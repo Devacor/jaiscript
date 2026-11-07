@@ -86,8 +86,8 @@ code tools/vscode-jaiscript          # then press F5 and open a .jai file there
 # 3. package it
 cd tools/vscode-jaiscript
 npm install
-npx @vscode/vsce package             # jaiscript-0.5.0.vsix
-code --install-extension jaiscript-0.5.0.vsix</code></pre></div>
+npx @vscode/vsce package             # jaiscript-0.5.1.vsix
+code --install-extension jaiscript-0.5.1.vsix</code></pre></div>
 <p>The extension finds the server in this order: <code>jaiscript.languageServer.path</code> when it is set; <code>server/jaiscript_lsp</code> (<code>.exe</code> on Windows) inside the extension folder, where a packaged build carries it; the JaiScript folder&#x27;s build trees, two levels above the extension folder (so found when the extension runs from <code>tools/vscode-jaiscript</code>): <code>build/bin</code>, then <code>build-debug/bin</code>, then the trees Visual Studio&#x27;s CMake presets create there (Release before Debug); then <code>PATH</code>. Rebuilding the extension itself is <code>npm install</code> and <code>npm run compile</code> (a type check, then the bundle).</p>
 <div class="tablewrap"><table>
 <thead><tr><th>setting</th><th>default</th><th>meaning</th></tr></thead>

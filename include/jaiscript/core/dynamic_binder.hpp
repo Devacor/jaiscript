@@ -1833,43 +1833,43 @@ private:
             // Register vector conversions
             // Only register value-type vector if T is copyable
             if constexpr (std::is_copy_constructible_v<T>) {
-                conv_mgr.add_vector_conversion<T>();
+                conv_mgr.template add_vector_conversion<T>();
             }
-            conv_mgr.add_vector_conversion<std::shared_ptr<T>>();
+            conv_mgr.template add_vector_conversion<std::shared_ptr<T>>();
 
             // Register common map conversions with this type as value
             // Only register T map conversions if T is copyable and default constructible (required for std::map)
             if constexpr (std::is_copy_constructible_v<T> && std::is_default_constructible_v<T>) {
-                conv_mgr.add_map_conversion<std::string, T>();
-                conv_mgr.add_map_conversion<int, T>();
-                conv_mgr.add_map_conversion<int64_t, T>();
+                conv_mgr.template add_map_conversion<std::string, T>();
+                conv_mgr.template add_map_conversion<int, T>();
+                conv_mgr.template add_map_conversion<int64_t, T>();
             }
             // shared_ptr<T> is always default constructible
-            conv_mgr.add_map_conversion<std::string, std::shared_ptr<T>>();
-            conv_mgr.add_map_conversion<int, std::shared_ptr<T>>();
-            conv_mgr.add_map_conversion<int64_t, std::shared_ptr<T>>();
+            conv_mgr.template add_map_conversion<std::string, std::shared_ptr<T>>();
+            conv_mgr.template add_map_conversion<int, std::shared_ptr<T>>();
+            conv_mgr.template add_map_conversion<int64_t, std::shared_ptr<T>>();
             
             // Register bound array conversions for zero-copy performance
-            conv_mgr.add_bound_array_conversion<T>();
-            conv_mgr.add_bound_array_conversion<std::shared_ptr<T>>();
+            conv_mgr.template add_bound_array_conversion<T>();
+            conv_mgr.template add_bound_array_conversion<std::shared_ptr<T>>();
             
             // Register bound map conversions
             // Only register for default constructible types
             if constexpr (std::is_default_constructible_v<T>) {
-                conv_mgr.add_bound_map_conversion<std::string, T>();
-                conv_mgr.add_bound_map_conversion<int, T>();
+                conv_mgr.template add_bound_map_conversion<std::string, T>();
+                conv_mgr.template add_bound_map_conversion<int, T>();
             }
             // shared_ptr<T> is always default constructible
-            conv_mgr.add_bound_map_conversion<std::string, std::shared_ptr<T>>();
-            conv_mgr.add_bound_map_conversion<int, std::shared_ptr<T>>();
+            conv_mgr.template add_bound_map_conversion<std::string, std::shared_ptr<T>>();
+            conv_mgr.template add_bound_map_conversion<int, std::shared_ptr<T>>();
             
             // Register common map conversions with this type as key (if it has operator<)
             if constexpr (std::is_default_constructible_v<T> && requires(const T& a, const T& b) { a < b; }) {
-                conv_mgr.add_map_conversion<T, std::string>();
-                conv_mgr.add_map_conversion<T, int>();
-                conv_mgr.add_map_conversion<T, int64_t>();
-                conv_mgr.add_map_conversion<T, double>();
-                conv_mgr.add_map_conversion<T, bool>();
+                conv_mgr.template add_map_conversion<T, std::string>();
+                conv_mgr.template add_map_conversion<T, int>();
+                conv_mgr.template add_map_conversion<T, int64_t>();
+                conv_mgr.template add_map_conversion<T, double>();
+                conv_mgr.template add_map_conversion<T, bool>();
             }
         }
     }

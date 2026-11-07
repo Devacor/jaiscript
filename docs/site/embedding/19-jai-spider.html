@@ -40,7 +40,7 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <h2 id="running">Running an app<a class="hlink" href="#running" aria-label="link">&#8203;</a></h2>
 <p>The <code>jai_spider</code> CMake target builds <code>bin/jai_spider</code> beside the runner (option <code>JAISCRIPT_BUILD_SPIDER</code>, on by default). SQLite is the system&#x27;s (3.37 or newer) when CMake finds one, otherwise the official amalgamation, downloaded at configure time into the build tree and checked against a pinned hash; <code>-DJAI_SPIDER_SQLITE_ZIP=&lt;zip&gt;</code> or <code>-DJAI_SPIDER_SQLITE_DIR=&lt;dir&gt;</code> supply it offline. Point it at the app&#x27;s entry file:</p>
 <div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain">jai_spider tools/jai_spider/examples/guestbook/app.jai
-/\(o.o)/\  jai_spider 0.5.0-beta
+/\(o.o)/\  jai_spider 0.5.1-beta
 jai_spider: spinning tools/jai_spider/examples/guestbook/app.jai on http://127.0.0.1:8080/ (files from .../guestbook/public)
 GET / 200 1.21 ms
 GET /style.css 200 0.31 ms (file)

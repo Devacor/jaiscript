@@ -32,6 +32,7 @@
 #include <jaiscript/core/script_namespace.hpp>
 #include <jaiscript/detail/environment.hpp>
 
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -1038,7 +1039,9 @@ scoped_file resolve_scoped_file(engine& eng, const std::string& path, const std:
 	namespace fs = std::filesystem;
 	scoped_file result;
 	const fs::path asked = fs::path(path);
-	if (path.empty() || path.front() == '/' || path.front() == '\\' || asked.has_root_name() || asked.has_root_directory()) {
+	// a drive prefix refuses on every platform, where only Windows' fs::path gives it a root name
+	const bool names_a_drive = path.size() >= 2 && path[1] == ':' && std::isalpha(static_cast<unsigned char>(path[0]));
+	if (path.empty() || path.front() == '/' || path.front() == '\\' || names_a_drive || asked.has_root_name() || asked.has_root_directory()) {
 		result.error = "scoped_template: '" + path + "' is not a path relative to its template directories";
 		return result;
 	}

@@ -66,7 +66,7 @@ cmake --build build
 build/my_game</code></pre></div>
 <p><strong>With <code>FetchContent</code>.</strong> The same target, fetched at configure time instead of copied in:</p>
 <div class="codeblock cb-plain"><span class="cb-label">CMakeLists.txt</span><pre><code class="lang-plain">include(FetchContent)
-FetchContent_Declare(jaiscript GIT_REPOSITORY https://github.com/Devacor/jaiscript.git GIT_TAG v0.5.0)
+FetchContent_Declare(jaiscript GIT_REPOSITORY https://github.com/Devacor/jaiscript.git GIT_TAG v0.5.1)
 FetchContent_MakeAvailable(jaiscript)
 target_link_libraries(my_game PRIVATE JaiScript::jaiscript)</code></pre></div>
 <p>Options set before the <code>add_subdirectory</code> or <code>FetchContent_MakeAvailable</code> (or with <code>-D</code>) turn the tools back on: <code>JAISCRIPT_BUILD_RUNNER</code>, <code>JAISCRIPT_BUILD_TESTS</code>, <code>JAISCRIPT_BUILD_EXAMPLES</code>, <code>JAISCRIPT_BUILD_LSP</code>, and <code>JAISCRIPT_INTERPRETER</code> for the <code>jaiscript_interpreter</code> target. <code>JAISCRIPT_ENABLE_DEBUGGER=OFF</code> compiles the debugger&#x27;s socket code out.</p>
