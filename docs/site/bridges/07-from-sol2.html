@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From sol2 (Lua) Bindings — JaiScript Code Migrations</title>
+<meta name="description" content="Moving a Lua host built on sol2 to JaiScript: usertypes, constructors, properties, overloads, bases, globals, protected calls and errors, from a real host's binding code, and the Lua habits that get a different answer (copies, 0-based indexing, division, truthiness).">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="From sol2 (Lua) Bindings — JaiScript Code Migrations">
+<meta property="og:description" content="Moving a Lua host built on sol2 to JaiScript: usertypes, constructors, properties, overloads, bases, globals, protected calls and errors, from a real host's binding code, and the Lua habits that get a different answer (copies, 0-based indexing, division, truthiness).">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li class="current"><a href="../bridges/07-from-sol2.html" aria-current="page">From sol2 (Lua) Bindings</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>07</nav>
+<article class="chapter"><h1 id="from-sol2">From sol2 (Lua) Bindings<a class="hlink" href="#from-sol2" aria-label="link">&#8203;</a></h1>
+<p class="lead">sol2 makes binding C++ to Lua a matter of a few calls on a <code>sol::state</code>: <code>new_usertype</code> for a class, <code>set_function</code> or a table assignment for a function or a value, a <code>protected_function</code> to call back. JaiScript's binding API covers the same ground with a fluent <code>dynamic_binder</code> per class and plain engine calls, and a sol2 host converts mostly line for line. The larger change is on the script side. JaiScript is not a table language: arrays and maps are values that copy on assignment, indexes start at 0, <code>/</code> between integers truncates, and <code>0</code> is false. This page maps the sol2 API, converts a real host's binding code, and then lists the Lua habits that get a different answer. The binding API is documented in full in <a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a> and <a href="../embedding/02-dynamic-binder.html">dynamic_binder</a>.</p>
+
+<h2 id="the-concept-map">The concept map<a class="hlink" href="#the-concept-map" aria-label="link">&#8203;</a></h2>
+<p>Headers: <code>&lt;jaiscript/jaiscript.hpp&gt;</code> for the engine, values and binders, and <code>&lt;jaiscript/stdlib/stdlib.hpp&gt;</code> for the standard library.</p>
+<h3 id="state-and-scripts">State and scripts<a class="hlink" href="#state-and-scripts" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>sol2</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>sol::state lua;</code></td><td><code>auto eng = jai::engine::make();</code>, a <code>std::shared_ptr&lt;jai::engine&gt;</code></td></tr>
+<tr><td><code>lua.open_libraries(sol::lib::base, sol::lib::math, ...)</code></td><td><code>jai::stdlib::register_all(eng);</code>: opt-in in both, all of it in one call (math is <code>math::sqrt</code> and its namespace, not <code>math.sqrt</code>)</td></tr>
+<tr><td><code>lua.script(code)</code></td><td><code>eng-&gt;execute(code)</code>; both throw on failure</td></tr>
+<tr><td><code>lua.safe_script(code, sol::script_pass_on_error)</code> and a <code>valid()</code> check</td><td><code>eng-&gt;execute(code)</code> in a <code>try</code>: loading a program reports by exception</td></tr>
+<tr><td><code>lua.script_file(path)</code>, <code>lua.safe_script_file(path, ...)</code></td><td><code>eng-&gt;execute_file(path)</code></td></tr>
+<tr><td><code>lua["package"]["path"] = dir + "/?.lua";</code> and <code>require("enemies")</code></td><td><code>eng-&gt;add_include_path(dir);</code> and <code>import "enemies.jai";</code></td></tr>
+<tr><td>one <code>sol::state</code> per thread</td><td>one engine per thread at a time, the same rule</td></tr>
+</tbody></table></div>
+<h3 id="functions">Functions<a class="hlink" href="#functions" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>sol2</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>lua.set_function("f", &amp;f);</code>, <code>lua["f"] = [](double v) { ... };</code></td><td><code>eng-&gt;add_function("f", &amp;f);</code>, <code>eng-&gt;add_function("f", [](double v) { ... });</code></td></tr>
+<tr><td><code>lua.set_function("label", sol::overload(f1, f2));</code></td><td><code>eng-&gt;add_function("label", f1);</code> and <code>eng-&gt;add_function("label", f2);</code>: one name, an overload set resolved by argument types</td></tr>
+<tr><td>a <code>sol::variadic_args</code> parameter</td><td><code>eng-&gt;add_variadic_function("f", fn)</code>, whose <code>fn</code> receives a <code>const std::vector&lt;jai::script_value&gt;&amp;</code></td></tr>
+<tr><td>a <code>sol::this_state</code> parameter</td><td>the lambda captures the engine pointer</td></tr>
+</tbody></table></div>
+<h3 id="usertypes">Usertypes<a class="hlink" href="#usertypes" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>sol2</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>lua.new_usertype&lt;T&gt;("T", ...);</code></td><td><code>jai::dynamic_binder&lt;T&gt;(*eng, "T") ... .build();</code></td></tr>
+<tr><td><code>sol::constructors&lt;T(), T(std::string, int64_t)&gt;()</code>, called as <code>T.new(...)</code></td><td><code>.constructor&lt;&gt;()</code> and <code>.constructor&lt;std::string, int64_t&gt;()</code>, called as <code>T(...)</code> for a value or <code>new T(...)</code> for a <code>shared_ptr</code></td></tr>
+<tr><td><code>sol::factories([](int v) { return std::make_shared&lt;T&gt;(v); })</code></td><td><code>.constructor&lt;int&gt;()</code>: <code>new T(v)</code> in script already makes the <code>shared_ptr</code></td></tr>
+<tr><td><code>"method", &amp;T::method</code>, called as <code>obj:method()</code></td><td><code>.method("method", &amp;T::method)</code>, called as <code>obj.method()</code></td></tr>
+<tr><td><code>"field", &amp;T::field</code></td><td><code>.property("field", &amp;T::field)</code></td></tr>
+<tr><td><code>"hp", sol::property(&amp;T::health, &amp;T::setHealth)</code></td><td><code>.property("hp", &amp;T::health, &amp;T::setHealth)</code></td></tr>
+<tr><td><code>sol::readonly(&amp;T::field)</code>, <code>sol::readonly_property(getter)</code></td><td><code>.property("name", getter, nullptr)</code>; a store raises <code>Cannot assign to 'name': it is read-only</code></td></tr>
+<tr><td><code>"damage", sol::overload(...)</code></td><td><code>.method("damage", ...)</code> once per overload</td></tr>
+<tr><td><code>sol::base_classes, sol::bases&lt;Base&gt;()</code></td><td><code>.base_class&lt;Base&gt;()</code></td></tr>
+<tr><td><code>sol::meta_function::addition</code>, <code>equal_to</code>, <code>less_than</code>, <code>index</code></td><td><code>.method("+", ...)</code>, <code>.method("==", ...)</code>, <code>.method("&lt;", ...)</code>, <code>.method("[]", ...)</code></td></tr>
+<tr><td>a static function in the usertype table, <code>T.axes()</code></td><td><code>.static_method("axes", fn)</code>, called as <code>T::axes()</code></td></tr>
+</tbody></table></div>
+<h3 id="values">Values<a class="hlink" href="#values" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>sol2</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>lua["HOST_SEED"] = opt.seed;</code></td><td><code>eng-&gt;add_global("HOST_SEED", opt.seed);</code></td></tr>
+<tr><td><code>int64_t gold = lua["gold"];</code></td><td><code>int64_t gold = eng-&gt;get_variable("gold").as_int();</code></td></tr>
+<tr><td><code>lua["boss"] = boss;</code> with a <code>std::shared_ptr&lt;T&gt;</code></td><td><code>eng-&gt;add_global("boss", eng-&gt;make_object(boss));</code></td></tr>
+<tr><td><code>lua["player"] = std::ref(player);</code></td><td><code>eng-&gt;add_global_ref("player", player);</code>, which for a number or a string binds the C++ variable itself: script writes land in it</td></tr>
+<tr><td><code>sol::object</code>, <code>obj.as&lt;T&gt;()</code>, <code>obj.is&lt;T&gt;()</code></td><td><code>jai::script_value</code>, <code>v.as&lt;T&gt;()</code>, <code>v.is_int()</code>, <code>v.is_string()</code> and the other tests</td></tr>
+<tr><td><code>sol::table</code>, <code>lua.create_table()</code></td><td>an array or a map value: <code>eng-&gt;make_array()</code>, <code>eng-&gt;make_map()</code>; a typed one copies out with <code>v.as&lt;std::vector&lt;std::string&gt;&gt;()</code> or <code>v.as&lt;std::map&lt;std::string, int64_t&gt;&gt;()</code></td></tr>
+<tr><td><code>sol::lua_nil</code></td><td><code>eng-&gt;make_null()</code>; <code>null</code> in script</td></tr>
+</tbody></table></div>
+<h3 id="calls-and-errors">Calls into script and errors<a class="hlink" href="#calls-and-errors" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>sol2</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>sol::protected_function f = lua["f"];</code> <code>auto r = f(args...);</code> <code>if (!r.valid()) { sol::error e = r; }</code></td><td><code>auto r = eng-&gt;get_variable("f").as_function()({args...});</code> <code>if (!r) { eng-&gt;format_error(r); }</code>: a <code>jai::checked_result</code></td></tr>
+<tr><td><code>std::function&lt;int64_t(int64_t)&gt; f = lua["f"];</code>, <code>sol::function</code></td><td><code>auto f = jai::convert_script_function&lt;int64_t(int64_t)&gt;(eng-&gt;get_variable("f"));</code>, which throws <code>jai::runtime_error</code> on failure</td></tr>
+<tr><td><code>sol::error</code></td><td><code>jai::parse_error</code>, <code>jai::static_check_error</code> (the whole check listing, before anything runs), <code>jai::runtime_error</code>; all derive from <code>std::exception</code></td></tr>
+<tr><td><code>protected_function::set_default_handler(lua["debug"]["traceback"])</code></td><td><code>eng-&gt;format_stack_trace()</code> after a failure</td></tr>
+<tr><td><code>error("msg")</code> in script</td><td><code>throw "msg";</code>, which reaches the host as <code>jai::script_exception</code> with that text</td></tr>
+<tr><td>a C++ exception from a bound function, turned into a Lua error</td><td>a run-time error the script can <code>catch</code>, carrying the exception's <code>what()</code></td></tr>
+<tr><td><code>sol::coroutine</code>, <code>sol::thread</code></td><td>a script coroutine's handle, advanced from C++ with <code>next(engine*)</code> or <code>next(engine*, n)</code> (<a href="12-from-coroutines.html">From Lua Coroutines</a>, <a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a>)</td></tr>
+</tbody></table></div>
+
+<h2 id="a-host-converted">A host converted<a class="hlink" href="#a-host-converted" aria-label="link">&#8203;</a></h2>
+<p><a href="../examples/index.html#gloom">GLOOM</a>, the raycast shooter, runs on one shared C++ host with an adapter per language: the JaiScript original and, among the comparison ports, a Lua one on sol2. Both adapters bind the same host API: the seeded random generator every port shares, host services, and the host's flags. These are their binding blocks, trimmed to a few lines of each kind. sol2:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (sol2)</span><pre><code class="lang-cpp">#include &lt;sol/sol.hpp&gt;
+
+sol::state lua;
+lua.open_libraries(sol::lib::base, sol::lib::math, sol::lib::string, sol::lib::table, sol::lib::coroutine);
+
+lua.new_usertype&lt;gloom_rng&gt;("Rng",
+    sol::constructors&lt;gloom_rng(int64_t)&gt;(),
+    "next", &amp;gloom_rng::next,
+    "roll", &amp;gloom_rng::roll,
+    "chance", &amp;gloom_rng::chance,
+    "nextf", &amp;gloom_rng::nextf,
+    "state", &amp;gloom_rng::state);
+
+lua["host_log"] = [log](const std::string&amp; line) { log(line); };
+lua["itrunc"] = [](double v) -&gt; int64_t { return static_cast&lt;int64_t&gt;(v); };
+lua["ESC"] = std::string("\x1b");
+lua["HOST_SEED"] = opt.seed;
+lua["HOST_GOD"] = opt.god;</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">#include &lt;jaiscript/jaiscript.hpp&gt;
+#include &lt;jaiscript/stdlib/stdlib.hpp&gt;
+
+auto eng = jai::engine::make();
+jai::stdlib::register_all(eng);
+
+jai::dynamic_binder&lt;gloom_rng&gt;(*eng, "Rng")
+    .constructor&lt;jai::script_int&gt;()
+    .method("next", &amp;gloom_rng::next)
+    .method("roll", &amp;gloom_rng::roll)
+    .method("chance", &amp;gloom_rng::chance)
+    .method("nextf", &amp;gloom_rng::nextf)
+    .method("state", &amp;gloom_rng::state)
+    .build();
+
+eng-&gt;add_function("host_log", [log](const std::string&amp; line) { log(line); });
+eng-&gt;add_function("itrunc", [](jai::script_float v) -&gt; jai::script_int {
+    return static_cast&lt;jai::script_int&gt;(v);
+});
+eng-&gt;add_global("ESC", eng-&gt;make_value(std::string("\x1b")));
+eng-&gt;add_global("HOST_SEED", eng-&gt;make_value(opt.seed));
+eng-&gt;add_global("HOST_GOD", eng-&gt;make_value(opt.god));</code></pre></div>
+<p>The usertype's name-value list becomes a chain of named verbs, and assignments into the state become <code>add_function</code> and <code>add_global</code>. Integers need no care at the boundary: a script <code>int</code> is an <code>int64_t</code> (<code>jai::script_int</code>), so the generator's 64-bit state crosses whole, as it does through a Lua 5.4 integer.</p>
+<p>Loading the game and calling into it:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (sol2)</span><pre><code class="lang-cpp">lua["package"]["path"] = dir + "/?.lua";
+sol::protected_function_result result = lua.safe_script_file(dir + "/main.lua", sol::script_pass_on_error);
+if (!result.valid()) { sol::error err = result; throw std::runtime_error(err.what()); }
+
+sol::protected_function frame = lua["gloom_frame"];
+sol::protected_function_result out = frame(dt, key, fps, ms_sim, ms_draw);
+if (!out.valid()) { sol::error err = out; throw std::runtime_error(err.what()); }
+std::string text = out.get&lt;std::string&gt;();</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">eng-&gt;add_include_path(dir);
+eng-&gt;execute("import \"main.jai\";");
+
+jai::script_value frame = eng-&gt;get_variable("gloom_frame");
+jai::checked_result&lt;jai::script_value&gt; out = frame.as_function()({
+    eng-&gt;make_value(dt), eng-&gt;make_value(key), eng-&gt;make_value(fps),
+    eng-&gt;make_value(ms_sim), eng-&gt;make_value(ms_draw)});
+if (!out) { throw std::runtime_error(eng-&gt;format_error(out)); }
+std::string text = out.value().as_string();</code></pre></div>
+<p>The engine is ready for the next call after a failed one, as a Lua state is after a protected call. A host that would rather throw converts the function once: <code>jai::convert_script_function&lt;std::string(double, const std::string&amp;, double, double, double)&gt;(frame)</code> is a <code>std::function</code>, like sol2's conversion to one.</p>
+
+<h2 id="a-usertype-in-full">A usertype in full<a class="hlink" href="#a-usertype-in-full" aria-label="link">&#8203;</a></h2>
+<p>A class with two constructors, an overloaded method, a property with a getter and a setter, a read-only property, an operator and a base class:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">struct Entity {
+    virtual ~Entity() = default;
+    std::string name = "entity";
+    virtual std::string describe() const { return "entity " + name; }
+};
+
+struct Monster : Entity {
+    int64_t hp = 10;
+    Monster() = default;
+    Monster(std::string a_name, int64_t a_hp) : hp(a_hp) { name = std::move(a_name); }
+    void damage(int64_t amount) { hp -= amount; }
+    void damage(int64_t amount, double multiplier) { hp -= static_cast&lt;int64_t&gt;(amount * multiplier); }
+    int64_t health() const { return hp; }
+    void setHealth(int64_t a_hp) { hp = a_hp &lt; 0 ? 0 : a_hp; }
+    bool alive() const { return hp &gt; 0; }
+    std::string describe() const override { return "monster " + name; }
+    bool operator==(const Monster&amp; o) const { return name == o.name &amp;&amp; hp == o.hp; }
+};</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (sol2)</span><pre><code class="lang-cpp">lua.new_usertype&lt;Entity&gt;("Entity",
+    "name", &amp;Entity::name,
+    "describe", &amp;Entity::describe);
+
+lua.new_usertype&lt;Monster&gt;("Monster",
+    sol::constructors&lt;Monster(), Monster(std::string, int64_t)&gt;(),
+    sol::base_classes, sol::bases&lt;Entity&gt;(),
+    "damage", sol::overload(
+        static_cast&lt;void (Monster::*)(int64_t)&gt;(&amp;Monster::damage),
+        static_cast&lt;void (Monster::*)(int64_t, double)&gt;(&amp;Monster::damage)),
+    "alive", &amp;Monster::alive,
+    "hp", sol::property(&amp;Monster::health, &amp;Monster::setHealth),
+    "maxHp", sol::readonly_property([](const Monster&amp;) { return int64_t{100}; }),
+    sol::meta_function::equal_to, &amp;Monster::operator==);
+
+lua.set_function("label", sol::overload(
+    [](int64_t n) { return std::string("int ") + std::to_string(n); },
+    [](const std::string&amp; s) { return std::string("string ") + s; }));</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">jai::dynamic_binder&lt;Entity&gt;(*eng, "Entity")
+    .property("name", &amp;Entity::name)
+    .method("describe", &amp;Entity::describe)
+    .build();
+
+jai::dynamic_binder&lt;Monster&gt;(*eng, "Monster")
+    .base_class&lt;Entity&gt;()
+    .constructor&lt;&gt;()
+    .constructor&lt;std::string, int64_t&gt;()
+    .method("damage", static_cast&lt;void (Monster::*)(int64_t)&gt;(&amp;Monster::damage))
+    .method("damage", static_cast&lt;void (Monster::*)(int64_t, double)&gt;(&amp;Monster::damage))
+    .method("alive", &amp;Monster::alive)
+    .method("==", &amp;Monster::operator==)
+    .property("hp", &amp;Monster::health, &amp;Monster::setHealth)
+    .property("maxHp", [](const Monster&amp;) { return int64_t{100}; }, nullptr)
+    .build();
+
+eng-&gt;add_function("label", [](int64_t n) { return std::string("int ") + std::to_string(n); });
+eng-&gt;add_function("label", [](const std::string&amp; s) { return std::string("string ") + s; });</code></pre></div>
+<p>The same session in each language:</p>
+<div class="codeblock cb-plain"><span class="cb-label">lua</span><pre><code class="lang-plain">local m = Monster.new("ogre", 30)
+m:damage(5)
+m:damage(10, 1.5)
+m.hp = m.hp - 100
+print(m.name .. " hp=" .. m.hp .. " alive=" .. tostring(m:alive()) .. " max=" .. m.maxHp .. " " .. m:describe())
+print(label(3) .. " / " .. label("x") .. " / " .. tostring(Monster.new("a", 1) == Monster.new("a", 1)))</code></pre></div>
+<div class="codeblock cb-jai" data-host="Entity / Monster registration"><span class="cb-label">jaiscript (with the host above)</span><pre><code class="lang-jai">var m = Monster("ogre", 30);
+m.damage(5);
+m.damage(10, 1.5);
+m.hp -= 100;
+print(m.name, " hp=", m.hp, " alive=", m.alive(), " max=", m.maxHp, " ", m.describe());
+print(label(3), " / ", label("x"), " / ", Monster("a", 1) == Monster("a", 1));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output (both)</span><pre><code class="lang-output">ogre hp=0 alive=false max=100 monster ogre
+int 3 / string x / true</code></pre></div>
+<p>sol2 notes that <code>sol::constructors</code> makes a value userdata, which a C++ function taking <code>std::shared_ptr&lt;T&gt;</code> cannot share, so the comparison benchmarks bind their tree node with <code>sol::factories</code> returning <code>std::make_shared</code>. In JaiScript the constructor list serves both: <code>Monster(...)</code> is a value, <code>new Monster(...)</code> is a <code>shared_ptr</code> handle, and a C++ object handed over with <code>make_object</code> stays one object on both sides.</p>
+
+<h2 id="lua-habits">Lua habits that get a different answer<a class="hlink" href="#lua-habits" aria-label="link">&#8203;</a></h2>
+<p>JaiScript's semantics are C++'s, so most Lua habits that change are the ones a JavaScript programmer meets too; <a href="01-from-javascript.html">From JavaScript</a> covers the dynamic-language side in more depth, and <a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> is the chapter to read first. The spellings:</p>
+<div class="tablewrap"><table><thead><tr><th>Lua</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>local x = 5</code></td><td><code>auto x = 5;</code> (inferred, then enforced), <code>int x = 5;</code>, or <code>var x = 5;</code> (dynamic)</td></tr>
+<tr><td><code>nil</code>, <code>~=</code>, <code>and</code>, <code>or</code>, <code>not</code></td><td><code>null</code>, <code>!=</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>!</code></td></tr>
+<tr><td><code>"hp " .. hp</code></td><td><code>"hp " + hp</code>, or a template string <code>`hp ${hp}`</code></td></tr>
+<tr><td><code>#t</code></td><td><code>t.size()</code></td></tr>
+<tr><td><code>t[1]</code>, the first element</td><td><code>t[0]</code></td></tr>
+<tr><td><code>for i = 1, #t do ... end</code>, <code>for _, v in ipairs(t)</code></td><td><code>for (int i = 0; i &lt; t.size(); ++i) { ... }</code>, <code>for (auto v : t)</code></td></tr>
+<tr><td><code>for k, v in pairs(m)</code>, in no set order</td><td><code>for (auto [k, v] : m)</code>, in key order</td></tr>
+<tr><td><code>obj:method(x)</code>, <code>self</code></td><td><code>obj.method(x)</code>; inside a method, fields and methods are in scope without <code>this</code></td></tr>
+<tr><td><code>return a, b</code></td><td><code>return [a, b];</code> and <code>auto [a, b] = f();</code></td></tr>
+<tr><td><code>error("msg")</code>, <code>pcall(f)</code></td><td><code>throw "msg";</code>, <code>try { f(); } catch (e) { ... }</code></td></tr>
+<tr><td><code>-- comment</code></td><td><code>// comment</code>, which is why <code>7 // 2</code> is <code>7</code> followed by a comment</td></tr>
+</tbody></table></div>
+<h3 id="tables-are-values">Arrays and maps are values<a class="hlink" href="#tables-are-values" aria-label="link">&#8203;</a></h3>
+<p>In Lua, <code>b = a</code> makes a second name for one table. In JaiScript, assignment copies an array or a map, as passing one by value does; a reference declaration (<code>auto&amp;</code>), a reference parameter or a <code>shared_ptr</code> shares one:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; a = [1, 2, 3];
+array&lt;int&gt; b = a;                  // a copy, where Lua's b = a shares the table
+b[0] = 99;
+map&lt;string, int&gt; stats = {"hp": 10};
+auto copy = stats;
+copy["hp"] = 0;
+auto&amp; alias = stats;               // a reference names the same map
+alias["hp"] += 5;
+print(a[0], " ", b[0], " ", stats["hp"], " ", copy["hp"]);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 99 15 0</code></pre></div>
+<h3 id="indexes-start-at-0">Indexes start at 0<a class="hlink" href="#indexes-start-at-0" aria-label="link">&#8203;</a></h3>
+<p>The first element is <code>[0]</code> and the last is <code>[size() - 1]</code>. Reading past the end is an error, where Lua returns <code>nil</code>:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; names = ["ana", "bo", "cy"];
+print(names[0], " ", names[names.size() - 1], " ", names.size());
+for (int i = 0; i &lt; names.size(); ++i) { print(i, " ", names[i]); }
+try { print(names[3]); } catch (e) { print("caught: ", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ana cy 3
+0 ana
+1 bo
+2 cy
+caught: Array index 3 out of bounds for array of size 3</code></pre></div>
+<h3 id="division">Division follows the operand types<a class="hlink" href="#division" aria-label="link">&#8203;</a></h3>
+<p>Lua's <code>/</code> always produces a float (<code>7 / 2</code> is <code>3.5</code>) and <code>//</code> floors. In JaiScript, <code>/</code> between two integers is integer division truncating toward zero, as in C++, and a float operand makes it float division. <code>%</code> takes the sign of the left operand, where Lua's takes the sign of the right (<code>-7 % 2</code> is <code>1</code> in Lua):</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(7 / 2, " ", 7.0 / 2, " ", -7 / 2, " ", -7 % 2, " ", cast&lt;float&gt;(7) / 2);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 3.5 -3 -1 3.5</code></pre></div>
+<h3 id="zero-is-false">0 and the empty string are false<a class="hlink" href="#zero-is-false" aria-label="link">&#8203;</a></h3>
+<p>Lua treats every value but <code>nil</code> and <code>false</code> as true. JaiScript tests a value the C++ way: <code>0</code>, the empty string and <code>null</code> are false, so <code>if (count)</code> skips an empty count.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var zero = 0;
+var empty = "";
+print(zero ? "0 is true" : "0 is false", ", ", empty ? "\"\" is true" : "\"\" is false");</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">0 is false, "" is false</code></pre></div>
+<h3 id="names-are-declared">Names are declared, and checked before anything runs<a class="hlink" href="#names-are-declared" aria-label="link">&#8203;</a></h3>
+<p>A Lua assignment to an unknown name creates a global, and a misspelled read is <code>nil</code>. JaiScript declares every name; a program-scope declaration is the global, and the strict checker rejects an undeclared name, a wrong argument count or a mismatched typed value before the first statement runs (<a href="../guide/13-strict-checking.html">Strict checking</a>). Names the host registers before the script loads are visible to the checker.</p>
+<h3 id="integers-do-not-wrap">Integers do not wrap<a class="hlink" href="#integers-do-not-wrap" aria-label="link">&#8203;</a></h3>
+<p>Lua 5.4 integers wrap around (<code>math.maxinteger + 1 == math.mininteger</code>). A JaiScript <code>int</code> is the same 64 bits, but an operation that overflows it raises an error (<a href="../guide/04-operators.html#checked-overflow-raises-never-wraps-never-ub">Checked overflow</a>); <code>math::wrap_add</code> and its siblings wrap on purpose:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int big = 9223372036854775807;
+try { big += 1; } catch (e) { print("caught: ", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">caught: Integer overflow in '+='</code></pre></div>
+<h3 id="several-results">Several results come back as one value<a class="hlink" href="#several-results" aria-label="link">&#8203;</a></h3>
+<p>A function returns one value. Return an array and destructure it (<a href="../guide/11-kitchen-sink.html#destructuring">Destructuring</a>), or return a class instance:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function minmax(array&lt;int&gt; xs) {
+    int lo = xs[0];
+    int hi = xs[0];
+    for (auto x : xs) {
+        if (x &lt; lo) { lo = x; }
+        if (x &gt; hi) { hi = x; }
+    }
+    return [lo, hi];
+}
+auto [lo, hi] = minmax([4, 9, 1]);
+print(lo, " ", hi);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 9</code></pre></div>
+<h3 id="maps-iterate-in-key-order">Maps iterate in key order<a class="hlink" href="#maps-iterate-in-key-order" aria-label="link">&#8203;</a></h3>
+<p><code>pairs</code> visits a table in no promised order. A JaiScript map iterates in key order, every run, so a loop over one is deterministic:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; loot = {"zinc": 3, "amber": 1, "moss": 2};
+for (auto [name, count] : loot) { print(name, " ", count); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">amber 1
+moss 2
+zinc 3</code></pre></div>
+
+<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
+<p><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a> covers the engine, functions, globals, calls into script and every error surface; <a href="../embedding/02-dynamic-binder.html">dynamic_binder</a> covers every binder verb, <code>JAI_PROPERTY</code> classes that are reflected, scripted and saved from one declaration, and inheritance. <a href="../guide/08-coroutines.html">Coroutines</a> covers the script side of what Lua does with <code>coroutine.wrap</code>, and <a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a> the host side.</p>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../embedding/index.html"><span>next &middot; embedding &rarr;</span>Embedding &amp; Engine Guide</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time: Clocks, Stopwatches &amp; Dates &mdash; JaiScript Guide</title>
+<meta name="description" content="The time:: namespace: monotonic and wall clocks, execute_elapsed, value-type stopwatches, validated calendar dates in UTC or local time, templates with format specs, and why parallel bodies cannot read the clock.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Time: Clocks, Stopwatches &amp; Dates &mdash; JaiScript Guide">
+<meta property="og:description" content="The time:: namespace: monotonic and wall clocks, execute_elapsed, value-type stopwatches, validated calendar dates in UTC or local time, templates with format specs, and why parallel bodies cannot read the clock.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li class="current"><a href="../guide/14-time.html" aria-current="page">Time: Clocks, Stopwatches &amp; Dates</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>14</nav>
+<article class="chapter"><h1 id="time">Time: Clocks, Stopwatches &amp; Dates<a class="hlink" href="#time" aria-label="link">&#8203;</a></h1>
+<p>Everything to do with time lives in one namespace, <code>time::</code>, part of the standard library a host installs with <code>jai::stdlib::register_all</code>. It has three layers: <strong>clocks</strong> that answer &quot;how long&quot; and &quot;what time is it&quot;, a <strong>stopwatch</strong> type for measuring intervals, and a <strong>date</strong> type for the calendar. Every one of them reads the engine&#x27;s single time source, once per call and only when called, and the host can replace that source with a virtual clock (<a href="../embedding/17-host-api.html#the-time-source">The time source</a> in the Embedding guide), which is how tests, replays and deterministic simulations drive a script&#x27;s sense of time.</p>
+<h2 id="clocks">Clocks<a class="hlink" href="#clocks" aria-label="link">&#8203;</a></h2>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>Answers</th></tr></thead><tbody>
+<tr><td><code>time::now()</code></td><td>seconds (float) on the engine&#x27;s monotonic clock, counted from the engine&#x27;s construction; never goes backwards</td></tr>
+<tr><td><code>time::engine_elapsed()</code></td><td>the same clock, by its descriptive name</td></tr>
+<tr><td><code>time::execute_elapsed()</code></td><td>seconds since the running host entry began: the <code>execute()</code> the host called, or the script function or coroutine it invoked while no script was running. Nested executes, includes and imports belong to the entry that runs them</td></tr>
+<tr><td><code>time::unix_time()</code></td><td>seconds (float) since the Unix epoch, from the wall clock</td></tr>
+<tr><td><code>time::unix_ms()</code></td><td>whole milliseconds (int) since the Unix epoch</td></tr>
+<tr><td><code>time::date_now(template)</code></td><td>the current local date and time as a string, <a href="#formatting">formatted by a template</a></td></tr>
+</tbody></table></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">float t0 = time::now();
+sleep(0.02);
+float waited = time::now() - t0;
+print("waited at least 20 ms: {}", waited &gt;= 0.02);
+print("this execute has run at least that long: {}", time::execute_elapsed() &gt;= waited);
+float unix_seconds = time::unix_time();
+print("unix_ms reads the same clock, in milliseconds: {}", time::unix_ms() + 1 &gt; unix_seconds * 1000.0);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">waited at least 20 ms: true
+this execute has run at least that long: true
+unix_ms reads the same clock, in milliseconds: true</code></pre></div>
+<p>Use the monotonic clocks (<code>now</code>, <code>execute_elapsed</code>, stopwatches) to measure durations: the wall clock can jump when the system clock is set. Use the wall clock (<code>unix_time</code>, dates) to say what time it is.</p>
+<p>Waiting is the language&#x27;s own <code>sleep(seconds)</code> (<a href="08-coroutines.html#sleep">Coroutines</a>), which reads the same time source: in a run the host started with <code>engine::start</code> it suspends the run and hands control back to the host until the time has passed, and in a plain <code>execute()</code> it blocks the thread, counting against the execution budget like any other time.</p>
+<p><strong>The engine&#x27;s own deadlines run on the real clock.</strong> The execution budget and the window between import check passes (<a href="10-modules.html">Modules</a>) always measure real time, so a host&#x27;s virtual clock can neither stall nor trip them. The engine keeps a sample of the real clock, taken at each call from the host and at the budget&#x27;s periodic checks; while the time source is the system clock, a <code>time::</code> reading (and waking from a <code>sleep</code> that blocks) refreshes that sample too, and a run resumed after a <code>sleep</code> is a call from the host, which is what keeps a sleep-paced frame loop&#x27;s hot reload prompt. A replaced source never touches it.</p>
+<h2 id="stopwatches">Stopwatches<a class="hlink" href="#stopwatches" aria-label="link">&#8203;</a></h2>
+<p><code>time::stopwatch</code> is a type like any class: declare one, and call its methods. All results are float seconds.</p>
+<div class="tablewrap"><table><thead><tr><th>Method</th><th>Does</th></tr></thead><tbody>
+<tr><td><code>start()</code></td><td>starts timing from zero; on a running or paused stopwatch it restarts from zero</td></tr>
+<tr><td><code>elapsed()</code></td><td>running time so far, without stopping</td></tr>
+<tr><td><code>delta()</code></td><td>time since the previous <code>delta()</code> (or since the start), and remembers this moment; on a stopwatch that is not started it starts it and returns 0.0</td></tr>
+<tr><td><code>pause()</code></td><td>stops the time from accumulating and returns the elapsed time; a second <code>pause()</code> changes nothing</td></tr>
+<tr><td><code>resume()</code></td><td>accumulates again and returns the elapsed time; on a stopwatch never started it starts it, on a running one it changes nothing</td></tr>
+<tr><td><code>stop()</code></td><td>returns the elapsed time, then stops and resets both the elapsed time and the delta to zero</td></tr>
+<tr><td><code>is_running()</code> / <code>is_paused()</code></td><td>its state</td></tr>
+</tbody></table></div>
+<p>Time spent paused never counts toward <code>elapsed()</code> or <code>delta()</code>. A stopwatch is a value, like every JaiScript value: a copy is a separate stopwatch from then on, and a stopwatch field copies with its object.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">time::stopwatch frame;
+frame.delta();                      // the first delta starts the stopwatch and returns 0.0
+sleep(0.01);
+float dt = frame.delta();           // seconds since the previous delta
+float at_pause = frame.pause();    // pause returns the elapsed time
+sleep(0.05);                        // paused: none of this counts
+print("the pause stood still: {}", frame.elapsed() == at_pause);
+frame.resume();
+print("dt covered the sleep: {}", dt &gt;= 0.01);
+print("resumed from where it paused: {}", frame.elapsed() &gt;= at_pause);
+print("running: {}, paused: {}", frame.is_running(), frame.is_paused());
+auto lap = frame;                   // a copy has its own state
+lap.stop();
+print("copy running: {}, original running: {}", lap.is_running(), frame.is_running());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">the pause stood still: true
+dt covered the sleep: true
+resumed from where it paused: true
+running: true, paused: false
+copy running: false, original running: true</code></pre></div>
+<p>Declaring a stopwatch reads no clock, and each method reads the monotonic clock at most once: a paused stopwatch answers <code>elapsed()</code>, <code>delta()</code>, <code>pause()</code> and <code>stop()</code> without reading it at all.</p>
+<h2 id="dates">Dates<a class="hlink" href="#dates" aria-label="link">&#8203;</a></h2>
+<p><code>time::date</code> is a calendar date and a time of day to the millisecond, in one of two zones: <strong>UTC</strong> or the machine&#x27;s <strong>local</strong> zone. The zone is part of the value and is always chosen explicitly:</p>
+<div class="tablewrap"><table><thead><tr><th>Constructor</th><th>Makes</th></tr></thead><tbody>
+<tr><td><code>time::local_now()</code> / <code>time::utc_now()</code></td><td>now, from the wall clock</td></tr>
+<tr><td><code>time::date_from_unix(seconds)</code> / <code>time::date_from_unix(seconds, true)</code></td><td>the local (or, with <code>true</code>, UTC) date of a Unix time; fractions of a second round to the millisecond</td></tr>
+<tr><td><code>time::local_date(y, m, d)</code> / <code>time::utc_date(y, m, d)</code></td><td>a date from fields: year, month, day, then optionally hour, minute, second, millisecond; every field is validated</td></tr>
+<tr><td><code>time::date d;</code></td><td>the Unix epoch, 1970-01-01T00:00:00.000Z</td></tr>
+</tbody></table></div>
+<p>Dates run from year 1 to year 9999. Arithmetic, comparison and formatting work in both zones; converting a local date to or from an instant is limited to the range the platform&#x27;s local-time support covers.</p>
+<h3 id="fields">Fields<a class="hlink" href="#fields" aria-label="link">&#8203;</a></h3>
+<p><code>year</code>, <code>month</code> (1-12), <code>day</code>, <code>hour</code> (0-23), <code>minute</code>, <code>second</code> and <code>millisecond</code> read and write through ordinary member access. Every store is checked: a value out of its range, or a store that would leave the day past the end of its month, raises a catchable error and leaves the date unchanged. To move 2024-03-31 to April, set the day first. <code>weekday</code> (0 = Sunday through 6 = Saturday), <code>yearday</code> (1 = January 1) and <code>utc</code> are read-only.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">time::date d = time::utc_date(2024, 2, 29);
+print("{}-{}-{} is weekday {} and day {} of the year", d.year, d.month, d.day, d.weekday, d.yearday);
+d.day = 1;
+d.month = 3;
+print(d.to_string());
+try { d.day = 31; d.month = 4; } catch (e) { print(e); }
+print(d.to_string());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2024-2-29 is weekday 4 and day 60 of the year
+2024-03-01T00:00:00.000Z
+time::date: day 31 does not exist in 2024-04
+2024-03-31T00:00:00.000Z</code></pre></div>
+<p><code>to_string()</code> is ISO 8601: <code>2024-03-31T00:00:00.000Z</code> for a UTC date, the same without the <code>Z</code> for a local one.</p>
+<h3 id="arithmetic-and-comparison">Arithmetic and comparison<a class="hlink" href="#arithmetic-and-comparison" aria-label="link">&#8203;</a></h3>
+<p>Every <code>add_</code> method returns a new date and leaves the receiver alone. They come in two kinds:</p>
+<ul>
+<li><strong>Calendar steps</strong>: <code>add_days(n)</code>, <code>add_months(n)</code> and <code>add_years(n)</code> take whole numbers and keep the time of day. A month or year step that lands past the end of the target month <strong>clamps to its last day</strong>: January 31 plus one month is February 29 in a leap year and February 28 otherwise, and February 29 plus one year is February 28.</li>
+<li><strong>Elapsed time</strong>: <code>add_hours(n)</code>, <code>add_minutes(n)</code> and <code>add_seconds(n)</code> take any number (<code>add_seconds(1.5)</code>) and move the instant by exactly that much, rounded to the millisecond.</li>
+</ul>
+<p>In UTC the two kinds agree. In the local zone they differ across a daylight-saving change: <code>add_days(1)</code> is the same time tomorrow, <code>add_hours(24)</code> is twenty-four hours later.</p>
+<p>Dates compare as instants with <code>&lt;</code>, <code>&lt;=</code>, <code>==</code>, <code>!=</code>, <code>&gt;</code> and <code>&gt;=</code>, so a local date and a UTC date of the same moment are equal. <code>a - b</code> is the difference in float seconds, and <code>d.between(a, b)</code> asks whether <code>d</code> lies in the inclusive range between two dates given in either order.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">time::date launch = time::utc_date(2024, 1, 31, 9, 30);
+print(launch.to_string());
+print(launch.add_months(1).to_string());       // Feb 31 does not exist: the day clamps to Feb 29
+print(launch.add_days(30).format("${weekday_name}, ${month_name} ${day}"));
+print(launch.add_hours(36).to_string());
+time::date next = launch.add_years(1);
+print("{} seconds apart", next - launch);
+print("{} {} {}", launch &lt; next, launch == next.add_years(-1), launch.between(next, launch));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2024-01-31T09:30:00.000Z
+2024-02-29T09:30:00.000Z
+Friday, March 1
+2024-02-01T21:30:00.000Z
+31622400.0 seconds apart
+true true true</code></pre></div>
+<h3 id="zones-and-unix-time">Zones and Unix time<a class="hlink" href="#zones-and-unix-time" aria-label="link">&#8203;</a></h3>
+<p><code>d.unix()</code> is the date&#x27;s instant in float seconds since the Unix epoch and <code>d.unix_ms()</code> in whole milliseconds. <code>to_utc()</code> and <code>to_local()</code> return the same instant in the other zone.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">time::date u = time::date_from_unix(1700000000, true);
+time::date l = u.to_local();
+print(u.to_string());
+print("same instant: {}, local is UTC: {}", u == l, l.utc);
+print("round trip: {}", time::date_from_unix(l.unix()).to_string() == l.to_string());
+print("now, both ways: {}", time::local_now().to_utc().format("${year}") == time::utc_now().format("${year}"));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2023-11-14T22:13:20.000Z
+same instant: true, local is UTC: false
+round trip: true
+now, both ways: true</code></pre></div>
+<h2 id="formatting">Formatting<a class="hlink" href="#formatting" aria-label="link">&#8203;</a></h2>
+<p><code>d.format(template)</code> and <code>time::date_now(template)</code> fill a template string whose placeholders are <code>${name}</code>, optionally with a format spec: <code>${name:spec}</code> takes exactly the specs a <a href="09-containers-strings.html">template string</a> splice takes (<code>${day:02}</code>, <code>${month_name:&gt;10}</code>, <code>${year:x}</code>). The template is an ordinary string, so write it in double quotes: the placeholders are resolved by the call, not by the language at the call site. Everything outside a <code>${...}</code> is copied as it is.</p>
+<div class="tablewrap"><table><thead><tr><th>Placeholder</th><th>Value</th></tr></thead><tbody>
+<tr><td><code>year</code>, <code>month</code>, <code>day</code></td><td>ints (<code>month</code> is 1-12)</td></tr>
+<tr><td><code>month_name</code>, <code>month_short</code></td><td><code>September</code>, <code>Sep</code></td></tr>
+<tr><td><code>weekday_name</code>, <code>weekday_short</code></td><td><code>Sunday</code>, <code>Sun</code></td></tr>
+<tr><td><code>hours</code>, <code>military_hours</code></td><td>the 12-hour clock (12, 1-11) and the 24-hour clock (0-23)</td></tr>
+<tr><td><code>minutes</code>, <code>seconds</code>, <code>milliseconds</code></td><td>ints</td></tr>
+<tr><td><code>am_pm</code></td><td><code>AM</code> or <code>PM</code></td></tr>
+</tbody></table></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">time::date d = time::utc_date(2026, 9, 27, 14, 3, 5, 7);
+print(d.format("${weekday_short} ${day:02} ${month_short} ${year} ${hours}:${minutes:02} ${am_pm}"));
+print(d.format("${year}-${month:02}-${day:02}T${military_hours:02}:${minutes:02}:${seconds:02}.${milliseconds:03}"));
+print(d.format("[${month_name:&gt;10}] [${weekday_name:*^11}]"));
+try { d.format("${fortnight}"); } catch (e) { print(e); }
+print(time::date_now("${year}") == time::local_now().format("${year}"));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Sun 27 Sep 2026 2:03 PM
+2026-09-27T14:03:05.007
+[ September] [**Sunday***]
+time::date::format: unknown placeholder &#x27;${fortnight}&#x27;
+true</code></pre></div>
+<p>An unknown placeholder, an unterminated <code>${</code>, a spec outside the template-string subset and a spec that does not fit the value (<code>${month_name:05}</code>) all raise a catchable error that names the problem. <code>date_now</code> formats the local time; for UTC, format <code>time::utc_now()</code>.</p>
+<h2 id="the-types-by-their-names">The types by their names<a class="hlink" href="#the-types-by-their-names" aria-label="link">&#8203;</a></h2>
+<p><code>time::date</code> and <code>time::stopwatch</code> are spelled with their namespace everywhere a class name goes: declarations, parameters and returns, fields, container element types, <code>cast&lt;time::date&gt;(x)</code>, <code>shared_ptr&lt;time::date&gt;</code> and <code>new time::date()</code>. <code>time::date()</code> and <code>time::stopwatch()</code> construct them as expressions.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Session {
+    time::date started = time::utc_date(2026, 1, 1, 8);
+    time::stopwatch clock;
+}
+function length_of(time::date a, time::date b) -&gt; float { return b - a; }
+array&lt;time::date&gt; marks = [time::utc_date(2026, 1, 1, 9), time::utc_date(2026, 1, 1, 10, 30)];
+Session s;
+for (time::date m : marks) { print("{} s after start", length_of(s.started, m)); }
+print(type_of(s.clock), " ", s.clock.is_running());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3600.0 s after start
+9000.0 s after start
+time::stopwatch false</code></pre></div>
+<p>The strict checker knows the namespace: a <code>time::</code> call with the wrong number of arguments (<code>'time::now' expects 0 argument(s), got 1</code>) or an argument it cannot take (<code>time::date_from_unix("soon")</code>) fails the load, results carry their types, and a member neither type has (<code>no member 'nope' in class 'time::date'</code>) is a load error like any class&#x27;s.</p>
+<h2 id="time-and-parallel-loops">Time and parallel loops<a class="hlink" href="#time-and-parallel-loops" aria-label="link">&#8203;</a></h2>
+<p>A <code>parallel_for</code> gives the same result at every worker count. A clock read cannot keep that promise (the answer would depend on scheduling), so a parallel body that calls <code>time::</code> is rejected before any worker starts, with the usual catchable explanation:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;float&gt; stamps = [0.0, 0.0, 0.0];
+try {
+    parallel_for (auto&amp; s : stamps) { s = time::now(); }
+} catch (e) {
+    print(e);
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">parallel_for: time:: calls are not allowed in a parallel body (engine-owned clock) at 3:49</code></pre></div>
+<p>Read the clock before the loop and hand the value in.</p>
+<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
+<p>One chapter remains: <a href="15-math.html">Math</a> covers the vector and color types (<code>math::vec2</code> to <code>math::vec4</code>, the integer vectors, <code>math::color</code>) and the geometry library. After that: <a href="../embedding/index.html">Embedding</a> covers the C++ side (running scripts, binding your classes with <code>dynamic_binder</code>, signals, safety rails, the time source, and the performance model); <a href="../examples/index.html">Examples</a> walks complete programs written in the language; and the <a href="../reference/index.html">Reference</a> is the everything-on-one-page lookup when you know what you&#x27;re looking for.</p>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/13-strict-checking.html"><span>&larr; previous</span>Types That Fail Early: strict checking</a><a class="next" rel="next" href="../guide/15-math.html"><span>next &rarr;</span>Math: Vectors &amp; Colors</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reflection: reflect:: — JaiScript Guide</title>
+<meta name="description" content="The reflect:: surface: ask a value what it is, walk fields and methods by name, and build tools on top of live objects.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Reflection: reflect:: — JaiScript Guide">
+<meta property="og:description" content="The reflect:: surface: ask a value what it is, walk fields and methods by name, and build tools on top of live objects.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li class="current"><a href="../guide/12-reflection.html" aria-current="page">Reflection: reflect::</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>12</nav>
+<article class="chapter"><h1 id="reflection-reflect">Reflection: <code>reflect::</code><a class="hlink" href="#reflection-reflect" aria-label="link">&#8203;</a></h1>
+<p>The <code>reflect::</code> namespace answers questions about the program at runtime: what classes exist, what fields and methods they carry, and how to read, write, call, and construct by <em>name</em>. Three properties define it.</p>
+<p>It is <strong>engine truth</strong>. The namespace is reserved (a script cannot declare into it; contrast <code>math::</code>, which scripts legitimately extend), and each engine reflects only what <em>it</em> registered. A sandbox engine knows nothing about your gameplay classes.</p>
+<p>It is a <strong>live query</strong>. Every call reads the current class shape, so after a hot reload the same question returns the new answer. There is no snapshot to invalidate; you just ask again.</p>
+<p>Its results are <strong>plain values</strong>: ordinary arrays and maps minted at call time, safe to hold, iterate, and serialize.</p>
+<h2 id="ask-what-shape-is-this">Ask: what shape is this?<a class="hlink" href="#ask-what-shape-is-this" aria-label="link">&#8203;</a></h2>
+<p><code>reflect::type_name(v)</code> is the precise sibling of <code>type_of</code>: both name a class instance by the class it actually holds, and <code>type_name</code> is the sharper of the two elsewhere: a typed container answers its canonical tag (<code>"array&lt;int&gt;"</code>) where <code>type_of</code> answers <code>"array"</code>. References answer what they refer to, and every other value answers its kind (<code>"int"</code>, <code>"string"</code>, <code>"null"</code>, &hellip;).</p>
+<p><code>reflect::fields(v)</code> (on an instance or a class name) returns one entry per field as a map with <code>name</code>, <code>type</code>, <code>kind</code>, <code>access</code>, <code>static</code>, and <code>from</code> (the declaring class). Order is a contract: base class fields first, then own, each in <strong>declaration order</strong>, never hash order, identical across engines and backends. Non-class values return an empty array, so a property grid can call it on anything.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Creature { int hp = 10; private: string name = "grim"; }
+class Goblin : Creature { float speed = 1.5; }
+
+for (auto f : reflect::fields(Goblin())) {
+    print("[{}] {} {} (from {})", f["access"], f["type"], f["name"], f["from"]);
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[public] int hp (from Creature)
+[private] string name (from Creature)
+[public] float speed (from Goblin)</code></pre></div>
+<p>Static fields ride the same list with <code>"static": true</code>, after the instance fields of the class that declares them. For C++-bound classes the entries come from the host&#x27;s property schema, and <code>kind</code> distinguishes plain fields from <code>"signal"</code> and <code>"observable"</code> members.</p>
+<p><code>reflect::methods(v)</code> enumerates callable members the same way: one entry <strong>per overload</strong> with <code>name</code>, <code>arity</code>, <code>static</code>, <code>access</code>, <code>from</code>, and <code>params</code> (an array of <code>{name, type, default}</code> maps), sorted by name then arity. Property accessors and constructors are not in the list. They are the <code>fields()</code> and <code>construct()</code> surfaces respectively.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Soldier {
+    int hp = 10;
+    int wound(int amount) { hp = hp - amount; return hp; }
+    private: int covert() { return hp; }
+}
+for (auto m : reflect::methods("Soldier")) {
+    print("{} arity {} ({})", m["name"], m["arity"], m["access"]);
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">covert arity 0 (private)
+wound arity 1 (public)</code></pre></div>
+<p>For quick existence checks there are <code>reflect::has_field(v, "name")</code> and <code>reflect::has_method(v, "name")</code>. Both walk the inheritance chain. And to drive a call dynamically, <code>reflect::method_arguments(v, "name")</code> and <code>reflect::function_arguments("name")</code> return the parameter lists: one param-array <strong>per overload</strong>, because overloads make any single-signature answer ambiguous:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function greet(string who, int times = 1) -&gt; string { return who; }
+
+for (auto p : reflect::function_arguments("greet")[0]) {
+    print("{}: {} (default? {})", p["name"], p["type"], p["default"]);
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">who: string (default? false)
+times: int (default? true)</code></pre></div>
+<p>Host-registered functions are type-erased on the C++ side, so they answer an empty overload list rather than a fabricated signature.</p>
+<h2 id="act-read-write-call-construct">Act: read, write, call, construct<a class="hlink" href="#act-read-write-call-construct" aria-label="link">&#8203;</a></h2>
+<p><code>reflect::get</code>, <code>reflect::set</code> and <code>reflect::invoke</code> are <code>s.hp</code>, <code>s.hp = 42</code> and <code>s.wound(5)</code> with the name as a string:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Soldier {
+    int hp = 10;
+    int wound(int amount) { hp = hp - amount; return hp; }
+}
+var s = Soldier();
+print("hp = {}", reflect::get(s, "hp"));      // reads like s.hp
+reflect::set(s, "hp", 42);                     // writes like s.hp = 42
+print("wound(5) -&gt; {}", reflect::invoke(s, "wound", 5));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">hp = 10
+wound(5) -&gt; 37</code></pre></div>
+<p>The one rule that governs all of these: <strong>reflection ignores script access control, by design.</strong> Reflecting a class is an intentional request for its whole shape, so <code>reflect::get</code>, <code>reflect::set</code>, <code>reflect::invoke</code>, <code>reflect::bind</code> and <code>reflect::construct</code> reach private members and private constructors alike; at that level <code>private</code> is a convention, not a guarantee. Everything else still holds: typed fields convert-or-error with the same text as direct syntax, and direct syntax keeps enforcing <code>private</code> from outside the class. The security boundary is the host and the engine, and reflection never crosses it: a C++-bound class shows only what its binding registered (an unbound member stays unreachable, a read-only property stays read-only), builtin values expose no internal state, and engine capabilities such as file access are never reachable. A load follows the same idea: <code>from_json</code> and <code>from_binary</code> reconstitute the saved state, private fields and classes with private constructors included.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Vault { private: int gold = 100; }
+var v = Vault();
+
+try { v.gold = 0; } catch (e) { print("direct syntax: {}", e); }
+reflect::set(v, "gold", 7);
+print("through reflection: {}", reflect::get(v, "gold"));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">direct syntax: Cannot access private member &#x27;gold&#x27; of class &#x27;Vault&#x27;
+through reflection: 7</code></pre></div>
+<p><code>reflect::bind(obj, "name")</code> hands back the method as a callable bound to <code>obj</code>: it holds the object and keeps it alive, so calling it later is <code>obj.name(…)</code> on the object it was taken from, even after the variable that held it is reassigned. It is the one spelling of a method taken as a value (<code>obj.name</code> without a call is an error, see <a href="07-classes.html#methods-as-values">Classes</a>). A string, array or map is a value, so <code>reflect::bind</code> refuses one and points to a lambda: <code>[&amp;]() { s.to_upper(); }</code>.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Counter { int n = 0; void bump() { n += 1; } }
+Counter c;
+var bump = reflect::bind(c, "bump");
+bump();
+bump();
+print("{}", c.n);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2</code></pre></div>
+<p><code>reflect::call("name", args…)</code> is the free-function twin: it resolves a global or namespace-qualified name and calls it. <code>reflect::construct("Class", args…)</code> and <code>reflect::construct_shared("Class", args…)</code> are spawn-by-name: the first is <code>Class(args)</code> (a value: copies are independent), the second is <code>new Class(args)</code> (a shared handle: copies alias one object; see <a href="03-value-semantics.html">Value Semantics</a>).</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function raise(auto x) -&gt; auto { return x + 1; }
+namespace tools { function twice(auto x) -&gt; auto { return x * 2; } }
+
+print("{} {}", reflect::call("raise", 41), reflect::call("tools::twice", 21));
+
+class P { int x = 0; P(int v) { x = v; } }
+var a = reflect::construct("P", 1);          // == P(1)
+var b = a; b.x = 9;                           // copies: a untouched
+var sp = reflect::construct_shared("P", 1);  // == new P(1)
+var tp = sp; tp.x = 9;                        // shares: sp sees the write
+print("value a.x = {}, shared sp.x = {}", a.x, sp.x);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">42 42
+value a.x = 1, shared sp.x = 9</code></pre></div>
+<p>The canonical use is a data-driven spawn table: <code>spawned.push(reflect::construct_shared(row["type"], row["hp"]));</code>.</p>
+<h2 id="navigate-the-wider-world">Navigate: the wider world<a class="hlink" href="#navigate-the-wider-world" aria-label="link">&#8203;</a></h2>
+<p>Beyond one class: <code>reflect::classes()</code> lists every class this engine registered (script-declared and host-bound), sorted. <code>reflect::functions()</code> lists the callable registration surface, namespace-qualified and sorted. Constructors are excluded (they are <code>classes()</code>). <code>reflect::globals()</code> lists global variable names, sorted. <code>reflect::bases(v)</code> gives the base classes in declaration order, empty at a root. <code>reflect::is_cpp_bound(v)</code> tells host-backed apart from script-declared: for a class name it answers how the class was registered, for a value whether a C++ payload backs it. <code>reflect::is_enabled(requirements...)</code> asks whether the host granted privileges (<code>reflect::is_enabled("filesystem")</code>, <code>jai::filesystem</code>, a custom permission name): true only when all are enabled, false for a name the engine does not know (see <a href="10-modules.html#where-files-are">Where files are</a>).</p>
+<p><code>reflect::instances("Class")</code> returns the <em>live</em> instances of a class in this engine in creation order, the walk a debugger or an editor&#x27;s scene panel wants, without keeping its own registry:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Tracked { int n = 0; }
+var a = new Tracked(); var b = new Tracked(); a.n = 7;
+
+var total = 0;
+for (auto t : reflect::instances("Tracked")) { total = total + t.n; }
+print("{} live, n-sum {}", reflect::instances("Tracked").size(), total);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 live, n-sum 7</code></pre></div>
+<h2 id="hot-reload-ask-again">Hot reload: ask again<a class="hlink" href="#hot-reload-ask-again" aria-label="link">&#8203;</a></h2>
+<p>Because every query is live, recapture after a reload is just re-asking. <code>reflect::generation("Class")</code> is the cheap poll for tools: it bumps whenever the class is redefined, so a property grid re-reads <code>fields()</code> only when the number moved.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Evolver { int a = 1; }
+auto g0 = reflect::generation("Evolver");
+print("has b? {}", reflect::has_field("Evolver", "b"));
+
+class Evolver { int a = 1; int b = 2; }    // hot reload: same engine, new shape
+
+print("generation moved: {}", reflect::generation("Evolver") &gt; g0);
+print("has b? {}", reflect::has_field("Evolver", "b"));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">has b? false
+generation moved: true
+has b? true</code></pre></div>
+<h2 id="the-namespace-is-reserved">The namespace is reserved<a class="hlink" href="#the-namespace-is-reserved" aria-label="link">&#8203;</a></h2>
+<p>Reflection answers are engine truth, so the spelling cannot be impersonated: declaring into <code>reflect::</code> is an error at declaration time on both backends.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">namespace reflect { function evil() { return 1; } }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">== error: Namespace &#x27;reflect&#x27; is reserved for the engine (reflect:: is C++-registered only)</code></pre></div>
+<p>This is deliberately the opposite of <code>math::</code>, which scripts extend freely: script-contributed math is legitimate math; a script <code>reflect::fields</code> would be a lie about the engine.</p>
+<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
+<p>Three chapters remain: <a href="13-strict-checking.html">Types That Fail Early</a> gathers everything the checker does for you in one place: the load/run-time split you have met throughout, the diagnostic format, <code>cast&lt;T&gt;</code>, <code>extern</code>, and the <code>[[warn_mode]]</code> / <code>[[strict_mode]]</code> attributes; <a href="14-time.html">Time</a> covers clocks, stopwatches and dates; <a href="15-math.html">Math</a> covers the <code>math::</code> library and the vector types.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/11-kitchen-sink.html"><span>&larr; previous</span>Enums, Namespaces, Destructuring &amp; Friends</a><a class="next" rel="next" href="../guide/13-strict-checking.html"><span>next &rarr;</span>Types That Fail Early: strict checking</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

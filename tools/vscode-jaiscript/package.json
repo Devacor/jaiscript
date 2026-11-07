@@ -1,0 +1,156 @@
+{
+  "name": "jaiscript",
+  "displayName": "JaiScript",
+  "description": "JaiScript language support: the jaiscript_lsp language server (diagnostics from the strict checker, go to definition, references, hover, completion, signature help, rename, symbols), syntax highlighting and attach debugging for the JaiScript embedded scripting language.",
+  "version": "0.5.0",
+  "publisher": "snapjaw",
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Debuggers",
+    "Linters"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:jaiscript",
+    "onDebug"
+  ],
+  "contributes": {
+    "breakpoints": [
+      {
+        "language": "jaiscript"
+      }
+    ],
+    "languages": [
+      {
+        "id": "jaiscript",
+        "aliases": [
+          "JaiScript"
+        ],
+        "extensions": [
+          ".jai"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "jaiscript",
+        "scopeName": "source.jaiscript",
+        "path": "./syntaxes/jaiscript.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "jaiscript.restartLanguageServer",
+        "title": "JaiScript: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "JaiScript",
+      "properties": {
+        "jaiscript.languageServer.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run the jaiscript_lsp language server for .jai files."
+        },
+        "jaiscript.languageServer.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to jaiscript_lsp. Empty: the server packaged with the extension, else the checkout's build/bin and build-debug/bin, else the Visual Studio build trees (out/build/<config>/bin), else PATH. ${workspaceFolder} is expanded."
+        },
+        "jaiscript.languageServer.host": {
+          "type": "string",
+          "enum": [
+            "runner",
+            "stdlib",
+            "bare"
+          ],
+          "default": "runner",
+          "enumDescriptions": [
+            "The jaiscript runner's registrations: the standard library, file IO, console, networking, ARGS.",
+            "The standard library alone (jai::stdlib::register_all).",
+            "A fresh engine: only what every engine has."
+          ],
+          "description": "The host registration surface scripts are checked against."
+        },
+        "jaiscript.languageServer.includePaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra folders import and include resolve against, after the importing file's own folder (the engine's include paths)."
+        },
+        "jaiscript.languageServer.log": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log each request and its timing to the JaiScript Language Server output channel."
+        }
+      }
+    },
+    "debuggers": [
+      {
+        "type": "jaiscript",
+        "label": "JaiScript (attach)",
+        "configurationAttributes": {
+          "attach": {
+            "required": [
+              "host",
+              "port"
+            ],
+            "properties": {
+              "host": {
+                "type": "string",
+                "description": "Host the JaiScript debugger listens on (jai::debug::listen binds 127.0.0.1).",
+                "default": "127.0.0.1"
+              },
+              "port": {
+                "type": "number",
+                "description": "Port the host logs at startup: 52477 for the standalone jaiscript runner run with --debug, 52472 (jai::debug::default_port) for a host that calls jai::debug::listen(*eng).",
+                "default": 52477
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "jaiscript",
+            "request": "attach",
+            "name": "Attach to JaiScript",
+            "host": "127.0.0.1",
+            "port": 52477
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "JaiScript: Attach",
+            "description": "Attach to a jaiscript runner started with --debug (port 52477) or a host listening with jai::debug::listen (port 52472).",
+            "body": {
+              "type": "jaiscript",
+              "request": "attach",
+              "name": "Attach to JaiScript",
+              "host": "127.0.0.1",
+              "port": 52477
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./ --noEmit && esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18 --minify",
+    "watch": "esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18 --sourcemap --watch"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.91.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.4.0"
+  }
+}

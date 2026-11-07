@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Random Numbers &amp; Crypto</title>
+<meta name="description" content="template(path, names...) renders an HTML file with escaped ${...} splices, seeing the names it is given by reference and the program, checked at load and reloaded on edit; scoped_template renders untrusted templates over a copy of a map.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Random Numbers &amp; Crypto">
+<meta property="og:description" content="template(path, names...) renders an HTML file with escaped ${...} splices, seeing the names it is given by reference and the program, checked at load and reloaded on edit; scoped_template renders untrusted templates over a copy of a map.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li class="current"><a href="../guide/19-templates.html" aria-current="page">HTML Templates</a><ol class="page-toc" data-page-toc></ol></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>19</nav>
+<article class="chapter"><h1 id="templates">HTML Templates<a class="hlink" href="#templates" aria-label="link">&#8203;</a></h1>
+<p>A page is mostly HTML with a few values in it. <code>template(path, a, b, ...)</code> renders a template file: its text is HTML, and every <code>${...}</code> in it is an expression, spliced in HTML-escaped. The template sees the names you pass it, by reference, and the program&#x27;s functions and globals, and it is compiled and checked when the script that calls it loads. <code>scoped_template(path, map)</code> renders a template you did not write: it sees only a copy of the map, and nothing it does can reach the program. Both are on every engine; a template file is read under the filesystem privilege (<a href="../embedding/05-safety-rails.html">Safety Rails</a>).</p>
+<h2 id="a-template-file">A template file<a class="hlink" href="#a-template-file" aria-label="link">&#8203;</a></h2>
+<p>A template is a file, by convention <code>name.spider</code>. Its whole text is the template: there is no backtick around it, a backtick or a backslash in it is the page&#x27;s own, and only <code>\${</code> is an escape (it writes <code>${</code>). Line endings read as <code>\n</code>. A splice takes the format specs a backtick string takes (<a href="09-containers-strings.html#template-strings-format-specs">Template strings &amp; format specs</a>). The path resolves from the file of the script that calls <code>template</code>, as an import&#x27;s does.</p>
+<div class="codeblock cb-spider"><span class="cb-label">template &mdash; greeting.spider</span><pre><code class="lang-html">&lt;p&gt;Hello, ${name}! You have ${count} new ${count == 1 ? &quot;message&quot; : &quot;messages&quot;} (${ratio:.1f}).&lt;/p&gt;</code></pre></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string name = &quot;Ada &lt;admin&gt;&quot;;
+int count = 3;
+float ratio = 0.75;
+web::html page = template(&quot;greeting.spider&quot;, name, count, ratio);
+print(page);
+print(type_of(page), &quot; &quot;, page.to_string().size());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;p&gt;Hello, Ada &amp;lt;admin&amp;gt;! You have 3 new messages (0.8).&lt;/p&gt;
+web::html 63</code></pre></div>
+<p>Each argument after the path is a plain variable name, and the template sees it by that name. Anything else fails the load: <code>template("row.spider", rows[0])</code> reads <code>template() argument 2 is not a plain variable name: the template sees each argument by its name, so name the value first (auto entry = rows[0];) and pass the name</code>.</p>
+<h2 id="what-a-template-sees">What a template sees<a class="hlink" href="#what-a-template-sees" aria-label="link">&#8203;</a></h2>
+<p>A template&#x27;s splices read like a function body at program scope whose parameters are the names you passed: each name is the caller&#x27;s variable itself, bound by reference with its declared type, so any call its type allows works inside, and a store through it lands in the caller&#x27;s variable under that type&#x27;s rules. The program&#x27;s functions and globals are there too, and a passed name hides a global of the same name, as a parameter does. The caller&#x27;s other locals, its class&#x27;s fields and <code>this</code> are not: a template that names one fails the load.</p>
+<div class="codeblock cb-spider"><span class="cb-label">template &mdash; row.spider</span><pre><code class="lang-html">&lt;tr&gt;&lt;td&gt;${rank}&lt;/td&gt;&lt;td&gt;${player.name}&lt;/td&gt;&lt;td&gt;${medal(rank)}&lt;/td&gt;&lt;/tr&gt;</code></pre></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Player { string name; int score; Player(string n, int s) { name = n; score = s; } }
+string medal(int rank) { return rank == 1 ? &quot;gold&quot; : rank == 2 ? &quot;silver&quot; : &quot;-&quot;; }
+array&lt;Player&gt; players = [Player(&quot;Vex&quot;, 90), Player(&quot;Ada&quot;, 75), Player(&quot;Bo&quot;, 60)];
+int rank = 0;
+for (auto&amp; player : players) {
+    rank += 1;
+    print(template(&quot;row.spider&quot;, rank, player));
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;tr&gt;&lt;td&gt;1&lt;/td&gt;&lt;td&gt;Vex&lt;/td&gt;&lt;td&gt;gold&lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td&gt;2&lt;/td&gt;&lt;td&gt;Ada&lt;/td&gt;&lt;td&gt;silver&lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td&gt;3&lt;/td&gt;&lt;td&gt;Bo&lt;/td&gt;&lt;td&gt;-&lt;/td&gt;&lt;/tr&gt;</code></pre></div>
+<p>Because a name is the variable itself, a template that writes one writes the caller&#x27;s:</p>
+<div class="codeblock cb-spider"><span class="cb-label">template &mdash; tally.spider</span><pre><code class="lang-html">${seen += 1} of ${total}</code></pre></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int seen = 0;
+int total = 2;
+print(template(&quot;tally.spider&quot;, seen, total));
+print(template(&quot;tally.spider&quot;, seen, total));
+print(&quot;seen is now &quot;, seen);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 of 2
+2 of 2
+seen is now 2</code></pre></div>
+<p>A template is one expression: it has no statements of its own. Choose with <code>?:</code>, loop with <code>array::map</code>, and put anything longer in a function the template calls or in a smaller template. Use <code>array::map(xs, f)</code> rather than <code>xs.map(f)</code> over a passed array: the dot form maps the array in place (<a href="09-containers-strings.html">Containers &amp; Strings</a>), and the array is the caller&#x27;s.</p>
+<h2 id="escaping">Escaping and web::html<a class="hlink" href="#escaping" aria-label="link">&#8203;</a></h2>
+<p>A splice of <code>null</code> is an error, in <code>template</code> and the scoped forms alike: <code>a template splice is null: ${title} at page.spider:3</code> names the splice as written and its line, at load when the template splices a literal <code>null</code> and when it renders otherwise. Write <code>${title ?? &quot;&quot;}</code> for a value that may be missing. A backtick string outside a template still shows <code>null</code>.</p>
+<p>Every splice is HTML-escaped as <code>web::html_escape</code> escapes (<a href="17-web.html#html">The web:: Library</a>): <code>&amp;</code> <code>&lt;</code> <code>&gt;</code> <code>&quot;</code> and <code>&#x27;</code>, so a splice is safe in element text and in a quoted attribute. A value&#x27;s text is the one <code>to_string</code> gives, a class&#x27;s own <code>to_string()</code> included. What <code>template</code> returns is a <code>web::html</code>: text that is already HTML. A <code>web::html</code> splices as it is, so one template&#x27;s result spliced into another is not escaped twice, and an array splices its elements one after another, each by the same rule. <code>raw(text)</code>, inside a template, is the opt-out: its text splices unescaped.</p>
+<div class="codeblock cb-spider"><span class="cb-label">template &mdash; item.spider</span><pre><code class="lang-html">&lt;li&gt;${item}&lt;/li&gt;</code></pre></div>
+<div class="codeblock cb-spider"><span class="cb-label">template &mdash; list.spider</span><pre><code class="lang-html">&lt;h2&gt;${title}&lt;/h2&gt;&lt;ul&gt;${array::map(items, item =&gt; template(&quot;item.spider&quot;, item))}&lt;/ul&gt;${items}${raw(footer)}</code></pre></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string title = &quot;Tom &amp; Jerry&quot;;
+array&lt;string&gt; items = [&quot;&lt;script&gt;&quot;, &quot;fish &amp; chips&quot;];
+string footer = &quot;&lt;hr&gt;&quot;;
+print(template(&quot;list.spider&quot;, title, items, footer));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;h2&gt;Tom &amp;amp; Jerry&lt;/h2&gt;&lt;ul&gt;&lt;li&gt;&amp;lt;script&amp;gt;&lt;/li&gt;&lt;li&gt;fish &amp;amp; chips&lt;/li&gt;&lt;/ul&gt;&amp;lt;script&amp;gt;fish &amp;amp; chips&lt;hr&gt;</code></pre></div>
+<p>A <code>web::html</code> is a value: copy it, keep it in an array, pass it to a function, return it from a handler. <code>to_string()</code> gives its text and <code>print</code> prints it. A script makes one only with a template: there is no constructor from text, so text becomes HTML only by passing through a splice or through <code>raw</code> in a template you wrote. Escaping is for HTML text and quoted attributes; a value that goes into a URL wants <code>web::url_encode</code> as well, and a template never splices into a <code>&lt;script&gt;</code> or a <code>style</code> safely.</p>
+<h2 id="checked-at-load">Checked at load<a class="hlink" href="#checked-at-load" aria-label="link">&#8203;</a></h2>
+<p>A template with a literal path is compiled where it is called, when that script loads, and checked against the names and types the call passes, like a C++ template where it is instantiated: a misspelled member of a typed value, or a function or global that does not exist, fails the load with the template&#x27;s own file, line and column.</p>
+<div class="codeblock cb-spider"><span class="cb-label">template &mdash; profile.spider</span><pre><code class="lang-html">&lt;h1&gt;${user.name}&lt;/h1&gt;
+&lt;p&gt;${user.emial}&lt;/p&gt;</code></pre></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class User { string name = &quot;Ada&quot;; string email = &quot;ada@example.org&quot;; }
+User user = User();
+print(template(&quot;profile.spider&quot;, user));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
+profile.spider:2:11: error: no member &#x27;emial&#x27; in class &#x27;User&#x27;</code></pre></div>
+<p>A name the template uses that the call does not pass is a global, and fails the load if there is none: <code>use of undeclared identifier 'secret'</code>, at the template&#x27;s line, even when the caller has a local of that name.</p>
+<p>A <code>template</code> render writes at most the host&#x27;s template output limit, 10 MiB by default: a page that would be longer raises <code>template()&#x27;s output passed its 10485760-byte limit: the host raises it with engine::template_output_limit</code>. A script reads the limits with <code>reflect::template_output_limit()</code> and <code>reflect::scoped_template_output_limit()</code> and cannot change them (<a href="../embedding/05-safety-rails.html#6-template-output-limits">Safety Rails</a>). A <code>template</code> file is read under the filesystem privilege: with it off, <code>template</code> raises <code>Insufficient privilege: filesystem.</code> where it renders. <code>scoped_template</code> needs no filesystem privilege; it has its own (below).</p>
+<h2 id="paths-at-run-time">Paths known at run time<a class="hlink" href="#paths-at-run-time" aria-label="link">&#8203;</a></h2>
+<p>A path that is not a literal is resolved, read, compiled and checked the first time the call renders, then kept: each later render with the same names reuses it. A template that renders itself, a tree drawn by a template that renders each child, goes the same way: the inner call is compiled once, at its first render, and every level after reuses it. Pass the child under the template&#x27;s own name, since the template sees each value by the name it is given.</p>
+<div class="codeblock cb-spider"><span class="cb-label">template &mdash; tree.spider</span><pre><code class="lang-html">&lt;li&gt;${node[&quot;label&quot;]}&lt;ul&gt;${array::map(node[&quot;children&quot;], node =&gt; template(&quot;tree.spider&quot;, node))}&lt;/ul&gt;&lt;/li&gt;</code></pre></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var node = {&quot;label&quot;: &quot;root&quot;, &quot;children&quot;: [{&quot;label&quot;: &quot;a&quot;, &quot;children&quot;: []}, {&quot;label&quot;: &quot;b&quot;, &quot;children&quot;: [{&quot;label&quot;: &quot;c&quot;, &quot;children&quot;: []}]}]};
+print(template(&quot;tree.spider&quot;, node));
+string theme = &quot;tree.spider&quot;;
+print(template(theme, node).to_string() == template(&quot;tree.spider&quot;, node).to_string() ? &quot;same&quot; : &quot;different&quot;);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;li&gt;root&lt;ul&gt;&lt;li&gt;a&lt;ul&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;b&lt;ul&gt;&lt;li&gt;c&lt;ul&gt;&lt;/ul&gt;&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;
+same</code></pre></div>
+<p>A template compiled at run time checks what the call&#x27;s names cannot tell it: every name it does not pass and every function it calls, at its first render (the check failure is the call&#x27;s catchable error); a member of a passed value is checked when it is read, since the run-time compile does not see the caller&#x27;s declared types.</p>
+<h2 id="hot-reload">Hot reload<a class="hlink" href="#hot-reload" aria-label="link">&#8203;</a></h2>
+<p>A template file is tracked like an import. A literal path&#x27;s template is part of the script that calls it, so an edit to the file makes that script load again where an import of it is reached (<a href="10-modules.html">Modules</a>): its new code is checked first, and an edit that does not check is reported by that import while the program keeps running the version that did. A path known at run time checks the file again at a render once the import window (<code>import_recheck_interval</code>) has passed: an edit that checks renders from then on, and one that does not raises once, where it renders, then the last version that checked renders until the file changes again. A template a template calls is tracked the same way. Nothing needs a restart.</p>
+<h2 id="scoped-templates">Templates you did not write: scoped_template<a class="hlink" href="#scoped-templates" aria-label="link">&#8203;</a></h2>
+<p><code>scoped_template(path, map)</code> renders a template from a source you do not trust (a user&#x27;s theme, a page a customer edits) over one value: the map, taken by value, so the template has its own deep copy. Inside, the only name is <code>args</code>, the copy. <code>scoped_template_text(text, map)</code> is the same over a string instead of a file: the two are spelled apart so a path is never mistaken for template text. Both return a <code>web::html</code>. They run on their own privilege, <code>jai::scoped_template</code>, on by default, so a host can turn filesystem off and still serve them; disabled, both raise <code>Insufficient privilege: scoped_template.</code>. A scoped file is read only from the host&#x27;s template folders (<code>engine::scoped_template_dirs()</code>, by default the <code>template</code> folder found as an import&#x27;s file is): its path is relative, with no <code>..</code>, tried in each folder in order, and a file whose canonical path leaves its folder is refused (<a href="../embedding/05-safety-rails.html#6-scoped-templates">Safety Rails</a> has the rules and texts).</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, var&gt; data = {&quot;user&quot;: {&quot;name&quot;: &quot;&lt;ann&gt;&quot;}, &quot;items&quot;: [&quot;tea&quot;, &quot;cake&quot;], &quot;total&quot;: 7.5};
+print(scoped_template_text(&quot;Hi ${args[\&quot;user\&quot;][\&quot;name\&quot;]}: ${args[\&quot;items\&quot;].size()} items, ${array::map(args[\&quot;items\&quot;], i =&gt; string::to_upper(i)).join(\&quot;, \&quot;)}, ${args[\&quot;total\&quot;]:.2f}&quot;, data));
+print(to_json(data[&quot;items&quot;]));
+string untrusted = &quot;${secret}&quot;;
+try { scoped_template_text(untrusted, data); } catch (e) { print(&quot;caught: &quot;, e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Hi &amp;lt;ann&amp;gt;: 2 items, TEA, CAKE, 7.50
+[&quot;tea&quot;,&quot;cake&quot;]
+caught: parse failed:
+&lt;scoped_template_text&gt;:1:3: error: a scoped template sees only args: &#x27;secret&#x27; is not available
+    ${secret}</code></pre></div>
+<p>A scoped template may read <code>args</code> and index into it (a map&#x27;s key reads as <code>args[&quot;name&quot;]</code>, never <code>args.name</code>, which fails with <code>map has no member &#x27;name&#x27;; read the key as [&quot;name&quot;]</code>: at load where the map is <code>args</code> itself, where it renders otherwise), read the plain fields of an instance, use format specs, call any built-in method of a built-in value (a string, an array, a map, a math type) and the engine&#x27;s <code>string::</code>, <code>array::</code> and <code>map::</code> functions, which return copies (<code>${string::to_upper(args[&quot;name&quot;])}</code>, <code>${array::map(args[&quot;items&quot;], i =&gt; i.size())}</code>), and write <code>x =&gt; expr</code> lambdas for them under the same rules. An in-place method returns nothing, so a template, whose every value is spliced or used, raises the language&#x27;s error for it (<code>${args[&quot;items&quot;].sort()}</code> raises <code>sort changes obj in place and returns nothing; array::sort(obj) returns a sorted copy</code>): use the copy twin. It cannot reach anything else:</p>
+<div class="tablewrap"><table><thead><tr><th>refused</th><th>the text</th></tr></thead><tbody><tr><td>a global</td><td><code>a scoped template sees only args: 'secret' is not available</code></td></tr><tr><td>a free or global function, or one in any other namespace (a script&#x27;s own included)</td><td><code>a scoped template calls only built-in methods and the string::, array:: and map:: functions: 'leak(...)' is not allowed</code></td></tr><tr><td>a function value</td><td><code>a scoped template does not call function values: 'call(...)' is not allowed</code></td></tr><tr><td><code>raw</code></td><td><code>raw() is not allowed in a scoped template: its output is always escaped</code></td></tr><tr><td>an assignment, <code>this</code>, <code>new</code>, a cast, a statement</td><td><code>a scoped template is one expression over args: an assignment is not allowed</code></td></tr><tr><td>a method of a class instance or a host object</td><td><code>a scoped template does not call a method of a class instance, a host object or a function: its code could run</code></td></tr><tr><td>an operator on an instance (an overload)</td><td><code>a scoped template does not apply an operator to a class instance, a host object or a function: its code could run</code></td></tr><tr><td>splicing an instance (its <code>to_string()</code>)</td><td><code>a scoped template does not splice a class instance, a host object or a function: its code could run</code></td></tr><tr><td>a built-in method over a value holding an instance</td><td><code>a scoped template does not call a built-in method over a class instance, a host object or a function: its code could run</code></td></tr><tr><td>a host property, or a field with a user accessor</td><td><code>a scoped template reads the plain fields of a script class instance: 'secret' is not one</code></td></tr></tbody></table></div>
+<p>The rules a template&#x27;s text breaks (a name, a call, <code>raw</code>, a construct) fail it when it is compiled: at load for a literal text or path, at the first render otherwise, with the template&#x27;s line. The rules about values (an instance reached through <code>args</code>, whose class runs script) are checked as the template runs, since <code>args</code> holds whatever the caller put in it. A <code>shared_ptr</code> in the map is allowed, and reading a plain field through it is too; its methods stay out of reach. A scoped template always escapes, a <code>web::html</code> in the map included. A render writes at most the host&#x27;s scoped template output limit (1 MiB by default; every splice counts, a nested template&#x27;s text each time it is spliced): one that would write more raises <code>a scoped template&#x27;s output passed its 1048576-byte limit: the host raises it with engine::scoped_template_output_limit</code>. It runs under the execution budget (<a href="../embedding/05-safety-rails.html">Safety Rails</a>) like any script. A scoped file reloads as a run-time template path does, and a literal one as an import&#x27;s template does.</p>
+<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
+<p><a href="17-web.html">The web:: Library</a> has the escaping and URL functions; <code>jai_spider</code>&#x27;s guestbook (<code>tools/jai_spider/examples/guestbook</code>) renders every page with templates and reloads them while it serves; the <a href="../reference/index.html#errors-templates">reference</a> lists every error text.</p>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/18-random.html"><span>&larr; previous</span>Random Numbers &amp; Crypto</a><a class="next" rel="next" href="../embedding/01-embedding-quickstart.html"><span>next &middot; embedding &rarr;</span>Embedding Quickstart</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

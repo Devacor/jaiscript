@@ -1,0 +1,5 @@
+# runtime caches — regenerated on demand
+.cache/
+*.jaibite
+*.exe
+*.zip

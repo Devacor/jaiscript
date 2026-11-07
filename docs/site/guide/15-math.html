@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Math: Vectors &amp; Colors &mdash; JaiScript Guide</title>
+<meta name="description" content="The math value types: vec2, vec3, vec4, ivec2, ivec3 and color, their operators and value semantics, the component-wise and geometry libraries, perceptual color mixing, and packed vector arrays.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Math: Vectors &amp; Colors &mdash; JaiScript Guide">
+<meta property="og:description" content="The math value types: vec2, vec3, vec4, ivec2, ivec3 and color, their operators and value semantics, the component-wise and geometry libraries, perceptual color mixing, and packed vector arrays.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li class="current"><a href="../guide/15-math.html" aria-current="page">Math: Vectors &amp; Colors</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>15</nav>
+<article class="chapter"><h1 id="math">Math: Vectors &amp; Colors<a class="hlink" href="#math" aria-label="link">&#8203;</a></h1>
+<p>The language has six built-in math value types for positions, directions, grid cells and colors: <code>math::vec2</code>, <code>math::vec3</code>, <code>math::vec4</code>, <code>math::ivec2</code>, <code>math::ivec3</code> and <code>math::color</code>. They are values like <code>int</code> and <code>string</code>: a copy is a separate vector, every arithmetic operator works component by component, and the <code>math::</code> library has the interpolation and geometry functions a game needs. A host can make its own C++ vector types cross the boundary as these types (<a href="../embedding/15-math-adapters.html">Math Adapters</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>Type</th><th>Components</th><th>Also named</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>math::vec2</code></td><td><code>x y</code> (32-bit float)</td><td><code>width height</code></td><td><code>(0.0, 0.0)</code></td></tr>
+<tr><td><code>math::vec3</code></td><td><code>x y z</code> (32-bit float)</td><td><code>width height depth</code></td><td><code>(0.0, 0.0, 0.0)</code></td></tr>
+<tr><td><code>math::vec4</code></td><td><code>x y z w</code> (32-bit float)</td><td><code>width height depth</code></td><td><code>(0.0, 0.0, 0.0, 0.0)</code></td></tr>
+<tr><td><code>math::ivec2</code></td><td><code>x y</code> (32-bit int)</td><td><code>width height</code></td><td><code>(0, 0)</code></td></tr>
+<tr><td><code>math::ivec3</code></td><td><code>x y z</code> (32-bit int)</td><td><code>width height depth</code></td><td><code>(0, 0, 0)</code></td></tr>
+<tr><td><code>math::color</code></td><td><code>r g b a</code> (32-bit float, straight alpha)</td><td></td><td><code>(1.0, 1.0, 1.0, 1.0)</code>, opaque white</td></tr>
+</tbody></table></div>
+<h2 id="scalar-math">Scalar math<a class="hlink" href="#scalar-math" aria-label="link">&#8203;</a></h2>
+<p>All standard math operations and constants live in <code>math::</code>, on every engine. Use <code>math::abs</code>, <code>math::min</code>, <code>math::max</code>, <code>math::clamp</code>, rounding, powers, roots, logarithms, trigonometry and interpolation here; the <a href="../reference/api.html#group-math">full signatures</a> list every operation. <code>math::PI</code>, <code>math::E</code>, <code>math::TAU</code>, <code>math::INF</code> and <code>math::NAN_VALUE</code> are namespaced constants. Scalar helpers accept int/float numbers; bool and objects require an explicit numeric conversion.</p>
+<p>Function values such as <code>auto root = math::sqrt;</code> call the same math kernel. Random numbers are not here: they come from a <code>random</code> object you own (<a href="18-random.html">Random Numbers &amp; Crypto</a>).</p>
+<h2 id="making-vectors">Making vectors<a class="hlink" href="#making-vectors" aria-label="link">&#8203;</a></h2>
+<p>Call the type with up to one argument per component; missing components are 0. A declaration without an initializer holds the default, and the C++ initializer spellings work: <code>T v(args)</code> and <code>T v{args}</code>. A narrower vector followed by scalars that complete the count builds a wider one, and a vector of the same dimensions converts between the float and int families (float to int truncates toward zero). A color takes <code>(r, g, b)</code> with alpha 1, <code>(r, g, b, a)</code>, nothing (opaque white) or another color.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::vec3 a = math::vec3(1, 2.5, 3);
+math::vec3 b = math::vec3(1, 2);              // missing components are 0
+math::vec3 zero;                              // a declaration default-constructs
+math::ivec2 cell(3, 4);                       // direct initialization
+math::vec4 q{1, 2, 3, 4};                     // brace initialization
+print(a, " ", b, " ", zero, " ", cell, " ", q);
+
+math::vec3 lifted = math::vec3(math::vec2(1, 2), 3);   // a narrower vector, completed by scalars
+math::ivec3 snapped = math::ivec3(math::vec3(1.9, -1.9, 2));  // float to int truncates toward zero
+print(lifted, " ", snapped, " ", type_of(snapped));
+
+print(math::color(), " ", math::color(1, 0, 0), " ", math::color(0.2, 0.4, 0.6, 0.5));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(1.0, 2.5, 3.0) (1.0, 2.0, 0.0) (0.0, 0.0, 0.0) (3, 4) (1.0, 2.0, 3.0, 4.0)
+(1.0, 2.0, 3.0) (1, -1, 2) math::ivec3
+(1.0, 1.0, 1.0, 1.0) (1.0, 0.0, 0.0, 1.0) (0.2, 0.4, 0.6, 0.5)</code></pre></div>
+<p>One scalar is not a vector: <code>math::vec3(5)</code> raises <code>math::vec3 expects one vector of 3 components</code>, as does a vector of another dimension on its own (a color&#x27;s lone argument is a color: <code>math::color expects one color</code>); a narrower vector whose scalars do not complete the count raises <code>math::vec4 expects a narrower vector followed by scalars that complete 4 components</code>, a component that is no number <code>math::vec2 expects numeric components</code>, and too many arguments raise <code>math::vec3 expects 0 to 3 arguments</code>. An int component outside the 32-bit range raises <code>Integer overflow: the value does not fit an int32 component</code>.</p>
+<p><code>using</code> brings the names into a file so they read without the prefix (<a href="11-kitchen-sink.html">Namespaces</a>); <code>type_of</code> still reports the full name:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">using math::vec3, math::ivec2;
+
+vec3 up = vec3(0, 1, 0);
+ivec2 tile = ivec2(5, 9);
+print(up, " ", tile, " ", type_of(up));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(0.0, 1.0, 0.0) (5, 9) math::vec3</code></pre></div>
+<h2 id="components">Components<a class="hlink" href="#components" aria-label="link">&#8203;</a></h2>
+<p>Components read and store by name, with compound assignment and <code>++</code>/<code>--</code>. A vector's components are <code>float</code> (an ivec's are <code>int</code>); <code>width</code>, <code>height</code> and <code>depth</code> are second names for <code>x</code>, <code>y</code> and <code>z</code>. A color's channels are <code>r g b a</code> only. The components are stored as 32-bit floats, so a component reads back the nearest 32-bit value, widened exactly:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::vec3 v = math::vec3(1, 2, 3);
+v.x = 5;
+v.y += 2.5;
+v.z *= 2;
+print(v, " ", v.width, " ", v.height, " ", v.depth);
+
+math::ivec2 p;
+p.x++;
+++p.y;
+print(p, " ", type_of(p.x), " ", type_of(v.x));
+
+math::color c = math::color(0.25, 0.5, 0.75);
+c.a = 0.5;
+print(c, " ", c.r + c.g + c.b);
+
+math::vec2 tiny = math::vec2(0.1, 0);
+print(tiny.x, " ", tiny.x == 0.1);            // components are 32-bit floats</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(5.0, 4.5, 6.0) 5.0 4.5 6.0
+(1, 1) int float
+(0.25, 0.5, 0.75, 0.5) 1.5
+0.10000000149011612 false</code></pre></div>
+<p>A store into an int component checks the 32-bit range, a store into a float component rounds to 32 bits (a value beyond that range becomes infinity, as in C++), and a name the type does not have, or a value that is not a number, raises:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::ivec2 p;
+try { p.x = 3000000000; } catch (e) { print(e); }
+try { var w = math::vec2(); w.z = 1; } catch (e) { print(e); }
+try { var v = math::vec3(); var s = "a"; v.x = s; } catch (e) { print(e); }
+math::vec2 big;
+big.x = 1e300;
+print(big);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Integer overflow: the value does not fit an int32 component
+math::vec2 has no member &#x27;z&#x27;
+Cannot store a non-numeric value in a math::vec3 component
+(inf, 0.0)</code></pre></div>
+<h2 id="operators">Operators<a class="hlink" href="#operators" aria-label="link">&#8203;</a></h2>
+<p><code>+ - * /</code> work component by component between two vectors of the same type, and between a vector and a scalar on either side; <code>*</code> of two vectors is the component-wise product (the dot product is <code>math::dot</code>). Unary <code>-</code> negates every component; unary <code>+</code> is the identity and returns a copy (as glm does in C++); <code>~</code> is refused. An ivec divides like an int (truncating) and has <code>%</code>; float vectors have no <code>%</code>. Compound assignment works on any vector lvalue, and a vector concatenates into a string as its text.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::vec3 a = math::vec3(1, 2, 3);
+math::vec3 b = math::vec3(0.5, 0.5, 0.5);
+print(a + b, " ", a - b, " ", -a);
+print(a * 2, " ", 2 * a, " ", a / 2, " ", 6 / math::vec2(3, 6));
+print(math::vec2(1, 2) * math::vec2(3, 4));   // component-wise product
+print(math::ivec2(7, -7) / 2, " ", math::ivec2(7, -7) % 4);
+a += b;
+a *= 2;
+print(a);
+print("at " + math::ivec2(1, 2));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(1.5, 2.5, 3.5) (0.5, 1.5, 2.5) (-1.0, -2.0, -3.0)
+(2.0, 4.0, 6.0) (2.0, 4.0, 6.0) (0.5, 1.0, 1.5) (2.0, 1.0)
+(3.0, 8.0)
+(3, -3) (3, -3)
+(3.0, 5.0, 7.0)
+at (1, 2)</code></pre></div>
+<p><code>==</code> and <code>!=</code> compare every component; a vec equals an ivec holding the same values, and vectors of different dimensions, or a color and a vec4, are never equal. A vector is true when any component is nonzero. Vectors and colors compare lexicographically by component with &lt;=&gt; and relational operators; colors compare only with colors. Mixing kinds or dimensions in arithmetic, a float scalar with an ivec, and a zero divisor component raise the scalar operators' errors, and ivec arithmetic follows the integer overflow policy (<a href="04-operators.html">Operators</a>):</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(math::vec3(1, 2, 3) == math::vec3(1, 2, 3), " ", math::vec3(1, 2, 3) == math::ivec3(1, 2, 3), " ", math::vec2(1, 2) == math::vec3(1, 2, 0));
+print(math::color() == math::color(1, 1, 1, 1), " ", math::color() == math::vec4(1, 1, 1, 1));
+if (math::vec2(0, 0)) { print("zero is true"); } else { print("zero is false"); }
+if (math::ivec2(0, 1)) { print("any nonzero component is true"); }
+
+try { var q = math::vec3(1, 2, 3) + math::ivec3(1, 2, 3); } catch (e) { print(e); }
+try { var q = math::vec2(1, 2) + math::vec3(1, 2, 3); } catch (e) { print(e); }
+try { var q = math::ivec2(1, 2) * 1.5; } catch (e) { print(e); }
+try { var q = math::vec2(1, 1) &lt; math::vec2(2, 2); } catch (e) { print(e); }
+try { var q = math::vec2(1, 1) / 0; } catch (e) { print(e); }
+try { var q = math::ivec2(1, 1) % math::ivec2(1, 0); } catch (e) { print(e); }
+try { var q = math::ivec2(2147483647, 0) + 1; } catch (e) { print(e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true true false
+true false
+zero is false
+any nonzero component is true
+Invalid operands for + operator
+Invalid operands for + operator
+Invalid operands for * operator
+Division by zero
+Modulo by zero
+Integer overflow in &#x27;+&#x27;</code></pre></div>
+<h2 id="values-and-references">Values and references<a class="hlink" href="#values-and-references" aria-label="link">&#8203;</a></h2>
+<p>A vector is a value everywhere: assignment, a by-value parameter, an array element and a field each hold their own copy, exactly like a C++ struct. A <code>&amp;</code> parameter is the caller's vector. A field's components store through the object:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::vec3 a = math::vec3(1, 2, 3);
+math::vec3 b = a;                      // a copy
+b.x = 9;
+array&lt;math::vec3&gt; pts = [a, a];
+pts[1].y = 7;
+print(a, " ", b, " ", pts[0], " ", pts[1]);
+
+void push_up(math::vec3 p) { p.y += 100; }        // by value: the caller's vector is untouched
+void lift(math::vec3&amp; p) { p.y += 100; }          // by reference: it is the caller's vector
+push_up(a);
+print(a);
+lift(a);
+print(a);
+
+class Body { math::vec3 pos; }
+var body = Body();
+body.pos.x = 4;
+body.pos += math::vec3(1, 1, 1);
+print(body.pos);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(1.0, 2.0, 3.0) (9.0, 2.0, 3.0) (1.0, 2.0, 3.0) (1.0, 7.0, 3.0)
+(1.0, 2.0, 3.0)
+(1.0, 102.0, 3.0)
+(5.0, 1.0, 1.0)</code></pre></div>
+<p>A component is an lvalue wherever a reference binds, as a struct member is in C++: it passes to a <code>float&amp;</code> parameter, binds <code>auto&amp;</code> and <code>cast&lt;float&amp;&gt;</code>, and returns from a <code>float&amp;</code> function or method. A reference to a component keeps naming that component of the variable even after the whole vector is assigned again:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">void scale(float&amp; c) { c *= 10; }
+
+math::vec3 v = math::vec3(1, 2, 3);
+scale(v.y);                            // the component itself binds float&amp;
+auto&amp; r = v.x;
+r = 5;
+r += 1;
+auto&amp; z = cast&lt;float&amp;&gt;(v.z);
+z = 0.5;
+print(v);
+
+class Ship {
+    math::vec2 pos = math::vec2(1, 2);
+    float&amp; px() { return pos.x; }      // a component returned by reference
+}
+var ship = Ship();
+ship.px() = 40;
+scale(ship.pos.y);
+print(ship.pos);
+
+math::color tint = math::color(1, 1, 1);
+scale(tint.a);
+print(tint);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(6.0, 20.0, 0.5)
+(40.0, 20.0)
+(1.0, 1.0, 1.0, 10.0)</code></pre></div>
+<h2 id="typed-slots">Typed slots<a class="hlink" href="#typed-slots" aria-label="link">&#8203;</a></h2>
+<p>A declared vector slot (a variable, a parameter, a return, a field, an array element) converts between the float and int families of the same dimensions; a <code>string</code> slot takes text only, so <code>to_string(v)</code> gives it a vector's text; anything else is rejected with the typed-slot text. A color never converts to or from a <code>vec4</code>.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::vec3 v = math::ivec3(1, 2, 3);            // an ivec into a vec slot
+math::ivec2 p = math::vec2(1.5, -2.5);          // a vec into an ivec slot truncates
+string s = to_string(math::vec2(1, 2));         // a string slot takes the text
+math::ivec2 snap(math::vec2 at) { return at; }  // returns convert too
+print(v, " ", p, " ", s, " ", snap(math::vec2(2.9, 1.1)));
+
+var w = math::vec2(1, 2);
+try { math::vec3 bad = w; } catch (e) { print(e); }
+var c = math::color();
+try { math::vec4 bad = c; } catch (e) { print(e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(1.0, 2.0, 3.0) (1, -2) (1.0, 2.0) (2, 1)
+Cannot initialize &#x27;bad&#x27; (declared math::vec3) with math::vec2
+Cannot initialize &#x27;bad&#x27; (declared math::vec4) with math::color</code></pre></div>
+<h2 id="the-component-wise-library">The component-wise library<a class="hlink" href="#the-component-wise-library" aria-label="link">&#8203;</a></h2>
+<p>The <code>math::</code> functions that work on numbers work on vectors and colors too, component by component. A parameter that takes a number takes a vector of the call's dimensions, or one number for every component.</p>
+<div class="tablewrap"><table><thead><tr><th>Function</th><th>Does</th></tr></thead><tbody>
+<tr><td><code>math::mix(a, b, t)</code>, <code>math::lerp(a, b, t)</code></td><td><code>a + (b - a) * t</code>; <code>t</code> a float or a vector</td></tr>
+<tr><td><code>math::unmix(a, b, v)</code></td><td>where <code>v</code> lies between <code>a</code> and <code>b</code> (0 over an empty range)</td></tr>
+<tr><td><code>math::remap(v, in_lo, in_hi, out_lo, out_hi)</code></td><td>maps <code>v</code> from one range onto another</td></tr>
+<tr><td><code>math::clamp(v, lo, hi)</code>, <code>math::min(a, b)</code>, <code>math::max(a, b)</code></td><td>per component</td></tr>
+<tr><td><code>math::abs</code>, <code>math::floor</code>, <code>math::ceil</code>, <code>math::round</code></td><td>per component; <code>math::round</code> rounds half away from zero</td></tr>
+<tr><td><code>math::mix_in</code>, <code>math::mix_out</code>, <code>math::mix_in_out</code>, <code>math::mix_out_in</code> <code>(a, b, t, strength)</code></td><td>eased mixes</td></tr>
+<tr><td><code>math::unmix_in</code>, <code>math::unmix_out</code>, <code>math::unmix_in_out</code>, <code>math::unmix_out_in</code> <code>(a, b, v, strength)</code></td><td>their inverses</td></tr>
+</tbody></table></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::vec2 a = math::vec2(0, 10);
+math::vec2 b = math::vec2(10, 20);
+print(math::mix(a, b, 0.25), " ", math::lerp(a, b, math::vec2(0.5, 1)));   // a float or a per-component t
+print(math::unmix(a, b, math::vec2(5, 20)));                              // where a value sits between a and b
+print(math::remap(math::vec2(5, 5), 0.0, 10.0, a, b));                    // value, in_lo, in_hi, out_lo, out_hi
+print(math::clamp(math::vec3(-1, 0.5, 2), 0.0, 1.0), " ", math::clamp(math::ivec2(-5, 9), math::ivec2(0, 0), math::ivec2(4, 4)));
+print(math::min(math::vec2(1, 5), math::vec2(3, 2)), " ", math::max(math::ivec2(1, 5), 3));
+print(math::abs(math::vec2(-1.5, 2)), " ", math::floor(math::vec2(1.5, -1.5)), " ", math::ceil(math::vec2(1.2, -1.2)), " ", math::round(math::vec2(1.5, -2.5)));
+print(math::mix_in(a, b, 0.5, 2.0), " ", math::mix_out(a, b, 0.5, 2.0), " ", math::mix_in_out(a, b, 0.25, 2.0));
+
+var m = math::mix(math::ivec2(0, 0), math::ivec2(1, 3), 0.5);
+print(m, " ", type_of(m), " ", type_of(math::abs(math::ivec2(-3, 4))));
+try { var q = math::mix(math::vec2(0, 0), math::vec3(1, 1, 1), 0.5); } catch (e) { print(e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(2.5, 12.5) (5.0, 20.0)
+(0.5, 1.0)
+(5.0, 15.0)
+(0.0, 0.5, 1.0) (0, 4)
+(1.0, 2.0) (3, 5)
+(1.5, 2.0) (1.0, -2.0) (2.0, -1.0) (2.0, -3.0)
+(2.5, 12.5) (7.5, 17.5) (1.25, 11.25)
+(0.5, 1.5) math::vec2 math::ivec2
+math::mix expects vectors of the same dimensions</code></pre></div>
+<p>Results stay exact where they can: <code>math::abs</code>, <code>math::min</code>, <code>math::max</code> and <code>math::clamp</code> with int bounds keep an ivec an ivec, while the interpolations, <code>math::floor</code>/<code>math::ceil</code>/<code>math::round</code> and a float bound give a float vector. Functions with no component-wise meaning (<code>math::sqrt</code>, <code>math::sin</code>) stay scalar and reject a vector.</p>
+<h2 id="geometry">Geometry<a class="hlink" href="#geometry" aria-label="link">&#8203;</a></h2>
+<div class="tablewrap"><table><thead><tr><th>Function</th><th>Method</th><th>Result</th></tr></thead><tbody>
+<tr><td><code>math::dot(a, b)</code></td><td><code>a.dot(b)</code></td><td>float (int for two ivecs)</td></tr>
+<tr><td><code>math::cross(a, b)</code></td><td><code>a.cross(b)</code></td><td>a vec3 for two vec3 (an ivec3 for two ivec3), the scalar z for two vec2</td></tr>
+<tr><td><code>math::length(v)</code>, <code>math::length_squared(v)</code></td><td><code>v.length()</code>, <code>v.length_squared()</code></td><td>float (<code>length_squared</code> of an ivec is an exact int)</td></tr>
+<tr><td><code>math::normalize(v)</code></td><td><code>v.normalized()</code></td><td>a unit float vector; the zero vector stays zero</td></tr>
+<tr><td><code>math::distance(a, b)</code>, <code>math::distance_squared(a, b)</code></td><td><code>a.distance_to(b)</code></td><td>float (<code>distance_squared</code> of ivecs is an int)</td></tr>
+<tr><td><code>math::reflect(v, n)</code></td><td></td><td><code>v</code> reflected about the normal <code>n</code></td></tr>
+<tr><td><code>math::project(v, onto)</code></td><td></td><td><code>v</code> projected onto <code>onto</code> (onto zero is zero)</td></tr>
+<tr><td><code>math::angle_between(a, b)</code></td><td></td><td>radians; 0 when either is zero</td></tr>
+<tr><td><code>math::perpendicular(v)</code></td><td></td><td>a vec2 or ivec2 turned a quarter counterclockwise</td></tr>
+<tr><td><code>math::rotate(v, angle)</code>, <code>math::rotate(v, axis, angle)</code></td><td><code>v.rotated(angle)</code>, <code>v.rotated(axis, angle)</code></td><td>a vec2 by an angle, a vec3 about an axis (radians)</td></tr>
+</tbody></table></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::vec3 v = math::vec3(3, 4, 0);
+math::vec3 x = math::vec3(1, 0, 0);
+math::vec3 y = math::vec3(0, 1, 0);
+print(math::dot(v, x), " ", v.dot(y), " ", math::cross(x, y), " ", x.cross(y));
+print(v.length(), " ", math::length_squared(v), " ", v.normalized(), " ", math::normalize(math::vec3()));
+print(math::distance(math::vec2(0, 0), math::vec2(3, 4)), " ", math::vec2(1, 1).distance_to(math::vec2(4, 5)), " ", math::distance_squared(math::vec2(1, 1), math::vec2(4, 5)));
+print(math::reflect(math::vec2(1, -1), math::vec2(0, 1)), " ", math::project(math::vec2(2, 3), math::vec2(4, 0)));
+print(math::angle_between(math::vec2(1, 0), math::vec2(0, 1)), " ", math::perpendicular(math::vec2(1, 2)));
+print(math::round(math::rotate(math::vec2(2, 0), math::PI / 2)), " ", math::round(x.rotated(math::vec3(0, 0, 1), math::PI / 2)));
+
+var d = math::dot(math::ivec2(2, 3), math::ivec2(4, 5));
+print(d, " ", type_of(d), " ", math::ivec2(3, 4).length_squared(), " ", math::ivec2(3, 4).length(), " ", math::cross(math::vec2(1, 2), math::vec2(3, 4)));
+try { var q = math::cross(math::vec4(), math::vec4()); } catch (e) { print(e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3.0 4.0 (0.0, 0.0, 1.0) (0.0, 0.0, 1.0)
+5.0 25.0 (0.6, 0.8, 0.0) (0.0, 0.0, 0.0)
+5.0 5.0 25.0
+(1.0, 1.0) (2.0, 0.0)
+1.5707963267948966 (-2.0, 1.0)
+(0.0, 2.0) (0.0, 1.0, 0.0)
+23 int 25 5.0 -2.0
+math::cross expects two vec2 or two vec3 vectors</code></pre></div>
+<p>The methods are the free functions with the receiver first; a color has none of them. Dimensions must agree, and the errors name the shape they expected (<code>math::dot expects two vectors of the same dimensions</code>, <code>math::rotate expects (vec2, angle) or (vec3, axis, angle)</code>).</p>
+<h2 id="colors">Colors<a class="hlink" href="#colors" aria-label="link">&#8203;</a></h2>
+<p>A color's channels are straight (not premultiplied) alpha. Arithmetic, <code>math::clamp</code>, <code>math::min</code>, <code>math::max</code> and the rounding functions work on all four channels; a color combines only with colors and scalars, never with a <code>vec4</code>. <code>math::mix</code> and <code>math::lerp</code> blend colors in the OKLab perceptual space, so a blend keeps its brightness instead of dipping through gray; <code>math::mix_rgb</code> blends each channel directly and <code>math::mix_hsv</code> travels the shorter way around the hue wheel. Alpha always blends linearly, and the eased mixes ease the same perceptual blend.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::color red = math::color(1, 0, 0);
+math::color blue = math::color(0, 0, 1);
+print(math::mix(red, blue, 0.5));             // perceptual (OKLab)
+print(math::mix_rgb(red, blue, 0.5));         // per channel
+print(math::mix_hsv(red, blue, 0.5));         // around the hue wheel
+print(math::mix(math::color(0, 0, 0, 0), math::color(0, 0, 0, 1), 0.25).a);   // alpha blends linearly
+print(math::color(0.25, 0.5, 0.5, 1) * 2, " ", math::clamp(math::color(2, -1, 0.5), 0.0, 1.0));
+try { var q = math::color() + math::vec4(1, 1, 1, 1); } catch (e) { print(e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(0.5504411, 0.32562068, 0.63650066, 1.0)
+(0.5, 0.0, 0.5, 1.0)
+(1.0, 0.0, 1.0, 1.0)
+0.25
+(0.5, 1.0, 1.0, 2.0) (1.0, 0.0, 0.5, 1.0)
+Invalid operands for + operator</code></pre></div>
+<h2 id="arrays-and-maps-of-vectors">Arrays and maps of vectors<a class="hlink" href="#arrays-and-maps-of-vectors" aria-label="link">&#8203;</a></h2>
+<p><code>array&lt;math::vec3&gt;</code> (and the same for every math type) is a packed typed buffer: the components sit side by side, an element reads as a copy, element components store in place, and the element boundary converts the other family of the same dimensions. Converting a whole array between the families copies element by element. An ivec makes a natural map key.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;math::vec3&gt; pts = [math::vec3(1, 2, 3), math::vec3(4, 5, 6)];
+pts.push(math::ivec3(7, 8, 9));                 // the element boundary converts
+pts[0].x += 10;
+for (auto&amp; p : pts) { p.z = 0; }
+print(pts.join(" "), " ", pts.size());
+
+array&lt;math::ivec3&gt; cells = pts;                 // converts by value, element by element
+print(cells.join(" "));
+
+map&lt;math::ivec2, string&gt; tiles;
+tiles[math::ivec2(1, 2)] = "door";
+print(tiles[math::ivec2(1, 2)]);
+
+try { pts.push(math::vec2(1, 2)); } catch (e) { print(e); }
+try { pts.sort(); } catch (e) { print(e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(11.0, 2.0, 0.0) (4.0, 5.0, 0.0) (7.0, 8.0, 0.0) 3
+(11, 2, 0) (4, 5, 0) (7, 8, 0)
+door
+Cannot push &#x27;math::vec2&#x27; to array&lt;math::vec3&gt;</code></pre></div>
+<h2 id="text-and-json">Text and JSON<a class="hlink" href="#text-and-json" aria-label="link">&#8203;</a></h2>
+<p><code>to_string</code>, <code>print</code> and string concatenation write a vector as its components in parentheses, floats in the shortest text that reads back the same 32-bit value. An array of vectors prints its elements, <code>[(1.0, 2.0), (3.0, 4.0)]</code>. <code>to_json</code> writes the type and the named components, and <code>from_json</code> rebuilds the same type; the binary archive (<code>to_base64</code> / <code>from_base64</code>) keeps the exact bits.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::vec3 v = math::vec3(1, 0.5, -2);
+print(to_string(v), " ", "v = " + v, " ", math::vec2(0.1, 1e30));
+string j = to_json(v);
+print(j);
+var back = from_json(j);
+print(back, " ", type_of(back));
+print(to_json(math::color(1, 0.5, 0, 1)));
+var restored = from_base64(to_base64(math::ivec2(-7, 3)));
+print(restored, " ", type_of(restored));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(1.0, 0.5, -2.0) v = (1.0, 0.5, -2.0) (0.1, 1e+30)
+{&quot;$type&quot;:&quot;math::vec3&quot;,&quot;$val&quot;:{&quot;x&quot;:1.0,&quot;y&quot;:0.5,&quot;z&quot;:-2.0}}
+(1.0, 0.5, -2.0) math::vec3
+{&quot;$type&quot;:&quot;math::color&quot;,&quot;$val&quot;:{&quot;r&quot;:1.0,&quot;g&quot;:0.5,&quot;b&quot;:0.0,&quot;a&quot;:1.0}}
+(-7, 3) math::ivec2</code></pre></div>
+<h2 id="what-the-checker-catches">What the checker catches<a class="hlink" href="#what-the-checker-catches" aria-label="link">&#8203;</a></h2>
+<p>Under strict checking (<a href="13-strict-checking.html">Types That Fail Early</a>) the checker knows every math type, its components and methods and the library's result types, so these fail the load before anything runs:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::vec3 v = 5;
+math::vec2 flat;
+flat.z = 1;
+math::color tint;
+float red = tint.x;
+float len = math::floor(v);
+var n = v.dot();</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
+&lt;script&gt;:1:12: error: cannot initialize &#x27;v&#x27; declared &#x27;math::vec3&#x27; with &#x27;int&#x27;
+    math::vec3 v = 5;
+               ^
+&lt;script&gt;:3:6: error: math::vec2 has no member &#x27;z&#x27;
+    flat.z = 1;
+         ^
+&lt;script&gt;:5:18: error: math::color has no member &#x27;x&#x27;
+    float red = tint.x;
+                     ^
+&lt;script&gt;:6:7: error: cannot initialize &#x27;len&#x27; declared &#x27;float&#x27; with &#x27;math::vec3&#x27;
+    float len = math::floor(v);
+          ^
+&lt;script&gt;:7:15: error: &#x27;dot&#x27; expects 1 argument
+    var n = v.dot();
+                  ^</code></pre></div>
+<p>Mixed kinds and dimensions in arithmetic, a zero divisor and an int32 overflow depend on values, so they are run-time errors, catchable like any other.</p>
+<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
+<p>That completes the language tour. From here: <a href="../embedding/index.html">Embedding</a> covers the C++ side, including <a href="../embedding/15-math-adapters.html">Math Adapters</a>, which make a host's own vector and color types arrive in script as these types; <a href="../examples/index.html">Examples</a> walks complete programs; and the <a href="../reference/index.html">Reference</a> is the one-page lookup.</p>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/14-time.html"><span>&larr; previous</span>Time: Clocks, Stopwatches &amp; Dates</a><a class="next" rel="next" href="../guide/16-parallel.html"><span>next &rarr;</span>Parallel Loops</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

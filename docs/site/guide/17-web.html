@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The web:: Library — JaiScript Guide</title>
+<meta name="description" content="The opt-in web:: library: HTML escaping and unescaping, RFC 3986 and form percent-encoding, query strings parsed and built, and URLs split into a web::url and joined back.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="The web:: Library — JaiScript Guide">
+<meta property="og:description" content="The opt-in web:: library: HTML escaping and unescaping, RFC 3986 and form percent-encoding, query strings parsed and built, and URLs split into a web::url and joined back.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li class="current"><a href="../guide/17-web.html" aria-current="page">The web:: Library</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>17</nav>
+<article class="chapter"><h1 id="web">The <code>web::</code> Library<a class="hlink" href="#web" aria-label="link">&#8203;</a></h1>
+<p>The text a web page and a URL are made of: HTML escaping, percent-encoding, query strings and URLs, as plain functions over strings. The library is opt-in: a host registers it with <code>jai::stdlib::register_web(engine)</code>, apart from <code>register_all</code>, so an engine that never serves a page carries none of it. The standalone runner and the <a href="../embedding/19-jai-spider.html">jai_spider</a> host register it, so every sample on this page runs as it is (the <a href="#spider"><code>spider::</code></a> samples reach the network, so they show their calls without running them). Pages made from files are <a href="19-templates.html">HTML Templates</a>: <code>template</code>, <code>scoped_template</code> and their <code>web::html</code> value are on every engine, without this library.</p>
+<h2 id="html">HTML text<a class="hlink" href="#html" aria-label="link">&#8203;</a></h2>
+<p><code>web::html_escape(s)</code> makes text safe to put in a page: it writes <code>&amp;</code> <code>&lt;</code> <code>&gt;</code> <code>&quot;</code> <code>&#x27;</code> as <code>&amp;amp;</code> <code>&amp;lt;</code> <code>&amp;gt;</code> <code>&amp;quot;</code> <code>&amp;#39;</code> (the set PHP&#x27;s <code>htmlspecialchars</code> escapes with <code>ENT_QUOTES</code>), so the result holds in element text and in a quoted attribute alike, and leaves every other byte, UTF-8 included, as it is. <code>web::html_unescape(s)</code> reads character references the way a browser reads them in text: the 2231 HTML5 named references (<code>&amp;eacute;</code>, <code>&amp;nLt;</code>), the legacy names a browser also takes without the <code>;</code> (<code>&amp;copy</code>, <code>&amp;amp</code>; the longest name that fits wins, so <code>&amp;notit;</code> is <code>&#xAC;it;</code>), and numeric references, <code>&amp;#233;</code> or <code>&amp;#xE9;</code> with the <code>;</code> optional, written out as UTF-8. A reference to 0, a surrogate or a value past U+10FFFF becomes U+FFFD, and 0x80 to 0x9F read as their windows-1252 characters (<code>&amp;#150;</code> is <code>&#x2013;</code>), as in a browser. An unknown name, a <code>&amp;</code> that starts no reference and anything else stay exactly as written, so <code>web::html_unescape(web::html_escape(s)) == s</code> for every <code>s</code>. Both return the argument&#x27;s kind: a <code>utf8_string</code> in, a <code>utf8_string</code> out.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string name = &quot;Tom &amp; Jerry&#x27;s &lt;b&gt;show&lt;/b&gt;&quot;;
+print(`&lt;p title=&quot;${web::html_escape(name)}&quot;&gt;${web::html_escape(name)}&lt;/p&gt;`);
+print(web::html_unescape(&quot;caf&amp;eacute; &amp;copy 2026 &amp;#x1F642; &amp;#150; &amp;#0; &amp;bogus; AT&amp;T&quot;));
+print(web::html_unescape(web::html_escape(name)) == name);
+utf8_string word = &quot;café&quot;;
+print(type_of(web::html_escape(word)));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;p title=&quot;Tom &amp;amp; Jerry&amp;#39;s &amp;lt;b&amp;gt;show&amp;lt;/b&amp;gt;&quot;&gt;Tom &amp;amp; Jerry&amp;#39;s &amp;lt;b&amp;gt;show&amp;lt;/b&amp;gt;&lt;/p&gt;
+café © 2026 🙂 – � &amp;bogus; AT&amp;T
+true
+utf8_string</code></pre></div>
+<h2 id="percent-encoding">Percent-encoding<a class="hlink" href="#percent-encoding" aria-label="link">&#8203;</a></h2>
+<p>Two encodings, each with its decoder. <code>web::url_encode(s)</code> is RFC 3986 percent-encoding, for a path segment or any other part of a URL: the unreserved characters <code>A-Z a-z 0-9 - . _ ~</code> stay as they are and every other byte of the string, each byte of a UTF-8 character included, is written <code>%XX</code> in upper-case hex (PHP&#x27;s <code>rawurlencode</code>). <code>web::form_encode(s)</code> is the <code>application/x-www-form-urlencoded</code> encoding a form submits and a query string carries: <code>A-Z a-z 0-9 * - . _</code> stay, a space is <code>+</code>, and every other byte is <code>%XX</code> (PHP&#x27;s <code>urlencode</code>). <code>web::url_decode</code> turns each <code>%XX</code> back into its byte, and <code>web::form_decode</code> does that and reads <code>+</code> as a space. A <code>%</code> that is not followed by two hex digits is kept as written, as a browser keeps it, so decoding never fails; the result is the decoded bytes, which need not be valid UTF-8.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string title = &quot;Snap Jaw/Social? 50% off &amp; more&quot;;
+print(web::url_encode(title));
+print(web::url_decode(web::url_encode(title)) == title);
+print(web::url_decode(&quot;100%25 sure, 100% sure&quot;));
+print(web::form_encode(title));
+print(web::form_decode(&quot;two+words+%26+more&quot;));
+print(web::url_decode(&quot;a+b&quot;), &quot; &quot;, web::form_decode(&quot;a+b&quot;));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Snap%20Jaw%2FSocial%3F%2050%25%20off%20%26%20more
+true
+100% sure, 100% sure
+Snap+Jaw%2FSocial%3F+50%25+off+%26+more
+two words &amp; more
+a+b a b</code></pre></div>
+<h2 id="queries">Query strings<a class="hlink" href="#queries" aria-label="link">&#8203;</a></h2>
+<p><code>web::parse_query(s)</code> reads <code>a=1&amp;b=two+words</code> (a leading <code>?</code> is skipped) into a <code>map&lt;string, string&gt;</code>: each key and value is form-decoded, a key without <code>=</code> has an empty value, an empty key is dropped, and a key that repeats keeps its last value. <code>web::parse_query_all(s)</code> keeps every value instead, a <code>map&lt;string, var&gt;</code> of <code>array&lt;string&gt;</code> in the order they came. <code>web::build_query(m)</code> writes a map back: keys and values form-encoded, joined with <code>&amp;</code>, in the map&#x27;s key order (a map orders its keys, so the same map always builds the same query). A value is a string, a number or a bool (written as <code>to_string</code> writes it); an array repeats its key once per element; a null value leaves its key out. Any other value raises <code>web::build_query: the value of &#x27;m&#x27; is a map</code> (or <code>... is not text, a number, a bool or an array of them</code>).</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, string&gt; q = web::parse_query(&quot;?page=2&amp;sort=new+first&amp;tag=a&amp;tag=b&amp;draft&quot;);
+print(to_json(q));
+map&lt;string, var&gt; all = web::parse_query_all(&quot;tag=a&amp;tag=b&amp;tag=c+d&quot;);
+print(to_json(all));
+print(web::build_query({&quot;q&quot;: &quot;jai script&quot;, &quot;page&quot;: 2, &quot;tags&quot;: [&quot;a&quot;, &quot;b c&quot;], &quot;draft&quot;: false, &quot;skip&quot;: null}));
+print(to_json(web::parse_query(web::build_query({&quot;k&amp;&quot;: &quot;v=1&quot;, &quot;x&quot;: &quot;a b&quot;}))));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{&quot;draft&quot;:&quot;&quot;,&quot;page&quot;:&quot;2&quot;,&quot;sort&quot;:&quot;new first&quot;,&quot;tag&quot;:&quot;b&quot;}
+{&quot;tag&quot;:[&quot;a&quot;,&quot;b&quot;,&quot;c d&quot;]}
+draft=false&amp;page=2&amp;q=jai+script&amp;tags=a&amp;tags=b+c
+{&quot;k&amp;&quot;:&quot;v=1&quot;,&quot;x&quot;:&quot;a b&quot;}</code></pre></div>
+<h2 id="urls">URLs<a class="hlink" href="#urls" aria-label="link">&#8203;</a></h2>
+<p><code>web::parse_url(s)</code> splits an RFC 3986 URI reference into a <code>web::url</code>: <code>scheme</code>, <code>user</code>, <code>password</code>, <code>host</code>, <code>port</code> (an <code>int</code>, 0 when the URL names none), <code>path</code>, <code>query</code> and <code>fragment</code>, each as written, nothing decoded. A reference without a scheme or a host (<code>/search?q=jai</code>, <code>//cdn.example/x</code>, <code>page.html#top</code>) parses too, and an IPv6 host keeps its brackets. A port that is not a number from 0 to 65535, or a bracket that does not close, raises <code>web::parse_url: &#x27;http://example.org:99999/&#x27; has a malformed host or port</code>. A <code>web::url</code> is a value: change its fields and <code>to_string()</code> joins them back, writing <code>//</code> and the authority only when there is a host, a user or a port, and <code>?</code> and <code>#</code> only before a non-empty query and fragment. It writes the parts as they are: encode a path segment with <code>web::url_encode</code> and a query with <code>web::build_query</code> first.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">web::url u = web::parse_url(&quot;https://ada:pw@snapjaw.example:8443/posts/7?sort=new#comments&quot;);
+print(u.scheme, &quot; | &quot;, u.user, &quot; | &quot;, u.password, &quot; | &quot;, u.host, &quot; | &quot;, u.port, &quot; | &quot;, u.path, &quot; | &quot;, u.query, &quot; | &quot;, u.fragment);
+u.path = &quot;/posts/8&quot;;
+u.query = web::build_query({&quot;sort&quot;: &quot;old&quot;, &quot;page&quot;: 2});
+u.user = &quot;&quot;;
+u.password = &quot;&quot;;
+print(u.to_string());
+web::url relative = web::parse_url(&quot;/search?q=jai#top&quot;);
+print(&quot;[&quot;, relative.scheme, &quot;] [&quot;, relative.host, &quot;] &quot;, relative.port, &quot; &quot;, relative.path, &quot; &quot;, relative.query, &quot; &quot;, relative.fragment);
+web::url v6 = web::parse_url(&quot;http://[::1]:8080/&quot;);
+print(v6.host, &quot; &quot;, v6.port);
+web::url built;
+built.scheme = &quot;https&quot;;
+built.host = &quot;example.org&quot;;
+built.path = &quot;/a b&quot;;
+print(built.to_string());
+try { web::parse_url(&quot;http://example.org:99999/&quot;); } catch (e) { print(&quot;caught: &quot;, e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">https | ada | pw | snapjaw.example | 8443 | /posts/7 | sort=new | comments
+https://snapjaw.example:8443/posts/8?page=2&amp;sort=old#comments
+[] [] 0 /search q=jai top
+[::1] 8080
+https://example.org/a b
+caught: web::parse_url: &#x27;http://example.org:99999/&#x27; has a malformed host or port</code></pre></div>
+<h2 id="spider">HTTP with <code>spider::</code><a class="hlink" href="#spider" aria-label="link">&#8203;</a></h2>
+<p>A script fetches from a URL with <code>spider::catch</code> and sends to one with <code>spider::sling</code>. Each call runs one request to its whole answer and returns a <code>spider::Response</code>. Like <code>web::</code>, the client is opt-in: a host registers it with <code>jai::stdlib::register_spider(engine)</code>, installs the HTTP stack it runs on and grants the <code>network</code> permission (<a href="../embedding/17-host-api.html#http-transport">The HTTP transport</a>). The standalone runner and <a href="../embedding/19-jai-spider.html">jai_spider</a> do all three.</p>
+<div class="codeblock cb-jai" data-host="network"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">spider::Response page = spider::catch(&quot;https://api.example.org/scores?game=snapjaw&quot;);
+if (page.ok()) {
+    var scores = page.json();
+    print(&quot;top score: &quot;, scores[0][&quot;points&quot;]);
+}
+
+spider::Response saved = spider::sling({&quot;player&quot;: &quot;ada&quot;, &quot;points&quot;: 420}, &quot;https://api.example.org/scores&quot;);
+print(saved.status, &quot; &quot;, saved.header(&quot;Location&quot;));
+
+spider::Response gone = spider::catch(&quot;https://api.example.org/scores/7&quot;,
+    {&quot;method&quot;: &quot;DELETE&quot;, &quot;headers&quot;: {&quot;Authorization&quot;: &quot;Bearer &quot; + token}, &quot;timeout&quot;: 5});</code></pre></div>
+<p><code>spider::catch(url[, options])</code> sends a GET; <code>spider::sling(content, url[, options])</code> sends a POST carrying <code>content</code>. Both have plain names, the same calls with the URL first as most HTTP clients spell them:</p>
+<ul>
+<li><code>spider::get(url[, options])</code> is <code>spider::catch(url[, options])</code>.</li>
+<li><code>spider::post(url, content[, options])</code> is <code>spider::sling(content, url[, options])</code>.</li>
+</ul>
+<p>The content is sent as it is when it is text (<code>text/plain; charset=utf-8</code>), and as JSON otherwise (<code>application/json</code>: a map, an array, a number, a bool or null, written as <code>to_json</code> writes it). The options map takes:</p>
+<div class="tablewrap"><table><thead><tr><th>Option</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>method</code></td><td><code>GET</code>, <code>HEAD</code>, <code>POST</code>, <code>PUT</code>, <code>PATCH</code>, <code>DELETE</code> or <code>OPTIONS</code>, any case (catch defaults to GET, sling to POST)</td></tr>
+<tr><td><code>headers</code></td><td>a map of header names to text, number or bool values; it overrides the defaults (<code>User-Agent: jaiscript-spider/VERSION</code>, <code>Accept: */*</code>, the content&#x27;s type)</td></tr>
+<tr><td><code>timeout</code></td><td>seconds for the whole call, redirects included (default 30)</td></tr>
+<tr><td><code>type</code></td><td>how the content is sent: <code>"json"</code>, <code>"text"</code>, <code>"form"</code> (a map as <code>application/x-www-form-urlencoded</code>, as <code>web::build_query</code> spells it) or a media type such as <code>"text/csv"</code> for text content</td></tr>
+<tr><td><code>redirects</code></td><td>how many redirects to follow, 0 to 100 (default 5); 0 answers the redirect itself</td></tr>
+</tbody></table></div>
+<p>An unknown key, or a value of the wrong kind, raises before anything is sent (<code>spider::catch: unknown option &#x27;retries&#x27; (method, headers, timeout, type, redirects)</code>), and so does a header name that is not a token, a header value holding a line break or NUL, and a header the transport writes itself (<code>Host</code>, <code>Content-Length</code>, <code>Transfer-Encoding</code>, <code>Connection</code>: <code>spider::catch: header &#x27;Host&#x27; is the transport&#x27;s to set</code>).</p>
+<h3 id="spider-response"><code>spider::Response</code><a class="hlink" href="#spider-response" aria-label="link">&#8203;</a></h3>
+<p>An HTTP answer: what a client call returns, and what a <a href="../embedding/19-jai-spider.html">jai_spider</a> handler answers with. An error status is an answer like any other, not an error: <code>ok()</code> tells them apart.</p>
+<div class="tablewrap"><table><thead><tr><th>Member</th><th>What it is</th></tr></thead><tbody>
+<tr><td><code>status</code></td><td>the status code (<code>int</code>)</td></tr>
+<tr><td><code>headers</code>, <code>header(name)</code></td><td>a <code>map&lt;string, string&gt;</code>; a received answer&#x27;s names are lowercased, and a repeated header is joined with <code>", "</code>; <code>header(name)</code> reads any spelling, "" when absent</td></tr>
+<tr><td><code>cookies</code></td><td>the Set-Cookie lines, one per cookie (<code>array&lt;string&gt;</code>)</td></tr>
+<tr><td><code>body</code>, <code>json()</code></td><td>the body&#x27;s bytes; <code>from_json</code> of them</td></tr>
+<tr><td><code>ok()</code></td><td>true for a 2xx status</td></tr>
+<tr><td><code>url</code></td><td>the URL that answered, after any redirects ("" for a response a script built)</td></tr>
+<tr><td><code>spider::Response(status, body)</code></td><td>a new one (both optional: 200 and an empty body)</td></tr>
+<tr><td><code>header(name, value)</code></td><td>sets a header, replacing one of the same name in any spelling; returns the response, so calls chain. A name that is not a token, or a value holding a line break or NUL, raises <code>Response.header: &#x27;N&#x27; is not a header name, or its value holds a line break or NUL</code></td></tr>
+<tr><td><code>set_cookie(name, value[, options])</code>, <code>clear_cookie(name[, options])</code></td><td>adds a Set-Cookie line, the value percent-encoded; options <code>max_age</code>, <code>expires</code> (unix seconds), <code>path</code> ("/"), <code>domain</code>, <code>secure</code>, <code>http_only</code> (true), <code>same_site</code> ("Lax", "" leaves it out); <code>clear_cookie</code> sets one with <code>Max-Age=0</code>. The name is a token and <code>path</code>, <code>domain</code> and <code>same_site</code> hold no <code>;</code> or control character, so no option adds an attribute of its own (<code>Response.set_cookie: option &#x27;path&#x27; holds a &#x27;;&#x27; or a control character</code>)</td></tr>
+</tbody></table></div>
+<p>A response is a value: assigning one copies its headers and cookies, and <code>r.headers["X-Trace"] = id</code> writes that response&#x27;s own map.</p>
+<h3 id="spider-redirects">Redirects, timeouts and errors<a class="hlink" href="#spider-redirects" aria-label="link">&#8203;</a></h3>
+<p>A 301, 302, 303, 307 or 308 answer with a Location is followed, up to <code>redirects</code> times, against the URL that answered (a relative Location resolves as a browser resolves it). As browsers do, a 303 turns any method but HEAD into a GET without a body, a 301 or 302 turns a POST into a GET, and a 307 or 308 sends the same request again. Authorization and Cookie headers are dropped when a redirect leaves the origin they were given for, and a redirect from https to http is refused. The answer&#x27;s <code>url</code> says where the call ended.</p>
+<p>What stops a call raises a catchable error naming the call, the URL and the reason:</p>
+<div class="tablewrap"><table><thead><tr><th>Error</th><th>When</th></tr></thead><tbody>
+<tr><td><code>spider::catch: http://example.org/slow: timed out after 5 s</code></td><td>the call took longer than its <code>timeout</code></td></tr>
+<tr><td><code>spider::catch: http://127.0.0.1:1/: cannot connect to 127.0.0.1:1</code></td><td>the transport&#x27;s reason: no connection, an unresolved host, a certificate that did not verify, an answer cut short (the words depend on the transport)</td></tr>
+<tr><td><code>spider::catch: http://example.org/a: more than 5 redirects</code></td><td>the redirects outnumbered the option</td></tr>
+<tr><td><code>spider::catch: https://example.org/: a redirect from https to http (http://example.org/) is refused</code></td><td>a redirect would drop TLS</td></tr>
+<tr><td><code>spider::catch: &#x27;ftp://example.org/&#x27; is not an http or https URL</code></td><td>the URL is relative or of another scheme</td></tr>
+<tr><td><code>spider::catch: no HTTP transport installed: the host provides one with engine::http_transport()</code></td><td>the host registered the client and installed no transport</td></tr>
+<tr><td><code>Insufficient privilege: network.</code></td><td>the host has not granted the <code>network</code> permission</td></tr>
+</tbody></table></div>
+<p>A call blocks the script until its answer arrives, inside a coroutine too; a host that must not wait gives the script a short <code>timeout</code>. A parallel body cannot call <code>spider::</code> (each call touches the network the host shares).</p>
+<h2 id="parallel">In parallel bodies<a class="hlink" href="#parallel" aria-label="link">&#8203;</a></h2>
+<p>Every <code>web::</code> function is pure: it reads its argument and returns a new value. They all run in <a href="16-parallel.html">parallel bodies</a>, each worker calling its own copy, and give the same results as the serial loop.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; titles = [&quot;one &amp; two&quot;, &quot;&lt;three&gt;&quot;, &quot;four five&quot;];
+array&lt;string&gt; slugs = parallel_transform(titles, [](string t) { return web::url_encode(web::html_escape(t)); });
+print(to_json(slugs));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[&quot;one%20%26amp%3B%20two&quot;,&quot;%26lt%3Bthree%26gt%3B&quot;,&quot;four%20five&quot;]</code></pre></div>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/16-parallel.html"><span>&larr; previous</span>Parallel Loops</a><a class="next" rel="next" href="../guide/18-random.html"><span>next &rarr;</span>Random Numbers &amp; Crypto</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

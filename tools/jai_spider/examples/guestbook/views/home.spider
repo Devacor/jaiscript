@@ -1,0 +1,8 @@
+${flash == "" ? raw("") : template("flash.spider", flash)}
+<form method="post" action="/sign">
+<label>Name <input name="name" value="${name}" maxlength="80" required></label>
+<label>Message <textarea name="message" rows="3" maxlength="2000" required></textarea></label>
+<button>Sign</button>
+</form>
+${entries.size() == 0 ? template("empty.spider") : raw("")}${array::map(entries, entry => template("card.spider", entry))}
+<footer>${views} page views since the server started</footer>

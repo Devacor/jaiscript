@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Math Adapters: Host Vector Types &mdash; JaiScript Embedding</title>
+<meta name="description" content="One macro line makes a host vector, point or color struct cross every binding as math::vec3, math::ivec2 or math::color: parameters, returns, write-back, bound members, reflected properties and std::vector buffers.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Math Adapters: Host Vector Types &mdash; JaiScript Embedding">
+<meta property="og:description" content="One macro line makes a host vector, point or color struct cross every binding as math::vec3, math::ivec2 or math::color: parameters, returns, write-back, bound members, reflected properties and std::vector buffers.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding</summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li class="current"><a href="../embedding/15-math-adapters.html" aria-current="page">Math Adapters: Host Vector Types</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>15</nav>
+<article class="chapter"><h1 id="math-adapters">Math Adapters: Host Vector Types<a class="hlink" href="#math-adapters" aria-label="link">&#8203;</a></h1>
+<p>Every engine already has its own vector, point and color structs. A math adapter tells JaiScript that one of them <em>is</em> a <code>math::vec3</code> (or another of the language's <a href="../guide/15-math.html">math types</a>): from then on that C++ type crosses every binding as the script's math value, never as a class instance. A parameter, a return value, a bound member, a reflected property and a <code>std::vector</code> of it all exchange the native vector, so script code gets the operators, the <code>math::</code> library and value semantics, and the host keeps its own type.</p>
+<h2 id="adapting-a-type">Adapting a type<a class="hlink" href="#adapting-a-type" aria-label="link">&#8203;</a></h2>
+<p>One line per type, in the header that defines it, so every translation unit that binds the type sees the adapter. The macro names the type (in parentheses, so a template argument list with commas passes through) and the members that hold its components, in order:</p>
+<div class="codeblock cb-cpp" data-sample="math-types"><span class="cb-label">C++ (vec_types.h)</span><pre><code class="lang-cpp">#pragma once
+#include &lt;jaiscript/math/adapter.hpp&gt;
+
+namespace game {
+    struct Vec3 {
+        float x = 0, y = 0, z = 0;
+        friend bool operator==(const Vec3&amp;, const Vec3&amp;) = default;
+    };
+    struct Cell { int col = 0, row = 0; };
+    struct Rgba { float R = 1, G = 1, B = 1, A = 1; };
+}
+
+JAI_BIND_VEC3((game::Vec3), x, y, z)
+JAI_BIND_IVEC2((game::Cell), col, row)
+JAI_BIND_COLOR((game::Rgba), R, G, B, A)</code></pre></div>
+<div class="tablewrap"><table><thead><tr><th>Macro</th><th>Script type</th><th>Component members</th></tr></thead><tbody>
+<tr><td><code>JAI_BIND_VEC2(T, x, y)</code></td><td><code>math::vec2</code></td><td>two, converted to and from float</td></tr>
+<tr><td><code>JAI_BIND_VEC3(T, x, y, z)</code></td><td><code>math::vec3</code></td><td>three, float</td></tr>
+<tr><td><code>JAI_BIND_VEC4(T, x, y, z, w)</code></td><td><code>math::vec4</code></td><td>four, float</td></tr>
+<tr><td><code>JAI_BIND_IVEC2(T, x, y)</code></td><td><code>math::ivec2</code></td><td>two, converted to and from int32</td></tr>
+<tr><td><code>JAI_BIND_IVEC3(T, x, y, z)</code></td><td><code>math::ivec3</code></td><td>three, int32</td></tr>
+<tr><td><code>JAI_BIND_COLOR(T, r, g, b, a)</code></td><td><code>math::color</code></td><td>four channels, float</td></tr>
+</tbody></table></div>
+<p>The macros live in <code>&lt;jaiscript/math/adapter.hpp&gt;</code> and expand to a specialization of <code>jai::math_adapter</code>, so they go at global scope, after the type's definition. The member names are whatever the type uses (<code>col, row</code>; <code>R, G, B, A</code>), and each member converts with a <code>static_cast</code> to the component type and back, so a <code>double</code> or <code>int</code> member works too. JaiScript's own C++ structs, <code>jai::vec2</code> through <code>jai::color</code> in <code>&lt;jaiscript/math/types.hpp&gt;</code>, are adapted already.</p>
+<h2 id="functions">Functions<a class="hlink" href="#functions" aria-label="link">&#8203;</a></h2>
+<p>With the adapter in scope, an adapted type is an ordinary parameter and return type for <code>add_function</code>, <code>dynamic_binder</code> methods and constructors:</p>
+<div class="codeblock cb-cpp" data-sample="math-host"><span class="cb-label">C++</span><pre><code class="lang-cpp">using game::Vec3;
+using game::Cell;
+using game::Rgba;
+
+eng-&gt;add_function(&quot;scale&quot;, [](Vec3 p, float k) { return Vec3{p.x * k, p.y * k, p.z * k}; });
+eng-&gt;add_function(&quot;nudge&quot;, [](Vec3&amp; p) { p.x += 100; });          // written back into the script&#x27;s vector
+eng-&gt;add_function(&quot;neighbor&quot;, [](Cell c) { return Cell{c.col + 1, c.row}; });
+eng-&gt;add_function(&quot;faded&quot;, [](Rgba c) { return Rgba{c.R, c.G, c.B, c.A * 0.5f}; });
+eng-&gt;add_function(&quot;make_path&quot;, [](int n) {
+    std::vector&lt;Vec3&gt; out;
+    for (int i = 0; i &lt; n; ++i) { out.push_back(Vec3{float(i), float(i) * 2, 1}); }
+    return out;                                                     // arrives as array&lt;math::vec3&gt;
+});
+eng-&gt;add_function(&quot;path_length&quot;, [](std::vector&lt;Vec3&gt; path) { return static_cast&lt;int64_t&gt;(path.size()); });
+
+jai::dynamic_binder&lt;Body&gt;(*eng, &quot;Body&quot;)
+    .property(&quot;pos&quot;, &amp;Body::pos)
+    .property(&quot;tint&quot;, &amp;Body::tint)
+    .property(&quot;path&quot;, &amp;Body::path)
+    .method(&quot;moved&quot;, &amp;Body::moved)
+    .build();</code></pre></div>
+<div class="codeblock cb-jai" data-host="math adapter registration (vec_types.h, scale / nudge / neighbor / faded / make_path / path_length)" data-sample="math-functions"><span class="cb-label">jaiscript (with the host above)</span><pre><code class="lang-jai">var p = scale(math::vec3(1, 2, 3), 2);
+print(p, " ", type_of(p));
+
+math::vec3 v = math::vec3(1, 2, 3);
+nudge(v);
+print(v);
+
+print(neighbor(math::ivec2(4, 7)), " ", neighbor(math::vec2(4.9, 7.2)));   // a vec2 converts like a typed slot
+print(faded(math::color(1, 0, 0)));
+
+var path = make_path(3);
+print(path.join(" "), " ", type_of(path[0]));
+array&lt;math::vec3&gt; pts = [math::vec3(1, 2, 3), math::vec3(4, 5, 6)];
+print(path_length(pts));
+
+try { scale(5, 2); } catch (e) { print(e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(2.0, 4.0, 6.0) math::vec3
+(101.0, 2.0, 3.0)
+(5, 7) (5, 7)
+(1.0, 0.0, 0.0, 0.5)
+(0.0, 0.0, 1.0) (1.0, 2.0, 1.0) (2.0, 4.0, 1.0) math::vec3
+2
+No overload of 'scale' takes (int, int)</code></pre></div>
+<p>Read it back:</p>
+<ul>
+<li>A by-value or <code>const&amp;</code> parameter receives the script vector as the host type; a returned host value arrives as the math type (<code>type_of</code> says <code>math::vec3</code>).</li>
+<li>A non-const <code>T&amp;</code> parameter writes the callee's final value back into the script lvalue it was given (a variable, a field, an element, a bound C++ member), the same write-back every host <code>T&amp;</code> parameter makes (<a href="01-embedding-quickstart.html">Embedding Quickstart</a>). A temporary is passed as a copy.</li>
+<li>An argument goes through the typed-slot conversion of the parameter's math type: a <code>vec2</code> reaches an <code>ivec2</code> parameter truncated toward zero. A scalar or a vector of other dimensions finds no candidate.</li>
+<li>A <code>std::vector</code> of an adapted type converts from and to the packed <code>array&lt;math::vec3&gt;</code> buffer. Take it by value; a <code>const std::vector&lt;T&gt;&amp;</code> parameter is rejected at compile time (it would bind a converted copy), and a non-const <code>std::vector&lt;T&gt;&amp;</code> writes the callee's result back.</li>
+</ul>
+<h2 id="bound-members">Bound members<a class="hlink" href="#bound-members" aria-label="link">&#8203;</a></h2>
+<p>A member of an adapted type bound with <code>.property</code> reads as the math value and stores through: a whole-vector store, a component store and a compound assignment all reach the C++ member. A read is a copy, like any member read of a value type:</p>
+<div class="codeblock cb-cpp" data-sample="math-body"><span class="cb-label">C++</span><pre><code class="lang-cpp">struct Body {
+    game::Vec3 pos;
+    game::Rgba tint;
+    std::vector&lt;game::Vec3&gt; path;
+    game::Vec3 moved(game::Vec3 d) const { return {pos.x + d.x, pos.y + d.y, pos.z + d.z}; }
+};</code></pre></div>
+<div class="codeblock cb-jai" data-host="math adapter registration (Body binder above)" data-sample="math-body-script"><span class="cb-label">jaiscript (with the host above)</span><pre><code class="lang-jai">var b = Body();
+b.pos = math::vec3(1, 2, 3);
+b.pos.x += 4;                          // a component store reaches the C++ member
+b.tint.g = 0.5;
+print(b.pos, " ", type_of(b.pos), " ", b.tint);
+print(b.moved(math::vec3(1, 1, 1)));
+
+math::vec3 copy = b.pos;               // a read is a copy
+copy.x = 0;
+print(b.pos);
+
+void halve(float&amp; c) { c /= 2; }
+halve(b.pos.y);                        // a member's component binds float&amp;
+b.path = [math::vec3(1, 2, 3), math::vec3(4, 5, 6)];
+print(b.pos, " ", b.path.size());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(5.0, 2.0, 3.0) math::vec3 (1.0, 0.5, 1.0, 1.0)
+(6.0, 3.0, 4.0)
+(5.0, 2.0, 3.0)
+(5.0, 1.0, 3.0) 2</code></pre></div>
+<h2 id="reflected-properties">Reflected properties<a class="hlink" href="#reflected-properties" aria-label="link">&#8203;</a></h2>
+<p>A <code>JAI_PROPERTY</code> of an adapted type (<a href="02-dynamic-binder.html">dynamic_binder</a>) surfaces in script as its math type with no per-property binding. Whole, component and compound stores assign through the property, so an observable property notifies on each store that changes the value:</p>
+<div class="codeblock cb-cpp" data-sample="math-marker-class"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/properties/property_manager.hpp&gt;
+#include &lt;jaiscript/properties/observable_property.hpp&gt;
+#include &lt;jaiscript/properties/macros.hpp&gt;
+#include &lt;jaiscript/properties/property_serialization.hpp&gt;
+
+class Marker : public jai::property_owner&lt;Marker&gt; {
+public:
+    JAI_PROPERTY((game::Vec3), position);
+    JAI_OBSERVABLE_PROPERTY((game::Vec3), velocity);
+    JAI_PROPERTY((game::Rgba), tint);
+};</code></pre></div>
+<div class="codeblock cb-cpp" data-sample="math-marker"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::dynamic_binder&lt;Marker&gt;(*eng, &quot;Marker&quot;).auto_bind().build();
+
+auto marker = std::make_shared&lt;Marker&gt;();
+int changes = 0;
+auto watch = marker-&gt;velocity.on_change.connect([&amp;](const game::Vec3&amp;, const game::Vec3&amp;) { ++changes; });
+eng-&gt;add_global(&quot;marker&quot;, eng-&gt;make_object(marker));
+
+eng-&gt;execute(R&quot;(
+    print(type_of(marker.position), &quot; &quot;, marker.tint);
+    marker.position = math::vec3(1, 2, 3);
+    marker.position.x += 4;
+    marker.velocity.y = 2;
+    marker.velocity = math::vec3(1, 1, 1);
+    marker.tint.a = 0.5;
+)&quot;);
+std::cout &lt;&lt; &quot;position &quot; &lt;&lt; marker-&gt;position-&gt;x &lt;&lt; &quot; &quot; &lt;&lt; marker-&gt;position-&gt;y &lt;&lt; &quot; &quot; &lt;&lt; marker-&gt;position-&gt;z &lt;&lt; &quot;\n&quot;;
+std::cout &lt;&lt; &quot;velocity changes &quot; &lt;&lt; changes &lt;&lt; &quot;, tint alpha &quot; &lt;&lt; marker-&gt;tint-&gt;A &lt;&lt; &quot;\n&quot;;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">math::vec3 (1.0, 1.0, 1.0, 1.0)
+position 5 2 3
+velocity changes 2, tint alpha 0.5</code></pre></div>
+<p>Change detection compares the old and new value with the host type's <code>operator==</code>. That is why <code>Vec3</code> in <code>vec_types.h</code> declares one: an observable property of a type without <code>operator==</code> still stores, but silently, with no <code>on_change</code>. Here the component store <code>velocity.y = 2</code> and the whole store each changed the value, so the receiver ran twice.</p>
+<h2 id="values-from-c">Values from C++<a class="hlink" href="#values-from-c" aria-label="link">&#8203;</a></h2>
+<p><code>make_value</code> turns a host value into the script math value, and <code>as&lt;T&gt;()</code> reads a math value back as the host type:</p>
+<div class="codeblock cb-cpp" data-sample="math-value"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::script_value v = eng-&gt;make_value(game::Vec3{1, 2, 3});         // a math::vec3 value
+eng-&gt;add_global(&quot;spawn_point&quot;, v);
+game::Vec3 back = eng-&gt;execute(&quot;spawn_point * 2&quot;).as&lt;game::Vec3&gt;();  // and back to the host type
+std::cout &lt;&lt; v.to_string() &lt;&lt; &quot; -&gt; &quot; &lt;&lt; back.x &lt;&lt; &quot; &quot; &lt;&lt; back.y &lt;&lt; &quot; &quot; &lt;&lt; back.z &lt;&lt; &quot;\n&quot;;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(1.0, 2.0, 3.0) -&gt; 2 4 6</code></pre></div>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/14-language-server.html"><span>&larr; previous</span>Editor Support: the Language Server</a><a class="next" rel="next" href="../embedding/16-thread-pool.html"><span>next &rarr;</span>Thread Pool for Host Work</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

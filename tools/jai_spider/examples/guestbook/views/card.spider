@@ -1,0 +1,4 @@
+<article>
+<p class="message">${entry["message"]}</p>
+<p class="byline"><a href="/entries/${entry["id"]}">${entry["name"]}, ${when(entry["created"])}</a></p>
+</article>

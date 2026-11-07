@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Performance Notes — JaiScript Embedding</title>
+<meta name="description" content="What the VM does for you, what idiomatic-fast code looks like, the honest cost model, and real measured numbers.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Performance Notes — JaiScript Embedding">
+<meta property="og:description" content="What the VM does for you, what idiomatic-fast code looks like, the honest cost model, and real measured numbers.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding</summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li class="current"><a href="../embedding/11-performance.html" aria-current="page">Performance Notes</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>11</nav>
+<article class="chapter"><h1 id="performance-notes">Performance Notes<a class="hlink" href="#performance-notes" aria-label="link">&#8203;</a></h1>
+<p>How fast is it, and how do you write fast code in it? This chapter is the site&#x27;s one home for
+both answers: the design that makes the VM quick, the cost model that makes <em>your</em> code quick,
+and every measured number: microbenchmarks against Lua, Squirrel, and ChaiScript (a separate comparison harness outside this
+package, MSVC x64 Release, min-of-5), the embedding cost sheet, and
+complete games measured end-to-end. The numbers come from two machines, and the top of the
+<a href="#measured-results">measured section</a> says which is which. One caveat travels with all of it: the
+benchmark harness reports integer µs with real run-to-run variance. Compare bands and medians,
+not &plusmn;1&nbsp;µs deltas.</p>
+<h2 id="what-the-vm-does-for-you">What the VM does for you<a class="hlink" href="#what-the-vm-does-for-you" aria-label="link">&#8203;</a></h2>
+<p>You write ordinary script; the bytecode VM earns its keep below the waterline:</p>
+<ul>
+<li><strong>Fused superinstructions and register temps.</strong> The compiler collapses the common
+shapes (<code>sum += a[i] * 2.0</code>, compare-and-branch, element-read-into-local, nested
+arithmetic through frame-slot temporaries) into single dest-addressed opcodes, so a hot statement
+is one dispatch, not five, and intermediate results never touch the operand stack. A fused
+compound loop runs in the <strong>low tens of nanoseconds per iteration</strong> (the numbers are
+<a href="#embedding-costs">below</a>).</li>
+<li><strong>Counted loops without ceremony.</strong> <code>for (int i = 0; i &lt; n; ++i)</code>
+compiles to dedicated loop opcodes; there is no per-iteration environment allocation, and
+variable resolution is inline-cached.</li>
+<li><strong>Typed arrays.</strong> <code>array&lt;int&gt;</code> / <code>array&lt;float&gt;</code> keep raw
+primitive buffers behind the same script API as ordinary arrays: a 13.6k-element pixel grid
+drops from 435&nbsp;KB to 109&nbsp;KB, a value-semantics clone becomes a <code>memcpy</code>, and
+element access skips boxing entirely. This is the intended container for bulk numeric data.</li>
+<li><strong>Calls stay in the loop.</strong> Script calls never recurse natively. Frames are pooled
+and pushed inside the dispatch loop, and arguments bind zero-copy from the stack window.</li>
+<li><strong>In-language parallelism.</strong> <code>parallel_for</code> / <code>parallel_transform</code>
+run bodies that the engine can <em>prove</em> safe across a worker pool, deterministic by
+construction (identical results and hashes at any worker count), reaching 4.8&times; over the
+serial loop at 8 workers on a 4C/8T machine for a 100k-element map.</li>
+<li><strong>Thin values.</strong> <code>script_value</code> is 16 bytes, static-assert-gated: four per
+cache line.</li>
+<li><strong>Two backends, one contract.</strong> The tree-walking interpreter is the oracle that keeps
+the VM honest. The full test suite and a differential fuzzer hold both to byte-identical behavior
+(see <a href="03-backends.html">Backends</a>), so the fast paths above carry no semantic drift,
+and any workload can A/B the backends to separate "slow" from "wrong".</li>
+<li><strong>Safety that stays out of the profile.</strong> Checked integer overflow detects with
+intrinsics (not division), the execution-budget clock samples every 1024 ticks, and the idle
+debugger hook is one predictable branch per statement. None of them is measurable in hot loops.</li>
+</ul>
+<h2 id="what-idiomatic-fast-code-looks-like">What idiomatic-fast code looks like<a class="hlink" href="#what-idiomatic-fast-code-looks-like" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">// The fast shape: typed locals, typed arrays, &amp; params, compound element stores.
+array&lt;int&gt; pix = [];
+for (int i = 0; i &lt; 64; ++i) { pix.push(0); }
+
+function shade(array&lt;int&gt;&amp; dst, int base) {      // &amp; = no copy, writes land in the caller
+    for (int i = 0; i &lt; dst.size(); ++i) {
+        dst[i] += base + (i &amp; 7);                // compound element store: one fused op
+    }
+}
+
+shade(pix, 100);
+int sum = 0;
+for (int i = 0; i &lt; pix.size(); ++i) { sum += pix[i]; }
+print("sum = {}", sum);
+
+function square(int x) { return x * x; }
+array&lt;int&gt; nums = [];
+for (int i = 1; i &lt;= 8; ++i) { nums.push(i); }
+var squares = parallel_transform(nums, square);   // deterministic at any worker count
+print(to_json(squares));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">sum = 6624
+[1,4,9,16,25,36,49,64]</code></pre></div>
+<p>The rules this example encodes, in priority order:</p>
+<ul>
+<li><strong>Declare types.</strong> <code>int</code> and <code>auto</code> locals ride slot storage and the
+typed fast paths; <code>var</code> is the dynamic opt-out and costs accordingly.</li>
+<li><strong>Pass anything heavy by <code>&amp;</code>.</strong> Value semantics means a by-value
+parameter deep-copies unless the callee provably only reads it (then the argument binds in place at
+reference speed, see <a href="../guide/03-value-semantics.html#what-each-strategy-costs">the elision</a>);
+<code>&amp;</code> is the cheap-by-design idiom, and it makes mutation visible
+in the signature. Decision guidance: <a href="../guide/03-value-semantics.html">Value Semantics</a>;
+the three-way measurements (value vs <code>&amp;</code> vs <code>shared_ptr</code>) are
+<a href="#value-strategy-costs">below</a>.</li>
+<li><strong>Use <code>array&lt;int&gt;</code>/<code>array&lt;float&gt;</code> for bulk numeric data</strong>:
+grids, pools, geometry tables. Same API, flat storage.</li>
+<li><strong>Prefer compound element stores.</strong> <code>a[i] += v</code> is one fused dispatch,
+measurably cheaper than spelling out the read-modify-write.</li>
+<li><strong>Define classes once.</strong> Executing a <code>class</code> declaration does
+redefinition/hot-reload bookkeeping; keep class definitions out of per-frame scripts and re-run
+only the code that ticks.</li>
+<li><strong>Stay on the VM.</strong> An engine you make runs the bytecode VM, as the standalone runner does;
+<code>eng-&gt;set_backend(jai::backend_type::interpreter)</code> selects the tree-walking interpreter, the reference
+for checking rather than for speed (<a href="03-backends.html">Backends</a>). Measure Release builds: a Debug build of the engine is many times slower.</li>
+<li><strong>Walk containers by reference.</strong> <code>for (auto u : units)</code> copies each element, as in C++, and a
+write to <code>u</code> changes the copy; <code>for (auto&amp; u : units)</code> visits the elements themselves and copies nothing.</li>
+<li><strong>Copies are real, but read-only ones are free.</strong> <code>Unit u = units[i];</code> is a copy. Inside a function, when nothing after
+it writes <code>u</code>, uses it whole or can change <code>units[i]</code>, the engine binds the element itself instead, and a
+by-value parameter the callee only reads binds the same way. Nothing can observe the difference, so write the copy
+when you mean a copy and <code>auto&amp;</code> when you mean the element, and treat the saving as a bonus rather than a rule.</li>
+</ul>
+<h2 id="the-cost-model">The cost model<a class="hlink" href="#the-cost-model" aria-label="link">&#8203;</a></h2>
+<p>The intuition, cheapest to dearest (every rung quantified in the
+<a href="#measured-results">measured section</a> below):</p>
+<ul>
+<li><strong>Typed-local arithmetic and fused element ops are the floor.</strong> A hot fused loop
+iteration is tens of nanoseconds; a single statement is sub-microsecond on either backend.</li>
+<li><strong>Function calls are the unit of cost.</strong> A script call in a tight loop costs roughly
+ten fused-loop iterations on the VM; method invocation adds receiver binding and dispatch on top.
+Typed loops over locals and arrays are where JaiScript holds its own (the bytecode-VM app runs ahead of
+Lua 5.4); call-dense recursion and object graphs walked through many small methods are where rivals with
+cheaper frames pull ahead (the <a href="#the-comparison-story">benchmark apps</a> below).</li>
+<li><strong>Value semantics is a tax you opt out of with <code>&amp;</code>.</strong> Assignment and
+by-value parameters deep-copy; reference parameters and <code>var&amp;</code> declarations are the
+cheap-by-design idiom. Decision guidance:
+<a href="../guide/03-value-semantics.html">Value Semantics</a>; three-way measurements:
+<a href="#value-strategy-costs">below</a>.</li>
+<li><strong>Building a string in a loop is amortized O(1) per append, in every spelling.</strong> There is
+no string builder to reach for: <code>s += x</code>, <code>s = s + x</code>, <code>s = s + a + "-" + b</code>
+and template appends grow the string's own buffer in place, whether <code>s</code> is a local, a global,
+a field (<code>obj.s</code>, <code>this.s</code>, a bare field), a static, an array element, a map value,
+a <code>string&amp;</code> parameter or a map entry's binding. Strings stay values: a copy taken before an
+append shares the text until the append, which then writes its own copy, so the copy never sees it.
+A chain such as <code>a + "/" + b + "/" + c</code> or a template string joins into one accumulator sized
+for its text, and <code>format()</code> writes its values straight into its result.</li>
+<li><strong>Class declaration is bookkeeping, not construction.</strong> Executing a <code>class</code>
+declaration pays redefinition/hot-reload machinery every time: cheap once, wasteful per-frame.</li>
+<li><strong>Engine lifecycle sits far above script cost.</strong> Creating an engine and registering the
+stdlib cost hundreds of warm executes. Reuse engines; never build one per evaluation.</li>
+</ul>
+<h3 id="whats-slower">What&#x27;s slower, and what to use instead<a class="hlink" href="#whats-slower" aria-label="link">&#8203;</a></h3>
+<ul><li><strong>Call-dense recursion.</strong> Lua runs fib(15) ~2.8&times; faster and Squirrel ~1.25&times;;
+the cost is per-call frame setup, not opcode count. Bare self tail calls are the exception: on the VM,
+<code>return f(args)</code> reuses the live frame (constant stack space, no depth limit, ~40 ns per
+call), so accumulator-style tail recursion runs at loop speed and any depth. The interpreter keeps its
+call-depth cap (256 active calls by default, about 150 to 200 on a 1 MB thread, <a href="05-safety-rails.html">Safety Rails</a>). The caveat applies to
+non-tail shapes like fib&#x27;s <code>f(n-1) + f(n-2)</code>, and the same per-call cost shows in object graphs
+walked through many small methods: Richards and DeltaBlue take about 2.4&times; Lua 5.4&#x27;s time (the
+<a href="#the-comparison-story">benchmark apps</a> below). Keep naive deep <em>non-tail</em> recursion out of
+per-frame hot paths, or express the algorithm iteratively.</li>
+<li><strong>By-value copies of big structures.</strong> Use <code>&amp;</code> parameters and
+<code>var&amp;</code> declarations for anything heavy. The BST benchmark written with <code>&amp;</code>
+runs 18 µs on the reference machine against 74 µs for the naive by-value spelling (~4&times;): by-value
+deep-copies a subtree at every recursion level, and that copy is the whole difference.</li>
+<li><strong>Bulk per-element pixel pushing.</strong> Software rendering (tens of thousands of scripted
+element reads and stores per frame) is where any tagged-value VM pays list price against Lua
+(GLOOM serial takes about 1.6&times; Lua 5.4.8&#x27;s time per tick in the
+<a href="#whole-games-measured">GLOOM row</a> below). The
+mitigations, in order: typed arrays for the grids, <code>parallel_transform</code> for the bulk stages
+(it roughly halved GLOOM&#x27;s dominant stage), and binding the one innermost loop to C++ if the budget
+still doesn&#x27;t close. Full game <em>sim</em> is not the problem: DOOM&#x27;s entire playsim takes
+under a millisecond a frame on the VM with six monsters awake and firing (the DOOM row below).</li>
+<li><strong>Per-execute class redefinition.</strong> Re-executing class declarations pays hot-reload
+bookkeeping every time (~250 µs for a 30-line class script, both backends equally). Define classes
+once; per-frame scripts should call, not declare.</li></ul>
+<h2 id="measured-results">Measured results<a class="hlink" href="#measured-results" aria-label="link">&#8203;</a></h2>
+<p>Three altitudes: the raw cost sheet for embedders, microbenchmarks against three rival runtimes, and
+complete games measured end-to-end. Sources are named per table.</p>
+<div class="callout"><p><strong>Two machines appear below; never compare a number from one with a number
+from the other.</strong> The <em>report machine</em> is a 2016-era 4-core/8-thread laptop: the cost sheet, the dispatch regimes, the aliasing table,
+and the parallel-scaling figures come from it. The <em>reference machine</em>
+is a current 24-thread laptop CPU (Core Ultra 9 285HX): every comparison against another runtime (the head-to-head
+table, the kernel suite, the benchmark apps and every whole-game row) was measured there, each row naming its date. It
+runs everything faster, and the two machines ran different builds of the VM. Read ratios within one table.</p></div>
+<h3 id="embedding-costs">The embedding cost sheet<a class="hlink" href="#embedding-costs" aria-label="link">&#8203;</a></h3>
+<p>Order-of-magnitude operation costs, report machine (interp / VM):</p>
+<div class="tablewrap"><table><thead><tr><th>operation</th><th>cost</th></tr></thead><tbody><tr><td>single arithmetic op</td><td>&lt;1 µs both backends</td></tr><tr><td>function call</td><td>~2 µs interp / ~1 µs VM (in a tight loop: 0.9 / 0.44 µs)</td></tr><tr><td>class creation</td><td>~15 µs interp / ~14 µs VM</td></tr><tr><td>method invocation</td><td>~12 µs interp / ~9 µs VM (per-call in a tight loop: ~1 µs either backend)</td></tr><tr><td>hot loop, per iteration</td><td><strong>~45 ns</strong> (VM, fused compound loop; ~9 ns on the reference machine)</td></tr><tr><td>engine creation</td><td>~73–77 µs (+ lazy backend init on first execute; ~90 µs all-in)</td></tr><tr><td>stdlib registration</td><td>~311 µs</td></tr></tbody></table></div>
+<p>Dispatch regimes, report machine (Release builds, medians of
+interleaved samples; scripts: a 1-line predicate, a 6-line function script, a ~30-line class+loop
+script):</p>
+<div class="tablewrap"><table><thead><tr><th>regime</th><th>interpreter</th><th>vm</th></tr></thead><tbody><tr><td>engine create + first trivial execute</td><td>~90 µs</td><td>~87 µs (identical)</td></tr><tr><td>cold one-shot, fresh engine (tiny script)</td><td>36.9 µs</td><td>34.8 µs (VM already ahead)</td></tr><tr><td>warm engine, novel string every time (tiny)</td><td>7.1 µs</td><td>8.4 µs (interp +18–20% ahead)</td></tr><tr><td>warm engine, repeated string (tiny)</td><td>1.03 µs</td><td>0.60 µs (<strong>VM 1.7–1.8x faster</strong>)</td></tr><tr><td>warm jaibite execute (tiny)</td><td>0.85 µs</td><td><strong>0.38 µs</strong></td></tr><tr><td>warm jaibite execute (6-line fn script)</td><td>3.10 µs</td><td><strong>1.69 µs</strong></td></tr><tr><td>~30-line class/loop script, warm</td><td>251.6 µs</td><td>241.4 µs (1.04x)</td></tr></tbody></table></div>
+<ul><li><strong>VM compilation costs about one third of parsing</strong> (tiny: parse 3.8 µs, compile ~1.5 µs; 30-line: parse 67.5 µs, compile ~21 µs) and is cached (in the source-cache entry or the jaibite), so it amortizes by the <strong>3rd–4th execution</strong> in every re-execution regime.</li><li>The interpreter&#x27;s only durable win is genuinely unique, never-repeated small strings on a warm engine, worth 1.3–5 µs per execution, gone entirely at ~30 lines.</li><li>Class-heavy scripts see only ~4% VM advantage warm: per-execute class redefinition/hot-reload machinery costs the same on both.</li><li>The automatic jaibite disk cache turns file loads from parse-bound to IO-bound: a measured 535-line game file&#x27;s load-and-run drops from 5.8 ms to 2.4 ms: the ~3.4 ms parse replaced by a sub-millisecond binary load (see <a href="04-jaibite.html">jaibite</a> for the mechanism).</li></ul>
+<h3 id="debugger-cost">What the debugger costs<a class="hlink" href="#debugger-cost" aria-label="link">&#8203;</a></h3>
+<p>The <a href="12-debugging.html">debugger</a> is designed to be free until a session attaches. The
+1000-iteration hot-loop script from the cost sheet, report machine, min-of-3, µs per run:</p>
+<div class="tablewrap"><table><thead><tr><th>configuration</th><th>interpreter</th><th>vm</th></tr></thead><tbody><tr><td>no debugger constructed</td><td>149</td><td>47</td></tr><tr><td>controller constructed, no session</td><td>148</td><td>46</td></tr><tr><td>session enabled, no breakpoints</td><td>148</td><td>50</td></tr><tr><td>session enabled, breakpoint in a cold file</td><td>146</td><td>51</td></tr><tr><td>session enabled, breakpoint whose line collides with the hot statement</td><td>165</td><td>64</td></tr></tbody></table></div>
+<p>The two disabled rows sit on the pre-debugger band exactly; an armed session costs the VM ~10% (it
+detects statement edges per dispatch iteration); the only expensive row is the deliberate worst case: a
+breakpoint in another file whose <em>line number</em> matches the hot statement, one bounded string compare
+per collision.</p>
+<h3 id="value-strategy-costs">What each aliasing strategy costs<a class="hlink" href="#value-strategy-costs" aria-label="link">&#8203;</a></h3>
+<p><a href="../guide/03-value-semantics.html">Value Semantics</a> teaches the strategies; this is the
+bill. Same computation, three ways of holding and passing a meaty object (string name + 8-int stats
+array + 4 scalars; 200 precompiled calls per row, best of five runs, report machine):</p>
+<div class="tablewrap"><table><thead><tr><th>strategy</th><th>interp µs/call</th><th>vm µs/call</th><th>vs <code>&amp;</code></th></tr></thead><tbody><tr><td>read-only compute, pass <code>Creature c</code> (by value)</td><td>8.0</td><td>6.6</td><td>1.3–1.4×. The deep copy, ~1.8 µs/call here, grows with payload</td></tr><tr><td>read-only compute, pass <code>Creature&amp; c</code></td><td>6.2</td><td>4.8</td><td>1.0</td></tr><tr><td>read-only compute, pass <code>shared_ptr&lt;Creature&gt; c</code></td><td>6.4</td><td>4.9</td><td>tie (within noise)</td></tr><tr><td>mutate: <code>heal(Unit&amp; u)</code> vs <code>heal(shared_ptr&lt;Unit&gt; u)</code></td><td>1.7 / 1.8</td><td>1.4 / 1.4</td><td>tie (within noise)</td></tr><tr><td>method call, held as value / <code>auto&amp;</code> / shared_ptr</td><td>5.7–5.8</td><td>4.7</td><td>all tie: the holder doesn&#x27;t matter</td></tr></tbody></table></div>
+<p>The structure-heavy version of the same story, on the node-aliasing BST benchmark (15 nodes):
+in-place <code>&amp;</code> params are ~1.35&times; faster than the shared_ptr return-and-reassign
+shape (that delta is the shape, not a per-access penalty), and both are ~3.5&times; faster than naive
+by-value, which deep-copies subtrees at every recursion level.</p>
+<h3 id="the-comparison-story">Against Lua, Squirrel, and ChaiScript<a class="hlink" href="#the-comparison-story" aria-label="link">&#8203;</a></h3>
+<p>All three rivals are measured in one comparison harness, same machine, same protocol: the reference-machine run:
+each suite run five times pinned to one P core, each cell the fastest of the five.
+Headline rows, µs/iteration (a plain function call rounds to 0 or 1 µs everywhere but ChaiScript, so that row is omitted; the cost sheet above has it in nanoseconds):</p>
+<div class="tablewrap"><table><thead><tr><th>benchmark</th><th>Jai VM</th><th>Lua 5.4</th><th>Squirrel</th><th>ChaiScript</th></tr></thead><tbody>
+<tr><td>Method invocation</td><td>0</td><td>1</td><td>2</td><td>13</td></tr>
+<tr><td>Class creation</td><td>0</td><td>1</td><td>2</td><td>16</td></tr>
+<tr><td>Array push/pop</td><td>0</td><td>2</td><td>3</td><td>17</td></tr>
+<tr><td>Map/table insert + lookup</td><td>0</td><td>1</td><td>2</td><td>10</td></tr>
+<tr><td>For loop, 100 iters</td><td>1</td><td>1</td><td>3</td><td>12</td></tr>
+<tr><td>Hot loop 1000 (<code>sum += i</code>)</td><td>9</td><td>3</td><td>10</td><td>n/a</td></tr>
+<tr><td>String concat, 20 iters</td><td>1</td><td>1</td><td>3</td><td>19</td></tr>
+<tr><td>Fibonacci(15)</td><td>69</td><td>25</td><td>55</td><td>n/a</td></tr>
+<tr><td>BST 15 nodes, idiomatic <code>&amp;</code></td><td>18</td><td>8</td><td>11</td><td>n/a</td></tr>
+</tbody></table></div>
+<ul><li><strong>vs Squirrel</strong>: the VM wins or ties everything statement-, container- and
+string-shaped: method dispatch, class creation, containers, short loops, the 1,000-iteration hot loop
+(9 µs against 10) and string work; Squirrel keeps call-dense recursion (~1.25&times; on
+fib(15)) and the script-built BST (~1.6&times;), where its minimal per-call frames pull ahead, and at whole-program scale
+it runs Richards, DeltaBlue and the spatial hash faster (the benchmark apps below).</li>
+<li><strong>vs Lua 5.4</strong> (via sol2): the VM wins or ties statements, containers, method dispatch,
+class creation, range-for and null-checks; string work is level; Lua keeps the hot-loop row (~3&times;),
+call-dense recursion (<strong>~2.8&times; on fib(15)</strong>) and the script-built BST (~2.3&times;).</li>
+<li><strong>vs ChaiScript</strong>: a clean sweep across every live row: method dispatch, class creation,
+push/pop and map round to 0&nbsp;µs on the VM against ChaiScript&#x27;s 13, 16, 17 and 10, and the loop and string
+rows run 12–19&times; faster.</li></ul>
+<p><strong>The kernel suite.</strong> The sixteen interpreter kernels of daScript&#x27;s
+<a href="https://github.com/borisbat/dasProfile">dasProfile</a> (recursion, loops, n-queens, mandelbrot,
+n-bodies, spectral norm, particles, sha256, a treap, sort, dictionary, exp, string/float conversion, host
+calls) run under dasProfile&#x27;s protocol in the same comparison harness: each sample is one process that
+repeats the kernel for a 0.5&nbsp;s budget, each cell the median of five, implementations interleaved,
+checksums equal across implementations, reference machine. Against Lua 5.5.1, idiomatic typed JaiScript on
+the VM takes a geometric mean of <strong>1.09&times;</strong> Lua&#x27;s time and the same algorithms with
+<code>var</code> everywhere 1.35&times;. The VM&#x27;s widest wins are mandelbrot (0.04&times;: two float locals
+against Lua&#x27;s complex-number tables), sha256 (0.12&times;), float-to-string (0.30&times;) and string-to-float
+(0.88&times;); its widest losses are the treap (5.5&times;), host calls (4.4&times;), n-queens (3.3&times;), the
+dictionary (2.6&times;), n-bodies (2.1&times;) and recursive fibonacci (1.8&times;). LuaJIT&#x27;s JIT runs the suite
+at 0.01–0.73&times; Lua&#x27;s time.</p>
+<p><strong>The benchmark apps.</strong> Four general programs, each one algorithm written the ordinary way in every
+language and hash-checked: Richards (an OS scheduler simulation: polymorphic methods over linked objects), DeltaBlue
+(a constraint solver: a deep class hierarchy and virtual dispatch), a bytecode VM written in the script (a dispatch loop
+over integer arrays) and a spatial hash over 100,000 entities. Each cell is the median of seven processes, the
+implementations interleaved, on one P core; each program times its own workload, so start-up and compilation
+stay out.</p>
+<div class="tablewrap"><table><thead><tr><th>app</th><th>Jai VM</th><th>Lua 5.4</th><th>Squirrel 3.2</th><th>VM / Lua</th><th>VM / Squirrel</th></tr></thead><tbody>
+<tr><td>Richards</td><td>788 ms</td><td>334 ms</td><td>609 ms</td><td>2.36</td><td>1.29</td></tr>
+<tr><td>DeltaBlue</td><td>948 ms</td><td>398 ms</td><td>588 ms</td><td>2.38</td><td>1.61</td></tr>
+<tr><td>bytecode VM</td><td>673 ms</td><td>744 ms</td><td>1,104 ms</td><td>0.90</td><td>0.61</td></tr>
+<tr><td>spatial hash</td><td>2,644 ms</td><td>972 ms</td><td>1,130 ms</td><td>2.72</td><td>2.34</td></tr>
+</tbody></table></div>
+<p>The script-level dispatch loop over typed arrays runs ahead of both; programs made of small methods over shared
+objects, and the spatial hash&#x27;s map of per-cell arrays, run at about 2.4&ndash;2.7&times; Lua&#x27;s time. The per-call
+and per-object costs those programs pay are the VM&#x27;s slowest ground.</p>
+<h3 id="whole-games-measured">Whole games, measured<a class="hlink" href="#whole-games-measured" aria-label="link">&#8203;</a></h3>
+<p>Microbenchmarks reward fast statements; games reward fast <em>frames</em>. Four complete programs are
+measured end-to-end: DOOM, GLOOM, the demoreel (the whole reel on both backends, and its OSSUARY scene against the other runtimes) and Gator Quest&#x27;s simulation. All four
+ship in <code>examples/</code> and reproduce on your machine; the Lua, Squirrel and Luau ports they are timed
+against live in the separate comparison harness. JaiDoom ships as
+source and downloads its game data on first launch: the freely distributable Freedoom IWADs and the DOOM
+shareware episode, from their public releases (<a href="../examples/index.html#jaidoom">Examples</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>workload</th><th>measured</th><th>the takeaway</th></tr></thead><tbody>
+<tr><td><strong>DOOM, 2026-11-04</strong>: E1M1 on the VM, textured software render at
+120&times;78 plus status bar, six monsters awake and firing, the full weapon/powerup/lighting roster,
+300-frame autopilot play session (<code>p7_bench.jai</code>, three runs, one P core); reference machine</td><td><strong>~1.3 ms/frame</strong>
+(sim ~0.39, render ~0.71, blit ~0.21)</td><td>more than 21&times; inside DOOM&#x27;s 28.5 ms (35 fps) frame budget,
+with the enemy brains written as coroutines and the movers and weapons as classes</td></tr>
+<tr><td><strong>DOOM timedemo, 2026-11-04</strong>: 3,984 recorded tics of E1M1 at 120&times;78,
+one full replay warming the same engine before the measured replay; one P core</td><td><strong>1.389 ms/tic</strong>
+(about 20&times; real time)<br>
+layout control: 1.387, -0.43% to -0.05%</td><td>Six runs per build in three interleaved rounds. The layout control is
+the same program relinked with unused padding code, so a change smaller than its spread is code layout, not
+speed. Both replay hashes match 1746772898. The script timer excludes level/demo setup.</td></tr>
+<tr><td><strong>GLOOM, 2026-11-04</strong>: 600 measured ticks after 600 warm-up ticks,
+seed 666, 100&times;40 quad output. One P core for serial configurations; eight for parallel
+JaiScript. MSVC Release with LTCG, Core Ultra 9 285HX.</td><td>
+JaiScript VM serial: <strong>0.634 ms/tick</strong> (layout control -0.48% to +1.15%)<br>
+JaiScript VM 8 workers: <strong>0.461 ms/tick</strong> (layout control -4.34% to +7.96%)<br>
+Lua 5.4.8: <strong>0.397 ms/tick</strong> (layout control -0.27% to +1.92%)<br>
+Lua 5.5.1: <strong>0.389 ms/tick</strong> (layout control -0.38% to +1.19%)<br>
+LuaJIT 2.1 JIT: <strong>0.097 ms/tick</strong> (layout control -14.08% to +21.81%)<br>
+Squirrel 3.2: <strong>1.165 ms/tick</strong> (layout control -1.09% to +0.39%)</td><td>All frame and state hashes match. Six runs per build in three interleaved rounds;
+the 25 runs that started with more than one core of background load were discarded. The serial VM takes 1.60&times;
+Lua 5.4.8&#x27;s time per tick and 0.54&times; Squirrel&#x27;s.
+Eight workers take JaiScript from 0.634 to 0.461 ms/tick (1.38&times;): only the stages
+whose loops the engine proves safe run in parallel, and the rest stay serial.
+Lua 5.5.1 runs within 2% of 5.4.8, and LuaJIT&#x27;s spread is wide. LuaJIT&#x27;s JIT
+generates machine code at run time, which some shipping targets (iOS) forbid, so it is a
+ceiling rather than a target.</td></tr>
+<tr><td><strong>OSSUARY, 2026-11-04</strong>: the demoreel&#x27;s raymarched skull-spider scene at
+100&times;40, seed 20260705, from scene time 3.0; five measured frames after five warm-up frames and a
+reboot to the same state in the same runtime. One P core for serial configurations; six for parallel
+JaiScript. MSVC Release with LTCG.</td><td>
+JaiScript VM serial: <strong>127.1 ms/frame</strong> (layout control -0.82% to +8.57%)<br>
+JaiScript VM 6 workers: <strong>23.7 ms/frame</strong> (layout control -0.66% to +1.70%)<br>
+Lua 5.4.8: <strong>167.7 ms/frame</strong> (layout control -0.60% to -0.05%)<br>
+Squirrel 3.2: <strong>388.5 ms/frame</strong> (layout control -5.37% to -1.58%)</td><td>Every frame hash
+matches. Six runs per layout in three interleaved rounds. The serial VM takes
+0.76&times; Lua 5.4.8&#x27;s time per frame and 0.33&times; Squirrel&#x27;s; six workers trace the rows in parallel
+for 5.4&times;. <code>skull_natural.jai</code>, the same scene written the way a user would write it, runs
+3.8% slower serial (131.9 ms/frame).</td></tr>
+<tr><td><strong>Demoreel, 2026-11-04</strong>: the whole reel headless (<code>jai_demoreel --smoke --workers 1</code>):
+seventeen truecolor scenes and their transitions at 100&times;40 cells (100&times;80 half-block pixels), 1,700 frames,
+seed 20260705, fixed dt 1/30. Five runs, each on a fresh copy of the executable, on one P core; the median is shown. MSVC
+Release with LTCG, Core Ultra 9 285HX.</td><td>
+JaiScript VM: <strong>9.9 ms/frame</strong> (best 9.87)</td><td>Every run prints the same frame-stream hash
+(006d304a70772e5f). On one core the VM runs the whole reel in under a third of the
+reel&#x27;s 33.3 ms frame budget at its 30 fps pacing.</td></tr>
+<tr><td><strong>Gator Quest, 2026-11-04</strong>: the smoke session&#x27;s simulation (mobiles, spawners,
+combat, items, quests, bots), seed 1, 6,000 ticks with 4 bots; the in-script tick loop is timed, world
+generation is not. One process per sample on one P core, five interleaved rounds.</td><td>
+JaiScript VM: <strong>1.354 ms/tick</strong><br>
+Lua 5.4.8: <strong>1.151 ms/tick</strong><br>
+Lua 5.5.1: <strong>1.151 ms/tick</strong><br>
+Luau 0.741 interpreter (-O2): <strong>1.126 ms/tick</strong><br>
+Luau 0.741 native (-O2 --codegen): <strong>0.655 ms/tick</strong><br>
+LuaJIT 2.1 interpreter (-joff): <strong>0.777 ms/tick</strong><br>
+LuaJIT 2.1 JIT: <strong>0.190 ms/tick</strong></td><td>Every run&#x27;s STATE_HASH matches. Medians of
+five; every range is within 1% of its median except Luau native code&#x27;s (-0.2% to +3.3%) and LuaJIT&#x27;s JIT
+(-2.5% to +2.5%). The VM takes 1.18&times;
+Lua 5.4.8&#x27;s time per tick here, and 1.21&times; on the shorter 2,000-tick, 2-bot session (0.68 against
+0.56 ms/tick). The Lua twins port the simulation only; rendering, audio, netplay and save/load are not in
+the measured session.</td></tr></tbody></table></div>
+<p>The five ports say something beyond the numbers: the same enemy brain is ~23 lines of
+coroutine or generator method in JaiScript, Lua, Squirrel, and Python. In ChaiScript, which has no coroutines, it is a 50-line
+hand-lowered state machine. Expressiveness parity is table stakes; the
+differentiators are speed and what the language lets you say directly.</p>
+<p><strong>Style is near-free, and provably so.</strong> GLOOM exists in a second complete flavor,
+<code>examples/gloom_idiomatic</code>, a full rewrite in modern class-based style: subsystem classes, an
+enemy hierarchy with virtual coroutine brains, typed classes for the record types instead of string-keyed maps. It produces <em>bit-identical</em> state and
+frame hashes to the flat original on both backends at every worker count, and measures within noise on
+the interpreter and ~4–7% behind on the VM. The moral for code review: choose the architecture you want
+to maintain; the per-pixel hot stages are held to the flat shape by the parallel-admission rules either
+way, and that is where the time goes.</p>
+<h2 id="measuring-yourself">Measuring yourself<a class="hlink" href="#measuring-yourself" aria-label="link">&#8203;</a></h2>
+<p>Build the test executable with the performance suites enabled (<code>-DJAISCRIPT_ENABLE_BENCHMARKS=ON</code> at configure time, Release; see <a href="https://github.com/Devacor/jaiscript/blob/master/docs/BUILD.md"><code>docs/BUILD.md</code></a>, &quot;Comparison benchmarks&quot;) and then:</p>
+<div class="codeblock cb-plain"><pre><code class="lang-plain">jaiscript_tests &quot;Performance Benchmarks&quot; --verbose [--backend=vm]</code></pre></div>
+<p>These suites time JaiScript alone. The head-to-head numbers against Lua, Squirrel and ChaiScript come from the
+separate comparison harness, which is not part of this package.</p>
+<p>Measure Release builds only. A Debug build of the engine runs script ~25–40&times; slower, and no
+number taken from one means anything.
+Run min-of-3 and compare medians; the integer-µs harness cannot resolve sub-µs changes (use a
+dedicated ns micro-bench for those). For end-to-end embedding costs (engine create, parse, compile,
+warm dispatch, crossover points) see <a href="#embedding-costs">the cost sheet
+above</a>. The whole-game harnesses that ship reproduce too: <code>jai_gloom.exe --smoke</code> and
+<code>jai_demoreel --smoke</code> run each game headless on both backends and print ms per tick or frame
+next to the parity hashes (each example&#x27;s README has the flags).</p>
+<p>To see where the VM spends its operations, configure with <code>JAISCRIPT_VM_COVERAGE</code>: the VM then counts every instruction where it runs (a cell block, the general form typed or untyped) and, for the general form, the reason the compiler left it there, by function and source line, the parallel workers included. <code>engine::vm_coverage_report(top)</code> ranks the reasons by executed operations with their <code>top</code> sites (default 25), <code>vm_coverage_summary()</code> gives the totals as numbers for a harness that aggregates many runs, and <code>vm_coverage_reset()</code> zeroes the counters so a warm-up drops out. <code>engine::vm_coverage_available()</code> says whether the build counts; without the define the other calls throw <code>std::logic_error</code>. The runner&#x27;s <code>--coverage=FILE</code> writes the report at exit.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/10-signals-properties.html"><span>&larr; previous</span>Signals &amp; Observable Properties</a><a class="next" rel="next" href="../embedding/12-debugging.html"><span>next &rarr;</span>Debugging</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

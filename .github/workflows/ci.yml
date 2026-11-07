@@ -1,0 +1,259 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+# A hosted runner has 4 vCPUs and 16 GB: Ninja's default of 6 jobs peaks near 16 GB on the GCC Release test sources, and the
+# single-threaded suites run as 4 shards at once (tools/ci/gates.sh suite_run)
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  JAI_TEST_SHARDS: 4
+
+jobs:
+  # Five toolchains x two configurations. Every cell builds the library, the suite, the
+  # fuzzer, the runner and the example games, then runs the suite on both backends, a
+  # short differential-fuzz run and the games' deterministic hash checks. The gate
+  # logic lives in tools/ci/gates.sh so any step can be reproduced locally.
+  build:
+    name: ${{ matrix.name }} ${{ matrix.config }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [windows-msvc, windows-clang, linux-gcc, linux-clang, macos-clang]
+        config: [Debug, Release]
+        include:
+          # the image with Visual Studio 2026 (MSVC 14.5x), the toolset the package is verified with; windows-latest may still be VS 2022
+          - name: windows-msvc
+            os: windows-2025-vs2026
+            cxx: cl
+            cc: cl
+          # clang-cl from Visual Studio's C++ Clang tools against the MSVC STL, inside the same developer environment
+          - name: windows-clang
+            os: windows-2025-vs2026
+            cxx: clang-cl
+            cc: clang-cl
+          - name: linux-gcc
+            os: ubuntu-24.04
+            cxx: g++-14
+            cc: gcc-14
+          - name: linux-clang
+            os: ubuntu-24.04
+            cxx: clang++
+            cc: clang
+          # AppleClang from the image's Xcode, on Apple silicon
+          - name: macos-clang
+            os: macos-15
+            cxx: clang++
+            cc: clang
+    defaults:
+      run:
+        shell: bash
+    env:
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.name }}-${{ matrix.config }}
+          max-size: 1G
+
+      # jai_spider downloads the SQLite amalgamation at configure time (pinned and hash-checked in tools/jai_spider/CMakeLists.txt);
+      # the cache keeps a sqlite.org outage from failing the cell. A system SQLite is used when CMake finds one.
+      - name: SQLite download cache
+        uses: actions/cache@v4
+        with:
+          path: build/tools/jai_spider/sqlite_download
+          key: sqlite-${{ hashFiles('tools/jai_spider/CMakeLists.txt') }}
+
+      # Embedded (/Z7) debug info on MSVC Debug: ccache cannot cache /Zi's shared PDB.
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -DCMAKE_C_COMPILER=${{ matrix.cc }}
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_POLICY_DEFAULT_CMP0141=NEW
+          '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=$<$<CONFIG:Debug>:Embedded>'
+
+      - name: Build
+        run: cmake --build build --target jaiscript_tests jaiscript_fuzz jaiscript_runner jaiscript_lsp jai_gloom jai_crawler jai_demoreel embed_quickstart jai_spider
+
+      - name: Tests (interpreter)
+        run: bash tools/ci/gates.sh tests-interp
+
+      - name: Tests (vm)
+        run: bash tools/ci/gates.sh tests-vm
+
+      - name: Tests (vm reference)
+        run: bash tools/ci/gates.sh tests-vm-reference
+
+      - name: Differential fuzz smoke
+        run: bash tools/ci/gates.sh fuzz
+
+      - name: VM reference fuzz smoke
+        run: bash tools/ci/gates.sh fuzz-vm-reference
+
+      - name: Ordering fuzz
+        run: bash tools/ci/gates.sh fuzz-order
+
+      - name: GLOOM hash gate
+        run: bash tools/ci/gates.sh gloom
+
+      - name: crawler hash gate
+        run: bash tools/ci/gates.sh crawler
+
+      - name: Embedding quickstart
+        run: bash tools/ci/gates.sh embed-quickstart
+
+      - name: Language server tests
+        run: bash tools/ci/gates.sh lsp
+
+      - name: Web host and HTTP client
+        run: bash tools/ci/gates.sh spider
+
+      - name: Runner selftest
+        run: bash tools/ci/gates.sh selftest
+
+      # Release only: every sample on the site runs on both backends.
+      - name: Documentation site
+        if: matrix.config == 'Release'
+        run: bash tools/ci/gates.sh site
+
+      # Release only: in a Debug build these two runs take tens of minutes.
+      - name: demoreel hash gate
+        if: matrix.config == 'Release'
+        run: bash tools/ci/gates.sh demoreel
+
+      - name: Gator Quest hash gate
+        if: matrix.config == 'Release'
+        run: bash tools/ci/gates.sh gatorquest
+
+      # Release only: it asserts how many units an edit re-checks and prints the edit-to-diagnostics times for reading.
+      - name: Language server latency
+        if: matrix.config == 'Release'
+        run: bash tools/ci/gates.sh lsp-latency
+
+  # The Xcode generator: a multi-configuration project built with xcodebuild, the suite on the VM.
+  macos-xcode:
+    name: macos-xcode Release
+    runs-on: macos-15
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure
+        run: cmake --preset macos-xcode
+
+      - name: Build
+        run: cmake --build --preset macos-xcode --target jaiscript_tests jaiscript_runner
+
+      - name: Tests (vm)
+        run: BIN=build-macos-xcode/bin bash tools/ci/gates.sh tests-vm
+
+      - name: Runner selftest
+        run: BIN=build-macos-xcode/bin bash tools/ci/gates.sh selftest
+
+  # The ways in, on each platform's default toolchain with no developer prompt: the git + CMake line's build script in the
+  # checkout, then the installer against the checkout, run twice (the second run updates and rebuilds, and adds no
+  # second PATH entry), and the runner found by name in a new shell.
+  get:
+    name: get ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025-vs2026]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: The git + CMake line's build script
+        run: |
+          cmake -P tools/install/build_runner.cmake
+          cmake -E chdir . build/bin/jaiscript --version
+          cd examples/gatorquest && ../../build/bin/jaiscript scripts/gatorquest.jai -- smoke ticks 300 bots 1
+
+      - name: install.sh, twice
+        if: runner.os != 'Windows'
+        env:
+          JAISCRIPT_REPO: file://${{ github.workspace }}
+          SHELL: /bin/bash
+        run: |
+          sh docs/site/install.sh
+          sh docs/site/install.sh
+          [ "$(grep -c 'added by the JaiScript installer' "$HOME/.bashrc")" = 1 ]
+          [ "$(uname -s)" != Darwin ] || [ "$(grep -c 'added by the JaiScript installer' "$HOME/.bash_profile")" = 1 ]
+          bash -ic 'jaiscript --version'
+
+      - name: install.ps1 (PowerShell 7), then install.cmd (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          JAISCRIPT_REPO: file://${{ github.workspace }}
+          JAISCRIPT_INSTALL_PS1: ${{ github.workspace }}\docs\site\install.ps1
+        run: |
+          ./docs/site/install.ps1
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmd /c docs\site\install.cmd
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $entries = @($userPath -split ';' | Where-Object { $_ -ieq "$env:LOCALAPPDATA\jaiscript\bin" })
+          if ($entries.Count -ne 1) { throw "the user PATH has $($entries.Count) jaiscript entries" }
+          pwsh -NoProfile -Command "`$env:Path = [Environment]::GetEnvironmentVariable('Path', 'User') + ';' + `$env:Path; jaiscript --version"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+  # AddressSanitizer and UndefinedBehaviorSanitizer: the suites on both backends and a short
+  # differential fuzz run in a Debug build of their own (tools/ci/gates.sh asan).
+  sanitizers:
+    name: linux-clang asan+ubsan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: bash
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: ASan + UBSan suites and fuzz
+        run: bash tools/ci/gates.sh asan
+
+  # Cheap conformance gate: catches MSVC-isms and missing standard includes
+  # without waiting for the full matrix.
+  syntax-sweep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: g++ -fsyntax-only sweep
+        run: find source/implementation -name '*.cpp' | sort | xargs -P 4 -n 1 g++-14 -std=c++20 -fsyntax-only -Iinclude -Isource
+      - name: Public headers alone and warning-free
+        run: HEADER_CXX=g++-14 bash tools/ci/gates.sh headers && HEADER_CXX=clang++ bash tools/ci/gates.sh headers

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From Squirrel Bindings — JaiScript Code Migrations</title>
+<meta name="description" content="Moving a Squirrel host from the stack-based C API to JaiScript: natives, classes with type tags, globals, calls into script and errors, from a real host's binding code, and the Squirrel habits that get a different answer (shared instances, the empty string, generators).">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="From Squirrel Bindings — JaiScript Code Migrations">
+<meta property="og:description" content="Moving a Squirrel host from the stack-based C API to JaiScript: natives, classes with type tags, globals, calls into script and errors, from a real host's binding code, and the Squirrel habits that get a different answer (shared instances, the empty string, generators).">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li class="current"><a href="../bridges/08-from-squirrel.html" aria-current="page">From Squirrel Bindings</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>08</nav>
+<article class="chapter"><h1 id="from-squirrel">From Squirrel Bindings<a class="hlink" href="#from-squirrel" aria-label="link">&#8203;</a></h1>
+<p class="lead">A Squirrel host talks to its VM through a stack: push the closure, push the arguments, <code>sq_call</code>, read the result off the top, pop what you pushed. Natives read their arguments by stack index, and a class is a table of closures with a type tag and a block of user data. JaiScript has no stack in its API. A host function is a typed C++ callable, a class is one <code>dynamic_binder</code> chain, and a call into script takes a vector of values and returns a result. The script languages are closer than the APIs: braces, classes, <code>null</code>, generators. The differences that change results are copies (an instance, an array or a table assigned in Squirrel is shared), the empty string, and names that must be declared. This page maps the Squirrel API, converts a real host's binding code, and then lists the script habits that get a different answer. The binding API is documented in full in <a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a> and <a href="../embedding/02-dynamic-binder.html">dynamic_binder</a>.</p>
+
+<h2 id="the-concept-map">The concept map<a class="hlink" href="#the-concept-map" aria-label="link">&#8203;</a></h2>
+<p>Headers: <code>&lt;jaiscript/jaiscript.hpp&gt;</code> for the engine, values and binders, and <code>&lt;jaiscript/stdlib/stdlib.hpp&gt;</code> for the standard library.</p>
+<h3 id="vm-and-scripts">VM and scripts<a class="hlink" href="#vm-and-scripts" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Squirrel</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>HSQUIRRELVM v = sq_open(1024);</code> ... <code>sq_close(v);</code></td><td><code>auto eng = jai::engine::make();</code>, a <code>std::shared_ptr&lt;jai::engine&gt;</code> freed with its last owner</td></tr>
+<tr><td><code>sqstd_register_mathlib(v);</code>, <code>sqstd_register_stringlib(v);</code></td><td><code>jai::stdlib::register_all(eng);</code></td></tr>
+<tr><td><code>sq_compilebuffer</code>, <code>sq_pushroottable</code>, <code>sq_call</code>, <code>sq_pop</code></td><td><code>eng-&gt;execute(code);</code></td></tr>
+<tr><td>reading a file into a buffer and compiling it</td><td><code>eng-&gt;execute_file(path);</code></td></tr>
+<tr><td>a host-bound <code>include("file.nut")</code> native (Squirrel has no module system)</td><td><code>import "file.jai";</code> (runs once and is cached) or <code>include "file.jai";</code>, resolved through <code>eng-&gt;add_include_path(dir)</code></td></tr>
+<tr><td><code>sq_setprintfunc(v, print, error)</code></td><td><code>eng-&gt;set_output_stream(stream)</code> for <code>print</code>, <code>eng-&gt;set_script_error_handler(fn)</code> for errors nothing can catch</td></tr>
+<tr><td><code>sq_setforeignptr(v, host)</code> to reach the host from a native</td><td>the lambda captures what it needs</td></tr>
+<tr><td><code>SQInteger</code> and <code>SQFloat</code>, 64-bit and <code>double</code> only with <code>_SQ64</code> and <code>SQUSEDOUBLE</code></td><td><code>jai::script_int</code> (<code>int64_t</code>) and <code>jai::script_float</code> (<code>double</code>) in every build</td></tr>
+</tbody></table></div>
+<h3 id="functions">Functions<a class="hlink" href="#functions" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Squirrel</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td>an <code>SQFUNCTION</code> that reads arguments with <code>sq_getinteger(v, 2, &amp;n)</code>, pushes its result and returns <code>1</code></td><td><code>eng-&gt;add_function("name", [](int64_t n) { ... return result; });</code>: the parameters and the return type do the stack work</td></tr>
+<tr><td><code>sq_newclosure</code>, <code>sq_newslot</code> into the root table</td><td><code>add_function</code></td></tr>
+<tr><td><code>sq_setparamscheck(v, 2, ".s")</code></td><td>the C++ signature; the checker rejects a call no overload can take before the script runs, and a call that reaches the function with the wrong kind raises <code>No overload of 'name' takes (int)</code></td></tr>
+<tr><td><code>return sq_throwerror(v, "msg");</code></td><td><code>throw std::runtime_error("msg");</code>, which the script catches as <code>msg</code></td></tr>
+<tr><td>one native that inspects argument types to serve several signatures</td><td>one <code>add_function</code> per signature under one name: an overload set resolved by argument types</td></tr>
+</tbody></table></div>
+<h3 id="classes">Classes<a class="hlink" href="#classes" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Squirrel</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>sq_newclass</code>, <code>sq_settypetag</code>, <code>sq_setclassudsize(v, -1, sizeof(T))</code></td><td><code>jai::dynamic_binder&lt;T&gt;(*eng, "T") ... .build();</code>; the object lives in a <code>std::shared_ptr&lt;T&gt;</code></td></tr>
+<tr><td>a <code>constructor</code> closure that placement-<code>new</code>s <code>T</code> into the user data</td><td><code>.constructor&lt;int64_t&gt;()</code>, once per overload</td></tr>
+<tr><td>a method closure that fetches <code>this</code> with <code>sq_getinstanceup(v, 1, &amp;up, tag, SQTrue)</code></td><td><code>.method("name", &amp;T::name)</code>; the binder checks the receiver's class before the call</td></tr>
+<tr><td><code>sq_setreleasehook</code> to run a destructor</td><td>nothing: the destructor runs when the last <code>shared_ptr</code> goes</td></tr>
+<tr><td><code>_get</code> / <code>_set</code> metamethods for a field-like member</td><td><code>.property("hp", &amp;T::hp)</code>, or <code>.property("hp", getter, setter)</code></td></tr>
+<tr><td><code>_add</code>, <code>_cmp</code> and the other metamethods</td><td><code>.method("+", ...)</code>, <code>.method("&lt;=&gt;", ...)</code>, and the other operator tokens</td></tr>
+<tr><td>a class that <code>extends</code> another, registered through the base's class object</td><td><code>.base_class&lt;Base&gt;()</code></td></tr>
+</tbody></table></div>
+<h3 id="values-calls-and-errors">Values, calls and errors<a class="hlink" href="#values-calls-and-errors" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Squirrel</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>sq_pushstring(v, "HOST_SEED", -1); sq_pushinteger(v, seed); sq_newslot(v, -3, SQFalse);</code></td><td><code>eng-&gt;add_global("HOST_SEED", seed);</code></td></tr>
+<tr><td><code>sq_pushroottable</code>, <code>sq_pushstring</code>, <code>sq_get</code>, <code>sq_getinteger</code>, <code>sq_pop</code></td><td><code>eng-&gt;get_variable("name").as_int()</code></td></tr>
+<tr><td>push the closure, push the root table as <code>this</code>, push the arguments, <code>sq_call(v, 1 + n, SQTrue, SQTrue)</code>, read the top, pop</td><td><code>eng-&gt;get_variable("fn").as_function()({args...})</code>, a <code>jai::checked_result</code>; or <code>jai::convert_script_function&lt;Sig&gt;(...)</code> for a <code>std::function</code> that throws on failure</td></tr>
+<tr><td><code>sq_getlasterror</code> and <code>sq_tostring</code></td><td><code>eng-&gt;format_error(result)</code>, or the exception's <code>what()</code></td></tr>
+<tr><td><code>sq_setcompilererrorhandler</code></td><td><code>jai::parse_error</code>, and <code>jai::static_check_error</code> listing every error in the program before anything runs</td></tr>
+<tr><td><code>sqstd_seterrorhandlers</code> printing the call stack</td><td><code>eng-&gt;format_stack_trace()</code> after a failure</td></tr>
+<tr><td>a generator: <code>yield</code> in a function, <code>resume g</code>, <code>g.getstatus()</code></td><td>a <code>coroutine</code> function, <code>g.next()</code>, <code>g.done()</code> (<a href="#generators-are-coroutines">below</a>, and <a href="12-from-coroutines.html">From Lua Coroutines</a>)</td></tr>
+</tbody></table></div>
+
+<h2 id="a-host-converted">A host converted<a class="hlink" href="#a-host-converted" aria-label="link">&#8203;</a></h2>
+<p><a href="../examples/index.html#gloom">GLOOM</a>, the raycast shooter, runs on one shared C++ host with an adapter per language: the JaiScript original and, among the comparison ports, a Squirrel one written against the raw C API. Both adapters bind the same host API: the seeded random generator every port shares, host services, and the host's flags. These are their binding blocks, trimmed to a few lines of each kind. The Squirrel adapter's class, one method of it, and the helper every registration goes through:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (Squirrel)</span><pre><code class="lang-cpp">#include &lt;squirrel.h&gt;
+#include &lt;sqstdmath.h&gt;
+#include &lt;sqstdstring.h&gt;
+
+SQUserPointer rng_tag() {
+    return reinterpret_cast&lt;SQUserPointer&gt;(&amp;rng_tag);
+}
+
+gloom_rng* rng_self(HSQUIRRELVM v) {
+    SQUserPointer up = nullptr;
+    sq_getinstanceup(v, 1, &amp;up, rng_tag(), SQTrue);
+    return static_cast&lt;gloom_rng*&gt;(up);
+}
+
+SQInteger rng_construct(HSQUIRRELVM v) {
+    SQInteger seed = 0;
+    sq_getinteger(v, 2, &amp;seed);
+    gloom_rng* self = rng_self(v);
+    if (!self) { return sq_throwerror(v, "Rng: bad instance"); }
+    new (self) gloom_rng(seed);
+    return 0;
+}
+
+SQInteger rng_roll(HSQUIRRELVM v) {
+    SQInteger lo = 0, hi = 0;
+    sq_getinteger(v, 2, &amp;lo);
+    sq_getinteger(v, 3, &amp;hi);
+    sq_pushinteger(v, rng_self(v)-&gt;roll(lo, hi));
+    return 1;
+}
+
+SQInteger native_itrunc(HSQUIRRELVM v) {
+    SQFloat f = 0;
+    sq_getfloat(v, 2, &amp;f);
+    sq_pushinteger(v, static_cast&lt;SQInteger&gt;(f));
+    return 1;
+}
+
+void bind_closure(HSQUIRRELVM v, const SQChar* name, SQFUNCTION fn, SQInteger nparams, const SQChar* mask) {
+    sq_pushstring(v, name, -1);
+    sq_newclosure(v, fn, 0);
+    if (mask) { sq_setparamscheck(v, nparams, mask); }
+    sq_newslot(v, -3, SQFalse);
+}
+
+HSQUIRRELVM vm = sq_open(1024);
+sq_pushroottable(vm);
+sqstd_register_mathlib(vm);
+sqstd_register_stringlib(vm);
+bind_closure(vm, "host_log", native_host_log, 2, ".s");
+bind_closure(vm, "itrunc", native_itrunc, 2, ".n");
+set_global_int(vm, "HOST_SEED", opt.seed);
+
+sq_pushstring(vm, "Rng", -1);
+sq_newclass(vm, SQFalse);
+sq_settypetag(vm, -1, rng_tag());
+sq_setclassudsize(vm, -1, sizeof(gloom_rng));
+bind_closure(vm, "constructor", rng_construct, 2, "xn");
+bind_closure(vm, "roll", rng_roll, 3, "xnn");
+sq_newslot(vm, -3, SQFalse);
+sq_pop(vm, 1);</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">#include &lt;jaiscript/jaiscript.hpp&gt;
+#include &lt;jaiscript/stdlib/stdlib.hpp&gt;
+
+auto eng = jai::engine::make();
+jai::stdlib::register_all(eng);
+
+jai::dynamic_binder&lt;gloom_rng&gt;(*eng, "Rng")
+    .constructor&lt;jai::script_int&gt;()
+    .method("roll", &amp;gloom_rng::roll)
+    .build();
+
+eng-&gt;add_function("host_log", [log](const std::string&amp; line) { log(line); });
+eng-&gt;add_function("itrunc", [](jai::script_float v) -&gt; jai::script_int {
+    return static_cast&lt;jai::script_int&gt;(v);
+});
+eng-&gt;add_global("HOST_SEED", eng-&gt;make_value(opt.seed));</code></pre></div>
+<ul>
+<li><strong>The stack work is the signature.</strong> Every <code>sq_get*</code> that reads an argument and every <code>sq_push*</code> that returns one becomes a C++ parameter or return type, and the parameter-check mask becomes the types themselves.</li>
+<li><strong>The object is a C++ object.</strong> Squirrel reserves <code>sizeof(gloom_rng)</code> bytes in the instance and the constructor builds the object there, so a type with a destructor also needs a release hook. The binder constructs it with <code>new</code> under a <code>std::shared_ptr</code>, and its destructor runs when the last owner lets go.</li>
+<li><strong>The type tag goes.</strong> The tag check in <code>rng_self</code> guards against a method called on another class's instance; the binder makes that check before every call.</li>
+</ul>
+<p>Calling into the game. The Squirrel adapter pushes the root table, fetches the closure, pushes the root again as <code>this</code> and then the arguments, calls, reads the string off the top and pops three slots:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (Squirrel)</span><pre><code class="lang-cpp">sq_pushroottable(vm);
+sq_pushstring(vm, "gloom_frame", -1);
+if (SQ_FAILED(sq_get(vm, -2))) { sq_pop(vm, 1); throw std::runtime_error("gloom_frame: not defined by scripts"); }
+sq_pushroottable(vm);
+sq_pushfloat(vm, static_cast&lt;SQFloat&gt;(dt));
+sq_pushstring(vm, key.c_str(), static_cast&lt;SQInteger&gt;(key.size()));
+sq_pushfloat(vm, static_cast&lt;SQFloat&gt;(fps));
+sq_pushfloat(vm, static_cast&lt;SQFloat&gt;(ms_sim));
+sq_pushfloat(vm, static_cast&lt;SQFloat&gt;(ms_draw));
+if (SQ_FAILED(sq_call(vm, 6, SQTrue, SQTrue))) { fail("gloom_frame"); }
+const SQChar* s = nullptr;
+SQInteger len = 0;
+sq_getstringandsize(vm, -1, &amp;s, &amp;len);
+std::string out(s ? s : "", s ? static_cast&lt;size_t&gt;(len) : 0);
+sq_pop(vm, 3);</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">jai::script_value frame = eng-&gt;get_variable("gloom_frame");
+jai::checked_result&lt;jai::script_value&gt; result = frame.as_function()({
+    eng-&gt;make_value(dt), eng-&gt;make_value(key), eng-&gt;make_value(fps),
+    eng-&gt;make_value(ms_sim), eng-&gt;make_value(ms_draw)});
+if (!result) { throw std::runtime_error(eng-&gt;format_error(result)); }
+std::string out = result.value().as_string();</code></pre></div>
+<p>There is nothing to balance afterwards, and nothing to unwind with <code>sq_settop</code> when a call fails: the engine is ready for the next call either way. The Squirrel adapter's <code>fail</code> reads <code>sq_getlasterror</code> through <code>sq_tostring</code>; JaiScript's <code>format_error</code> is that text, and <code>eng-&gt;format_stack_trace()</code> is the script stack the error handler printed.</p>
+<p>Errors at load arrive together. The Squirrel adapter installs a compiler error handler that records one message; <code>eng-&gt;execute_file(path)</code> throws <code>jai::parse_error</code> for a syntax error and <code>jai::static_check_error</code> whose <code>what()</code> lists every error the checker found in the program, before any statement runs. All JaiScript exceptions derive from <code>std::exception</code>.</p>
+
+<h2 id="script-habits">Script habits that get a different answer<a class="hlink" href="#script-habits" aria-label="link">&#8203;</a></h2>
+<p>Squirrel and JaiScript share braces, <code>class</code>, <code>null</code>, <code>+</code> on strings and numbers, integer division between integers, and a remainder that takes the left operand's sign. Where a Squirrel habit gives another result, the cause is usually JaiScript's C++ semantics; <a href="02-from-cpp.html">From C++</a> lists them, and <a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> is the chapter to read first. The spellings:</p>
+<div class="tablewrap"><table><thead><tr><th>Squirrel</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>local x = 5;</code></td><td><code>auto x = 5;</code> (inferred, then enforced), <code>int x = 5;</code>, or <code>var x = 5;</code> (dynamic)</td></tr>
+<tr><td><code>score &lt;- 0;</code>, a new slot</td><td><code>int score = 0;</code> at program scope</td></tr>
+<tr><td><code>::score</code>, the root table</td><td><code>::score</code>, the program-scope name a member of the same name hides</td></tr>
+<tr><td><code>foreach (v in arr)</code>, <code>foreach (k, v in table)</code></td><td><code>for (auto v : arr)</code>, <code>for (auto [k, v] : m)</code></td></tr>
+<tr><td><code>class P { x = 0; constructor(px) { x = px; } }</code></td><td><code>class P { int x = 0; P(int px) { x = px; } }</code></td></tr>
+<tr><td><code>class Q extends P</code>, <code>base.method()</code></td><td><code>class Q : P</code>, <code>super::method()</code>, and <code>override</code> on a redefinition</td></tr>
+<tr><td><code>throw "msg";</code>, <code>try { } catch (e) { }</code></td><td>the same</td></tr>
+</tbody></table></div>
+<h3 id="assignment-copies">Assignment copies an instance, an array and a table<a class="hlink" href="#assignment-copies" aria-label="link">&#8203;</a></h3>
+<p>In Squirrel, <code>local q = p;</code> makes a second name for one instance, and the same holds for arrays and tables. In JaiScript a class instance, an array and a map are values: assignment copies them. <code>new</code> makes a <code>shared_ptr</code> handle, which shares:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Point {
+    int x = 0;
+    int y = 0;
+    Point(int px, int py) { x = px; y = py; }
+    int sum() { return x + y; }
+}
+Point p = Point(1, 2);
+Point q = p;                       // a copy, where Squirrel's q = p shares the instance
+q.x = 10;
+auto h = new Point(1, 2);          // a shared handle
+auto h2 = h;
+h2.x = 10;
+print(p.x, " ", q.sum(), " / ", h.x);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 12 / 10</code></pre></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; a = [1, 2, 3];
+array&lt;int&gt; b = a;
+b[0] = 99;
+map&lt;string, int&gt; t = {"hp": 10};
+auto u = t;
+u["hp"] = 0;
+print(a[0], " ", b[0], " ", t["hp"]);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 99 10</code></pre></div>
+<h3 id="the-empty-string-is-false">The empty string is false<a class="hlink" href="#the-empty-string-is-false" aria-label="link">&#8203;</a></h3>
+<p>Squirrel treats <code>null</code>, <code>0</code>, <code>0.0</code> and <code>false</code> as false and every string as true. JaiScript agrees on the first four and also treats the empty string as false:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var empty = "";
+print(empty ? "\"\" is true" : "\"\" is false");</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">"" is false</code></pre></div>
+<h3 id="names-are-declared">Names are declared, and checked before anything runs<a class="hlink" href="#names-are-declared" aria-label="link">&#8203;</a></h3>
+<p>A Squirrel function that assigns a name nobody created loads, then fails when it runs (<code>the index 'score' does not exist</code>); <code>&lt;-</code> creates the slot. A JaiScript program-scope declaration is the global, functions read and write it, and an undeclared name stops the load with <code>use of undeclared identifier 'score'</code>:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int score = 0;
+function setup() { score = 10; }
+setup();
+print(score);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">10</code></pre></div>
+<h3 id="integers-do-not-wrap">Integers do not wrap<a class="hlink" href="#integers-do-not-wrap" aria-label="link">&#8203;</a></h3>
+<p>A 64-bit Squirrel build wraps <code>9223372036854775807 + 1</code> to the most negative integer. A JaiScript <code>int</code> is the same 64 bits, and an operation that overflows it raises an error (<a href="../guide/04-operators.html#checked-overflow-raises-never-wraps-never-ub">Checked overflow</a>):</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int big = 9223372036854775807;
+try { big = big + 1; } catch (e) { print("caught: ", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">caught: Integer overflow in '+'</code></pre></div>
+<h3 id="generators-are-coroutines">Generators are coroutines<a class="hlink" href="#generators-are-coroutines" aria-label="link">&#8203;</a></h3>
+<p>A Squirrel function that contains <code>yield</code> is a generator: calling it makes a suspended generator, <code>resume g</code> runs it to the next <code>yield</code>, and <code>g.getstatus()</code> reports <code>"dead"</code> when it has returned. JaiScript marks the function <code>coroutine</code>; calling it returns a handle, <code>next()</code> advances it and <code>done()</code> reports completion. The last <code>next()</code> hands back the <code>return</code> value, as the last <code>resume</code> does:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int gen() {
+    yield 1;
+    yield 2;
+    return 3;
+}
+auto g = gen();
+print(g.next());
+print(g.next());
+print(g.next());
+print(g.done());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1
+2
+3
+true</code></pre></div>
+<p>Squirrel's threads (<code>newthread</code>, <code>suspend</code>, <code>wakeup</code>) suspend from any call depth; a JaiScript <code>yield</code> sits in the coroutine's own body. <a href="12-from-coroutines.html">From Lua Coroutines</a> covers the patterns that need the difference.</p>
+
+<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
+<p><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a> covers the engine, functions, globals, calls into script and every error surface; <a href="../embedding/02-dynamic-binder.html">dynamic_binder</a> covers every binder verb, <code>JAI_PROPERTY</code> classes that are reflected, scripted and saved from one declaration, and inheritance. <a href="07-from-sol2.html">From sol2</a> and <a href="06-from-chaiscript.html">From ChaiScript</a> convert the same host from the other comparison ports.</p>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../embedding/index.html"><span>next &middot; embedding &rarr;</span>Embedding &amp; Engine Guide</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

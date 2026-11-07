@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From Qt Properties, RTTR and refl-cpp — JaiScript Code Migrations</title>
+<meta name="description" content="Moving C++ reflection from Q_PROPERTY, RTTR or refl-cpp to JAI_PROPERTY: declaring, enumerating, reading and writing by name, change notification through observable properties, script access, and what has no counterpart (metadata, compile-time iteration, dynamic properties).">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="From Qt Properties, RTTR and refl-cpp — JaiScript Code Migrations">
+<meta property="og:description" content="Moving C++ reflection from Q_PROPERTY, RTTR or refl-cpp to JAI_PROPERTY: declaring, enumerating, reading and writing by name, change notification through observable properties, script access, and what has no counterpart (metadata, compile-time iteration, dynamic properties).">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li class="current"><a href="../bridges/11-from-qt-properties.html" aria-current="page">From Qt Properties, RTTR and refl-cpp</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>11</nav>
+<article class="chapter"><h1 id="from-qt-properties">From Qt Properties, RTTR and refl-cpp<a class="hlink" href="#from-qt-properties" aria-label="link">&#8203;</a></h1>
+<p class="lead">C++ reflection libraries answer one question: what fields does this object have, and how do I read and write them by name? Qt answers it with <code>Q_PROPERTY</code> and the moc-generated meta-object. RTTR registers properties at run time from a registration block. refl-cpp describes members at compile time for templates to walk. In JaiScript a property is a member declared with <code>JAI_PROPERTY</code> on a <code>jai::property_owner</code>, and that one declaration serves four systems: run-time reflection by name, serialization, script access, and, through <code>JAI_OBSERVABLE_PROPERTY</code> and <code>JAI_SIGNAL_PROPERTY</code>, change signals. The trade is scope. There is no user metadata on a property, no compile-time member list, and no property added at run time. This page maps the three libraries, converts a class, and lists what each has with no counterpart here. The declaration is documented in <a href="../embedding/02-dynamic-binder.html#the-declaration">dynamic_binder</a>, observable values and signals in <a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a>, and script-side reflection in the guide's <a href="../guide/12-reflection.html">Reflection</a>.</p>
+
+<h2 id="the-concept-map">The concept map<a class="hlink" href="#the-concept-map" aria-label="link">&#8203;</a></h2>
+<p>Headers: <code>&lt;jaiscript/properties/macros.hpp&gt;</code> and <code>&lt;jaiscript/properties/property_serialization.hpp&gt;</code> for the declarations, <code>&lt;jaiscript/properties/observable_property.hpp&gt;</code> for observable values, <code>&lt;jaiscript/signals/signal_property.hpp&gt;</code> for <code>JAI_SIGNAL_PROPERTY</code>, and <code>&lt;jaiscript/core/registrar.hpp&gt;</code> to make the class scriptable.</p>
+<h3 id="declaring">Declaring<a class="hlink" href="#declaring" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Qt / RTTR / refl-cpp</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td>a <code>QObject</code> with <code>Q_OBJECT</code>; RTTR and refl-cpp work on any class</td><td><code>class Turret : public jai::property_owner&lt;Turret&gt;</code> (<code>property_owner&lt;Derived, Base&gt;</code> for a derived level)</td></tr>
+<tr><td><code>Q_PROPERTY(int ammo MEMBER m_ammo)</code>; RTTR <code>.property("ammo", &amp;Turret::ammo)</code>; refl-cpp <code>field(ammo)</code></td><td><code>JAI_PROPERTY((int64_t), ammo, 10);</code>, a <code>jai::property&lt;int64_t&gt;</code> that reads and assigns like the member</td></tr>
+<tr><td><code>Q_PROPERTY(int ammo READ ammo WRITE setAmmo NOTIFY ammoChanged)</code></td><td><code>JAI_OBSERVABLE_PROPERTY((int64_t), ammo, 10);</code>, whose <code>on_change(old, new)</code> fires on every change; or, for a plain class, <code>.property("ammo", &amp;Turret::ammo, &amp;Turret::setAmmo)</code> on its binder</td></tr>
+<tr><td><code>Q_PROPERTY(... CONSTANT)</code>, RTTR <code>registration::property_readonly</code></td><td>script-side, a binder <code>.property(name, getter, nullptr)</code>; a <code>JAI_PROPERTY</code> is writable</td></tr>
+<tr><td><code>Q_PROPERTY(... STORED false)</code></td><td><code>JAI_TRANSIENT_PROPERTY</code>: reflected and scripted, never saved</td></tr>
+<tr><td>a different public name for a member</td><td><code>JAI_NAMED_PROPERTY((int64_t), "ammo_count", ammo, 10);</code></td></tr>
+<tr><td>a <code>signals:</code> member, RTTR has none</td><td><code>JAI_SIGNAL_PROPERTY(void(int64_t), onFire);</code>: a signal scripts connect to, whose script-text receivers save with the object</td></tr>
+<tr><td>the class name from <code>Q_OBJECT</code>; <code>registration::class_&lt;T&gt;("Turret")</code>; <code>type(Turret)</code></td><td>the bare C++ class name, or <code>JAI_PROPERTY_OWNER_AS(Turret, "Turret")</code> to pin one</td></tr>
+<tr><td>moc, a registration block, <code>REFL_AUTO</code></td><td>nothing else: the macros are the declaration</td></tr>
+</tbody></table></div>
+<h3 id="reading-and-writing-by-name">Reading and writing by name<a class="hlink" href="#reading-and-writing-by-name" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Qt / RTTR / refl-cpp</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>meta-&gt;property(i)</code> for <code>i</code> up to <code>propertyCount()</code>; <code>type::get&lt;T&gt;().get_properties()</code>; <code>for_each(refl::reflect&lt;T&gt;().members, ...)</code></td><td><code>obj-&gt;visit_reflected_properties([](const std::string&amp; name, jai::property_base* p) { ... });</code>, base levels first and virtual, so a base pointer sees the whole object</td></tr>
+<tr><td>the property list without an instance</td><td><code>Turret::all_property_names()</code>, and <code>Turret::schema()</code> for each name's C++ type and flags</td></tr>
+<tr><td><code>obj.property("ammo").toInt()</code>; <code>prop.get_value(obj).to_int()</code>; <code>member(obj)</code></td><td><code>obj-&gt;property_value&lt;int64_t&gt;("ammo")</code>, a pointer to the value, null for another name or type</td></tr>
+<tr><td><code>obj.setProperty("ammo", 3)</code>; <code>prop.set_value(obj, 3)</code></td><td><code>obj-&gt;set_property_value&lt;int64_t&gt;("ammo", 3)</code>, which goes through the property, so an observable one fires <code>on_change</code></td></tr>
+<tr><td><code>QMetaProperty::type()</code>, <code>prop.get_type()</code></td><td><code>p-&gt;value_type_id()</code>, a <code>std::type_index</code>; <code>p-&gt;allow_save()</code> tells whether it is saved</td></tr>
+<tr><td><code>QVariant</code>, <code>rttr::variant</code></td><td>typed access (<code>p-&gt;value_as&lt;T&gt;()</code>), or a <code>jai::script_value</code> through script</td></tr>
+<tr><td><code>Q_INVOKABLE</code> with <code>QMetaObject::invokeMethod</code>; RTTR <code>.method(...)</code> with <code>invoke</code></td><td>methods are binder <code>.method(...)</code> entries; script calls one by name with <code>reflect::invoke(obj, "fire")</code></td></tr>
+</tbody></table></div>
+<h3 id="from-script">From script<a class="hlink" href="#from-script" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Qt (QML / QJSEngine)</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>turret.ammo</code> in QML</td><td><code>turret.ammo</code>: a property of <code>int</code>, <code>float</code>, <code>bool</code> or <code>string</code> type binds to script by itself, through <code>auto_bind</code>; another type takes a binder <code>.property</code> line</td></tr>
+<tr><td><code>onAmmoChanged: ...</code></td><td><code>turret.ammo.on_change([=](int old_value, int new_value) -&gt; void { ... });</code> on an observable property</td></tr>
+<tr><td>enumerating properties from JavaScript</td><td><code>reflect::fields(turret)</code> (name, type, kind), <code>reflect::get(turret, "ammo")</code>, <code>reflect::set(turret, "ammo", 3)</code></td></tr>
+</tbody></table></div>
+
+<h2 id="a-class-converted">A class converted<a class="hlink" href="#a-class-converted" aria-label="link">&#8203;</a></h2>
+<p>A turret with a name, ammunition, a range limited to 0..50, a heat level other systems watch, and a cooldown nobody saves. Qt and RTTR, the way each is usually written:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (Qt)</span><pre><code class="lang-cpp">class Turret : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QString name MEMBER m_name)
+    Q_PROPERTY(int ammo MEMBER m_ammo)
+    Q_PROPERTY(double range MEMBER m_range)
+    Q_PROPERTY(int heat READ heat WRITE setHeat NOTIFY heatChanged)
+    Q_PROPERTY(double cooldown MEMBER m_cooldown STORED false)
+public:
+    int heat() const { return m_heat; }
+    void setHeat(int heat) {
+        if (heat == m_heat) { return; }
+        int old = m_heat;
+        m_heat = heat;
+        emit heatChanged(old, heat);
+    }
+signals:
+    void heatChanged(int oldHeat, int newHeat);
+private:
+    QString m_name = "north";
+    int m_ammo = 10;
+    double m_range = 12.5;
+    int m_heat = 0;
+    double m_cooldown = 0.0;
+};
+
+const QMetaObject* meta = turret.metaObject();
+for (int i = meta-&gt;propertyOffset(); i &lt; meta-&gt;propertyCount(); ++i) {
+    qDebug() &lt;&lt; meta-&gt;property(i).name();
+}
+turret.setProperty("ammo", 3);
+QObject::connect(&amp;turret, &amp;Turret::heatChanged, [](int oldHeat, int newHeat) { qDebug() &lt;&lt; oldHeat &lt;&lt; newHeat; });</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (RTTR)</span><pre><code class="lang-cpp">RTTR_REGISTRATION {
+    rttr::registration::class_&lt;Turret&gt;("Turret")
+        .constructor&lt;&gt;()
+        .property("name", &amp;Turret::name)
+        .property("ammo", &amp;Turret::ammo)
+        .property("range", &amp;Turret::range)(rttr::metadata("min", 0.0), rttr::metadata("max", 50.0));
+}
+
+rttr::type type = rttr::type::get&lt;Turret&gt;();
+for (auto&amp; prop : type.get_properties()) {
+    std::cout &lt;&lt; prop.get_name() &lt;&lt; "\n";
+}
+type.get_property("ammo").set_value(turret, 3);</code></pre></div>
+<p>refl-cpp describes the members beside the class and walks them in templates, attribute included:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (refl-cpp)</span><pre><code class="lang-cpp">#include &lt;refl.hpp&gt;
+
+struct Range : refl::attr::usage::field {
+    float min, max;
+    constexpr Range(float a_min, float a_max) : min(a_min), max(a_max) {}
+};
+
+struct Turret {
+    std::string name = "north";
+    int ammo = 10;
+    float range = 12.5f;
+};
+
+REFL_AUTO(
+    type(Turret),
+    field(name),
+    field(ammo),
+    field(range, Range(0.0f, 50.0f))
+)
+
+for_each(refl::reflect&lt;Turret&gt;().members, [&amp;](auto member) {
+    std::cout &lt;&lt; get_display_name(member) &lt;&lt; " = " &lt;&lt; member(t) &lt;&lt; "\n";
+});</code></pre></div>
+<p>JaiScript:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">#include &lt;jaiscript/core/registrar.hpp&gt;
+#include &lt;jaiscript/properties/macros.hpp&gt;
+#include &lt;jaiscript/properties/property_serialization.hpp&gt;
+#include &lt;jaiscript/properties/observable_property.hpp&gt;
+
+class Turret : public jai::property_owner&lt;Turret&gt; {
+public:
+    JAI_PROPERTY((std::string), name, "north");
+    JAI_PROPERTY((int64_t), ammo, 10);
+    JAI_PROPERTY((double), range, 12.5);
+    JAI_OBSERVABLE_PROPERTY((int64_t), heat, 0);
+    JAI_TRANSIENT_PROPERTY((double), cooldown, 0.0);
+};
+
+static jai::registrar&lt;Turret, void&gt; turretRegistrar("Turret");
+
+auto turret = std::make_shared&lt;Turret&gt;();
+turret-&gt;visit_reflected_properties([](const std::string&amp; name, jai::property_base* p) {
+    std::cout &lt;&lt; name &lt;&lt; (p-&gt;allow_save() ? "" : " (transient)") &lt;&lt; "\n";
+});
+turret-&gt;set_property_value&lt;int64_t&gt;("ammo", int64_t{3});
+
+auto watch = turret-&gt;heat.on_change.connect([](const int64_t&amp; oldHeat, const int64_t&amp; newHeat) {
+    std::cout &lt;&lt; "heat " &lt;&lt; oldHeat &lt;&lt; " -&gt; " &lt;&lt; newHeat &lt;&lt; "\n";
+});
+turret-&gt;heat = 5;
+turret-&gt;set_property_value&lt;int64_t&gt;("heat", int64_t{8});</code></pre></div>
+<div class="codeblock cb-plain"><span class="cb-label">output</span><pre><code class="lang-plain">ammo
+cooldown (transient)
+heat
+name
+range
+heat 0 -&gt; 5
+heat 5 -&gt; 8</code></pre></div>
+<ul>
+<li><strong>One declaration, four uses.</strong> The same five lines are what <code>jai::to_json(*eng, turret)</code> saves (<code>"ammo": 3,"heat": 8,"name": "north","range": 12.5</code>, the transient cooldown left out), what script reads and writes (<code>turret.ammo</code>, <code>reflect::fields(turret)</code>), and what an editor walks. There is no registration block to keep in step with the class.</li>
+<li><strong>The walk is in name order within a level</strong> and starts with base levels. <code>Turret::all_property_names()</code> lists the names in declaration order without an instance.</li>
+<li><strong>The notify signal is part of the property.</strong> <code>on_change</code> fires only when the value changes, from C++ assignment, compound operators, <code>set_property_value</code> or a script store; <code>heat.set_silent(v)</code> writes without it, for loading.</li>
+<li><strong>The range limit has no place to go.</strong> A property carries its name, its C++ type and its save and observe flags, nothing else. A limit is enforced by a setter (a binder <code>.property(name, getter, setter)</code>) and described to an editor by the host's own table.</li>
+</ul>
+<p>From script, the same object:</p>
+<div class="codeblock cb-jai" data-host="Turret registrar above, the turret as a global"><span class="cb-label">jaiscript (with the host above)</span><pre><code class="lang-jai">for (auto f : reflect::fields(turret)) { print(f["name"], " ", f["type"], " ", f["kind"]); }
+print(reflect::get(turret, "ammo"));
+reflect::set(turret, "range", 20.0);
+turret.heat.on_change([=](int old_value, int new_value) -&gt; void { print("script sees heat ", old_value, " -&gt; ", new_value); });
+turret.heat = turret.heat + 1;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">name string field
+ammo int field
+range float field
+heat int observable
+cooldown float field
+3
+heat 8 -&gt; 9
+script sees heat 8 -&gt; 9</code></pre></div>
+<p>The C++ receiver from the block above fires too (<code>heat 8 -&gt; 9</code>): one emitter, receivers on both sides.</p>
+
+<h2 id="no-counterpart">What has no counterpart<a class="hlink" href="#no-counterpart" aria-label="link">&#8203;</a></h2>
+<ul>
+<li><strong>Metadata and attributes.</strong> RTTR's <code>metadata(key, value)</code>, refl-cpp's attributes and Qt's <code>DESIGNABLE</code>, <code>SCRIPTABLE</code> and <code>USER</code> flags have nothing to attach to: a property is a name, a type and its save and observe flags.</li>
+<li><strong>Compile-time iteration.</strong> refl-cpp's member list is a compile-time sequence templates expand over. JaiScript's is a run-time walk; generic code takes a <code>property_base*</code> and asks it for its type.</li>
+<li><strong>Dynamic properties.</strong> Qt's <code>setProperty</code> with an undeclared name adds one to that object. <code>set_property_value</code> finds declared properties only, and returns <code>false</code> for any other name.</li>
+<li><strong><code>RESET</code>, <code>REVISION</code>, <code>BINDABLE</code>.</strong> No reset function, revisions or bindable properties; a binding that follows another value connects to its <code>on_change</code>.</li>
+<li><strong>Enumerating methods from C++.</strong> Qt and RTTR list and invoke methods through the meta-object. A JaiScript class's methods are its binder entries in an engine; script lists them with <code>reflect::methods</code> and calls them with <code>reflect::invoke</code>.</li>
+<li><strong>Properties on any class.</strong> RTTR and refl-cpp reflect a class without touching it. A JaiScript property lives in a <code>property_owner</code>; a class you cannot edit is bound with <code>dynamic_binder</code> <code>.property</code> lines, which script sees but the C++ walk does not.</li>
+</ul>
+
+<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
+<p><a href="../embedding/02-dynamic-binder.html">dynamic_binder</a> follows one declaration through script, reflection, serialization and hot reload. <a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a> covers <code>observable_property</code> and <code>JAI_SIGNAL_PROPERTY</code>, and the guide's <a href="../guide/12-reflection.html">Reflection</a> covers every <code>reflect::</code> call.</p>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../embedding/index.html"><span>next &middot; embedding &rarr;</span>Embedding &amp; Engine Guide</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

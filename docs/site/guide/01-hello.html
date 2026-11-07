@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hello &amp; Basics — JaiScript Guide</title>
+<meta name="description" content="Run your first script from C++, meet the values and literals, and learn print and format.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Hello &amp; Basics — JaiScript Guide">
+<meta property="og:description" content="Run your first script from C++, meet the values and literals, and learn print and format.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li class="current"><a href="../guide/01-hello.html" aria-current="page">Hello &amp; Basics</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>01</nav>
+<article class="chapter"><h1 id="hello-basics">Hello &amp; Basics<a class="hlink" href="#hello-basics" aria-label="link">&#8203;</a></h1>
+<p>JaiScript is a C++-flavored embedded scripting language: snake_case, hot-reloadable, zero static state, and shipped with <strong>two interchangeable backends</strong> (a tree-walking interpreter and a bytecode VM) that are kept at full test parity. Every example in these docs was executed on <strong>both</strong> backends; unless a divergence is called out, the output shown is identical on each.</p>
+<h2 id="running-a-script-from-c">Running a script from C++<a class="hlink" href="#running-a-script-from-c" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/core/engine.hpp&gt;
+#include &lt;jaiscript/stdlib/stdlib.hpp&gt;
+
+auto eng = jai::engine::make();                 // shared_ptr&lt;engine&gt;
+// eng-&gt;set_backend(jai::backend_type::interpreter);   // optional: tree-walking interpreter (before first execute; link jaiscript_interpreter)
+jai::stdlib::register_all(eng);                 // formatted print, format, to_string, type_of, to_json, ...
+jai::script_value r = eng-&gt;execute(&quot;2 + 2&quot;);
+int v = r.as_int();                             // 4</code></pre></div>
+<p>Three things to know from the start:</p>
+<ol><li><strong>The last expression&#x27;s value is the result of <code>execute()</code>.</strong> No <code>return</code> needed at top level.</li><li><code>set_backend()</code> must be called <strong>before</strong> the first <code>execute()</code> (forbidden after).</li><li><strong>The checker runs first, and it is strict.</strong> A typed mistake it can see (or an undeclared name) throws out of <code>execute()</code> before any statement runs. <code>[[warn_mode]]</code> turns a region&#x27;s errors into warnings; see <a href="02-type-ladder.html#when-a-mismatch-is-caught">the Type Ladder</a>. <a href="13-strict-checking.html">Chapter 13</a> collects the whole story.</li></ol>
+<h2 id="try-it-from-a-terminal">Try it from a terminal<a class="hlink" href="#try-it-from-a-terminal" aria-label="link">&#8203;</a></h2>
+<p>You don&#x27;t need a host program to follow this guide. The build produces a standalone runner, <code>jaiscript</code>: hand it a file and it runs it. The installer in <a href="../index.html#get-jaiscript">Get JaiScript</a> builds it and puts it on your PATH. In a clone, building it is one CMake target, from the repository root:</p>
+<div class="codeblock cb-shell"><span class="cb-label">shell</span><pre><code class="lang-shell">cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target jaiscript_runner</code></pre></div>
+<p>The executable lands in <code>build/bin/jaiscript</code> with every generator (the target is <code>jaiscript_runner</code> because the library owns the name <code>jaiscript</code>). With that on your path:</p>
+<div class="codeblock cb-shell"><span class="cb-label">shell</span><pre><code class="lang-shell">jaiscript hello.jai            # run a file, then exit
+jaiscript                      # interactive REPL (:help inside)
+jaiscript --watch hello.jai    # re-run the file every time you save it</code></pre></div>
+<p>The REPL runs each entry as one <code>execute()</code> into a persistent engine, and an entry&#x27;s last statement needs no <code>;</code>, whatever its kind, just as the last expression of an <code>execute()</code> needs none: <code>int hp = 100</code>, <code>hp += 1</code> and <code>import &quot;rules.jai&quot;</code> each run as typed. Statements inside braces keep the language&#x27;s rule. An expression prints its value; a declaration prints nothing.</p>
+<p>Three flags matter for the rest of these docs:</p>
+<div class="tablewrap"><table><thead><tr><th>Flag</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>--backend=vm|interp</code></td><td>Which backend executes the script. The runner defaults to <code>vm</code>; <code>interp</code> is the tree-walking interpreter. Both must produce the same answer. Running a script twice, once per backend, is how these pages are checked.</td></tr>
+<tr><td><code>--warnings</code></td><td>Lists the static checker&#x27;s warnings before the script runs. Errors (typed mistakes, undeclared names) always fail the load and print.</td></tr>
+<tr><td><code>--budget=N</code></td><td>Seconds of wall clock per execute. An overrun ends the run with a terminal error the script cannot <code>catch</code> (the host sees an exception; see <a href="05-control-flow.html#terminal-errors-execution-budget-memory-cap-are-uncatchable-by-design">Control Flow</a>). Default <code>0</code>: unlimited.</td></tr>
+</tbody></table></div>
+<div class="callout"><p><strong>The runner&#x27;s defaults are not the engine&#x27;s.</strong> Both start on the <em>VM</em>, but an embedded <code>jai::engine</code> enforces a <strong>5.0&nbsp;second</strong> execution budget per <code>execute()</code> and the runner has <strong>no budget at all</strong>, because an infinite loop in a script you are editing is your own business. Static checking is <code>strict</code> in both.</p></div>
+<p>One convention to know before you compare output. When a block on these pages ends in <code>== result: …</code>, that line is the value of the script&#x27;s last expression: what <code>execute()</code> hands back to a host. The runner does not echo it after a file run (an <code>int</code> result becomes the exit code; the REPL echoes every non-null result), so wrap the last expression in <code>print(...)</code> if you want to see it in a terminal. Everything above that line is <code>print</code> output and matches character for character. Two more shapes you will meet: a block that ends in <code>== error: …</code> shows the message the host would receive from an uncaught error (the runner prints it to stderr and exits 1), and a block that starts <code>jaiscript: static check failed:</code> is the runner&#x27;s own listing when the checker stops a load before anything runs.</p>
+<h2 id="values-and-literals">Values and literals<a class="hlink" href="#values-and-literals" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto i = 42;            // integer (64-bit)
+auto f = 3.14;          // float (double)
+auto s = "hello";       // string
+auto c = 'x';           // char
+auto b = true;          // bool
+auto n = null;          // null
+print(type_of(i), " ", type_of(f), " ", type_of(s), " ", type_of(c), " ", type_of(b), " ", type_of(n));
+print("hex: {}, binary: {}, exponent: {}", 0xFF, 0b1010, 2.5e3);
+i + f;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">int float string char bool null
+hex: 255, binary: 10, exponent: 2500.0
+== result: 45.14</code></pre></div>
+<p>Integers are 64-bit (<code>int64</code>), floats are doubles. Hex (<code>0xFF</code>) and binary (<code>0b1010</code>) integer literals work, as do C++&#x27;s float spellings: an exponent (<code>2.5e3</code>), and a fraction&#x27;s digits on either side of the point alone (<code>1.e5</code>, <code>1.</code>, <code>.5</code>). Strings support the usual escapes (<code>\n</code>, <code>\"</code>, <code>\\</code>) plus <code>\xNN</code> byte escapes (see <a href="09-containers-strings.html#bytes-and-chars">Containers &amp; Strings</a>). A raw string, C++&#x27;s <code>R"(...)"</code>, takes its text exactly as written, backslashes and quotes included and across lines (each line ending inside is one <code>\n</code>): <code>R"(C:\games\save.dat)"</code> is that path and <code>R"(\d+)"</code> a regex pattern, and a delimiter of up to 16 characters between the quote and the parenthesis lets the text hold <code>)"</code>: <code>R"js(say("hi"))js"</code>. Which rung each of these declarations sits on (and why <code>auto</code> here is not &quot;dynamic&quot;) is the <a href="02-type-ladder.html">next chapter</a>.</p>
+<h2 id="comments-and-the-implicit-result">Comments and the implicit result<a class="hlink" href="#comments-and-the-implicit-result" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">// single-line comment
+/* multi-line
+   comment */
+auto x = 10; // trailing comment
+x * 2;  // the last expression's value is what execute() returns</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">== result: 20</code></pre></div>
+<h2 id="print-and-format">print and format<a class="hlink" href="#print-and-format" aria-label="link">&#8203;</a></h2>
+<p>A bare engine ships a basic <code>print</code> (arguments concatenate; no <code>{}</code>
+substitution); <code>jai::stdlib::register_all</code> upgrades it in place to the formatted version
+shown below and registers <code>format</code> and <code>vformat</code>. They are variadic host functions: the canonical
+example of variadics, which live on the host side (see <a href="06-functions.html">Functions &amp; Lambdas</a>).</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print("plain string");
+print("several", " ", "args", " ", "concatenate");
+print("sequential: {} + {} = {}", 2, 3, 2 + 3);
+print("positional: {1} before {0}", "cart", "horse");
+print("literal {{braces}} in a formatted call: {}", true);
+auto msg = format("format() returns: {}", 99);
+print(msg);
+string typed = "a user typed {}";
+print(typed, " and it stays as typed");
+string pattern = "{} of {}";
+print(vformat(pattern, 1, 2));
+print("no newline ", skip_newline);
+print("continues the line");</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">plain string
+several args concatenate
+sequential: 2 + 3 = 5
+positional: horse before cart
+literal {braces} in a formatted call: true
+format() returns: 99
+a user typed {} and it stays as typed
+1 of 2
+no newline continues the line
+== result: null</code></pre></div>
+<p>Rules:</p>
+<ul><li><code>print(value)</code>. One argument: printed as-is (no <code>{}</code> processing).</li><li><code>print("fmt", args...)</code>. A string literal written as the first argument that contains <code>{}</code> or <code>{n}</code> placeholders is a format string: <code>{}</code> consumes the next argument, <code>{0}</code>/<code>{1}</code> are positional (0-based over the args after the format string), <code>{{</code>/<code>}}</code> escape braces.</li><li>Only a literal is a format string, as in C++20&rsquo;s <code>std::format</code>. Any other first argument (a variable, a container element, a template string, a concatenation, text a user typed) is text like the rest, so its braces print as they are. The call names <code>print</code> or <code>format</code> itself: a function value holding <code>print</code> takes every argument as text.</li><li><code>print(a, b, c)</code>. When the first argument is no format string, all arguments are concatenated.</li><li>Trailing <code>skip_newline</code> suppresses the newline; <code>skip_flush</code> suppresses newline and flush.</li><li>Every argument prints its display text, as <code>to_string(x)</code> and <code>"text" + x</code> show it: a container its contents, an instance its class&rsquo;s <code>string to_string()</code> or else its class name and fields (<a href="09-containers-strings.html#printing-values">Printing values</a>). A container&rsquo;s or an instance&rsquo;s text is never read as a format string.</li><li><code>format(...)</code> follows the same rules but returns the string instead of printing. A first argument the checker sees is a string but not a literal fails the load: <code>the format text of 'format' must be a string literal: vformat(fmt, ...) formats a run-time text, and + or a template string joins text</code>.</li><li><code>vformat(fmt, args...)</code> formats a format text known only at run time, the way <code>format</code> formats a literal (C++&rsquo;s <code>std::vformat</code>); <code>print(vformat(fmt, args...))</code> prints one.</li></ul>
+<p>Note: brace escaping (<code>{{</code>) only applies on the <em>format path</em> (multiple arguments with placeholders). A single-argument <code>print("{{x}}")</code> prints the braces literally.</p>
+<h2 id="stringifying-values">Stringifying values<a class="hlink" href="#stringifying-values" aria-label="link">&#8203;</a></h2>
+<p><code>to_string(x)</code> converts any value to a string; a float prints as the shortest text that reads back to the same value, keeping <code>.0</code> on a whole number (<code>3.14</code> → <code>"3.14"</code>, <code>2.0</code> → <code>"2.0"</code>, <code>0.1 + 0.2</code> → <code>"0.30000000000000004"</code>), so <code>to_string(x).to_float() == x</code> for every number (infinities print <code>inf</code> and <code>-inf</code>, and every NaN prints <code>nan</code> on every platform); a format spec such as <code>${x:.2f}</code> picks a fixed width when you want one. A container prints its contents, strings inside it quoted (<a href="09-containers-strings.html#printing-values">Printing values</a>); <code>to_json(x)</code> writes the archive text that <code>from_json</code> reads back:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto nums = [1,2,3];
+print(nums);
+print({"a": 1, "b": ["x"]});
+print(to_json(nums));
+print(to_json({"a": 1}));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[1, 2, 3]
+{&quot;a&quot;: 1, &quot;b&quot;: [&quot;x&quot;]}
+[1,2,3]
+{&quot;a&quot;:1}</code></pre></div>
+<p><code>type_of(x)</code> answers <code>null</code>, <code>bool</code>, <code>int</code>, <code>float</code>, <code>char</code>, <code>string</code>, <code>utf8_string</code>, <code>array</code>, <code>map</code>, <code>function</code>, <code>weak_ptr</code> or <code>coroutine_handle</code>. A class instance answers its class's name, and so does a <code>shared_ptr</code> handle to one (<code>Foo</code>, <code>math::vec2</code>, <code>time::stopwatch</code>); a reference answers the type of what it refers to; a coroutine handle answers <code>coroutine_handle</code>. A typed array is still <code>array</code>: its element type lives in its declaration.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Foo { }
+var handle = new Foo();
+int x = 1;
+auto&amp; r = x;
+array&lt;int&gt; xs = [1];
+print(type_of(Foo()), " ", type_of(handle), " ", type_of(r), " ", type_of(xs), " ", type_of(math::vec2(1, 2)));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Foo Foo int array math::vec2</code></pre></div><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/index.html"><span>&larr; guide</span>The Language Guide</a><a class="next" rel="next" href="../guide/02-type-ladder.html"><span>next &rarr;</span>The Type Ladder: typed, auto, var</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

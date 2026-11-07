@@ -1,0 +1,118 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "Release (build/)",
+      "description": "Optimized build in build/ with Ninja; binaries land in build/bin.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug (build-debug/)",
+      "description": "Debug build in build-debug/ with Ninja for iteration; binaries land in build-debug/bin.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "vs-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "installDir": "${sourceDir}/out/install/${presetName}",
+      "architecture": { "value": "x64", "strategy": "external" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "x64-Debug",
+      "inherits": "vs-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "x64-Debug BENCHMARKS",
+      "inherits": "vs-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "JAISCRIPT_ENABLE_BENCHMARKS": "ON" }
+    },
+    {
+      "name": "x64-Release",
+      "inherits": "vs-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
+      "name": "x64-Release BENCHMARKS",
+      "inherits": "vs-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "JAISCRIPT_ENABLE_BENCHMARKS": "ON",
+        "JAISCRIPT_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "toolchain-base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build-${presetName}",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "windows-msvc",
+      "inherits": "toolchain-base",
+      "displayName": "Windows: MSVC",
+      "description": "MSVC through CMake's default generator, Visual Studio; no developer prompt needed.",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "windows-clang",
+      "inherits": "toolchain-base",
+      "displayName": "Windows: clang-cl and Ninja",
+      "description": "clang-cl against the MSVC STL with Ninja, from a Visual Studio developer prompt with the C++ Clang tools (or LLVM) installed.",
+      "generator": "Ninja",
+      "cacheVariables": { "CMAKE_C_COMPILER": "clang-cl", "CMAKE_CXX_COMPILER": "clang-cl" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "macos",
+      "inherits": "toolchain-base",
+      "displayName": "macOS: AppleClang and Makefiles",
+      "description": "AppleClang from the Xcode command line tools with CMake's default generator, Makefiles.",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "macos-xcode",
+      "inherits": "toolchain-base",
+      "displayName": "macOS: Xcode",
+      "description": "An Xcode project in build-macos-xcode/, built with xcodebuild.",
+      "generator": "Xcode",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "linux-gcc",
+      "inherits": "toolchain-base",
+      "displayName": "Linux: GCC",
+      "description": "g++ with CMake's default generator, Makefiles.",
+      "cacheVariables": { "CMAKE_C_COMPILER": "gcc", "CMAKE_CXX_COMPILER": "g++" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "linux-clang",
+      "inherits": "toolchain-base",
+      "displayName": "Linux: Clang",
+      "description": "clang++ with CMake's default generator, Makefiles.",
+      "cacheVariables": { "CMAKE_C_COMPILER": "clang", "CMAKE_CXX_COMPILER": "clang++" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "release", "configuration": "Release" },
+    { "name": "debug", "configurePreset": "debug", "configuration": "Debug" },
+    { "name": "windows-msvc", "configurePreset": "windows-msvc", "configuration": "Release" },
+    { "name": "windows-clang", "configurePreset": "windows-clang", "configuration": "Release" },
+    { "name": "macos", "configurePreset": "macos", "configuration": "Release" },
+    { "name": "macos-xcode", "configurePreset": "macos-xcode", "configuration": "Release" },
+    { "name": "linux-gcc", "configurePreset": "linux-gcc", "configuration": "Release" },
+    { "name": "linux-clang", "configurePreset": "linux-clang", "configuration": "Release" }
+  ]
+}

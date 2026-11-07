@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From ChaiScript Bindings — JaiScript Code Migrations</title>
+<meta name="description" content="Moving a ChaiScript host to JaiScript: functions, classes, constructors, members, overloads, bases, globals, modules, calls into script and errors, from a real host's binding code, and the script habits that get a different answer.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="From ChaiScript Bindings — JaiScript Code Migrations">
+<meta property="og:description" content="Moving a ChaiScript host to JaiScript: functions, classes, constructors, members, overloads, bases, globals, modules, calls into script and errors, from a real host's binding code, and the script habits that get a different answer.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li class="current"><a href="../bridges/06-from-chaiscript.html" aria-current="page">From ChaiScript Bindings</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>06</nav>
+<article class="chapter"><h1 id="from-chaiscript">From ChaiScript Bindings<a class="hlink" href="#from-chaiscript" aria-label="link">&#8203;</a></h1>
+<p class="lead">ChaiScript and JaiScript embed in a C++ program the same way: a header-driven library, an engine object, C++ functions and classes registered by pointer, script that calls them by name. A ChaiScript host moves over mostly line for line. What changes is the shape of a class registration (one fluent <code>dynamic_binder</code> chain in place of separate <code>add</code> calls), the standard library (opt-in), the way a call into script reports failure, and the script language itself: typed where you want it, statically checked before it runs, and copying containers on assignment. This page maps the ChaiScript API, converts a real host's binding code, and then lists the script habits that get a different answer. The binding API is documented in full in <a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a> and <a href="../embedding/02-dynamic-binder.html">dynamic_binder</a>.</p>
+
+<h2 id="the-concept-map">The concept map<a class="hlink" href="#the-concept-map" aria-label="link">&#8203;</a></h2>
+<p>Headers: <code>&lt;jaiscript/jaiscript.hpp&gt;</code> for the engine, values and binders, <code>&lt;jaiscript/stdlib/stdlib.hpp&gt;</code> for the standard library, and <code>&lt;jaiscript/core/registrar.hpp&gt;</code> for registrars.</p>
+<h3 id="engine-and-scripts">Engine and scripts<a class="hlink" href="#engine-and-scripts" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>ChaiScript</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>chaiscript::ChaiScript chai;</code>, standard library included</td><td><code>auto eng = jai::engine::make();</code> (a <code>std::shared_ptr&lt;jai::engine&gt;</code>) and <code>jai::stdlib::register_all(eng);</code>: the standard library is opt-in</td></tr>
+<tr><td><code>chai.eval(code)</code>, <code>chai.eval&lt;T&gt;(code)</code></td><td><code>eng-&gt;execute(code)</code>, <code>eng-&gt;execute(code).as&lt;T&gt;()</code></td></tr>
+<tr><td><code>chai.eval_file(path)</code></td><td><code>eng-&gt;execute_file(path)</code></td></tr>
+<tr><td><code>use("file.chai")</code> in script</td><td><code>import "file.jai";</code> (runs once and is cached; <code>include</code> runs the file each time)</td></tr>
+<tr><td>the search paths passed to the <code>ChaiScript</code> constructor</td><td><code>eng-&gt;add_include_path(dir)</code></td></tr>
+<tr><td>one engine shared by threads (unless <code>CHAISCRIPT_NO_THREADS</code>)</td><td>one engine per thread at a time; engines share nothing, so a second thread makes its own</td></tr>
+</tbody></table></div>
+<h3 id="functions">Functions<a class="hlink" href="#functions" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>ChaiScript</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>chai.add(chaiscript::fun(&amp;f), "f");</code></td><td><code>eng-&gt;add_function("f", &amp;f);</code></td></tr>
+<tr><td><code>chai.add(chaiscript::fun([](double v) { ... }), "f");</code></td><td><code>eng-&gt;add_function("f", [](double v) { ... });</code></td></tr>
+<tr><td>an overloaded C++ function: <code>fun(static_cast&lt;...&gt;(&amp;f))</code> once per overload, under one name</td><td><code>add_function</code> once per overload under one name (with the same casts for an overloaded C++ name); the call resolves by argument types</td></tr>
+</tbody></table></div>
+<h3 id="classes">Classes<a class="hlink" href="#classes" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>ChaiScript</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>chai.add(user_type&lt;T&gt;(), "T");</code></td><td><code>jai::dynamic_binder&lt;T&gt;(*eng, "T") ... .build();</code></td></tr>
+<tr><td><code>chai.add(constructor&lt;T(int64_t)&gt;(), "T");</code></td><td><code>.constructor&lt;int64_t&gt;()</code>, once per overload; script calls <code>T(...)</code> for a value and <code>new T(...)</code> for a <code>shared_ptr</code></td></tr>
+<tr><td><code>chai.add(fun(&amp;T::method), "method");</code>, a function any matching first argument can call with dot syntax</td><td><code>.method("method", &amp;T::method)</code>, a method of <code>T</code></td></tr>
+<tr><td>overloaded methods: <code>fun(static_cast&lt;void (T::*)(int64_t)&gt;(&amp;T::damage))</code> per overload</td><td><code>.method("damage", static_cast&lt;void (T::*)(int64_t)&gt;(&amp;T::damage))</code> per overload</td></tr>
+<tr><td>a data member: <code>fun(&amp;T::field)</code></td><td><code>.property("field", &amp;T::field)</code></td></tr>
+<tr><td>a getter and a setter registered as two functions</td><td><code>.property("hp", &amp;T::health, &amp;T::setHealth)</code>; <code>nullptr</code> as the setter makes it read-only</td></tr>
+<tr><td><code>chai.add(base_class&lt;Base, Derived&gt;());</code></td><td><code>.base_class&lt;Base&gt;()</code> on the derived binder</td></tr>
+<tr><td><code>chai.add(fun(&amp;T::operator==), "==");</code></td><td><code>.method("==", &amp;T::operator==)</code>; <code>!=</code> follows from <code>==</code></td></tr>
+<tr><td><code>utility::add_class&lt;T&gt;(*module, "T", {constructors}, {{fun(...), "name"}, ...})</code></td><td>the same binder chain</td></tr>
+<tr><td><code>chaiscript::ModulePtr</code> filled once and <code>chai.add(module)</code> into each engine</td><td>a <code>static jai::registrar&lt;T, void&gt;</code> with a configure lambda, and <code>jai::bind_registrar(eng)</code> per engine</td></tr>
+</tbody></table></div>
+<h3 id="globals-and-values">Globals and values<a class="hlink" href="#globals-and-values" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>ChaiScript</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>chai.add_global(var(x), "x");</code>, a copy</td><td><code>eng-&gt;add_global("x", x);</code></td></tr>
+<tr><td><code>chai.add_global(var(std::ref(x)), "x");</code>, shared with C++</td><td><code>eng-&gt;add_global_ref("x", x);</code>: script reads and writes the C++ variable</td></tr>
+<tr><td><code>chai.add_global_const(const_var(v), "N");</code></td><td><code>eng-&gt;add_global("N", v);</code> is assignable from script; a constant is a <code>const</code> declaration the host runs: <code>eng-&gt;execute("const int MAX_LEVEL = 20;");</code></td></tr>
+<tr><td><code>var(std::shared_ptr&lt;T&gt;)</code> for a live object</td><td><code>eng-&gt;add_global("boss", eng-&gt;make_object(boss));</code>; script writes land in the C++ object</td></tr>
+<tr><td><code>chaiscript::Boxed_Value</code>, <code>boxed_cast&lt;T&gt;(bv)</code></td><td><code>jai::script_value</code>, <code>v.as&lt;T&gt;()</code> (and <code>as_int()</code>, <code>as_float()</code>, <code>as_string()</code>, <code>as_bool()</code>)</td></tr>
+<tr><td><code>Boxed_Number(bv).get_as&lt;int64_t&gt;()</code></td><td><code>v.as_int()</code>: a script integer is always an <code>int64_t</code> (<code>jai::script_int</code>), a float a <code>double</code> (<code>jai::script_float</code>)</td></tr>
+</tbody></table></div>
+<h3 id="calls-and-errors">Calls into script and errors<a class="hlink" href="#calls-and-errors" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>ChaiScript</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>chai.eval&lt;std::function&lt;int (int)&gt;&gt;("damage_for")</code></td><td><code>jai::convert_script_function&lt;int64_t(int64_t)&gt;(eng-&gt;get_variable("damage_for"))</code>; a failure inside it throws <code>jai::runtime_error</code></td></tr>
+<tr><td>(no counterpart)</td><td><code>eng-&gt;get_variable("damage_for").as_function()({args})</code> returns a <code>jai::checked_result&lt;jai::script_value&gt;</code> that carries the failure instead of throwing it</td></tr>
+<tr><td><code>chaiscript::exception::eval_error</code> for parse and run-time errors, with <code>pretty_print()</code></td><td><code>jai::parse_error</code>, <code>jai::static_check_error</code> (the whole check listing, before anything runs) and <code>jai::runtime_error</code>; <code>eng-&gt;format_stack_trace()</code> is the script stack</td></tr>
+<tr><td>a script <code>throw(value)</code>, caught as a thrown <code>Boxed_Value</code></td><td><code>jai::script_exception</code> (a <code>jai::runtime_error</code>) whose <code>what()</code> is the thrown text</td></tr>
+<tr><td>a C++ exception thrown by a registered function</td><td>a run-time error the script can <code>catch</code>, carrying the exception's <code>what()</code>; uncaught, it leaves <code>execute</code> as a <code>jai::runtime_error</code></td></tr>
+</tbody></table></div>
+
+<h2 id="a-host-converted">A host converted<a class="hlink" href="#a-host-converted" aria-label="link">&#8203;</a></h2>
+<p><a href="../examples/index.html#gloom">GLOOM</a>, the raycast shooter, runs on one shared C++ host with an adapter per language: the JaiScript original and, among the comparison ports, a ChaiScript one. Both adapters bind the same host API: the seeded random generator every port shares, host services, and the host's flags. These are their binding blocks, trimmed to a few lines of each kind. ChaiScript:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (ChaiScript)</span><pre><code class="lang-cpp">#include &lt;chaiscript/chaiscript.hpp&gt;
+
+chaiscript::ChaiScript chai;
+using namespace chaiscript;
+
+chai.add(user_type&lt;gloom_rng&gt;(), "Rng");
+chai.add(constructor&lt;gloom_rng(int64_t)&gt;(), "Rng");
+chai.add(fun(&amp;gloom_rng::next), "next");
+chai.add(fun(&amp;gloom_rng::roll), "roll");
+chai.add(fun(&amp;gloom_rng::chance), "chance");
+chai.add(fun(&amp;gloom_rng::nextf), "nextf");
+chai.add(fun(&amp;gloom_rng::state), "state");
+
+chai.add(fun([log](const std::string&amp; line) { log(line); }), "host_log");
+chai.add(fun([](double v) -&gt; int64_t { return static_cast&lt;int64_t&gt;(v); }), "itrunc");
+chai.add(fun([](double v) -&gt; double { return std::sqrt(v); }), "sqrt");
+
+chai.add_global_const(const_var(std::string("\x1b")), "ESC");
+chai.add_global_const(const_var(opt.seed), "HOST_SEED");
+chai.add_global_const(const_var(opt.god), "HOST_GOD");</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">#include &lt;jaiscript/jaiscript.hpp&gt;
+#include &lt;jaiscript/stdlib/stdlib.hpp&gt;
+
+auto eng = jai::engine::make();
+jai::stdlib::register_all(eng);
+
+jai::dynamic_binder&lt;gloom_rng&gt;(*eng, "Rng")
+    .constructor&lt;jai::script_int&gt;()
+    .method("next", &amp;gloom_rng::next)
+    .method("roll", &amp;gloom_rng::roll)
+    .method("chance", &amp;gloom_rng::chance)
+    .method("nextf", &amp;gloom_rng::nextf)
+    .method("state", &amp;gloom_rng::state)
+    .build();
+
+eng-&gt;add_function("host_log", [log](const std::string&amp; line) { log(line); });
+eng-&gt;add_function("itrunc", [](jai::script_float v) -&gt; jai::script_int {
+    return static_cast&lt;jai::script_int&gt;(v);
+});
+
+eng-&gt;add_global("ESC", eng-&gt;make_value(std::string("\x1b")));
+eng-&gt;add_global("HOST_SEED", eng-&gt;make_value(opt.seed));
+eng-&gt;add_global("HOST_GOD", eng-&gt;make_value(opt.god));</code></pre></div>
+<ul>
+<li><strong>The class is one statement.</strong> ChaiScript registers the type, its constructor and each method as separate entries in the engine; <code>next</code> is a function named <code>next</code> that dot syntax reaches through its first argument. The binder makes them members of <code>Rng</code>, and <code>build()</code> registers the class.</li>
+<li><strong>The math whitelist goes.</strong> ChaiScript's core has no math library, so the ChaiScript adapter binds <code>sqrt</code>, <code>cos</code>, <code>sin</code>, <code>atan2</code> and <code>floor</code> itself. The JaiScript standard library has them as <code>math::sqrt</code> and the rest; the script spells the namespace.</li>
+<li><strong>The constants are globals.</strong> <code>add_global</code> has no const form; a script that must not reassign a value declares it <code>const</code> itself, or the host runs that declaration.</li>
+</ul>
+<p>Loading the game and calling into it change the same way:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (ChaiScript)</span><pre><code class="lang-cpp">chai.eval_file(scripts_dir + "/main.chai");
+
+auto frame = chai.eval&lt;std::function&lt;std::string(double, const std::string&amp;, double, double, double)&gt;&gt;("gloom_frame");
+std::string out = frame(dt, key, fps, ms_sim, ms_draw);
+
+chaiscript::Boxed_Value bv = chai.eval("gloom_state_hash()");
+int64_t hash = chaiscript::Boxed_Number(bv).get_as&lt;int64_t&gt;();
+bool quit = chai.eval&lt;bool&gt;("gloom_wants_quit()");</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">eng-&gt;add_include_path(scripts_dir);
+eng-&gt;execute("import \"main.jai\";");
+
+auto frame = jai::convert_script_function&lt;std::string(double, const std::string&amp;, double, double, double)&gt;(
+    eng-&gt;get_variable("gloom_frame"));
+std::string out = frame(dt, key, fps, ms_sim, ms_draw);
+
+int64_t hash = eng-&gt;execute("gloom_state_hash()").as_int();
+bool quit = eng-&gt;execute("gloom_wants_quit()").as&lt;bool&gt;();</code></pre></div>
+<p>A frame loop that should not throw calls through <code>as_function()</code> instead, and checks the result:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::script_value fn = eng-&gt;get_variable("gloom_frame");
+jai::checked_result&lt;jai::script_value&gt; result = fn.as_function()({
+    eng-&gt;make_value(dt), eng-&gt;make_value(key), eng-&gt;make_value(fps),
+    eng-&gt;make_value(ms_sim), eng-&gt;make_value(ms_draw)});
+if (!result) { throw std::runtime_error(eng-&gt;format_error(result)); }
+std::string out = result.value().as_string();</code></pre></div>
+
+<h2 id="classes-in-full">Classes in full<a class="hlink" href="#classes-in-full" aria-label="link">&#8203;</a></h2>
+<p>A class with two constructors, an overloaded method, a getter and setter pair, an operator and a base class. The C++ side is ordinary:</p>
+<div class="codeblock cb-cpp" data-sample="chai-monster-types"><span class="cb-label">C++</span><pre><code class="lang-cpp">struct Entity {
+    virtual ~Entity() = default;
+    std::string name = "entity";
+    virtual std::string describe() const { return "entity " + name; }
+};
+
+struct Monster : Entity {
+    int64_t hp = 10;
+    Monster() = default;
+    Monster(std::string a_name, int64_t a_hp) : hp(a_hp) { name = std::move(a_name); }
+    void damage(int64_t amount) { hp -= amount; }
+    void damage(int64_t amount, double multiplier) { hp -= static_cast&lt;int64_t&gt;(amount * multiplier); }
+    int64_t health() const { return hp; }
+    void setHealth(int64_t a_hp) { hp = a_hp &lt; 0 ? 0 : a_hp; }
+    bool alive() const { return hp &gt; 0; }
+    std::string describe() const override { return "monster " + name; }
+    bool operator==(const Monster&amp; o) const { return name == o.name &amp;&amp; hp == o.hp; }
+};</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (ChaiScript)</span><pre><code class="lang-cpp">chai.add(chaiscript::user_type&lt;Entity&gt;(), "Entity");
+chai.add(chaiscript::fun(&amp;Entity::name), "name");
+chai.add(chaiscript::fun(&amp;Entity::describe), "describe");
+
+chai.add(chaiscript::user_type&lt;Monster&gt;(), "Monster");
+chai.add(chaiscript::base_class&lt;Entity, Monster&gt;());
+chai.add(chaiscript::constructor&lt;Monster()&gt;(), "Monster");
+chai.add(chaiscript::constructor&lt;Monster(std::string, int64_t)&gt;(), "Monster");
+chai.add(chaiscript::fun(static_cast&lt;void (Monster::*)(int64_t)&gt;(&amp;Monster::damage)), "damage");
+chai.add(chaiscript::fun(static_cast&lt;void (Monster::*)(int64_t, double)&gt;(&amp;Monster::damage)), "damage");
+chai.add(chaiscript::fun(&amp;Monster::alive), "alive");
+chai.add(chaiscript::fun(&amp;Monster::health), "health");
+chai.add(chaiscript::fun(&amp;Monster::setHealth), "set_health");
+chai.add(chaiscript::fun(&amp;Monster::operator==), "==");</code></pre></div>
+<div class="codeblock cb-cpp" data-sample="chai-monster-binding"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">jai::dynamic_binder&lt;Entity&gt;(*eng, "Entity")
+    .property("name", &amp;Entity::name)
+    .method("describe", &amp;Entity::describe)
+    .build();
+
+jai::dynamic_binder&lt;Monster&gt;(*eng, "Monster")
+    .base_class&lt;Entity&gt;()
+    .constructor&lt;&gt;()
+    .constructor&lt;std::string, int64_t&gt;()
+    .method("damage", static_cast&lt;void (Monster::*)(int64_t)&gt;(&amp;Monster::damage))
+    .method("damage", static_cast&lt;void (Monster::*)(int64_t, double)&gt;(&amp;Monster::damage))
+    .method("alive", &amp;Monster::alive)
+    .method("==", &amp;Monster::operator==)
+    .property("hp", &amp;Monster::health, &amp;Monster::setHealth)
+    .property("maxHp", [](const Monster&amp;) { return int64_t{100}; }, nullptr)
+    .build();
+
+eng-&gt;add_function("describe", [](std::shared_ptr&lt;Entity&gt; e) { return e-&gt;describe(); });</code></pre></div>
+<p>Script reads the pair as one property, and a value made in script passes to a function that takes the base:</p>
+<div class="codeblock cb-jai" data-host="Entity / Monster registration" data-sample="chai-monster"><span class="cb-label">jaiscript (with the host above)</span><pre><code class="lang-jai">var m = Monster("ogre", 30);
+m.damage(5);
+m.damage(10, 1.5);
+m.hp -= 100;                                // through setHealth, which clamps at 0
+print(m.name, " hp=", m.hp, " alive=", m.alive(), " max=", m.maxHp, " ", m.describe(), " ", describe(m));
+try { m.maxHp = 5; } catch (e) { print("caught: ", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ogre hp=0 alive=false max=100 monster ogre monster ogre
+caught: Cannot assign to 'maxHp': it is read-only</code></pre></div>
+<p>A C++ class that points at its own type, like the tree node of the comparison benchmarks, binds its self-typed members with <code>jai::skip_type_check</code>, because the type is not registered yet while its own binder runs; ChaiScript's <code>add_class</code> needs no such tag:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (ChaiScript)</span><pre><code class="lang-cpp">chaiscript::ModulePtr m = std::make_shared&lt;chaiscript::Module&gt;();
+chaiscript::utility::add_class&lt;CppTreeNode&gt;(*m,
+    "CppTreeNode",
+    { chaiscript::constructor&lt;CppTreeNode(int)&gt;() },
+    { {chaiscript::fun(&amp;CppTreeNode::value), "value"},
+      {chaiscript::fun(&amp;CppTreeNode::left), "left"},
+      {chaiscript::fun(&amp;CppTreeNode::right), "right"} }
+);
+m-&gt;add(chaiscript::fun(&amp;cpp_insertNode), "cpp_insertNode");
+chai.add(m);</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">jai::dynamic_binder&lt;CppTreeNode&gt;(*eng, "CppTreeNode")
+    .constructor&lt;int&gt;()
+    .property("value", &amp;CppTreeNode::value)
+    .property("left", &amp;CppTreeNode::left, jai::skip_type_check)
+    .property("right", &amp;CppTreeNode::right, jai::skip_type_check)
+    .build();
+eng-&gt;add_function("cpp_insertNode", &amp;cpp_insertNode);</code></pre></div>
+<p>The ChaiScript benchmark also registers an <code>=</code> for <code>std::shared_ptr&lt;CppTreeNode&gt;</code> so script can reassign a node handle; JaiScript assigns <code>shared_ptr</code> values without help.</p>
+<h3 id="modules-and-registrars">Modules and registrars<a class="hlink" href="#modules-and-registrars" aria-label="link">&#8203;</a></h3>
+<p>A <code>ModulePtr</code> collects registrations once so several engines can take them. A <code>jai::registrar</code> does the same at program start, from the translation unit that defines the class, and <code>jai::bind_registrar</code> applies every registrar to an engine. The registrar's name is also the class's serialization identity (<a href="04-from-cereal.html#versions-and-polymorphism">From Cereal</a>):</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">static jai::registrar&lt;gloom_rng, void&gt; rngRegistrar("Rng", [](jai::dynamic_binder&lt;gloom_rng&gt;&amp; binder) {
+    binder.constructor&lt;int64_t&gt;()
+        .method("next", &amp;gloom_rng::next)
+        .method("roll", &amp;gloom_rng::roll);
+});
+
+auto eng = jai::engine::make();
+jai::bind_registrar(eng);</code></pre></div>
+
+<h2 id="errors">Errors<a class="hlink" href="#errors" aria-label="link">&#8203;</a></h2>
+<p>The ChaiScript adapter wraps every call in a guard that turns ChaiScript's two failure shapes into one:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (ChaiScript)</span><pre><code class="lang-cpp">try {
+    fn();
+} catch (const chaiscript::exception::eval_error&amp; e) {
+    last_trace = e.pretty_print();
+    throw std::runtime_error(e.what());
+} catch (const chaiscript::Boxed_Value&amp; bv) {
+    std::string msg = "script threw a value";
+    try { msg = chaiscript::boxed_cast&lt;std::string&gt;(bv); } catch (...) {}
+    throw std::runtime_error(msg);
+}</code></pre></div>
+<p>Every JaiScript exception derives from <code>std::exception</code>, so the guard is ordinary <code>catch</code> clauses, and the most specific ones are optional:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">try {
+    eng-&gt;execute_file(scripts_dir + "/main.jai");
+} catch (const jai::static_check_error&amp; e) {   // nothing ran: e.what() lists every error in the program
+    std::cerr &lt;&lt; e.what();
+} catch (const jai::exception&amp; e) {            // parse_error, runtime_error, script_exception
+    std::cerr &lt;&lt; e.what() &lt;&lt; "\n" &lt;&lt; eng-&gt;format_stack_trace();
+}</code></pre></div>
+<p>A host function that throws is part of the script's run. The script can catch it, and an uncaught one reaches the host as a <code>jai::runtime_error</code> with the same text:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;add_function("load_level", [](const std::string&amp; name) -&gt; int64_t {
+    if (name.empty()) { throw std::runtime_error("level name is empty"); }
+    return 1;
+});
+eng-&gt;execute(R"(try { load_level(""); } catch (e) { print("script caught: ", e); })");   // script caught: level name is empty</code></pre></div>
+<p>The checker reads a whole program before its first statement runs, so mistakes ChaiScript reports when control reaches them (a misspelled name, a wrong argument count to a typed function) arrive as one <code>jai::static_check_error</code> at load. Names the host registers before the script loads are visible to it; a name the host adds later is declared in script with <code>extern</code> (<a href="../embedding/06-static-checking.html">Static Checking</a>).</p>
+
+<h2 id="script-habits">Script habits that get a different answer<a class="hlink" href="#script-habits" aria-label="link">&#8203;</a></h2>
+<p>The two languages look alike: braces, <code>var</code>, <code>for (x : xs)</code>, <code>+</code> on strings. Where a ChaiScript habit gives another result, the cause is usually JaiScript's C++ semantics; <a href="02-from-cpp.html">From C++</a> lists them all, and <a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> is the chapter to read first.</p>
+<h3 id="assignment-copies-containers">Assignment copies a container<a class="hlink" href="#assignment-copies-containers" aria-label="link">&#8203;</a></h3>
+<p>In ChaiScript, <code>var b = a;</code> of a <code>Vector</code> leaves both names on one vector, and writing through <code>b</code> changes <code>a</code>. A JaiScript array or map is a value: assignment copies it. ChaiScript's reference assignment <code>:=</code> is a reference declaration, <code>auto&amp;</code>. <code>push_back</code> is <code>push</code>.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; a = [1, 2, 3];
+array&lt;int&gt; b = a;          // a copy
+b[0] = 99;
+b.push(4);
+auto&amp; c = a;               // an alias, ChaiScript's :=
+c[0] = 42;
+print(a[0], " ", a.size(), " / ", b[0], " ", b.size());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">42 3 / 99 4</code></pre></div>
+<h3 id="interpolation-uses-backticks">Interpolation uses backticks<a class="hlink" href="#interpolation-uses-backticks" aria-label="link">&#8203;</a></h3>
+<p>ChaiScript interpolates <code>${...}</code> inside double quotes. In JaiScript a double-quoted string is literal text, and a backtick string interpolates (<a href="../guide/09-containers-strings.html#template-strings-format-specs">Template strings</a>):</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int hp = 7;
+print("plain: hp is ${hp}");
+print(`template: hp is ${hp}`);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">plain: hp is ${hp}
+template: hp is 7</code></pre></div>
+<h3 id="names-are-declared">Names are declared before they are used<a class="hlink" href="#names-are-declared" aria-label="link">&#8203;</a></h3>
+<p>ChaiScript finds names when a statement runs: a function that assigns an undeclared <code>score</code> loads, then fails when called (<code>Can not find object: score</code>), and <code>global score = 10;</code> inside a function creates a global when it runs. In JaiScript a program-scope declaration is the global, functions read and write it, and an undeclared name stops the load with <code>use of undeclared identifier 'score'</code>:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int score = 0;
+function setup() { score = 10; }
+setup();
+print(score);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">10</code></pre></div>
+<h3 id="integers-are-64-bit">Integers are 64-bit, and overflow is an error<a class="hlink" href="#integers-are-64-bit" aria-label="link">&#8203;</a></h3>
+<p>A ChaiScript integer literal is a C++ <code>int</code>, so <code>2147483647 + 1</code> wraps to <code>-2147483648</code>. A JaiScript <code>int</code> is 64-bit, and an operation that overflows it raises an error a <code>catch</code> sees (<a href="../guide/04-operators.html#checked-overflow-raises-never-wraps-never-ub">Checked overflow</a>):</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(2147483647 + 1);
+int big = 9223372036854775807;
+try { big = big + 1; } catch (e) { print("caught: ", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2147483648
+caught: Integer overflow in '+'</code></pre></div>
+<h3 id="conditions-test-values">Conditions test values<a class="hlink" href="#conditions-test-values" aria-label="link">&#8203;</a></h3>
+<p>ChaiScript requires a <code>bool</code> condition and stops with <code>Condition not boolean</code> on <code>if (0)</code>. JaiScript tests a value the C++ way: <code>0</code>, the empty string and <code>null</code> are false.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var zero = 0;
+var empty = "";
+var nothing = null;
+print(zero ? "0 is true" : "0 is false", ", ", empty ? "\"\" is true" : "\"\" is false", ", ", nothing ? "null is true" : "null is false");</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">0 is false, "" is false, null is false</code></pre></div>
+<h3 id="classes-declare-their-fields">Classes declare their fields<a class="hlink" href="#classes-declare-their-fields" aria-label="link">&#8203;</a></h3>
+<p>A ChaiScript class declares <code>var x;</code> and a constructor <code>def Point(px, py) { this.x = px; }</code>, and methods reach fields through <code>this</code>. A JaiScript class types its fields, names the constructor like C++, and reads fields without <code>this</code>. An instance is a value, and assignment copies it (<a href="../guide/07-classes.html">Classes</a>):</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Point {
+    float x;
+    float y;
+    Point(float px, float py) { x = px; y = py; }
+    float sum() { return x + y; }
+}
+Point p = Point(1.0, 2.0);
+Point q = p;
+q.x = 10.0;
+print(p.x, " ", q.sum());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1.0 12.0</code></pre></div>
+
+<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
+<p><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a> covers the engine, functions, globals, calls into script and every error surface; <a href="../embedding/02-dynamic-binder.html">dynamic_binder</a> covers every binder verb, <code>JAI_PROPERTY</code> classes that are reflected, scripted and saved from one declaration, and inheritance. <a href="../embedding/13-script-extensible.html">Script-Extensible Objects</a> covers a script class deriving a bound C++ class, which ChaiScript has no counterpart for.</p>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../embedding/index.html"><span>next &middot; embedding &rarr;</span>Embedding &amp; Engine Guide</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

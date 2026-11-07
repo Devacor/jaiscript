@@ -1,0 +1,3 @@
+node_modules/
+*.vsix
+test/e2e_result.json

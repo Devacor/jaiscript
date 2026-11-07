@@ -1,0 +1,9 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/JaiScriptTargets.cmake")
+
+# The MSVC runtime the installed library was built with (empty: CMake's default, the DLL runtime).
+# A consumer linking it sets the same: set_property(TARGET app PROPERTY MSVC_RUNTIME_LIBRARY "${JaiScript_MSVC_RUNTIME_LIBRARY}")
+set(JaiScript_MSVC_RUNTIME_LIBRARY "@JAISCRIPT_PACKAGE_MSVC_RUNTIME@")
+
+check_required_components(JaiScript)

@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From C# — JaiScript Language Bridges</title>
+<meta name="description" content="C# beside JaiScript, idiom by idiom: classes as value types, var and auto, properties as accessors, loops for LINQ, coroutines for async, and a complete program.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="From C# — JaiScript Language Bridges">
+<meta property="og:description" content="C# beside JaiScript, idiom by idiom: classes as value types, var and auto, properties as accessors, loops for LINQ, coroutines for async, and a complete program.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li class="current"><a href="../bridges/03-from-csharp.html" aria-current="page">From C#</a><ol class="page-toc" data-page-toc></ol></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>03</nav>
+<article class="chapter"><h1 id="from-csharp">From C#<a class="hlink" href="#from-csharp" aria-label="link">&#8203;</a></h1>
+<p class="lead">Much of JaiScript's surface will look familiar from C#: classes with constructors and <code>: this(...)</code> chaining, a required <code>override</code>, <code>static</code> members, properties (spelled as accessor methods), <code>foreach</code>-style loops, <code>try</code>/<code>catch</code>/<code>throw</code>, lambdas, namespaces, and <code>yield</code> for iterators. The semantics underneath are C++'s, and the largest consequence is that a class is a value type: <code>b = a</code> copies the object, the way a C# <code>struct</code> copies. <code>new</code> makes the shared reference that every C# class is. JaiScript's <code>var</code> is the dynamic one, C#'s <code>dynamic</code>; <code>auto</code> is C#'s <code>var</code>. Integers are 64-bit and checked, and a static checker reads the whole program before its first statement runs. This page sets the two languages side by side, then lists the places where a C# habit gets a different answer. Every JaiScript line on it was run on both backends, and the output under each sample is what they printed.</p>
+<h2 id="side-by-side">Side by side<a class="hlink" href="#side-by-side" aria-label="link">&#8203;</a></h2>
+<h3 id="variables-and-types">Variables and types<a class="hlink" href="#variables-and-types" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th></th><th>C#</th><th>JaiScript</th></tr></thead><tbody><tr><td>inferred</td><td><code>var n = 5;</code></td><td><code>auto n = 5;</code></td></tr><tr><td>dynamic</td><td><code>dynamic x = 5;</code></td><td><code>var x = 5;</code></td></tr><tr><td>integer</td><td><code>int</code> (32-bit), <code>long</code></td><td><code>int</code>, 64-bit; no <code>long</code></td></tr><tr><td>floating point</td><td><code>double</code>, <code>float</code></td><td><code>float</code>, 64-bit; <code>double</code> names the same type</td></tr><tr><td>string, char, bool</td><td><code>string</code>, <code>char</code>, <code>bool</code></td><td>the same names; a <code>string</code> is a byte sequence and a value</td></tr><tr><td>constant</td><td><code>const</code>, <code>readonly</code></td><td><code>const int MAX = 10;</code>; no <code>readonly</code></td></tr><tr><td>null</td><td><code>null</code>, <code>int?</code></td><td><code>null</code>, which a <code>var</code> holds</td></tr><tr><td>list</td><td><code>new List&lt;int&gt; { 1, 2 }</code></td><td><code>array&lt;int&gt; xs = [1, 2];</code></td></tr><tr><td>dictionary</td><td><code>new Dictionary&lt;string, int&gt; { ["a"] = 1 }</code></td><td><code>map&lt;string, int&gt; m = {"a": 1};</code></td></tr><tr><td>type name</td><td><code>x.GetType().Name</code></td><td><code>type_of(x)</code></td></tr></tbody></table></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto n = 5;                     // C#'s var
+var anything = 5;               // C#'s dynamic
+anything = "text";
+int big = 2147483647;
+array&lt;int&gt; xs = [1, 2];
+map&lt;string, int&gt; m = {"a": 1};
+print(type_of(n), " ", type_of(anything), " ", big + 1, " ", xs.size() + m.size());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">int string 2147483648 3</code></pre></div>
+<h3 id="collections-and-linq">Collections and LINQ<a class="hlink" href="#collections-and-linq" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th></th><th>C#</th><th>JaiScript</th></tr></thead><tbody><tr><td>add</td><td><code>list.Add(x)</code></td><td><code>xs.push(x)</code></td></tr><tr><td>count</td><td><code>list.Count</code></td><td><code>xs.size()</code></td></tr><tr><td>search</td><td><code>list.Contains(x)</code>, <code>list.IndexOf(x)</code></td><td><code>xs.contains(x)</code>, <code>xs.index_of(x)</code></td></tr><tr><td>remove</td><td><code>list.RemoveAt(i)</code>, <code>list.RemoveAll(x =&gt; x &lt; 0)</code></td><td><code>xs.remove(i)</code>, <code>xs.remove_if(x =&gt; x &lt; 0)</code></td></tr><tr><td>foreach</td><td><code>foreach (var x in xs)</code></td><td><code>for (auto x : xs)</code>; <code>for (auto&amp; x : xs)</code> changes the elements</td></tr><tr><td>Where</td><td><code>xs.Where(x =&gt; x &gt; 2)</code></td><td><code>array::filter(xs, x =&gt; x &gt; 2)</code> returns a new array; <code>xs.filter</code> changes it</td></tr><tr><td>OrderBy</td><td><code>xs.OrderBy(u =&gt; u.Hp)</code></td><td><code>xs.sort((a, b) =&gt; a.hp &lt; b.hp)</code>, in place</td></tr><tr><td>Select</td><td><code>xs.Select(f)</code></td><td><code>array::map(xs, f)</code>: an <code>array&lt;T&gt;</code> when <code>f</code> declares its return type <code>T</code>; <code>xs.map(f)</code> changes the input and retains its element type</td></tr><tr><td>Sum, Any, First</td><td><code>xs.Sum()</code>, <code>xs.Any(p)</code>, <code>xs.First(p)</code></td><td><code>xs.reduce((sum, x) =&gt; sum + x, 0)</code>, <code>xs.some(p)</code>, <code>xs.find(p)</code> (null when none matches)</td></tr><tr><td>All, FindIndex, ForEach</td><td><code>xs.All(p)</code>, <code>list.FindIndex(p)</code>, <code>list.ForEach(f)</code></td><td><code>xs.every(p)</code>, <code>xs.find_index(p)</code> (-1 when none), <code>xs.for_each(f)</code></td></tr><tr><td>Concat, Insert</td><td><code>xs.Concat(ys)</code>, <code>list.Insert(i, x)</code></td><td><code>array::concat(xs, ys)</code> returns a new array; <code>xs.concat(ys)</code> appends in place; <code>xs.insert(i, x)</code> inserts in place</td></tr><tr><td>Join</td><td><code>string.Join(", ", xs)</code></td><td><code>xs.join(", ")</code> or <code>string::join(xs, ", ")</code></td></tr><tr><td>ContainsKey</td><td><code>d.ContainsKey(k)</code></td><td><code>m.contains(k)</code></td></tr><tr><td>TryGetValue</td><td><code>d.TryGetValue(k, out v)</code></td><td><code>m.get(k, fallback)</code></td></tr><tr><td>remove a key</td><td><code>d.Remove(k)</code></td><td><code>m.erase(k)</code></td></tr><tr><td>keys</td><td><code>d.Keys</code></td><td><code>m.keys()</code>, in key order</td></tr><tr><td>pairs</td><td><code>foreach (var kv in d)</code> and <code>kv.Key</code></td><td><code>for (auto [k, v] : m)</code>, or <code>for (auto kv : m)</code> and <code>kv.first</code>, <code>kv.second</code></td></tr></tbody></table></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Unit {
+    string name;
+    int hp;
+    Unit(string n, int h) { name = n; hp = h; }
+}
+array&lt;Unit&gt; units = [Unit("ogre", 30), Unit("imp", 8), Unit("elf", 15)];
+units.sort((Unit a, Unit b) =&gt; a.hp &lt; b.hp);
+auto healthy = array::filter(units, u =&gt; u.hp &gt; 10);
+int total = units.reduce((int sum, Unit u) =&gt; sum + u.hp, 0);
+array&lt;string&gt; names = array::map(healthy, u =&gt; u.name);
+map&lt;string, int&gt; kills = {"ogre": 2};
+print(units[0].name, " ", string::join(names, ", "), " ", total, " ", kills.get("imp", 0));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">imp elf, ogre 53 0</code></pre></div>
+<h3 id="classes-and-properties">Classes and properties<a class="hlink" href="#classes-and-properties" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th></th><th>C#</th><th>JaiScript</th></tr></thead><tbody><tr><td>class</td><td><code>class Hero { public int Hp = 10; }</code></td><td><code>class Hero { int hp = 10; }</code>: members start public</td></tr><tr><td>value or reference</td><td>a class is a reference type</td><td>a class is a value type, like a C# <code>struct</code>; <code>new Hero()</code> makes the shared reference</td></tr><tr><td>struct</td><td><code>struct Point { }</code></td><td>no <code>struct</code>: every class is already a value type</td></tr><tr><td>constructor chaining</td><td><code>: this(0, 0)</code>, <code>: base(5)</code></td><td><code>: this(0, 0)</code>, <code>: super(5)</code></td></tr><tr><td>base call</td><td><code>base.Describe()</code></td><td><code>super::describe()</code></td></tr><tr><td>virtual, override</td><td><code>virtual</code> in the base, <code>override</code> in the subclass</td><td>every method is virtual; <code>override</code> is required (writing <code>virtual</code> is an error that says so)</td></tr><tr><td>abstract, interface</td><td><code>abstract class Shape</code>, <code>interface IShape</code></td><td>neither: a base class with default methods, or a <code>var</code> that takes any object with the method</td></tr><tr><td>access</td><td><code>public</code>, <code>private</code>, <code>protected</code>, <code>internal</code> on each member</td><td><code>public:</code> and <code>private:</code> section labels; <code>private</code> reaches subclasses, and <code>protected:</code> means the same</td></tr><tr><td>property</td><td><code>public int Hp { get; set; }</code></td><td>a field, <code>int hp;</code>, or accessor methods <code>int _get_hp()</code> and <code>void _set_hp(int v)</code> that <code>obj.hp</code> goes through</td></tr><tr><td>static</td><td><code>Hero.Count</code></td><td><code>Hero::count</code></td></tr><tr><td>ToString</td><td><code>public override string ToString()</code></td><td><code>string to_string()</code>, used by <code>to_string(x)</code>, <code>"text" + x</code>, <code>`${x}`</code> and <code>print(x)</code></td></tr><tr><td>Equals, ==</td><td>reference equality by default</td><td><code>==</code> compares fields; <code>operator==</code> replaces it; <code>same_object(a, b)</code> is identity</td></tr><tr><td>operators</td><td><code>public static Vec operator+(Vec a, Vec b)</code></td><td><code>Vec operator+(Vec o)</code>, a method</td></tr><tr><td>is, as</td><td><code>x is Hero h</code>, <code>x as Hero</code></td><td><code>type_of(x) == "Hero"</code>; <code>cast&lt;Hero&amp;&gt;(x)</code> raises a catchable error when <code>x</code> is not a <code>Hero</code></td></tr><tr><td>using, IDisposable</td><td><code>using (var f = Open())</code></td><td>a destructor, <code>~File()</code>, runs when its scope ends</td></tr></tbody></table></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Hero {
+private:
+    int hp_value = 10;
+public:
+    static int count = 0;
+    string name;
+    Hero(string n) { name = n; Hero::count += 1; }
+    int _get_hp() { return hp_value; }
+    void _set_hp(int v) { hp_value = v &lt; 0 ? 0 : v; }
+    string describe() { return name; }
+    string to_string() { return `${name} (${hp_value} hp)`; }
+}
+class Paladin : Hero {
+    Paladin(string n) : super(n) {}
+    string describe() override { return "Sir " + super::describe(); }
+}
+Paladin p = Paladin("Ada");
+p.hp = -3;                       // through _set_hp
+var anyone = p;
+print(p.describe(), " ", p.hp, " ", Hero::count, " ", to_string(p), " ", type_of(anyone) == "Paladin");
+print("hero: " + p);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Sir Ada 0 1 Ada (0 hp) true
+hero: Ada (0 hp)</code></pre></div>
+<h3 id="errors-strings-and-the-rest">Errors, strings and the rest<a class="hlink" href="#errors-strings-and-the-rest" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th></th><th>C#</th><th>JaiScript</th></tr></thead><tbody><tr><td>throw</td><td><code>throw new InvalidOperationException("x");</code></td><td><code>throw "x";</code>, any value: a string, a number, an instance</td></tr><tr><td>catch</td><td><code>catch (IOException e) { e.Message; }</code></td><td><code>catch (e) { e.message; e.stack; e.value; }</code>, untyped (a typed <code>catch</code> is an error that says so)</td></tr><tr><td>finally</td><td><code>finally { }</code></td><td>none: a destructor runs when its scope ends, a throw included</td></tr><tr><td>interpolation</td><td><code>$"{name} has {hp:F1}"</code></td><td><code>`${name} has ${hp:.1f}`</code></td></tr><tr><td>format</td><td><code>string.Format("{0}", x)</code></td><td><code>format("{}", x)</code></td></tr><tr><td>string methods</td><td>return new strings</td><td><code>to_upper</code>, <code>trim</code>, <code>replace</code> and the other mutators change the string; the <code>string::</code> versions return new ones</td></tr><tr><td>parse</td><td><code>int.Parse("42")</code></td><td><code>"42".to_int()</code>, null when the text is not a number</td></tr><tr><td>null-conditional</td><td><code>x?.Name</code>, <code>x?.A.B</code></td><td><code>x?.name</code>; a null <code>x</code> skips the rest of the chain, so <code>x?.a.b</code> is null too</td></tr><tr><td>null-coalescing</td><td><code>x ?? "none"</code></td><td>the same: <code>x ?? "none"</code>, and <code>x ??= v</code></td></tr><tr><td>switch</td><td>every case ends in <code>break</code></td><td>breaks by default; <code>fallthrough;</code> replaces <code>goto case</code></td></tr><tr><td>checked</td><td><code>checked { }</code></td><td>always checked: integer overflow raises; <code>math::wrap_add</code> wraps on purpose</td></tr><tr><td>lambda</td><td><code>x =&gt; x * 2</code></td><td>the same: <code>x =&gt; x * 2</code>, <code>(int x) =&gt; x * 2</code>; or <code>[](x) { return x * 2; }</code></td></tr><tr><td>delegate, event</td><td><code>Func&lt;int, int&gt;</code>, <code>event Action Clicked</code></td><td>a <code>function</code> parameter or field; an <code>array&lt;function&gt;</code> of handlers</td></tr><tr><td>generic method</td><td><code>T Max&lt;T&gt;(T a, T b)</code></td><td><code>auto biggest(auto a, auto b)</code></td></tr><tr><td>iterator</td><td><code>IEnumerable&lt;int&gt; Evens() { yield return 0; }</code></td><td><code>coroutine int evens() { yield 0; }</code>, driven by range-<code>for</code> or <code>next()</code></td></tr><tr><td>async, await</td><td><code>await Task.Delay(100)</code></td><td>none: a coroutine that the host advances every frame</td></tr><tr><td>namespace</td><td><code>namespace Game { }</code>, <code>using Game;</code></td><td><code>namespace game { }</code> and <code>game::f()</code>; <code>using game::f;</code> brings in one name</td></tr><tr><td>JSON</td><td><code>JsonSerializer.Serialize(o)</code></td><td><code>to_json(v)</code>, <code>from_json(s)</code></td></tr></tbody></table></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int evens(int limit) {
+    for (int i = 0; i &lt; limit; i += 2) { yield i; }
+}
+array&lt;int&gt; seen = [];
+for (int e : evens(7)) { seen.push(e); }
+
+class Button {
+    array&lt;function&gt; clicked = [];
+    void click() { for (auto&amp; h : clicked) { h(); } }
+}
+Button b;
+int clicks = 0;
+b.clicked.push([]() { clicks += 1; });
+b.click();
+b.click();
+
+namespace game { int spawn_cost(int n) { return n * 5; } }
+using game::spawn_cost;
+float hp = 7.25;
+string name = "  Ada ";
+print(to_json(seen), " ", clicks, " ", `${string::trim(name)} has ${hp:.1f}`, " ", "42".to_int() + 1, " ", spawn_cost(3));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[0,2,4,6] 2 Ada has 7.2 43 15</code></pre></div>
+<h2 id="watch-out">Watch out<a class="hlink" href="#watch-out" aria-label="link">&#8203;</a></h2>
+<p>The differences below are the ones a C# habit runs into first. Each sample shows what JaiScript does.</p>
+<h3 id="a-class-is-a-value-type">A class is a value type<a class="hlink" href="#a-class-is-a-value-type" aria-label="link">&#8203;</a></h3>
+<p>This is the one to learn first. Assignment, a by-value parameter and a by-value return copy the whole object, as with a C# <code>struct</code>. <code>new</code> gives the shared reference a C# class always is, and a <code>&amp;</code> parameter is C#'s <code>ref</code>:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Account { int balance = 0; }
+Account a = Account();
+Account b = a;                  // a copy
+b.balance = 50;
+print(a.balance, " ", b.balance);
+
+shared_ptr&lt;Account&gt; shared = new Account();   // a shared reference
+auto other = shared;
+other.balance = 50;
+print(shared.balance, " ", other.balance);
+
+void deposit(Account acct) { acct.balance += 10; }        // gets a copy
+void deposit_ref(Account&amp; acct) { acct.balance += 10; }   // like ref Account
+deposit(a);
+deposit_ref(a);
+print(a.balance);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">0 50
+50 50
+10</code></pre></div>
+<p><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> is the chapter on this, with the cost of each choice.</p>
+<h3 id="a-list-holds-values">A list holds values<a class="hlink" href="#a-list-holds-values" aria-label="link">&#8203;</a></h3>
+<p>An <code>array&lt;Unit&gt;</code> holds the units themselves. A loop variable without <code>&amp;</code> is a copy, so changes to it vanish; <code>auto&amp;</code> names the element, and a method called through an element changes that element. An array of handles behaves like a C# <code>List&lt;Unit&gt;</code>:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Unit { int hp = 10; void hit() { hp -= 1; } }
+array&lt;Unit&gt; units = [Unit(), Unit()];
+for (auto u : units) { u.hp -= 5; }        // u is a copy
+print(units[0].hp);
+for (auto&amp; u : units) { u.hp -= 5; }       // u is the element
+units[1].hit();
+print(units[0].hp, " ", units[1].hp);
+array&lt;shared_ptr&lt;Unit&gt;&gt; handles = [new Unit()];
+for (auto h : handles) { h.hp = 1; }       // copies of a handle share the object
+print(handles[0].hp);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">10
+5 4
+1</code></pre></div>
+<h3 id="var-and-auto">var is dynamic; auto is C#'s var<a class="hlink" href="#var-and-auto" aria-label="link">&#8203;</a></h3>
+<p>A <code>var</code> takes anything for its whole life. An <code>auto</code> takes its type from the initializer and keeps it, converting what it can as an <code>int</code> variable would:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var loose = 5;
+loose = "now text";
+auto locked = 5;
+locked = 9.7;                   // converts: locked stays an int
+print(loose, " ", locked);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">now text 9</code></pre></div>
+<p>A value of the wrong type for an <code>auto</code> is a load error when the checker can see it:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto locked = 5;
+locked = "text";</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
+&lt;script&gt;:2:8: error: cannot assign 'string' to 'locked' declared 'int' (declared at 1:6)
+    locked = "text";
+           ^</code></pre></div>
+<h3 id="properties">Properties are accessor methods<a class="hlink" href="#properties" aria-label="link">&#8203;</a></h3>
+<p>A plain field already reads and writes as <code>obj.x</code>. A computed property is a pair of methods, <code>_get_x()</code> and <code>_set_x(v)</code>, and <code>obj.x</code> goes through them; inside the class a bare <code>x</code> is the backing field, if there is one:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Thermostat {
+    float celsius = 20.0;
+    float _get_fahrenheit() { return celsius * 9.0 / 5.0 + 32.0; }
+    void _set_fahrenheit(float f) { celsius = (f - 32.0) * 5.0 / 9.0; }
+}
+Thermostat t;
+t.fahrenheit = 212.0;
+print(t.celsius, " ", t.fahrenheit);
+t.celsius = 0.0;
+print(t.fahrenheit);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">100.0 212.0
+32.0</code></pre></div>
+<h3 id="access-labels">Access modifiers are section labels<a class="hlink" href="#access-labels" aria-label="link">&#8203;</a></h3>
+<p><code>private:</code> and <code>public:</code> label every member below them, as in C++; <code>private int x;</code> does not parse. A private member is reachable from the class and from every class derived from it, where C# would need <code>protected</code>:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Base {
+private:
+    int secret = 7;
+}
+class Derived : Base {
+    int reveal() { return secret; }
+}
+print(Derived().reveal());
+var b = Base();
+try { print(b.secret); } catch (e) { print("caught: ", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">7
+caught: Cannot access private member 'secret' of class 'Base'</code></pre></div>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Base { private int secret = 7; }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: parse failed:
+&lt;script&gt;:1:22: error: expected ':' after 'private'
+    class Base { private int secret = 7; }
+                         ^</code></pre></div>
+<h3 id="no-linq">LINQ is array methods<a class="hlink" href="#no-linq" aria-label="link">&#8203;</a></h3>
+<p><code>filter</code>, <code>map</code>, <code>reduce</code>, <code>find</code>, <code>some</code>, <code>every</code>, <code>sort</code> and <code>slice</code> cover a LINQ chain. There is no deferred query: each step runs when it is called. The <code>array::</code> forms (<code>array::filter(xs, f)</code>, <code>array::map</code>, <code>array::slice</code>, <code>array::sort</code>) return a new array and leave <code>xs</code> alone, like LINQ; the dot forms (<code>xs.filter(f)</code>, <code>map</code>, <code>slice</code>, <code>sort</code>, <code>remove_if</code>) change <code>xs</code> itself, like <code>List&lt;T&gt;.Sort</code> and <code>RemoveAll</code>, and the in-place ones return nothing, as <code>Sort</code> does, so a dot chain is an error. A map pairs the same way: <code>map::filter(m, f)</code> returns a new map, <code>m.filter(f)</code> keeps the entries in <code>m</code>.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; scores = [72, 95, 40, 88, 61];
+// scores.Where(s =&gt; s &gt;= 60).OrderByDescending(s =&gt; s).Take(3).Sum()
+auto passed = array::filter(scores, s =&gt; s &gt;= 60);
+passed.sort((int a, int b) =&gt; a &gt; b);
+int top3 = array::slice(passed, 0, 3).reduce((int sum, int s) =&gt; sum + s, 0);
+print(to_json(passed), " ", top3, " ", scores.some(s =&gt; s &lt; 50), " ", scores.find_index(s =&gt; s &gt; 90));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[95,88,72,61] 255 true 1</code></pre></div>
+<h3 id="coroutines-instead-of-async">Coroutines instead of async<a class="hlink" href="#coroutines-instead-of-async" aria-label="link">&#8203;</a></h3>
+<p>There is no <code>async</code> or <code>await</code>. Work that spans frames is a coroutine: each <code>next()</code> runs it to its next <code>yield</code>, and the final <code>return</code> value arrives with the last <code>next()</code>. The host's frame loop does the advancing:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine function fade(string what, int frames) {
+    for (int f = 1; f &lt;= frames; f++) { yield `${what} ${f}/${frames}`; }
+    return `${what} done`;
+}
+auto job = fade("door", 3);
+while (!job.done()) {
+    print(job.next());
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">door 1/3
+door 2/3
+door 3/3
+door done</code></pre></div>
+<h3 id="print-and-to-string">to_string() speaks for an instance<a class="hlink" href="#print-and-to-string" aria-label="link">&#8203;</a></h3>
+<p>A class's <code>string to_string()</code> is what <code>to_string(x)</code>, <code>"text" + x</code>, a template splice and <code>print(x)</code> show, as <code>ToString()</code> is in C#. A class without one prints its class name and fields:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Point { int x = 1; int y = 2; string to_string() { return `(${x}, ${y})`; } }
+class Plain { int x = 1; }
+Point p;
+print(p);
+print(to_string(p), " ", `${p}`, " ", "at " + p);
+print(Plain());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(1, 2)
+(1, 2) (1, 2) at (1, 2)
+Plain{x: 1}</code></pre></div>
+<h3 id="strings-change-in-place">Strings change in place<a class="hlink" href="#strings-change-in-place" aria-label="link">&#8203;</a></h3>
+<p>A string is a value, so a copy never sees a later change, but the mutating methods change the string they are called on and return nothing, so <code>string upper = name.to_upper();</code> is an error. The <code>string::</code> functions return a new string instead:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string name = "ada";
+string copy = name;
+name.to_upper();                      // changes name, returns nothing
+print(name, " ", copy, " ", string::to_lower(name), " ", name);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ADA ada ada ADA</code></pre></div>
+<h3 id="statics">Statics use ::<a class="hlink" href="#statics" aria-label="link">&#8203;</a></h3>
+<p><code>Config::volume</code> reaches a static. <code>Config.volume</code> is an error that names the right spelling: the checker reports it at load, and in a <code>[[warn_mode]]</code> region it raises the same text when it runs:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Config { static int volume = 7; }
+print(Config::volume);
+print(Config.volume);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
+main.jai:3:14: error: 'Config' is a class; use Config::volume
+    print(Config.volume);
+                 ^</code></pre></div>
+<h3 id="integers">Integers are 64-bit and checked<a class="hlink" href="#integers" aria-label="link">&#8203;</a></h3>
+<p>There is no wrap at 2<sup>31</sup>, and overflow at 2<sup>63</sup> raises instead of wrapping, as if every block were <code>checked</code>. <code>math::wrap_add</code>, <code>wrap_sub</code> and <code>wrap_mul</code> are the unchecked arithmetic:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int big = 2147483647;
+print(big + 1);
+int max = 9223372036854775807;
+try { max += 1; } catch (e) { print("caught: ", e); }
+print(math::wrap_add(max, 1));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2147483648
+caught: Integer overflow in '+='
+-9223372036854775808</code></pre></div>
+<h2 id="complete-program">A complete program<a class="hlink" href="#complete-program" aria-label="link">&#8203;</a></h2>
+<p>A small shop in the shape a C# programmer would write it: a class with a read-only property and an event, a shared instance, a lambda handler, an iterator feeding customers, and a filter over the stock.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Item {
+    string name;
+    int price;
+    Item(string n, int p) { name = n; price = p; }
+    string to_string() { return `${name} (${price}g)`; }
+}
+class Shop {
+private:
+    int gold_value = 100;
+public:
+    array&lt;Item&gt; stock = [];
+    array&lt;function&gt; on_sale = [];
+    int _get_gold() { return gold_value; }          // a read-only property
+    bool sell(string name) {
+        for (int i = 0; i &lt; stock.size(); i++) {
+            if (stock[i].name == name) {
+                Item sold = stock[i];
+                stock.remove(i);
+                gold_value += sold.price;
+                for (auto&amp; h : on_sale) { h(sold); }
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+shared_ptr&lt;Shop&gt; shop = new Shop();                 // one shared shop, like a C# reference
+shop.stock = [Item("sword", 40), Item("potion", 5), Item("shield", 30)];
+array&lt;string&gt; receipts = [];
+shop.on_sale.push([](Item it) { receipts.push("sold " + it); });
+
+coroutine customers() {
+    yield "potion";
+    yield "axe";
+    yield "sword";
+}
+for (auto want : customers()) {
+    if (!shop.sell(want)) { receipts.push("no " + want); }
+}
+auto cheap = array::filter(shop.stock, [](Item it) { return it.price &lt; 50; });
+print(receipts.join("; "));
+print("gold: ", shop.gold, ", left: ", cheap.size(), " ", to_string(cheap[0]));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">sold potion (5g); no axe; sold sword (40g)
+gold: 145, left: 1 shield (30g)</code></pre></div>
+<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
+<p><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> is the chapter to read before anything else. <a href="../guide/02-type-ladder.html">The Type Ladder</a> explains <code>var</code>, <code>auto</code> and typed slots, <a href="../guide/07-classes.html">Classes</a> constructors, accessors, access control and hot reload, and <a href="../guide/08-coroutines.html">Coroutines</a> the handles that replace <code>async</code>. The <a href="../tour/index.html">ten-minute tour</a> builds a small game with all of it.</p>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../guide/01-hello.html"><span>next &middot; the guide &rarr;</span>Hello &amp; Basics</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

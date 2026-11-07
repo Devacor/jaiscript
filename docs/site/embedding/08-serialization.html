@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Serialization — JaiScript Embedding</title>
+<meta name="description" content="Script values to JSON and back, plus a C++ archive framework that writes JSON or binary through one interface.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Serialization — JaiScript Embedding">
+<meta property="og:description" content="Script values to JSON and back, plus a C++ archive framework that writes JSON or binary through one interface.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding</summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li class="current"><a href="../embedding/08-serialization.html" aria-current="page">Serialization</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>08</nav>
+<article class="chapter"><h1 id="serialization">Serialization<a class="hlink" href="#serialization" aria-label="link">&#8203;</a></h1>
+<p>Two layers, one system.</p>
+<p><strong>Script side</strong>: the <code>to_json</code> / <code>from_json</code> builtins turn any script
+value into text and back: one line each way.</p>
+<p><strong>C++ side</strong>: an archive framework that writes JSON or a compact binary through one
+interface (<code>include/jaiscript/serialization/</code>). It is a drop-in for Cereal-shaped code: the same
+member/free <code>serialize</code> / <code>save</code> / <code>load</code> dispatch.</p>
+<p>The part worth knowing before you write any of it: <strong>binding a class for scripting does not
+make it archivable by itself.</strong> The C++ archives need what the class declares for them: a member or free
+<code>serialize</code> / <code>save</code> / <code>load</code>, or <code>JAI_PROPERTY</code> fields on a
+<code>property_owner</code>. What the <a href="02-dynamic-binder.html">dynamic_binder</a> chain adds is the
+class&#x27;s name for the script-value path, and a <code>jai::registrar</code> around the same chain gives the
+identity polymorphic saves need (below).</p>
+<h2 id="script-side-to-json-from-json">Script side: <code>to_json</code> / <code>from_json</code><a class="hlink" href="#script-side-to-json-from-json" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Player {
+    int hp = 0;
+    float speed = 0.0;
+    string name = "";
+}
+auto p = Player();
+p.hp = 42; p.speed = 1.5; p.name = "hero";
+
+var j = to_json(p);
+print(j);
+
+var q = from_json(j);          // reconstructs a Player via the $type discriminator
+print(type_of(q.hp) + " " + to_string(q.hp) + ", " + q.name);
+
+// A float payload landing in an int field: the load converts, it does not trust.
+var r = from_json("{\"$type\": \"Player\", \"$val\": {\"hp\": 7.9, \"speed\": 2, \"name\": \"clone\"}}");
+print(type_of(r.hp) + " " + to_string(r.hp) + ", " + type_of(r.speed));
+
+// Plain values and containers round-trip too.
+var m = from_json(to_json({"a": [1, 2.5, "three", true, null]}));
+print(to_json(m));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{&quot;$type&quot;:&quot;Player&quot;,&quot;$val&quot;:{&quot;hp&quot;:42,&quot;speed&quot;:1.5,&quot;name&quot;:&quot;hero&quot;}}
+int 42, hero
+int 7, float
+{&quot;a&quot;:[1,2.5,&quot;three&quot;,true,null]}</code></pre></div>
+<p>The interesting line is the third one. The payload said <code>"hp": 7.9</code> and the field is
+declared <code>int</code>, so the load converted it (through the very same table <code>=</code> uses)
+and you got <code>7</code>. Nothing about a save file is trusted more than an assignment is.</p>
+<p>A second argument pretty-prints: <code>to_json(v, n)</code> indents <code>n</code> spaces per level, and
+<code>to_json(v)</code> (or <code>n = 0</code>) writes one line.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Player { int hp = 42; string name = "hero"; array&lt;int&gt; bag = [1, 2]; }
+print(to_json(Player(), 2));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{
+  &quot;$type&quot;: &quot;Player&quot;,
+  &quot;$val&quot;: {
+    &quot;hp&quot;: 42,
+    &quot;name&quot;: &quot;hero&quot;,
+    &quot;bag&quot;: [
+      1,
+      2
+    ]
+  }
+}</code></pre></div>
+<p>Key facts:</p>
+<ul><li><strong>Typed-field enforcement on deserialize</strong>: declared field types are stored on the class definition, and <em>every</em> write path, including <code>from_json</code>, converts through the same field kernel that <code>=</code> uses (float→int truncates, int→string via to_string; <code>var</code> fields stay dynamic). A hostile or sloppy save file cannot sneak a string into an <code>int hp</code>.</li><li>A class instance is <code>{"$type": "Name", "$val": {fields}}</code>, its fields in the class&#x27;s declaration order (base first). The class must be defined (or registered) in the engine before <code>from_json</code> sees its <code>$type</code>. An unknown <code>$type</code> is <em>data</em>, not an error: <code>from_json("{\"$type\": \"NoSuchClass\", \"$val\": {\"hp\": 3}}")</code> hands you a plain <code>map</code> with both keys intact.</li><li>A known <code>$type</code> is constructed as <code>Name()</code> would construct it (the default constructor and the field initializers run, then the payload writes its fields). A constructor that throws or raises an error fails the <code>from_json</code> call with that error, catchable like any call&#x27;s.</li><li>Values a JSON object cannot spell travel tagged, in the same <code>$</code> family as the archives&#x27; <code>$id</code>: a <code>char</code> is <code>{"$char": 122}</code> (its code, 0..255), and a map whose keys are not all strings (or an empty one declared with such a key type) is <code>{"$map": [[1, "sword"], [2, "bow"]]}</code>, each key and value written by the same rules. <code>from_json</code> reads both back, so a <code>char</code> field and a <code>map&lt;int, string&gt;</code> field round-trip. A single-key object of any other shape (<code>{"$char": 300}</code>, a <code>$map</code> whose entries are not pairs) stays a plain map.</li><li>Handles keep their sharing. A <code>shared_ptr&lt;T&gt;</code> (what <code>new T()</code> yields) writes its object once, at its first appearance, as <code>{"$id": 1, "$type": "T", "$val": {...}}</code>, and every later handle to the same object as <code>{"$id": 1}</code>; a <code>weak_ptr</code> is <code>{"$ref": 1}</code> in the same numbering (with the object&#x27;s <code>"$type"</code> and <code>"$val"</code> beside it when it is the first reference). An empty handle and an expired weak handle are <code>null</code>; a <code>null</code> loads into a <code>shared_ptr&lt;T&gt;</code> or <code>weak_ptr&lt;T&gt;</code> field as <code>= null</code> stores it. These are the C++ archives&#x27; spellings (<a href="#one-handle-format">One handle format</a>). The load hands back handles to one object per id, in any order and through cycles, so two slots that shared an object share it again; a weak pointer whose object nothing else in the save holds loads expired. <code>to_binary</code> / <code>to_base64</code> keep the same graph. An id whose object the save never wrote fails the load with <code>Invalid shared_ptr ID: 4</code>.</li><li>Floats round-trip at <strong>full precision</strong> (<code>std::to_chars</code> shortest-round-trip; <code>-0.0</code> keeps its sign). JSON has no spelling for an infinity or a NaN, so <code>to_json</code> writes <code>null</code> for them; <code>to_base64</code> / <code>from_base64</code> keep the exact bits.</li><li>A payload nests as deep as memory allows: parsing, rebuilding and writing walk values on work lists, so a save that loaded on one machine loads on another whatever its depth (a host record type's own recursion stops at the host thread's stack or <code>JAI_MAX_HOST_RECORD_DEPTH</code> = 1024 records). Hostile-text hardening: trailing garbage rejected, invalid unicode escapes are serialization errors, lone surrogates become replacement chars.</li></ul>
+<h3 id="saving-game-state-to-a-file">Saving game state to a file<a class="hlink" href="#saving-game-state-to-a-file" aria-label="link">&#8203;</a></h3>
+<p>A save is <code>to_json</code> written to a file, and a load is the file read back through <code>from_json</code>. File access belongs to the host: the standalone runner provides <code>write_file</code>, <code>read_file</code> and <code>file_exists</code>, and an embedding host registers its own (they run through its virtual filesystem, its save folder, its cloud sync). <code>app_data_dir(name)</code> answers the platform's per-user data folder.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Hero { string name = "ada"; int gold = 0; array&lt;string&gt; bag = []; }
+class SaveGame { int version = 1; Hero hero; map&lt;string, bool&gt; flags; }
+
+SaveGame game;
+game.hero.gold = 120;
+game.hero.bag.push("lantern");
+game.flags["met_the_raccoon"] = true;
+write_file("save1.json", to_json(game, 2));
+
+SaveGame loaded = from_json(read_file("save1.json"));
+print(loaded.hero.name, " ", loaded.hero.gold, " ", loaded.hero.bag[0], " ", loaded.flags["met_the_raccoon"]);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ada 120 lantern true</code></pre></div>
+<p>A field added to the class after a save loads with its initializer, because <code>from_json</code> builds the object first and then writes the fields the file has. A version field like the one above lets a loader convert older files explicitly.</p>
+<h2 id="c-side-the-convenience-api">C++ side: the convenience API<a class="hlink" href="#c-side-the-convenience-api" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-cpp" data-sample="serialization-savegame"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/serialization/convenience.hpp&gt;
+
+struct SaveGame {
+    int level = 0; double time_played = 0; std::string hero; std::vector&lt;int&gt; inventory;
+    template&lt;typename Archive&gt;
+    void serialize(Archive&amp; ar) {          // one method, both directions, both formats
+        ar(&quot;level&quot;, level);
+        ar(&quot;time_played&quot;, time_played);
+        ar(&quot;hero&quot;, hero);
+        ar(&quot;inventory&quot;, inventory);
+    }
+};
+
+SaveGame save{7, 123.5, &quot;Alice&quot;, {1, 2, 3}};
+std::string json = jai::to_json(*eng, save);                  // human-readable, indented 2 spaces
+SaveGame loaded  = jai::from_json&lt;SaveGame&gt;(*eng, json);
+std::cout &lt;&lt; json &lt;&lt; &quot;\n&quot;;
+std::cout &lt;&lt; jai::to_json(*eng, save, 0) &lt;&lt; &quot;\n&quot;;              // indent 0: one line
+std::cout &lt;&lt; &quot;loaded: level=&quot; &lt;&lt; loaded.level &lt;&lt; &quot; hero=&quot; &lt;&lt; loaded.hero &lt;&lt; &quot; items=&quot; &lt;&lt; loaded.inventory.size() &lt;&lt; &quot;\n&quot;;
+
+std::vector&lt;uint8_t&gt; blob = jai::to_binary(*eng, save);       // compact little-endian
+SaveGame fromBin = jai::from_binary&lt;SaveGame&gt;(*eng, blob);
+std::cout &lt;&lt; &quot;binary: &quot; &lt;&lt; blob.size() &lt;&lt; &quot; bytes, hero=&quot; &lt;&lt; fromBin.hero &lt;&lt; &quot;\n&quot;;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{
+  &quot;level&quot;: 7,
+  &quot;time_played&quot;: 123.5,
+  &quot;hero&quot;: &quot;Alice&quot;,
+  &quot;inventory&quot;: [
+    1,
+    2,
+    3
+  ]
+}
+{&quot;level&quot;: 7,&quot;time_played&quot;: 123.5,&quot;hero&quot;: &quot;Alice&quot;,&quot;inventory&quot;: [1,2,3]}
+loaded: level=7 hero=Alice items=3
+binary: 114 bytes, hero=Alice</code></pre></div>
+<p>The third argument of <code>to_json</code> is the indent, 2 by default; 0 writes one line. A plain struct&#x27;s fields sit flat in the root record, which <code>to_json</code> opens with no type name, and a C++ record nested inside it carries no <code>$type</code>. (An owning pointer at the root sits under a <code>value0</code> slot in its pointer shape instead: <code>$id</code>/<code>$type</code>/<code>$val</code> for a <code>shared_ptr</code>, the shape the <a href="02-dynamic-binder.html#serialized">binder chapter</a> shows, and <code>$val</code> alone for a <code>unique_ptr</code>.)</p>
+<p>Also available: <code>to_binary_string</code>/<code>from_binary_string</code>, <code>to_base64</code>/<code>from_base64</code>, and <code>Context&amp;</code> overloads of every one (<code>jai::from_json&lt;T&gt;(*eng, json, ctx)</code>, <code>jai::to_binary(*eng, value, ctx)</code>) that hand a user context pointer to nested <code>save</code> and <code>load</code> calls (<code>ar.get_user_context&lt;Context&gt;()</code>). The binary format is little-endian on every platform, so a blob written on one machine loads on another.</p>
+<p>The loads that return <code>T</code> by value (<code>from_json&lt;T&gt;</code>, <code>from_binary&lt;T&gt;</code>, <code>from_binary_string&lt;T&gt;</code>, <code>from_base64&lt;T&gt;</code>) build a local <code>T</code> and return it, so <code>T</code> must be movable. A <code>property_owner</code> deletes its move constructor (its property manager points at its members), so it loads as <code>jai::from_json&lt;std::shared_ptr&lt;T&gt;&gt;</code>, which also keeps a derived object&#x27;s <code>$type</code>.</p>
+<h3 id="dispatch-priority-cereal-style-provide-either-serialize-or-save-load">Dispatch priority (Cereal-style: provide either <code>serialize</code> OR <code>save</code>/<code>load</code>)<a class="hlink" href="#dispatch-priority-cereal-style-provide-either-serialize-or-save-load" aria-label="link">&#8203;</a></h3>
+<p>For a type <code>T</code> the archive takes the first of these that applies:</p>
+<ol>
+<li>a primitive: an arithmetic type, an enum or <code>std::string</code></li>
+<li>a member <code>save</code> (writing) or <code>load</code> (reading)</li>
+<li>a member <code>serialize</code></li>
+<li>a <code>property_owner&lt;T&gt;</code>: every level&#x27;s <code>JAI_PROPERTY</code> fields, automatically</li>
+<li>a built-in standard type: <code>std::vector</code>, <code>map</code>, <code>unordered_map</code>, <code>array</code>, <code>pair</code>, <code>optional</code>, <code>variant</code>, <code>tuple</code>, the sets, <code>shared_ptr</code> / <code>weak_ptr</code> / <code>unique_ptr</code></li>
+<li>a free <code>serialize</code> found by ADL</li>
+<li>a free <code>save</code> (writing) or <code>load</code> (reading) found by ADL</li>
+</ol>
+<p>Members come first. A <code>property_owner</code> type that also declares <code>save</code> / <code>load</code> uses them, and can call <code>save_owned_properties(ar)</code> / <code>load_owned_properties(ar)</code> inside them to write its <code>JAI_PROPERTY</code> fields beside the hand-written ones. A type with a member function never reaches a free one. A type with <code>save</code> but no <code>load</code> loads through its <code>serialize</code>, and the reverse.</p>
+<p>Free functions are found only in their two-parameter form: <code>serialize(Archive&amp;, T&amp;)</code>, <code>save(Archive&amp;, const T&amp;)</code>, <code>load(Archive&amp;, T&amp;)</code>. One with a version parameter is not found. A member <code>save</code>, <code>load</code> or <code>serialize</code> with a <code>std::uint32_t</code> version parameter is found, and preferred over the one-parameter form (<a href="#versions-and-missing-fields">Versions</a> says what it receives and why a format property serves better).</p>
+<p>No match is not a compile error: the archive throws <code>jai::serialization_error</code> when it reaches the value (<code>Type '...' is not serializable. Add save/load, serialize, property_owner, or ADL functions — or mark the property transient.</code>, and <code>is not deserializable</code> on a load). A test that saves and loads each type catches it before a shipped save does. <code>JAI_STATIC_BINDER</code> (a compile-time property table some hosts declare instead of <code>property_owner</code>) is not part of this dispatch: its <code>jai_static_type&lt;T&gt;::save</code> / <code>load</code> runs for a statically bound property inside another statically bound type, and a statically bound type handed to the archive directly needs one of the functions above.</p>
+<p>A <code>shared_ptr</code> or <code>weak_ptr</code> load builds its object through <code>load_and_construct</code> when the type declares one: a static member <code>static void load_and_construct(Archive&amp;, jai::serialization::construct&lt;T&gt;&amp;)</code> with exactly those two parameters (<code>&lt;jaiscript/serialization/construct.hpp&gt;</code>); a free function or a form with a version parameter is not found. Without one, the archive default-constructs the object and loads it normally: a public default constructor, or a private one when the type declares <code>friend jai::access;</code>. A type with neither raises <code>serialization_error</code>. A <code>unique_ptr</code> always default-constructs, the same two ways.</p>
+<p>Private members: <code>friend jai::access</code>.</p>
+<h3 id="archive-methods">The archive inside <code>save</code>, <code>load</code> and <code>serialize</code><a class="hlink" href="#archive-methods" aria-label="link">&#8203;</a></h3>
+<p>Named properties are the normal form; the unnamed calls exist for hand-written layouts. A writer:</p>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>Writes</th></tr></thead><tbody>
+<tr><td><code>ar.serialize("name", value)</code>, <code>ar("name", value)</code></td><td>a named property; <code>value</code> goes through the dispatch above</td></tr>
+<tr><td><code>ar(JAI_NVP(x), JAI_NVP(y))</code>, <code>ar(make_nvp("name", value))</code></td><td>named properties, the key spelled by the macro (the variable's name) or the pair</td></tr>
+<tr><td><code>ar(obj)</code></td><td><code>obj</code>'s own <code>save</code> or <code>serialize</code>, in place</td></tr>
+<tr><td><code>ar.write_element(value)</code></td><td>the next element between <code>begin_array</code> and <code>end_array</code></td></tr>
+<tr><td><code>ar.write_int8</code> &hellip; <code>write_int64</code>, <code>write_uint8</code> &hellip; <code>write_uint64</code>, <code>write_float32</code>, <code>write_float64</code>, <code>write_bool</code>, <code>write_string</code></td><td>one unnamed primitive</td></tr>
+<tr><td><code>begin_object(type_name, version)</code> / <code>end_object()</code>, <code>begin_array(size)</code> / <code>end_array()</code>, <code>begin_map(size)</code> / <code>write_map_key(key)</code> / <code>end_map()</code></td><td>structure</td></tr>
+</tbody></table></div>
+<p>A reader mirrors it:</p>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>Reads</th></tr></thead><tbody>
+<tr><td><code>ar.serialize("name", value)</code>, <code>ar("name", value)</code>, <code>ar(nvp)</code></td><td>the named property into <code>value</code>; a record without it throws <code>jai::serialization_error</code> (<code>Property 'name' not found during deserialization</code>)</td></tr>
+<tr><td><code>ar(obj)</code></td><td><code>obj</code>'s own <code>load</code> or <code>serialize</code>, from the current record</td></tr>
+<tr><td><code>ar.read_element(value)</code></td><td>the next element between <code>begin_array</code> and <code>end_array</code></td></tr>
+<tr><td><code>ar.has_property("name")</code>, <code>ar.seek_property("name")</code></td><td>whether the current record has the property; positions the reader at it (false when it is absent)</td></tr>
+<tr><td><code>ar.read_int32()</code>, <code>ar.read_string()</code>, &hellip; (the writer's widths)</td><td>one unnamed primitive</td></tr>
+<tr><td><code>begin_object(type_name, version)</code> (fills both) / <code>end_object()</code>, <code>size_t n = begin_array()</code> / <code>end_array()</code>, <code>begin_map()</code> / <code>read_map_key(key)</code> / <code>end_map()</code></td><td>structure</td></tr>
+<tr><td><code>ar.get_version()</code></td><td>the version of the record opened last (<a href="#versions-and-missing-fields">Versions</a>)</td></tr>
+</tbody></table></div>
+<p>Every failure in either direction throws <code>jai::serialization_error</code>, a <code>jai::runtime_error</code>.</p>
+<h3 id="versions-and-missing-fields">Versions and missing fields<a class="hlink" href="#versions-and-missing-fields" aria-label="link">&#8203;</a></h3>
+<p><strong>Ignore the version parameter; write a format property.</strong> A member <code>save</code>, <code>load</code> or <code>serialize</code> may take a <code>std::uint32_t</code> version, the slot Cereal fills with a class version. These archives keep no class version, so the number carries nothing you wrote: a save always receives 0, and a load receives whatever the record happens to hold, usually 1 in JSON and 0 in binary. A <code>format</code> property is an ordinary field instead. You choose its value, it reads back the same from JSON and binary, and a record written before it existed simply lacks it, so the load defaults it:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">template&lt;class Archive&gt;
+void save(Archive&amp; ar) const {
+    ar(&quot;format&quot;, std::uint32_t(2));
+    ar(JAI_NVP(health));
+    ar(JAI_NVP(experience));
+}
+
+template&lt;class Archive&gt;
+void load(Archive&amp; ar) {
+    std::uint32_t format = 1;
+    if (ar.has_property(&quot;format&quot;)) { ar(&quot;format&quot;, format); }
+    ar(JAI_NVP(health));
+    if (format &gt;= 2) {
+        ar(JAI_NVP(experience));
+    } else {
+        int level = 0;
+        ar(&quot;level&quot;, level);
+        experience = level * 100;
+    }
+}</code></pre></div>
+<p>Most changes need no format number at all. Both formats are self-describing: every record names its properties, so a reader finds a property by name, never by position. The automatic <code>property_owner</code> load reads the properties the record and the class share. A property the record lacks keeps its initializer, and a property the class no longer declares is skipped. Adding or removing a <code>JAI_PROPERTY</code> therefore needs no migration code.</p>
+<p>A hand-written <code>load</code> asks for each property it reads, and <code>ar("name", v)</code> throws when the record lacks it. A field newer than some saves is read under <code>ar.has_property("name")</code>, so a record written before the field existed leaves it at its initializer.</p>
+<p>A format property earns its place when a field keeps its name but changes its meaning: a unit, an encoding, one field split into two, as in the example above. <a href="../bridges/04-from-cereal.html#versions-in-a-self-describing-format">From Cereal</a> converts a Cereal-versioned type this way.</p>
+<p>For code that already takes the version parameter, this is what it receives:</p>
+<ul>
+<li>A save always receives 0.</li>
+<li>A load reached through a named read (<code>ar("name", obj)</code>, a <code>JAI_PROPERTY</code>, a non-polymorphic pointer&#x27;s <code>$val</code>) receives the version stored in that record.</li>
+<li>Every other load (<code>ar(obj)</code>, a polymorphic pointer&#x27;s <code>$val</code>) receives 0.</li>
+<li>A record the archive opens itself stores no version. JSON writes no <code>"$type"</code> or <code>"$version"</code> key for it, which reads back as version 1. Binary stores an empty type name and version 0.</li>
+<li>The root record that <code>to_json</code> / <code>to_binary</code> open has an empty type name and version 1, which JSON leaves unwritten.</li>
+<li>A hand-written <code>save</code> can open a record with <code>begin_object(type_name, version)</code>. Binary keeps any number; JSON writes <code>"$version"</code> only above 1, so 0 reads back as 1.</li>
+<li><code>ar.get_version()</code> answers the version of the record opened last.</li>
+</ul>
+<p>A binder chain&#x27;s <code>.version(n)</code> never reaches the C++ archives. It sets a number (1 by default) that the engine&#x27;s serialization registry keeps for the class, and only the binary writer of script values reads it: <code>to_binary</code> / <code>to_base64</code> write it after the class name of each bound object a script value holds. On load, <code>from_binary</code> / <code>from_base64</code> hand that number to the class&#x27;s <code>.post_load_hook</code> only when the class also has a <code>.deserialization_factory</code>. Without a factory the object is rebuilt by its class name, and the hook receives 1. Script-side <code>from_json</code> runs the hook too, with the object&#x27;s <code>"$version"</code> key (beside its <code>"$type"</code>) when it has one and 1 otherwise, and <code>to_json</code> writes no <code>"$version"</code>.</p>
+<h3 id="wire-formats">Wire formats<a class="hlink" href="#wire-formats" aria-label="link">&#8203;</a></h3>
+<p>Both formats run the same calls; the writer decides the bytes. JSON writes a record as an object of its properties; a record opened with a type name (a hand-written <code>begin_object(type_name, version)</code>) leads with <code>"$type"</code>, and with <code>"$version"</code> when the version is above 1. The binary writer is little-endian: a record is the byte <code>0x01</code>, its type name (a <code>uint32</code> length, then the bytes; empty for a record the archive opens itself) and a <code>uint32</code> version (0 for such a record), then, when the record closes, its property count, every property name, every property's byte size, the values, and <code>0x02</code>. An array is <code>0x03</code>, a count, the elements and <code>0x04</code>; a map is <code>0x05</code> &hellip; <code>0x06</code>; null is <code>0x00</code>. The names and sizes up front let a reader jump to a property by name and skip the ones it does not know without parsing them.</p>
+<p>Pointers have the same record shapes in both formats, keyed by the archive's per-save object ids:</p>
+<div class="tablewrap"><table><thead><tr><th>Value</th><th>Written as</th></tr></thead><tbody>
+<tr><td><code>shared_ptr</code>, first time its object is written</td><td><code>{"$id": N, "$val": {...}}</code>; through a base pointer holding a registered derived class, <code>{"$id": N, "$type": "Derived", "$val": {...}}</code></td></tr>
+<tr><td><code>shared_ptr</code> to an object already written</td><td><code>{"$id": N}</code>, which the load re-aliases</td></tr>
+<tr><td><code>weak_ptr</code></td><td><code>{"$ref": N}</code>, with the object's <code>"$val"</code> (and <code>"$type"</code>) inline when the weak pointer is its first reference in the save; an expired one is null</td></tr>
+<tr><td><code>unique_ptr</code></td><td><code>{"$val": {...}}</code>, by the pointer&#x27;s static type with no <code>$type</code>: a <code>unique_ptr&lt;Base&gt;</code> holding a derived object writes only the <code>Base</code> fields and loads a <code>Base</code>, so a polymorphic owner is a <code>shared_ptr&lt;Base&gt;</code></td></tr>
+<tr><td>a null pointer</td><td>null</td></tr>
+</tbody></table></div>
+<h3 id="one-handle-format">One handle format<a class="hlink" href="#one-handle-format" aria-label="link">&#8203;</a></h3>
+<p>The script archives write a script value: script <code>to_json</code> / <code>from_json</code>, <code>to_binary</code> / <code>from_binary</code> and <code>to_base64</code> / <code>from_base64</code>. The C++ archives write a host type through its <code>serialize</code>, <code>save</code> / <code>load</code> or <code>JAI_PROPERTY</code> fields: <code>jai::to_json</code>, <code>jai::from_json&lt;T&gt;</code> and the other C++ entry points. Both spell classes and handles with the same keys, and the binary forms follow the same identity rules: an object travels with the save&#x27;s first reference to it, and every later reference is its id.</p>
+<div class="tablewrap"><table><thead><tr><th>Value</th><th>Written as</th></tr></thead><tbody>
+<tr><td>an object that names its class</td><td><code>{"$type": "Name", "$val": {...}}</code></td></tr>
+<tr><td>first handle to an object</td><td><code>{"$id": 1, "$val": {...}}</code>, with <code>"$type": "Name"</code> beside <code>"$val"</code> when the object names its class</td></tr>
+<tr><td>later handle to it</td><td><code>{"$id": 1}</code></td></tr>
+<tr><td>weak handle</td><td><code>{"$ref": 1}</code>, with the object&#x27;s <code>"$type"</code> and <code>"$val"</code> when it is the first reference</td></tr>
+<tr><td>expired weak handle, empty handle</td><td>null</td></tr>
+</tbody></table></div>
+<p>Where the two differ, the difference is the static type:</p>
+<div class="tablewrap"><table><thead><tr><th>Value</th><th>Script archives</th><th>C++ archives</th></tr></thead><tbody>
+<tr><td>an object&#x27;s class</td><td>named on every object</td><td>named when a base pointer holds a registered derived class; otherwise the static type names it</td></tr>
+<tr><td>the root</td><td>the value itself</td><td>a record type&#x27;s properties, flat; anything else (an owning pointer, a container, a number) under <code>"value0"</code></td></tr>
+<tr><td>a class name the engine does not know</td><td>the object loads as a plain map</td><td>the load throws <code>Unknown polymorphic type: Name</code></td></tr>
+</tbody></table></div>
+<p>The same object graph in each. A script class holding two handles to one <code>Node</code> and a weak handle to it:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Node { int v = 1; }
+class Link { shared_ptr&lt;Node&gt; a; shared_ptr&lt;Node&gt; b; weak_ptr&lt;Node&gt; w; }
+Link link;
+link.a = new Node();
+link.b = link.a;
+link.w = link.a;
+print(to_json(link));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{&quot;$type&quot;:&quot;Link&quot;,&quot;$val&quot;:{&quot;a&quot;:{&quot;$id&quot;:1,&quot;$type&quot;:&quot;Node&quot;,&quot;$val&quot;:{&quot;v&quot;:1}},&quot;b&quot;:{&quot;$id&quot;:1},&quot;w&quot;:{&quot;$ref&quot;:1}}}</code></pre></div>
+<p>The C++ version of the same types:</p>
+<div class="codeblock cb-cpp" data-sample="serialization-link"><span class="cb-label">C++</span><pre><code class="lang-cpp">struct Node {
+    int64_t v = 1;
+    template&lt;class Archive&gt; void serialize(Archive&amp; ar) { ar(&quot;v&quot;, v); }
+};
+struct Link {
+    std::shared_ptr&lt;Node&gt; a, b;
+    std::weak_ptr&lt;Node&gt; w;
+    template&lt;class Archive&gt; void serialize(Archive&amp; ar) { ar(&quot;a&quot;, a); ar(&quot;b&quot;, b); ar(&quot;w&quot;, w); }
+};
+
+Link link;
+link.a = std::make_shared&lt;Node&gt;();
+link.b = link.a;
+link.w = link.a;
+std::cout &lt;&lt; jai::to_json(*eng, link, 0) &lt;&lt; &quot;\n&quot;;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{&quot;a&quot;: {&quot;$id&quot;: 1,&quot;$val&quot;: {&quot;v&quot;: 1}},&quot;b&quot;: {&quot;$id&quot;: 1},&quot;w&quot;: {&quot;$ref&quot;: 1}}</code></pre></div>
+<p>A script load has no static type to go by, so every object names its class, and a name the engine does not know leaves the data as a map. A C++ load knows the type it is reading, so a record names its class only when the dynamic type differs from the static one. A script class layered over a C++ object meets both: the C++ archives write it as <code>"$type"</code>, <code>"$script"</code> and <code>"$val"</code>, and <code>"$script"</code> holds the script fields as a string in the script archives&#x27; JSON (<a href="13-script-extensible.html#serialization">Script-Extensible Objects</a>).</p>
+<h3 id="migrating-from-cereal">Migrating from Cereal<a class="hlink" href="#migrating-from-cereal" aria-label="link">&#8203;</a></h3>
+<p>A Cereal-serialized type moves over with spelling changes: <code>CEREAL_NVP</code> becomes <code>JAI_NVP</code>, <code>friend class cereal::access</code> becomes <code>friend jai::access</code>, member and free <code>serialize</code> / <code>save</code> / <code>load</code> keep their shape, and <code>CEREAL_REGISTER_TYPE</code> becomes a <code>jai::registrar</code> or a <code>property_owner</code> base. The files do not move: these archives do not read Cereal&#x27;s format, so existing data is converted once, loaded with Cereal and saved with JaiScript. <a href="../bridges/04-from-cereal.html">From Cereal</a>, in the Code Migrations, maps every Cereal construct (and the Boost.Serialization spellings), converts a small save game, keeps both libraries in one function during the transition, and covers converting existing files.</p>
+<h3 id="smart-pointers-polymorphism-graphs">Smart pointers, polymorphism, graphs<a class="hlink" href="#smart-pointers-polymorphism-graphs" aria-label="link">&#8203;</a></h3>
+<ul><li><code>shared_ptr</code> <strong>dedupe</strong>: aliased pointers serialize once (<code>$id</code>) and re-alias on load. Loaded copies share one object, exactly like the graph you saved.</li><li><code>weak_ptr</code> reconstruction works even for <strong>forward references</strong> (the weak_ptr appears in the stream before its owner).</li><li><strong>Polymorphism needs a serialization identity.</strong> Saving a <code>shared_ptr&lt;Base&gt;</code> that holds a Derived writes a <code>$type</code> discriminator and loads the Derived back, provided Derived has a name the archives know. A <code>property_owner</code> type has one from its declaration (<a href="02-dynamic-binder.html#inheritance-and-polymorphism">dynamic_binder</a>). A plain class bound with <code>dynamic_binder</code> gets one from a <code>jai::registrar</code>, whose <code>jai::bases&lt;...&gt;</code> tag records the edge the load checks; <code>.base_class&lt;B&gt;()</code> alone is the script-side edge, and a save through the base pointer without a registrar raises <code>Cannot serialize unregistered polymorphic type 'class Monster' through pointer-to-base 'class Actor'. Register it with jai::registrar&lt;T, Context, jai::bases&lt;Base&gt;&gt;("Name") or derive from jai::property_owner&lt;T, Base&gt;.</code> (the type names are the compiler&#x27;s <code>typeid</code> spellings, MSVC&#x27;s here):
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">// examples/embed_quickstart: Monster derives Actor, both plain classes with serialize()
+static jai::registrar&lt;Monster, void, jai::bases&lt;Actor&gt;&gt; monsterRegistrar(&quot;Monster&quot;, [](jai::dynamic_binder&lt;Monster&gt;&amp; b) {
+    b.base_class&lt;Actor&gt;()
+     .constructor&lt;std::string, int64_t&gt;()
+     .property(&quot;hp&quot;, &amp;Monster::hp)
+     .method(&quot;hurt&quot;, &amp;Monster::hurt);
+});
+
+jai::bind_registrar(*eng);                            // binds every registrar into this engine
+std::shared_ptr&lt;Actor&gt; boss = std::make_shared&lt;Monster&gt;(&quot;Troll&quot;, 40);
+auto json = jai::to_json(*eng, boss);                 // &quot;$type&quot;: &quot;Monster&quot;
+auto back = jai::from_json&lt;std::shared_ptr&lt;Actor&gt;&gt;(*eng, json);   // a Monster again</code></pre></div>
+The chain&#x27;s <code>.version(n)</code>, <code>.post_load_hook(...)</code> and <code>.deserialization_factory(...)</code> serve bound objects inside script values: <code>.version(n)</code> and the factory serve <code>from_binary</code> / <code>from_base64</code>, and the hook runs after those and after <code>from_json</code> (<a href="#versions-and-missing-fields">Versions</a>). A C++ pointer load constructs through <code>load_and_construct</code> or the default constructor. The chain itself is documented in <a href="02-dynamic-binder.html">dynamic_binder</a>.</li><li><strong>A script class layered over a C++ object serializes as itself.</strong> An object a script has <code>extend</code>ed writes <code>$type</code> (the script class), <code>$script</code> (its script fields) and <code>$val</code> (the C++ payload) through every archive path, and a load rebuilds the hybrid. See <a href="13-script-extensible.html#serialization">Script-Extensible Objects</a>.</li><li><strong>Signal connections ride save files.</strong> Named <em>script-text</em> receivers on signal properties serialize with their object; pass the engine as the <strong>load context</strong> (<code>jai::from_json&lt;std::shared_ptr&lt;T&gt;&gt;(*eng, json, *eng)</code>) and they re-arm on load, firing on the next emit. Function-object receivers (script lambdas, C++ callbacks) are runtime-only and skipped, never errored on. The worked round-trip is in the <a href="02-dynamic-binder.html#serialized">binder chapter</a>.</li></ul>
+<h3 id="security-posture-untrusted-payloads">Security posture (untrusted payloads)<a class="hlink" href="#security-posture-untrusted-payloads" aria-label="link">&#8203;</a></h3>
+<p>A dedicated security suite pins that deserialization <strong>never executes</strong> payload-controlled names: hostile <code>$type</code>/property names in JSON, binary, and base64 are data, not code, and oversized array/map length prefixes in binary data are rejected instead of pre-allocated, so a 12-byte payload can&#x27;t request a 2 GB allocation, and a count reserves at most 1 MiB ahead of the elements that actually load. Data of another kind where a record, an array, a map or an integer belongs fails the load with a <code>jai::serialization_error</code> (<code>Expected an object in the archive, found an integer</code>), and so does an integer its field cannot hold (<code>Archive value 300 does not fit int8</code>, and <code>1.5</code> into an integer field alike): nothing wraps or truncates (<a href="../reference/index.html#host-errors-archives">the texts</a>). A payload does choose which of the engine&#x27;s classes a load builds: a type name it carries runs that class&#x27;s zero-argument constructor and its <code>post_load</code>, as any load of that class would.</p>
+<p id="saved-receivers-are-script">The load itself runs no payload text, but two things in a payload reach code. A signal property (<code>JAI_SIGNAL_PROPERTY</code>) saves its script-text receivers as their source, and a load re-arms them, so each one runs as an <code>execute</code> of that text, in the engine&#x27;s global scope with every API the host registered, the next time its signal fires. A payload carrying signal properties therefore carries script: load such objects only from a trusted source, or into an engine that runs untrusted script under the <a href="05-safety-rails.html#putting-it-together-running-untrusted-script">safety rails</a>. And a payload chooses which classes the load constructs: a <code>$type</code> naming a class the engine defines runs that class&#x27;s own code (on <code>from_json</code>, a script class&#x27;s constructor and field initializers, the setters of the properties the payload writes, and its <code>post_load</code>; a hybrid&#x27;s field initializers and <code>post_load</code>; a C++ type&#x27;s <code>load_and_construct</code> or default constructor and its <code>load</code>), never code the payload supplies.</p>
+<h2 id="which-layer-to-use">Which layer to use<a class="hlink" href="#which-layer-to-use" aria-label="link">&#8203;</a></h2>
+<ul><li>Script gameplay state (the crawler&#x27;s save file is exactly this): script-side <code>to_json(G)</code> / <code>from_json(text)</code>. One line each way, typed fields re-enforced on load.</li><li>Host/engine objects, editor documents, network payloads: the C++ archives. JSON while debugging, <code>to_binary</code> when size/speed matter, same <code>serialize</code> method either way. A network payload that holds signal properties carries script (<a href="#saved-receivers-are-script">Security posture</a>).</li><li>Pre-parsed script code is its own format: <code>.jaibite</code> via <code>jaibite::save</code> (see <a href="04-jaibite.html">jaibite</a>). ASTs, not values.</li></ul><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/07-hot-reload.html"><span>&larr; previous</span>Hot Reload</a><a class="next" rel="next" href="../embedding/09-coroutine-hosting.html"><span>next &rarr;</span>Coroutine Hosting</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Embedding Quickstart — JaiScript Embedding</title>
+<meta name="description" content="From nothing to a scripted, hot-reloading game loop in six steps: add JaiScript to the build, run a script, bind a class, call a script function, reload an edit while the loop runs, and handle errors.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Embedding Quickstart — JaiScript Embedding">
+<meta property="og:description" content="From nothing to a scripted, hot-reloading game loop in six steps: add JaiScript to the build, run a script, bind a class, call a script function, reload an edit while the loop runs, and handle errors.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding</summary><ol class="chapter-list"><li class="current"><a href="../embedding/01-embedding-quickstart.html" aria-current="page">Embedding Quickstart</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>01</nav>
+<article class="chapter"><h1 id="embedding-quickstart">Embedding Quickstart<a class="hlink" href="#embedding-quickstart" aria-label="link">&#8203;</a></h1>
+<p>This page takes a C++ program from nothing to a scripted, hot-reloading game loop in six short steps: add JaiScript to the build, run a script, bind a class, call a script function, reload an edit while the loop runs, and handle errors. Every sample on it is compiled and run against the library, and the output under each one is what it prints.</p>
+<p>JaiScript compiles into your program as plain C++ with no dependencies, and an engine is an ordinary object. There is no global interpreter state: two engines are fully isolated, so two threads can each run their own without locks.</p>
+<h2 id="add-jaiscript-to-your-build">1. Add JaiScript to your build<a class="hlink" href="#add-jaiscript-to-your-build" aria-label="link">&#8203;</a></h2>
+<p>Every route needs the same three things: JaiScript&#x27;s sources compiled into your program, its <code>include</code> folder on the include path, and C++20. Pick the route that matches your project; <a href="18-build-integration.html">Building JaiScript into a host</a> has each one in full, with Debug and Release notes and an installed-package route.</p>
+<p><strong>CMake.</strong> Add the JaiScript folder as a subdirectory (or fetch it with <code>FetchContent</code>) and link the target. It carries the include path, the standard and the flags:</p>
+<div class="codeblock cb-plain"><span class="cb-label">CMakeLists.txt</span><pre><code class="lang-plain">cmake_minimum_required(VERSION 3.20)
+project(my_game CXX)
+add_subdirectory(JaiScript)
+add_executable(my_game main.cpp)
+target_link_libraries(my_game PRIVATE JaiScript::jaiscript)</code></pre></div>
+<p><strong>Visual Studio (MSBuild).</strong> Add <code>JaiScript\source\jaiscript.cpp</code> to the project; it is the whole library in one file. In the project properties, under C/C++: add <code>JaiScript\include</code> to Additional Include Directories, set C++ Language Standard to ISO C++20, and add <code>/bigobj</code> to Additional Options. The defaults for exceptions (<code>/EHsc</code>) and run-time type information stay as they are.</p>
+<p><strong>Xcode.</strong> Add <code>JaiScript/source/jaiscript.cpp</code> to your target. In Build Settings: Header Search Paths gets <code>$(SRCROOT)/JaiScript/include</code>, C++ Language Dialect is C++20, and Other C++ Flags gets <code>-ffp-contract=off</code>, which keeps floating-point results identical across platforms.</p>
+<h2 id="run-a-script">2. Run a script and read the result<a class="hlink" href="#run-a-script" aria-label="link">&#8203;</a></h2>
+<p><code>jai::engine::make()</code> returns a <code>std::shared_ptr&lt;jai::engine&gt;</code>. <code>execute()</code> runs source text and returns the value of its last expression as a <code>jai::script_value</code>, which <code>as_int()</code>, <code>as_float()</code>, <code>as_string()</code>, <code>as_bool()</code> or <code>as&lt;T&gt;()</code> converts:</p>
+<div class="codeblock cb-cpp" data-sample="quickstart-run"><span class="cb-label">C++ &mdash; main.cpp</span><pre><code class="lang-cpp">#include &lt;jaiscript/core/engine.hpp&gt;
+#include &lt;jaiscript/core/dynamic_binder.hpp&gt;   // section 3
+#include &lt;jaiscript/stdlib/stdlib.hpp&gt;
+#include &lt;filesystem&gt;                          // section 5
+#include &lt;fstream&gt;
+#include &lt;iostream&gt;
+
+int main() {
+    auto eng = jai::engine::make();                    // an engine is an object: make as many as you like
+    jai::stdlib::register_all(eng);                    // formatted print, to_string, math, containers, JSON
+
+    eng-&gt;execute(R&quot;(print(&quot;hello from {}&quot;, &quot;JaiScript&quot;);)&quot;);
+
+    jai::script_value r = eng-&gt;execute(&quot;6 * 7&quot;);       // the value of the last expression
+    std::cout &lt;&lt; &quot;6 * 7 = &quot; &lt;&lt; r.as_int() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; eng-&gt;execute(R&quot;(&quot;jai&quot; + &quot;script&quot;)&quot;).as&lt;std::string&gt;() &lt;&lt; &quot;\n&quot;;
+    std::cout &lt;&lt; std::boolalpha &lt;&lt; eng-&gt;execute(&quot;2.5 * 2 &gt; 4&quot;).as&lt;bool&gt;() &lt;&lt; &quot;\n&quot;;
+    return 0;
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">hello from JaiScript
+6 * 7 = 42
+jaiscript
+true</code></pre></div>
+<p>The standard library is opt-in. A bare engine runs the whole language with a concatenating <code>print</code>, template-string formatting (<code>${hp:.1f}</code>), the container and string methods, <code>math::</code>, <code>regex</code> and <code>binary::</code>; <code>jai::stdlib::register_all</code> adds formatted printing, <code>to_string</code>, <code>type_of</code>, JSON, <code>random</code>, <code>time::</code>, <code>crypto::</code> and <code>reflect::</code>. The reference lists <a href="../reference/index.html#bare-engine">both sets</a> in full. Output goes to <code>std::cout</code> unless you hand the engine another stream with <code>set_output_stream</code>.</p>
+<p>A result is a <code>jai::held_value</code>: keep it as long as you like while the engine lives. It never keeps the engine alive; once the engine is destroyed, reading it throws <code>Value outlived its engine.</code> A plain <code>script_value</code> your C++ receives is valid for the call; <code>eng-&gt;hold(v)</code> keeps one. Values pass between engines by copy (<a href="17-host-api.html#reading-script-state-back">Host API</a>).</p>
+<h2 id="bind-a-class">3. Bind a class and a function<a class="hlink" href="#bind-a-class" aria-label="link">&#8203;</a></h2>
+<p>A C++ class needs no macros. <code>jai::dynamic_binder</code> names the constructors, members and methods scripts may use, and <code>add_function</code> registers any C++ callable. The samples from here on run inside <code>main</code> after the engine is made:</p>
+<div class="codeblock cb-cpp" data-sample="quickstart-bind"><span class="cb-label">C++</span><pre><code class="lang-cpp">struct Player {
+    std::string name;
+    int64_t hp = 100;
+    explicit Player(std::string a_name) : name(std::move(a_name)) {}
+    void hit(int64_t damage) { hp -= damage; }
+};
+
+// in main, after the engine is made:
+jai::dynamic_binder&lt;Player&gt;(*eng, &quot;Player&quot;)
+    .constructor&lt;std::string&gt;()
+    .property(&quot;name&quot;, &amp;Player::name)
+    .property(&quot;hp&quot;, &amp;Player::hp)
+    .method(&quot;hit&quot;, &amp;Player::hit)
+    .build();
+eng-&gt;add_function(&quot;roll&quot;, [](int64_t sides) { return sides / 2 + 1; });   // any C++ callable
+
+auto hero = std::make_shared&lt;Player&gt;(&quot;Ada&quot;);     // a live C++ object the script shares
+eng-&gt;add_global(&quot;hero&quot;, eng-&gt;make_object(hero));
+eng-&gt;execute(R&quot;(
+    hero.hit(roll(20));
+    Player rat = Player(&quot;rat&quot;);                   // scripts construct the class too
+    rat.hit(30);
+    print(hero.name, &quot; &quot;, hero.hp, &quot;, &quot;, rat.name, &quot; &quot;, rat.hp);
+)&quot;);
+std::cout &lt;&lt; &quot;C++ sees hp &quot; &lt;&lt; hero-&gt;hp &lt;&lt; &quot;\n&quot;;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Ada 89, rat 70
+C++ sees hp 89</code></pre></div>
+<p><code>make_object</code> hands the script a handle to your live object, so its writes land in C++. A script that constructs the class (<code>Player("rat")</code>) gets its own object. <a href="02-dynamic-binder.html">dynamic_binder</a> covers properties with getters and setters, overloads, inheritance and the rest.</p>
+<h2 id="call-a-script-function">4. Call a script function<a class="hlink" href="#call-a-script-function" aria-label="link">&#8203;</a></h2>
+<p>A script function is a value. Look it up with <code>get_variable</code> and call it with a vector of arguments. The call returns a <code>checked_result</code>: test it, then read <code>value()</code>. <code>convert_script_function</code> wraps the same function in a typed <code>std::function</code> instead:</p>
+<div class="codeblock cb-cpp" data-sample="quickstart-call"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;execute(&quot;int damage_for(int level) { return level * 3; }&quot;);
+
+jai::script_value fn = eng-&gt;get_variable(&quot;damage_for&quot;);
+jai::checked_result&lt;jai::script_value&gt; r = fn.as_function()({eng-&gt;make_value(int64_t{4})});
+if (r) { std::cout &lt;&lt; &quot;damage_for(4) = &quot; &lt;&lt; r.value().as_int() &lt;&lt; &quot;\n&quot;; }
+
+auto damage = jai::convert_script_function&lt;int64_t(int64_t)&gt;(fn);   // or a typed std::function
+std::cout &lt;&lt; &quot;damage(10) = &quot; &lt;&lt; damage(10) &lt;&lt; &quot;\n&quot;;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">damage_for(4) = 12
+damage(10) = 30</code></pre></div>
+<h2 id="hot-reload-loop">5. A hot-reload frame loop<a class="hlink" href="#hot-reload-loop" aria-label="link">&#8203;</a></h2>
+<p>Put the rules in a module the game imports, and call a script function every frame that reaches the import. When the module&#x27;s file changes, the next frame re-runs it, and the new functions apply from then on. The sample writes its two files, then saves an edit to <code>rules.jai</code> between frames 2 and 3, as you would in an editor:</p>
+<div class="codeblock cb-cpp" data-sample="quickstart-reload"><span class="cb-label">C++</span><pre><code class="lang-cpp">namespace fs = std::filesystem;
+const fs::path dir = fs::temp_directory_path() / &quot;jai_quickstart&quot;;
+fs::create_directories(dir);
+auto save = [&amp;](const char* name, const char* text) { std::ofstream(dir / name) &lt;&lt; text; };
+save(&quot;rules.jai&quot;, &quot;int damage_for(int frame) { return frame * 2; }&quot;);
+save(&quot;game.jai&quot;, &quot;import \&quot;rules.jai\&quot;;\n&quot;
+                 &quot;int tick(int frame) { import(\&quot;rules.jai\&quot;); return damage_for(frame); }&quot;);
+
+eng-&gt;import_recheck_interval(0);                  // see a save at once (the default looks every 0.2 s)
+eng-&gt;execute_file((dir / &quot;game.jai&quot;).string());
+jai::script_value tick = eng-&gt;get_variable(&quot;tick&quot;);
+for (int64_t frame = 1; frame &lt;= 4; ++frame) {
+    if (frame == 3) { save(&quot;rules.jai&quot;, &quot;int damage_for(int frame) { return frame * 100; }&quot;); }   // an edit lands
+    auto r = tick.as_function()({eng-&gt;make_value(frame)});
+    if (!r) { std::cout &lt;&lt; &quot;frame &quot; &lt;&lt; frame &lt;&lt; &quot;: &quot; &lt;&lt; eng-&gt;format_error(r) &lt;&lt; &quot;\n&quot;; continue; }
+    std::cout &lt;&lt; &quot;frame &quot; &lt;&lt; frame &lt;&lt; &quot;: &quot; &lt;&lt; r.value().as_int() &lt;&lt; &quot;\n&quot;;
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">frame 1: 2
+frame 2: 4
+frame 3: 300
+frame 4: 400</code></pre></div>
+<p>A broken edit never stops the game. The changed module is parsed and checked before any of it runs; if it has a mistake, that frame&#x27;s call reports the listing in its result, the program keeps the code it had, and the next save tries again. <a href="07-hot-reload.html">Hot Reload</a> explains which state survives a reload and how live objects migrate when a class changes.</p>
+<h2 id="handle-errors">6. Handle errors<a class="hlink" href="#handle-errors" aria-label="link">&#8203;</a></h2>
+<p>Two rules cover every case. <code>execute()</code> throws, and every exception it throws derives from <code>std::exception</code>. A call through <code>as_function()</code> never throws for what the script did: the failure comes back in its result. Either way the engine stays ready for the next call:</p>
+<div class="codeblock cb-cpp" data-sample="quickstart-errors"><span class="cb-label">C++</span><pre><code class="lang-cpp">try {
+    eng-&gt;execute(&quot;undefined_thing + 1&quot;);           // rejected before anything runs
+} catch (const std::exception&amp; e) {
+    std::cout &lt;&lt; e.what() &lt;&lt; &quot;\n&quot;;
+}
+try {
+    eng-&gt;execute(R&quot;(throw &quot;out of mana&quot;;)&quot;);       // a throw nothing caught
+} catch (const std::exception&amp; e) {
+    std::cout &lt;&lt; &quot;script threw: &quot; &lt;&lt; e.what() &lt;&lt; &quot;\n&quot;;
+}
+eng-&gt;execute(&quot;int risky(int x) { return 10 / x; }&quot;);
+auto r = eng-&gt;get_variable(&quot;risky&quot;).as_function()({eng-&gt;make_value(int64_t{0})});
+if (!r) { std::cout &lt;&lt; &quot;risky(0) failed: &quot; &lt;&lt; eng-&gt;format_error(r) &lt;&lt; &quot;\n&quot;; }   // a call reports, never throws
+std::cout &lt;&lt; &quot;the engine carries on: &quot; &lt;&lt; eng-&gt;execute(&quot;40 + 2&quot;).as_int() &lt;&lt; &quot;\n&quot;;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">static check failed:
+&lt;script&gt;:1:1: error: use of undeclared identifier &#x27;undefined_thing&#x27;
+    undefined_thing + 1
+    ^
+
+script threw: out of mana
+risky(0) failed: Division by zero
+the engine carries on: 42</code></pre></div>
+<p>Checking is strict, so a mistake the checker can see is reported before a single statement runs, with every error in the file listed. <a href="17-host-api.html#error-surfaces">Error surfaces</a> lists the exception types and which calls throw, and <a href="06-static-checking.html">Static Checking</a> covers names your host injects at run time.</p>
+<h2 id="where-next">Where to go next<a class="hlink" href="#where-next" aria-label="link">&#8203;</a></h2>
+<ul>
+<li><a href="17-host-api.html">Host API in depth</a>: functions and direct entries, live bindings to C++ variables and their write-through rules, reading script state back, per-execution variables and the time source.</li>
+<li><a href="02-dynamic-binder.html">dynamic_binder</a>: binding classes in full.</li>
+<li><a href="05-safety-rails.html">Safety Rails</a>: execution budgets, memory caps and what an untrusted script can reach.</li>
+<li><a href="07-hot-reload.html">Hot Reload</a> and <a href="08-serialization.html">Serialization</a>: keeping state across edits and saves.</li>
+<li><code>examples/embed_quickstart/</code> in the repository: a complete host (a bound class, a signal, saves, hot reload, rails and the debugger).</li>
+</ul>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/index.html"><span>&larr; embedding</span>Embedding &amp; Engine Guide</a><a class="next" rel="next" href="../embedding/02-dynamic-binder.html"><span>next &rarr;</span>dynamic_binder: Binding C++ Classes</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

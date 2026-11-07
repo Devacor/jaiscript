@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From nlohmann::json — JaiScript Code Migrations</title>
+<meta name="description" content="Moving JSON code from nlohmann::json to JaiScript: types through the archives' serialize functions, the archive record format, plain JSON documents in script with to_json and from_json, and reaching them from the host.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="From nlohmann::json — JaiScript Code Migrations">
+<meta property="og:description" content="Moving JSON code from nlohmann::json to JaiScript: types through the archives' serialize functions, the archive record format, plain JSON documents in script with to_json and from_json, and reaching them from the host.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li class="current"><a href="../bridges/10-from-nlohmann-json.html" aria-current="page">From nlohmann::json</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>10</nav>
+<article class="chapter"><h1 id="from-nlohmann-json">From nlohmann::json<a class="hlink" href="#from-nlohmann-json" aria-label="link">&#8203;</a></h1>
+<p class="lead">nlohmann::json gives C++ a JSON value type: parse text into a <code>json</code>, read and write it like a container, and convert your own types through <code>to_json</code>/<code>from_json</code> functions or the <code>NLOHMANN_DEFINE_TYPE_*</code> macros. JaiScript covers the same jobs from two sides. On the host side, the archives save and load C++ types (<code>jai::to_json</code>, <code>jai::from_json&lt;T&gt;</code>), in JSON or binary, through the same description that makes a class scriptable. They write their own record format: a root tag, and identity records for shared pointers. On the script side, <code>to_json</code> and <code>from_json</code> turn script values into plain JSON text and back, and a parsed document is an ordinary map you index. What is missing is a C++ DOM type: a document a host wants to walk is a script value. This page maps the library, converts a save type, and shows where each kind of JSON belongs. The archives are documented in <a href="../embedding/08-serialization.html">Serialization</a>, and <a href="04-from-cereal.html">From Cereal</a> covers versions, polymorphic types and converting existing files.</p>
+
+<h2 id="the-concept-map">The concept map<a class="hlink" href="#the-concept-map" aria-label="link">&#8203;</a></h2>
+<p>Headers: <code>&lt;jaiscript/serialization/convenience.hpp&gt;</code> for the host entry points; the script builtins come with <code>jai::stdlib::register_all(eng)</code>.</p>
+<h3 id="your-types">Your types<a class="hlink" href="#your-types" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>nlohmann::json</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(T, a, b)</code>, <code>NLOHMANN_DEFINE_TYPE_INTRUSIVE(T, a, b)</code></td><td>a member <code>template&lt;class Archive&gt; void serialize(Archive&amp; ar) { ar(JAI_NVP(a), JAI_NVP(b)); }</code>, or a free two-parameter <code>serialize(Archive&amp;, T&amp;)</code> found by ADL</td></tr>
+<tr><td>free <code>to_json(json&amp;, const T&amp;)</code> and <code>from_json(const json&amp;, T&amp;)</code></td><td>a member <code>save</code> / <code>load</code> pair, or free two-parameter <code>save(Archive&amp;, const T&amp;)</code> / <code>load(Archive&amp;, T&amp;)</code></td></tr>
+<tr><td><code>NLOHMANN_DEFINE_TYPE_*_WITH_DEFAULT</code>, a missing key keeps the member's default</td><td><code>if (ar.has_property("best")) { ar(JAI_NVP(best)); }</code> in a <code>load</code>; a <code>property_owner</code> keeps the initializer of every property the record lacks</td></tr>
+<tr><td>an <code>adl_serializer&lt;T&gt;</code> specialization for a type you cannot edit</td><td>free <code>serialize</code>, or <code>save</code> / <code>load</code>, beside the type</td></tr>
+<tr><td>one macro listing the members</td><td>or no function at all: a <code>jai::property_owner</code> whose members are <code>JAI_PROPERTY</code> saves and loads them by name, and the same declaration makes them reflected and script-visible (<a href="../embedding/02-dynamic-binder.html">dynamic_binder</a>)</td></tr>
+</tbody></table></div>
+<h3 id="text-and-values">Text and values<a class="hlink" href="#text-and-values" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>nlohmann::json</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>json j = save; std::string text = j.dump();</code>, <code>j.dump(2)</code></td><td><code>std::string text = jai::to_json(*eng, save, 0);</code>, <code>jai::to_json(*eng, save)</code> (indent 2)</td></tr>
+<tr><td><code>json::parse(text).get&lt;T&gt;()</code>, <code>j.get_to(value)</code></td><td><code>T value = jai::from_json&lt;T&gt;(*eng, text);</code></td></tr>
+<tr><td><code>json::to_cbor</code>, <code>to_msgpack</code>, <code>to_bson</code>, <code>to_ubjson</code></td><td><code>jai::to_binary(*eng, value)</code> and <code>jai::from_binary&lt;T&gt;(*eng, bytes)</code>, the archives' own compact format (little-endian everywhere), or <code>to_base64</code> / <code>from_base64</code>; not an interchange format</td></tr>
+<tr><td><code>std::map&lt;std::string, T&gt;</code> as an object, other maps as arrays of pairs</td><td>the same</td></tr>
+<tr><td><code>std::optional</code> and <code>std::variant</code> through an <code>adl_serializer</code> you write</td><td>built in: <code>std::optional</code> is <code>[has_value, value]</code>, <code>std::variant</code> is <code>[index, value]</code></td></tr>
+<tr><td>enums as integers, <code>NLOHMANN_JSON_SERIALIZE_ENUM</code> for names</td><td>enums as integers; a name is a string the type's <code>serialize</code> converts</td></tr>
+<tr><td>keys in alphabetical order (<code>json</code>), or insertion order (<code>ordered_json</code>)</td><td>the order of the <code>ar(...)</code> calls; a <code>property_owner</code> writes each level's properties in name order. A reader finds keys by name in any order</td></tr>
+<tr><td><code>json::parse_error</code>, <code>json::type_error</code>, <code>json::out_of_range</code></td><td><code>jai::serialization_error</code>, a <code>jai::runtime_error</code></td></tr>
+</tbody></table></div>
+<h3 id="documents">Documents<a class="hlink" href="#documents" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>nlohmann::json</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>json doc = json::parse(text);</code>, <code>doc["hp"][1]</code>, <code>doc.contains("gold")</code>, iteration</td><td>script: <code>var doc = from_json(text);</code> is a map of arrays and maps: <code>doc["hp"][1]</code>, <code>doc.contains("gold")</code>, <code>for (auto [k, v] : doc)</code>. A host reaches the builtin through <code>convert_script_function</code> (<a href="#json-on-the-host-side">below</a>)</td></tr>
+<tr><td>building a value: <code>json j; j["name"] = "orc";</code></td><td>a map or array literal in script, <code>{"name": "orc"}</code>; <code>eng-&gt;make_map()</code> and <code>eng-&gt;make_array()</code> on the host</td></tr>
+<tr><td><code>doc.dump()</code></td><td><code>to_json(doc)</code>, <code>to_json(doc, 2)</code>: plain JSON with keys in order</td></tr>
+<tr><td><code>json_pointer</code>, <code>patch</code>, <code>merge_patch</code>, <code>diff</code>, SAX parsing</td><td>no counterpart</td></tr>
+</tbody></table></div>
+
+<h2 id="a-save-type-converted">A save type converted<a class="hlink" href="#a-save-type-converted" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (nlohmann::json)</span><pre><code class="lang-cpp">#include &lt;nlohmann/json.hpp&gt;
+
+using nlohmann::json;
+
+enum class Mood { calm = 0, angry = 1 };
+
+struct Item {
+    std::string name;
+    int count = 1;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Item, name, count)
+
+struct SaveGame {
+    int level = 1;
+    std::string hero;
+    std::vector&lt;Item&gt; items;
+    Mood mood = Mood::calm;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(SaveGame, level, hero, items, mood)
+
+json j = save;
+std::string text = j.dump();
+SaveGame back = json::parse(text).get&lt;SaveGame&gt;();</code></pre></div>
+<div class="codeblock cb-plain"><span class="cb-label">text</span><pre><code class="lang-plain">{"hero":"Alice","items":[{"count":1,"name":"rope"},{"count":3,"name":"torch"}],"level":7,"mood":1}</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">#include &lt;jaiscript/serialization/convenience.hpp&gt;
+
+enum class Mood { calm = 0, angry = 1 };
+
+struct Item {
+    std::string name;
+    int count = 1;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) { ar(JAI_NVP(name), JAI_NVP(count)); }
+};
+
+struct SaveGame {
+    int level = 1;
+    std::string hero;
+    std::vector&lt;Item&gt; items;
+    std::optional&lt;int&gt; best;
+    Mood mood = Mood::calm;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) { ar(JAI_NVP(level), JAI_NVP(hero), JAI_NVP(items), JAI_NVP(best), JAI_NVP(mood)); }
+};
+
+auto eng = jai::engine::make();
+std::string text = jai::to_json(*eng, save, 0);
+SaveGame back = jai::from_json&lt;SaveGame&gt;(*eng, text);</code></pre></div>
+<div class="codeblock cb-plain"><span class="cb-label">text</span><pre><code class="lang-plain">{"level": 7,"hero": "Alice","items": [{"name": "rope","count": 1},{"name": "torch","count": 3}],"best": [true,12],"mood": 1}</code></pre></div>
+<ul>
+<li><strong>The macro becomes a function.</strong> The member list moves into <code>serialize</code>, one <code>JAI_NVP</code> per member, and the keys follow the call order. Every standard container, <code>std::optional</code> and the smart pointers are built in, with nothing to include.</li>
+<li><strong>The text is an archive record.</strong> A type saved by value writes its properties flat at the root. A root that is not a record (a number, a vector, a map) sits under <code>"value0"</code>: <code>jai::to_json(*eng, std::vector&lt;int&gt;{1, 2, 3}, 0)</code> is <code>{"value0": [1,2,3]}</code>. A <code>std::shared_ptr</code> is written as <code>{"$id": 1, "$val": {...}}</code> the first time and <code>{"$id": 1}</code> after, so shared objects load shared, with <code>"$type"</code> naming a derived class (<a href="04-from-cereal.html#pointers-and-identity">Pointers and identity</a>).</li>
+<li><strong>The reader is forgiving about order.</strong> <code>from_json&lt;T&gt;</code> finds properties by name in any order and skips keys the type does not read, so plain JSON whose keys match loads: <code>{"level": 3, "hero": "Bo", "items": [...], ...}</code>. Optional, variant and pointer members still expect their archive shapes.</li>
+<li><strong>A missing key is an error.</strong> <code>from_json&lt;SaveGame&gt;(*eng, R"({"level": 3})")</code> throws <code>jai::serialization_error</code>: <code>Property 'hero' not found during deserialization</code> (nlohmann throws <code>out_of_range</code>, <code>key 'hero' not found</code>). Malformed text throws too: <code>Expected '"' in JSON</code>.</li>
+</ul>
+
+<h2 id="json-in-script">JSON in script<a class="hlink" href="#json-in-script" aria-label="link">&#8203;</a></h2>
+<p>Where a host uses <code>json</code> as a loose document (configuration, a web response, tuning data), JaiScript keeps it in script. <code>from_json</code> parses text into maps, arrays, numbers, strings, <code>bool</code> and <code>null</code>; <code>to_json</code> writes any script value back as plain JSON, with map keys in order so the same data always writes the same text (<a href="../guide/09-containers-strings.html#json">JSON</a> in the guide):</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var save = {"name": "orc", "hp": [10, 20], "pos": {"x": 1.5}};
+string text = to_json(save);
+var back = from_json(text);
+print(text);
+print(back["hp"][1], " ", back["pos"]["x"], " ", back.contains("gold"));
+print(to_json([1, 2.5, "three", true, null], 2));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{"hp":[10,20],"name":"orc","pos":{"x":1.5}}
+20 1.5 false
+[
+  1,
+  2.5,
+  "three",
+  true,
+  null
+]</code></pre></div>
+<p>A script class instance round-trips with its class name:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Hero { string name = "Vex"; int hp = 30; }
+Hero h;
+h.hp = 12;
+string text = to_json(h);
+Hero copy = from_json(text);
+print(text, " -&gt; ", copy.name, " ", copy.hp);
+try { from_json("{bad"); } catch (e) { print("caught: ", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{"$type":"Hero","$val":{"name":"Vex","hp":12}} -&gt; Vex 12
+caught: Expected '"' in JSON</code></pre></div>
+<p>Nesting is bounded by memory, not by a depth limit: the parser and the walks that rebuild script values run on work lists. A host record type whose own <code>serialize</code>/<code>save</code>/<code>load</code> recurses natively stops on save and on load at the host thread's stack, or at <code>JAI_MAX_HOST_RECORD_DEPTH</code> (1024) nested records where the stack cannot be asked, raising <code>Record nesting depth exceeds the host thread's stack</code> or <code>Maximum record nesting depth (1024) exceeded</code>.</p>
+
+<h2 id="json-on-the-host-side">JSON on the host side<a class="hlink" href="#json-on-the-host-side" aria-label="link">&#8203;</a></h2>
+<p>The script builtins are functions like any other, so a host that wants a document in C++ calls them through <code>convert_script_function</code> and works with the <code>jai::script_value</code> it gets back:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">auto eng = jai::engine::make();
+jai::stdlib::register_all(eng);
+auto parse = jai::convert_script_function&lt;jai::script_value(const std::string&amp;)&gt;(eng-&gt;get_variable("from_json"));
+auto dump = jai::convert_script_function&lt;std::string(const jai::script_value&amp;)&gt;(eng-&gt;get_variable("to_json"));
+
+jai::script_value doc = parse(R"({"name": "orc", "hp": [10, 20], "tag": null})");
+std::string name = doc.as&lt;std::map&lt;std::string, jai::script_value&gt;&gt;().at("name").as_string();   // "orc"
+std::string text = dump(doc);                                     // {"hp":[10,20],"name":"orc","tag":null}</code></pre></div>
+<p>A document a script will use goes in as a global (<code>eng-&gt;add_global("config", doc)</code>), and a script can hand one back the same way. For records the host owns, the archives are the better tool: one description per type, JSON or binary, shared objects kept shared, and the same declaration reflected and scripted.</p>
+
+<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
+<p><a href="../embedding/08-serialization.html">Serialization</a> documents the archives and script-side JSON in full. <a href="04-from-cereal.html">From Cereal</a> covers versions, polymorphic types, the <code>JAI_PROPERTY</code> route and converting existing files. The guide's <a href="../guide/09-containers-strings.html#json">JSON</a> section covers the script builtins.</p>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../embedding/index.html"><span>next &middot; embedding &rarr;</span>Embedding &amp; Engine Guide</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

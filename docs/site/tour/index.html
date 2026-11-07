@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Ten-Minute Tour — JaiScript</title>
+<meta name="description" content="Ten minutes, one small game: value semantics, the strict checker, a swarm, coroutines, hot reload and parallel_for, every line run on both backends.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="The Ten-Minute Tour — JaiScript">
+<meta property="og:description" content="Ten minutes, one small game: value semantics, the strict checker, a swarm, coroutines, hot reload and parallel_for, every line run on both backends.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html" class="active" aria-current="page">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="On this page"><details class="sidebar-box" open><summary class="sidebar-title">On this page</summary><ol class="page-toc" data-page-toc data-toc-h3></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span>Tour</nav>
+<article class="chapter"><h1 id="tour">The Ten-Minute Tour<a class="hlink" href="#tour" aria-label="link">&#8203;</a></h1>
+<p class="lead">One small game, built a piece at a time. Every block of code on this page was run through two independent engines, a tree-walking interpreter and a bytecode VM, and the output under it is what both of them printed.</p>
+<h2 id="reads-like-cpp">It reads like the C++ you already write<a class="hlink" href="#reads-like-cpp" aria-label="link">&#8203;</a></h2>
+<p>Classes with typed fields, constructors, methods, operator overloading. Strings that splice values in and format them on the way. If you have written a game in C++, you can read this without a manual.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Vec2 {
+    float x = 0.0; float y = 0.0;
+    Vec2(float px, float py) { x = px; y = py; }
+    Vec2 operator+(Vec2 o) { return Vec2(x + o.x, y + o.y); }
+    float length() { return math::sqrt(squared()); }
+private:
+    float squared() { return x * x + y * y; }
+}
+
+auto ship = Vec2(3.0, 4.0);
+auto next = ship + Vec2(1.0, -1.0);
+print(`ship is ${ship.length():.1f} from home, heading for (${next.x}, ${next.y})`);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ship is 5.0 from home, heading for (4.0, 3.0)</code></pre></div>
+<p><code>x</code> inside a method is the field, and <code>`${expr:.1f}`</code> formats like you think it should. JaiScript has no <code>struct</code> keyword, just classes, and since it is meant to be a simple scripting language, members are public by default; <code>private:</code> marks what only the class and its subclasses can touch.</p>
+<h2 id="a-copy-is-a-copy">A copy is a copy<a class="hlink" href="#a-copy-is-a-copy" aria-label="link">&#8203;</a></h2>
+<div class="callout cpp"><p>Value semantics as in C++: <code>b = a</code> copies an object, <code>T&amp;</code> names the same one, and <code>shared_ptr&lt;T&gt;</code> shares it.</p></div>
+<p>This is the one idea that makes JaiScript feel different from Lua, Python or JavaScript: <strong>objects are values</strong>, exactly as in C++. Assigning a ship gives you a second ship. When you want two names for one ship, you ask for a reference.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Vec2 { float x = 0.0; float y = 0.0; }
+
+Vec2 a;           // a Vec2, default-constructed
+Vec2 b = a;        // a copy, like C++: two ships, not one
+b.x = 100.0;
+
+Vec2&amp; pilot = a;   // a reference, when you mean it
+pilot.y = 7.0;
+
+print("a = ({}, {})   b = ({}, {})", a.x, a.y, b.x, b.y);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">a = (0.0, 7.0)   b = (100.0, 0.0)</code></pre></div>
+<p>That is the whole spooky-action-at-a-distance category of bug, gone. A function you hand an enemy to cannot quietly teleport yours; if it should, its parameter says <code>Enemy&amp;</code> and everyone can see it.</p>
+<h2 id="mistakes-die-early">Mistakes die before the program runs<a class="hlink" href="#mistakes-die-early" aria-label="link">&#8203;</a></h2>
+<p>Types are not decoration. The checker walks the whole program before the first statement executes, and a typed mistake stops the load:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Ship { int hull = 100; string name = "Wanderer"; }
+
+Ship s = Ship();
+s.hull = "full";   // a string into an int field: caught before anything runs</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;script&gt;:4:8: error: cannot assign &#x27;string&#x27; to field &#x27;hull&#x27; declared &#x27;int&#x27; (declared at 1:18)
+    s.hull = &quot;full&quot;;   // a string into an int field: caught before anything runs
+           ^</code></pre></div>
+<p>Nothing ran. No half-initialized level, no bug report three hours into a playtest. When you genuinely want a dynamic value, <code>var</code> is the escape hatch, and the checker lets it through. The types you do write also make the code faster: the runtime trusts what the checker proved.</p>
+<h2 id="a-swarm">A swarm in twenty lines<a class="hlink" href="#a-swarm" aria-label="link">&#8203;</a></h2>
+<p>Arrays of class instances, loops that edit them in place through <code>auto&amp;</code>, methods, and nothing you have to free.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Enemy {
+    string kind = ""; float x = 0.0; int hp = 0;
+    Enemy(string k, float px, int h) { kind = k; x = px; hp = h; }
+    void hit(int dmg) { hp -= dmg; }
+    bool alive() { return hp &gt; 0; }
+}
+
+array&lt;Enemy&gt; swarm = [Enemy("drone", 0.0, 30), Enemy("brute", 5.0, 120), Enemy("drone", 9.0, 30)];
+
+for (int wave = 1; wave &lt;= 3; ++wave) {
+    for (auto&amp; e : swarm) { e.hit(45); e.x -= 1.5; }
+    int standing = 0;
+    for (auto&amp; e : swarm) { if (e.alive()) { standing += 1; } }
+    print("wave {}: {} standing", wave, standing);
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">wave 1: 1 standing
+wave 2: 1 standing
+wave 3: 0 standing</code></pre></div>
+<p><code>array&lt;Enemy&gt;</code> holds enemies by value: copy the array and you have a second swarm. On the VM a typed loop like this compiles into a register block that runs without leaving it.</p>
+<h2 id="behavior-that-waits">Behavior that waits<a class="hlink" href="#behavior-that-waits" aria-label="link">&#8203;</a></h2>
+<p>Game logic is full of things that happen <em>over time</em>: patrols, cutscenes, attack wind-ups. A coroutine lets you write them top to bottom, and <code>yield</code> pauses right where you are until the next frame asks for more.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine string patrol(int laps) {
+    for (int lap = 1; lap &lt;= laps; ++lap) {
+        yield `lap ${lap}: walk east`;
+        yield `lap ${lap}: scan`;
+        yield `lap ${lap}: walk west`;
+    }
+}
+
+for (auto step : patrol(2)) { print(step); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">lap 1: walk east
+lap 1: scan
+lap 1: walk west
+lap 2: walk east
+lap 2: scan
+lap 2: walk west</code></pre></div>
+<p>No state machine, no enum of phases, no <code>switch (state)</code> spread across a file. The loop counter <em>is</em> the state.</p>
+<h2 id="change-the-code-keep-the-world">Change the code, keep the world<a class="hlink" href="#change-the-code-keep-the-world" aria-label="link">&#8203;</a></h2>
+<p>Hot reload is not a file watcher bolted on the side. Running a class declaration again <em>is</em> the reload: every live instance keeps its data and picks up the new methods. Here is the turret as it ships,</p>
+<p>with <code>turret_v1.jai</code>:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript &middot; turret_v1.jai</span><pre><code class="lang-jai">class Turret {
+    int shots = 0;
+    string fire() { shots += 1; return `pew (shot ${shots})`; }
+}</code></pre></div>
+<p>and the edit a designer makes mid-playtest,</p>
+<p>with <code>turret_v2.jai</code>:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript &middot; turret_v2.jai</span><pre><code class="lang-jai">class Turret {
+    int shots = 0;
+    string fire() { shots += 3; return `BRRRT x3 (shot ${shots})`; }
+}</code></pre></div>
+<p>The game keeps running across the change:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">include "turret_v1.jai";
+var t = Turret();
+print(t.fire());
+print(t.fire());
+
+include "turret_v2.jai";   // the edit lands: same turret, new trigger
+print(t.fire());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">pew (shot 1)
+pew (shot 2)
+BRRRT x3 (shot 5)</code></pre></div>
+<p>Same turret, same shot count, new trigger. A running game does the same by reaching its imports every frame: an import re-runs its module only when the file changed. Write that loop with its guard from the start. A reload the checker rejects raises a catchable error at the import, and the program keeps its old code:</p>
+<div class="codeblock cb-jai" data-host="the game&#x27;s loop (running, step_world)"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; MODULES = ["turret.jai", "rules.jai"];
+while (running) {
+    try {
+        import(MODULES);   // re-runs a module whose file changed; an unchanged one does nothing
+    } catch (e) {
+        print("reload rejected: {}", e);   // the file and line of the mistake; the old code keeps running
+    }
+    step_world();
+}</code></pre></div>
+<p>Fix the file and save again, and the loop picks it up within about 0.2 seconds. The world never restarts. <a href="../guide/10-modules.html#reloading-from-a-running-program">Reloading from a running program</a> has the whole story.</p>
+<h2 id="every-core">Every core, one loop<a class="hlink" href="#every-core" aria-label="link">&#8203;</a></h2>
+<p>Most scripting languages give you one thread and a lecture. <code>parallel_for</code> spreads a loop over every core, and the result is byte-identical to running it serially, at any thread count.</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Particle { float x = 0.0; float vx = 0.0; float life = 1.0; }
+
+array&lt;Particle&gt; sparks = [];
+for (int i = 0; i &lt; 100000; ++i) { Particle p = Particle(); p.vx = (i % 7) - 3.0; sparks.push(p); }
+
+parallel_for (auto&amp; p : sparks) {   // every core, one loop, the same answer as serial
+    p.x += p.vx * 0.016;
+    p.life -= 0.016;
+}
+
+float sum = 0.0;
+for (auto&amp; p : sparks) { sum += p.x; }
+print(`${sparks.size()} sparks stepped, drift ${sum:.3f}`);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">100000 sparks stepped, drift -0.080</code></pre></div>
+<p>The runtime proves the body only touches its own element before it lets the workers loose; a loop that would race is rejected with an explanation instead of a heisenbug.</p>
+<h2 id="hand-it-your-engine">Hand it your engine<a class="hlink" href="#hand-it-your-engine" aria-label="link">&#8203;</a></h2>
+<p>Embedding is a header and a few lines. Functions and whole C++ classes become script-callable, with conversions derived from their signatures.</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/core/engine.hpp&gt;
+#include &lt;jaiscript/stdlib/stdlib.hpp&gt;
+
+auto eng = jai::engine::make();
+jai::stdlib::register_all(eng);
+eng-&gt;add_function(&quot;screen_shake&quot;, [](jai::script_float amount) { camera.shake(amount); });
+
+jai::dynamic_binder&lt;Turret&gt;(*eng, &quot;Turret&quot;)      // your C++ class, callable from script
+    .constructor&lt;&gt;()
+    .method(&quot;fire&quot;, &amp;Turret::fire)
+    .property(&quot;shots&quot;, &amp;Turret::shots)
+    .build();
+
+eng-&gt;execute_file(&quot;scripts/level1.jai&quot;);         // scripts see screen_shake and Turret like their own</code></pre></div>
+<p>From there: step through scripts in VS Code while the game runs, cap a script&#x27;s time and memory so a bad mod cannot hang a frame, precompile scripts (<code>.jaibite</code>) so shipped builds skip parsing, and serialize script objects alongside your own. The <a href="../embedding/index.html">Embedding guide</a> walks each one.</p>
+<h2 id="fast-where-it-counts">Fast where it counts<a class="hlink" href="#fast-where-it-counts" aria-label="link">&#8203;</a></h2>
+<p>Typed code is where JaiScript is fastest: hot loops run as register blocks, and small functions, methods and lambdas are compiled straight into their callers. Integer arithmetic is overflow-checked and every index is bounds-checked, and the checker&#x27;s proofs remove most of that cost where the types are known. Against Lua 5.4 the VM wins or ties statements, containers and range-for, and trails on hot numeric loops (about 3&times;), call-dense recursion (about 2.8&times;), object-heavy programs (about 2.4&times; on Richards and DeltaBlue) and fully dynamic code; <a href="../embedding/11-performance.html">Performance Notes</a> has the measurements and the patterns that avoid them.</p>
+<h2 id="where-next">Where to go next<a class="hlink" href="#where-next" aria-label="link">&#8203;</a></h2>
+<ul><li><a href="../guide/01-hello.html">The Language Guide</a>: eighteen chapters, starting from hello world.</li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a>: the chapter that saves your first hour.</li><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a>: JaiScript inside your engine in one sitting.</li><li><a href="../examples/index.html">The example games</a>: a raycast shooter, a dungeon crawler, a demoscene reel, a networked terminal RPG and DOOM, written entirely in JaiScript.</li></ul>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="next" rel="next" href="../guide/01-hello.html"><span>next &middot; the guide &rarr;</span>Hello &amp; Basics</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

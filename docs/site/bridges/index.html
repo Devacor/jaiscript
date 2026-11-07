@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bridges — JaiScript docs</title>
+<meta name="description" content="Language bridges for programmers arriving from JavaScript, C++ or C#, and code migrations for C++ code moving to JaiScript from Cereal, Boost.Signals2, ChaiScript, sol2, Squirrel, pybind11, nlohmann::json, Qt properties or C++20 coroutines.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Bridges — JaiScript docs">
+<meta property="og:description" content="Language bridges for programmers arriving from JavaScript, C++ or C#, and code migrations for C++ code moving to JaiScript from Cereal, Boost.Signals2, ChaiScript, sol2, Squirrel, pybind11, nlohmann::json, Qt properties or C++20 coroutines.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span>Bridges</nav>
+<h1>Bridges</h1>
+<p>Two kinds of starting point. The <a href="#language-bridges">Language Bridges</a> are for programmers who already know another language and want to write JaiScript. The <a href="#code-migrations">Code Migrations</a> are for C++ code that already uses a library JaiScript replaces, and wants to move onto JaiScript's equivalent.</p>
+<h2 id="language-bridges">Language Bridges</h2>
+<p>Each bridge sets a language beside JaiScript idiom by idiom, then lists the places where a habit from it gets a different answer, each with a sample that shows what JaiScript does, and ends with a complete program written the way that audience would write it. Every code sample was executed on <strong>both</strong> backends (tree-walking interpreter and bytecode VM); the output shown beneath each example is the real, verified output.</p>
+<p>Run a sample by saving it as <code>try.jai</code> and running <code>jaiscript try.jai</code> with the standalone runner (<a href="../guide/01-hello.html#try-it-from-a-terminal">Hello &amp; Basics</a> has the two-minute setup). The static checker is always on, and strict, so a typed mistake it can see stops the load before anything runs.</p>
+<p>After a bridge, the <a href="../guide/index.html">Language Guide</a> covers every rule in depth, starting from the same place each bridge points to first: <a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a>.</p>
+<ol class="toc">
+<li><a href="01-from-javascript.html">From JavaScript</a><p class="toc-desc"><code>var</code>, <code>function</code>, template strings and <code>?.</code> carry over, with <code>let</code>, arrow functions, <code>??</code>, <code>do</code> ... <code>while</code> and the array helpers (<code>map</code>, <code>reduce</code>, <code>find</code>, ...). Assignment copies arrays and objects, <code>==</code> compares contents and never converts, <code>7 / 2</code> is <code>3</code>, lambdas name what they capture.</p></li>
+<li><a href="02-from-cpp.html">From C++</a><p class="toc-desc">Value classes, references, destructors, operators and capture lists mean what they mean in C++. No pointers or templates, a narrow <code>const</code>; a defined evaluation order, checked overflow, no slicing, and a <code>switch</code> that never falls through.</p></li>
+<li><a href="03-from-csharp.html">From C#</a><p class="toc-desc">Classes, <code>override</code>, statics and <code>yield</code> look familiar, but a class is a value type: <code>new</code> makes the shared reference. <code>var</code> is <code>dynamic</code> and <code>auto</code> is C#'s <code>var</code>; properties are accessor methods, and coroutines replace <code>async</code>.</p></li>
+</ol>
+<h2 id="code-migrations">Code Migrations</h2>
+<p>Each migration maps a C++ library's types and calls to their JaiScript spelling, converts real code from one to the other, and then covers the behavior that changes, where a straight translation compiles and gives another result. The C++ on these pages was compiled against the libraries it names, and the JaiScript samples ran on both backends.</p>
+<ol class="toc" style="counter-reset: toc 3">
+<li><a href="04-from-cereal.html">From Cereal</a><p class="toc-desc">Cereal's archives, names, save/load splits, versions, polymorphic registration and pointer identity mapped to JaiScript's archives, a converted save game, the <code>JAI_PROPERTY</code> route that deletes the serialize functions, both libraries in one function during the transition, converting existing files once, and the Boost.Serialization spellings of all of it.</p></li>
+<li><a href="05-from-boost-signals2.html">From Boost.Signals2</a><p class="toc-desc"><code>signal</code>, <code>connection</code>, <code>scoped_connection</code>, <code>track</code>, blocks and combiners mapped to <code>jai::signal</code>; a class converted; and what behaves differently: the private emitter, a handle that is the connection, connecting and disconnecting during an emit, the per-signal lock. Notes for Qt and sigslot code.</p></li>
+<li><a href="06-from-chaiscript.html">From ChaiScript Bindings</a><p class="toc-desc"><code>fun</code>, <code>user_type</code>, <code>constructor</code>, <code>base_class</code>, modules, globals, <code>eval</code> and <code>eval_error</code> mapped to the engine and <code>dynamic_binder</code>, from a real host's binding block; then the script habits that change: containers copy, interpolation uses backticks, integers are 64-bit and checked.</p></li>
+<li><a href="07-from-sol2.html">From sol2 (Lua) Bindings</a><p class="toc-desc"><code>new_usertype</code>, <code>constructors</code>, <code>property</code>, <code>overload</code>, <code>bases</code>, meta functions, tables and protected calls mapped to the engine and <code>dynamic_binder</code>, from a real host's binding block; then the Lua habits that change: tables become values, indexes start at 0, <code>/</code> truncates between integers, <code>0</code> is false.</p></li>
+<li><a href="08-from-squirrel.html">From Squirrel Bindings</a><p class="toc-desc">The stack-based C API (<code>sq_newclosure</code>, <code>sq_newclass</code> with type tags, <code>sq_call</code>, <code>sq_getlasterror</code>) mapped to the engine and <code>dynamic_binder</code>, from a real host's binding block; then the Squirrel habits that change: instances, arrays and tables copy, the empty string is false, generators become coroutines.</p></li>
+<li><a href="09-from-pybind11.html">From pybind11 and Boost.Python</a><p class="toc-desc"><code>class_</code>, <code>init</code>, <code>def_readwrite</code>, <code>def_property</code>, <code>overload_cast</code>, holders, <code>error_already_set</code> and calls into Python mapped to <code>dynamic_binder</code> and the engine, a class converted from both libraries, and what has no counterpart: keyword arguments, trampolines, the GIL.</p></li>
+<li><a href="10-from-nlohmann-json.html">From nlohmann::json</a><p class="toc-desc"><code>NLOHMANN_DEFINE_TYPE_*</code>, <code>dump</code> and <code>get&lt;T&gt;</code> mapped to the archives, the record format they write, and loose documents moved to script, where <code>from_json</code> gives maps and arrays and <code>to_json</code> writes plain JSON.</p></li>
+<li><a href="11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a><p class="toc-desc"><code>Q_PROPERTY</code>, RTTR registration and <code>REFL_AUTO</code> mapped to <code>JAI_PROPERTY</code>: declaring, walking, reading and writing by name, <code>NOTIFY</code> as an observable property, script access, and what has no counterpart: metadata, compile-time iteration, dynamic properties.</p></li>
+<li><a href="12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a><p class="toc-desc"><code>coroutine.create</code>, <code>yield</code>, <code>resume</code> and <code>status</code>, and C++20 promise types and schedulers, mapped to <code>coroutine</code> functions with <code>next()</code>, <code>next(n)</code> and <code>done()</code>; a patrol converted three ways, hosting handles from C++, budgets and hot reload.</p></li>
+</ol>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

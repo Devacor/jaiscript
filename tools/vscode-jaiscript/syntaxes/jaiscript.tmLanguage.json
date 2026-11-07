@@ -1,0 +1,325 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "JaiScript",
+  "scopeName": "source.jaiscript",
+  "fileTypes": ["jai", "jaiscript"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#raw-strings" },
+    { "include": "#strings" },
+    { "include": "#template-strings" },
+    { "include": "#chars" },
+    { "include": "#numbers" },
+    { "include": "#member-names" },
+    { "include": "#keyword-member-declaration" },
+    { "include": "#constants" },
+    { "include": "#keywords" },
+    { "include": "#storage" },
+    { "include": "#class-declaration" },
+    { "include": "#function-declaration" },
+    { "include": "#support-functions" },
+    { "include": "#function-call" },
+    { "include": "#operators" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.jaiscript",
+          "begin": "//",
+          "end": "$"
+        },
+        {
+          "name": "comment.block.jaiscript",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "raw-strings": {
+      "name": "string.quoted.raw.jaiscript",
+      "begin": "R\"([^()\\\\ \"\\t\\n]{0,16})\\(",
+      "end": "\\)\\1\"",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.jaiscript" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.jaiscript" }
+      }
+    },
+    "strings": {
+      "name": "string.quoted.double.jaiscript",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.jaiscript",
+          "match": "\\\\([nrt\\\\\"'])"
+        },
+        {
+          "name": "invalid.illegal.unknown-escape.jaiscript",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "template-strings": {
+      "name": "string.interpolated.jaiscript",
+      "begin": "`",
+      "end": "`",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.template.begin.jaiscript" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.template.end.jaiscript" }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.jaiscript",
+          "match": "\\\\([nrt\\\\`$])"
+        },
+        { "include": "#template-substitution" }
+      ]
+    },
+    "template-substitution": {
+      "name": "meta.template.expression.jaiscript",
+      "begin": "\\$\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.template-expression.begin.jaiscript" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.template-expression.end.jaiscript" }
+      },
+      "patterns": [
+        { "include": "#expression-in-braces" }
+      ]
+    },
+    "expression-in-braces": {
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#template-strings" },
+        { "include": "#raw-strings" },
+        { "include": "#strings" },
+        { "include": "#chars" },
+        { "include": "#numbers" },
+        { "include": "#member-names" },
+        { "include": "#constants" },
+        { "include": "#keywords" },
+        { "include": "#storage" },
+        { "include": "#support-functions" },
+        { "include": "#function-call" },
+        { "include": "#operators" },
+        { "include": "#identifiers" },
+        {
+          "comment": "balanced { } so a map literal / block inside ${ } doesn't end the interpolation early",
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [
+            { "include": "#expression-in-braces" }
+          ]
+        }
+      ]
+    },
+    "chars": {
+      "name": "string.quoted.single.jaiscript",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "name": "constant.character.escape.jaiscript",
+          "match": "\\\\([nrt\\\\\"'])"
+        },
+        {
+          "name": "invalid.illegal.unknown-escape.jaiscript",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.jaiscript",
+          "match": "\\b0[xX][0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.jaiscript",
+          "match": "\\b0[bB][01]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.jaiscript",
+          "match": "\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?\\b(?<=[.eE0-9])(?=[fFeE.]|[^0-9a-zA-Z_]|$)"
+        },
+        {
+          "name": "constant.numeric.octal.jaiscript",
+          "match": "\\b0[0-7]+\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.jaiscript",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "member-names": {
+      "comment": "after . ?. -> or :: every word is a member name, a reserved word included (p.catch(f), obj.default, spider::catch(url))",
+      "patterns": [
+        {
+          "match": "(?<=\\.|->|::)\\s*([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.member.jaiscript" }
+          }
+        },
+        {
+          "match": "(?<=\\.|->|::)\\s*([A-Za-z_][A-Za-z0-9_]*)\\b",
+          "captures": {
+            "1": { "name": "variable.other.property.jaiscript" }
+          }
+        }
+      ]
+    },
+    "keyword-member-declaration": {
+      "comment": "a reserved word declared as a class or namespace member's name after its type (int default = 0; void catch(function f) {})",
+      "patterns": [
+        {
+          "match": "(?<=[A-Za-z0-9_>&])(?<!\\breturn|\\belse|\\bthrow|\\byield|\\bdo|\\bnew|\\bcase)\\s+(bool|break|char|class|const|continue|else|false|float|for|function|if|int|map|array|namespace|null|nullptr|override|private|public|return|static|string|true|void|while|auto|var|let|weak_ptr|shared_ptr|try|catch|throw|switch|case|default|fallthrough|include|import|coroutine|yield|enum|new|protected|parallel_for|nocopy|cast|extern|inline)(?=\\s*\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.member.jaiscript" }
+          }
+        },
+        {
+          "match": "(?<=[A-Za-z0-9_>&])(?<!\\breturn|\\belse|\\bthrow|\\byield|\\bdo|\\bnew|\\bcase)\\s+(bool|break|char|class|const|continue|else|false|float|for|function|if|int|map|array|namespace|null|nullptr|override|private|public|return|static|string|true|void|while|auto|var|let|weak_ptr|shared_ptr|try|catch|throw|switch|case|default|fallthrough|include|import|coroutine|yield|enum|new|protected|parallel_for|nocopy|cast|extern|inline)(?=\\s*(?:=(?!=)|;))",
+          "captures": {
+            "1": { "name": "variable.other.property.jaiscript" }
+          }
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.jaiscript",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.jaiscript",
+          "match": "\\b(null|nullptr)\\b"
+        },
+        {
+          "name": "variable.language.this.jaiscript",
+          "match": "\\b(this|super)\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.jaiscript",
+          "match": "\\b(if|else|do|while|for|parallel_for|break|continue|return|try|catch|throw|switch|case|default|fallthrough|yield)\\b"
+        }
+      ]
+    },
+    "storage": {
+      "patterns": [
+        {
+          "name": "storage.type.class.jaiscript",
+          "match": "\\b(class|coroutine|enum|namespace|function)\\b"
+        },
+        {
+          "name": "storage.modifier.jaiscript",
+          "match": "\\b(const|static|inline|nocopy|override|public|private|protected|new|make_shared|cast|import|include|extern)\\b"
+        },
+        {
+          "name": "meta.attribute.jaiscript",
+          "match": "\\[\\[\\s*(warn_mode|strict_mode|nodiscard)\\s*\\]\\]",
+          "captures": {
+            "1": { "name": "storage.modifier.attribute.jaiscript" }
+          }
+        },
+        {
+          "name": "storage.type.jaiscript",
+          "match": "\\b(int|float|bool|char|string|void|map|array|weak_ptr|shared_ptr|auto|var|let)\\b"
+        }
+      ]
+    },
+    "class-declaration": {
+      "match": "\\b(class|enum)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.type.class.jaiscript" },
+        "2": { "name": "entity.name.type.class.jaiscript" }
+      }
+    },
+    "function-declaration": {
+      "match": "\\b(function|coroutine)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.type.class.jaiscript" },
+        "2": { "name": "entity.name.function.jaiscript" }
+      }
+    },
+    "support-functions": {
+      "name": "support.function.builtin.jaiscript",
+      "match": "\\b(print|to_string|type_of|to_json|from_json|to_binary|from_binary|to_base64|from_base64|base64_encode|base64_decode|html_escape|html_unescape|is_registered_type|format|abs|acos|asin|atan|atan2|cbrt|ceil|clamp|concatenate|cos|cosh|degrees|exp|exp2|floor|fmod|hypot|is_inf|is_nan|lerp|log|log10|log2|max|merge|min|mix|mix_in|mix_in_out|mix_out|mix_out_in|pow|radians|random|remap|round|saturate|sign|sin|sinh|sqrt|tan|tanh|trunc|unmix|unmix_in|unmix_in_out|unmix_out|unmix_out_in|wrap|append|saturate)(?=\\s*\\()"
+    },
+    "function-call": {
+      "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.jaiscript" }
+      }
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.spaceship.jaiscript",
+          "match": "<=>"
+        },
+        {
+          "name": "storage.type.function.arrow.jaiscript",
+          "match": "=>"
+        },
+        {
+          "name": "keyword.operator.assignment.compound.jaiscript",
+          "match": "(\\?\\?=|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>=)"
+        },
+        {
+          "name": "keyword.operator.null-coalescing.jaiscript",
+          "match": "\\?\\?"
+        },
+        {
+          "name": "keyword.operator.comparison.jaiscript",
+          "match": "(==|!=|<=|>=|<|>)"
+        },
+        {
+          "name": "keyword.operator.logical.jaiscript",
+          "match": "(&&|\\|\\||!)"
+        },
+        {
+          "name": "keyword.operator.bitwise.jaiscript",
+          "match": "(<<|>>|~|\\^|&|\\|)"
+        },
+        {
+          "name": "keyword.operator.increment.jaiscript",
+          "match": "(\\+\\+|--)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.jaiscript",
+          "match": "(\\+|-|\\*|/|%)"
+        },
+        {
+          "name": "keyword.operator.ternary.jaiscript",
+          "match": "(\\?\\.|\\?|:)"
+        },
+        {
+          "name": "keyword.operator.accessor.jaiscript",
+          "match": "(->|::|\\.)"
+        },
+        {
+          "name": "keyword.operator.assignment.jaiscript",
+          "match": "="
+        }
+      ]
+    },
+    "identifiers": {
+      "name": "variable.other.jaiscript",
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+    }
+  }
+}

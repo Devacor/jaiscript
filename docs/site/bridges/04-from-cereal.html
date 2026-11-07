@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From Cereal — JaiScript Code Migrations</title>
+<meta name="description" content="Moving a C++ codebase from Cereal or Boost.Serialization to the JaiScript archives: every construct mapped, a worked conversion, the property route that removes serialize functions, both libraries side by side, and converting existing files once.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="From Cereal — JaiScript Code Migrations">
+<meta property="og:description" content="Moving a C++ codebase from Cereal or Boost.Serialization to the JaiScript archives: every construct mapped, a worked conversion, the property route that removes serialize functions, both libraries side by side, and converting existing files once.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li class="current"><a href="../bridges/04-from-cereal.html" aria-current="page">From Cereal</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>04</nav>
+<article class="chapter"><h1 id="from-cereal">From Cereal<a class="hlink" href="#from-cereal" aria-label="link">&#8203;</a></h1>
+<p>Cereal and the JaiScript archives share a shape: a type describes itself once, in a <code>serialize</code>
+function or a <code>save</code>/<code>load</code> pair, and an archive drives that description in both
+directions. Most of a migration is spelling. Three things are more than spelling:</p>
+<ul>
+<li><strong>The files.</strong> The JaiScript archives write their own format, in JSON and in binary. A file
+Cereal wrote does not load through them, so existing data is converted once: loaded with Cereal, saved with
+JaiScript.</li>
+<li><strong>Registration.</strong> A polymorphic type gets its identity from a <code>jai::property_owner</code>
+base or a <code>jai::registrar</code>, in place of <code>CEREAL_REGISTER_TYPE</code>.</li>
+<li><strong>Versions.</strong> Both JaiScript formats name every property in every record, so most of what
+<code>CEREAL_CLASS_VERSION</code> did is unnecessary.</li>
+</ul>
+<p>This page maps every Cereal construct in common use, converts a small save game, shows the property route
+that removes the serialize functions entirely, and lays out a path that keeps both libraries in the build until
+the last old file is gone. Cereal took its design from Boost.Serialization, so a Boost codebase takes the same
+path; <a href="#from-boost-serialization">From Boost.Serialization</a> lists what is spelled differently there.
+The archive framework itself is documented in <a href="../embedding/08-serialization.html">Serialization</a>.</p>
+
+<h2 id="the-concept-map">The concept map<a class="hlink" href="#the-concept-map" aria-label="link">&#8203;</a></h2>
+<p>Headers: <code>&lt;jaiscript/serialization/convenience.hpp&gt;</code> for the archives and the one-call entry
+points, <code>&lt;jaiscript/serialization/construct.hpp&gt;</code> for <code>load_and_construct</code>,
+<code>&lt;jaiscript/core/registrar.hpp&gt;</code> for registrars, and
+<code>&lt;jaiscript/properties/macros.hpp&gt;</code> with
+<code>&lt;jaiscript/properties/property_serialization.hpp&gt;</code> for properties.</p>
+
+<h3 id="archives-and-entry-points">Archives and entry points<a class="hlink" href="#archives-and-entry-points" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Cereal</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>cereal::JSONOutputArchive ar(os); ar(value);</code></td><td><code>std::string text = jai::to_json(*eng, value);</code> (an optional third argument is the indent: 2 by default, 0 for one line)</td></tr>
+<tr><td><code>cereal::JSONInputArchive ar(is); ar(value);</code></td><td><code>T value = jai::from_json&lt;T&gt;(*eng, text);</code></td></tr>
+<tr><td><code>cereal::BinaryOutputArchive</code>, <code>cereal::PortableBinaryOutputArchive</code></td><td><code>std::vector&lt;std::uint8_t&gt; blob = jai::to_binary(*eng, value);</code>, or <code>to_binary_string</code>, <code>to_base64</code>; the binary format is little-endian on every platform, so it is already portable</td></tr>
+<tr><td><code>cereal::BinaryInputArchive</code>, <code>cereal::PortableBinaryInputArchive</code></td><td><code>jai::from_binary&lt;T&gt;(*eng, blob)</code>, <code>from_binary_string</code>, <code>from_base64</code></td></tr>
+<tr><td><code>cereal::XMLOutputArchive</code>, <code>cereal::XMLInputArchive</code></td><td>no XML format: JSON or binary</td></tr>
+<tr><td>an archive object, complete when it is destroyed</td><td><code>jai::serialization::json_archive_writer</code> / <code>json_archive_reader</code> and <code>binary_archive_writer</code> / <code>binary_archive_reader</code>, for a root you lay out by hand (<a href="#root-objects-and-files">below</a>); the result is <code>ar.str()</code> or <code>ar.data()</code> once the root record closes</td></tr>
+<tr><td>a <code>std::ostream</code> / <code>std::istream</code></td><td>a <code>std::string</code> or a <code>std::vector&lt;std::uint8_t&gt;</code>; the host reads and writes the file</td></tr>
+<tr><td>(nothing)</td><td>an engine: every entry point takes one (<code>auto eng = jai::engine::make();</code>), because a payload can hold script classes and bound types the engine resolves. One engine serves every save and load.</td></tr>
+</tbody></table></div>
+
+<h3 id="names">Names<a class="hlink" href="#names" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Cereal</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>CEREAL_NVP(hp)</code></td><td><code>JAI_NVP(hp)</code>: the key is the argument's text, <code>"hp"</code></td></tr>
+<tr><td><code>cereal::make_nvp("hp", hp)</code></td><td><code>ar("hp", hp)</code>, or <code>jai::serialization::make_nvp("hp", hp)</code></td></tr>
+<tr><td><code>ar(CEREAL_NVP(a), CEREAL_NVP(b))</code></td><td><code>ar(JAI_NVP(a), JAI_NVP(b))</code>; the two-argument form <code>ar("name", value)</code> takes one pair per call</td></tr>
+<tr><td><code>ar(hp, mana)</code>, which Cereal names <code>value0</code>, <code>value1</code></td><td>no positional form: every field has a name, <code>ar(JAI_NVP(hp), JAI_NVP(mana))</code></td></tr>
+</tbody></table></div>
+
+<h3 id="serialization-functions">Serialization functions<a class="hlink" href="#serialization-functions" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Cereal</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td>member <code>serialize(Archive&amp;)</code>, member <code>save(Archive&amp;) const</code> with <code>load(Archive&amp;)</code></td><td>unchanged</td></tr>
+<tr><td>the member forms with a <code>std::uint32_t const version</code> parameter</td><td>accepted, and preferred over the one-parameter forms, so no forwarding shims are needed. The archives record no class version for a C++ type, so the number carries nothing to branch on (<a href="#versions-in-a-self-describing-format">Versions</a>).</td></tr>
+<tr><td>free <code>serialize(Archive&amp;, T&amp;)</code>, <code>save(Archive&amp;, const T&amp;)</code>, <code>load(Archive&amp;, T&amp;)</code> found by ADL</td><td>unchanged in the two-parameter form. A free function with a version parameter is not found: drop the parameter.</td></tr>
+<tr><td><code>save_minimal</code> / <code>load_minimal</code></td><td>no minimal form: a type with a function always writes a record. Convert in the owning function (<code>ar("tint", tint.to_hex())</code>) or store the primitive.</td></tr>
+<tr><td><code>cereal::specialize&lt;Archive, T, cereal::specialization::...&gt;</code>, <code>CEREAL_SPECIALIZE_FOR_ALL_ARCHIVES</code></td><td>not needed: the choice is fixed (a member <code>save</code>/<code>load</code> before a member <code>serialize</code>, members before free functions), so the specializations are deleted</td></tr>
+<tr><td><code>ar(cereal::base_class&lt;Base&gt;(this))</code></td><td><code>Base::serialize(ar);</code> (or <code>Base::save(ar)</code> / <code>Base::load(ar)</code>): the base's fields join the derived class's record</td></tr>
+<tr><td><code>ar(cereal::virtual_base_class&lt;Base&gt;(this))</code></td><td>the virtual base's function called once, from the most-derived class</td></tr>
+<tr><td><code>cereal::make_size_tag(n)</code> in a hand-written container</td><td><code>ar.begin_array(n)</code>, <code>ar.write_element(v)</code> per element, <code>ar.end_array()</code>; a reader takes <code>std::size_t n = ar.begin_array()</code> and <code>ar.read_element(v)</code></td></tr>
+<tr><td><code>cereal::binary_data(ptr, size)</code></td><td>a <code>std::vector&lt;std::uint8_t&gt;</code> or <code>std::string</code> field</td></tr>
+</tbody></table></div>
+
+<h3 id="versions-and-polymorphism">Versions and polymorphism<a class="hlink" href="#versions-and-polymorphism" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Cereal</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>CEREAL_CLASS_VERSION(T, n)</code></td><td>no class version for a C++ type: properties are found by name, so reordered, added and removed fields need none. A type whose meaning changes writes a version as a property of its own (<a href="#versions-in-a-self-describing-format">Versions</a>).</td></tr>
+<tr><td><code>CEREAL_REGISTER_TYPE(Derived)</code> with <code>CEREAL_REGISTER_POLYMORPHIC_RELATION(Base, Derived)</code></td><td><code>class Derived : public jai::property_owner&lt;Derived, Base&gt;</code> declares both; a plain class takes <code>static jai::registrar&lt;Derived, void, jai::bases&lt;Base&gt;&gt; reg("Derived");</code></td></tr>
+<tr><td><code>CEREAL_REGISTER_TYPE_WITH_NAME(Derived, "name")</code></td><td>the registrar's name argument, or <code>JAI_PROPERTY_OWNER_AS(Derived, "name")</code> inside a <code>property_owner</code></td></tr>
+<tr><td><code>#include &lt;cereal/types/polymorphic.hpp&gt;</code></td><td><code>&lt;jaiscript/core/registrar.hpp&gt;</code> for a registrar; a <code>property_owner</code> needs nothing more</td></tr>
+<tr><td><code>CEREAL_REGISTER_DYNAMIC_INIT</code>, <code>CEREAL_FORCE_DYNAMIC_INIT</code></td><td>no macro: a registrar is a static object, so it lives in a translation unit the program links (a linker drops a static library's object file nothing references)</td></tr>
+<tr><td>a <code>std::unique_ptr&lt;Base&gt;</code> holding a derived object</td><td>a <code>unique_ptr</code> is written by its static type, with no <code>$type</code>, so a polymorphic owner is a <code>std::shared_ptr&lt;Base&gt;</code></td></tr>
+</tbody></table></div>
+
+<h3 id="pointers-and-identity">Pointers and identity<a class="hlink" href="#pointers-and-identity" aria-label="link">&#8203;</a></h3>
+<p>Cereal tracks each <code>shared_ptr</code> by an id so a shared object is written once. The JaiScript archives
+do the same, in records you can read:</p>
+<div class="tablewrap"><table><thead><tr><th>Cereal</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>std::shared_ptr&lt;T&gt;</code> (with <code>&lt;cereal/types/memory.hpp&gt;</code>)</td><td>built in: the first write is <code>{"$id": N, "$val": {...}}</code>, every later write of the same object is <code>{"$id": N}</code>, and the load re-aliases them; through a base pointer, <code>"$type"</code> names the derived class</td></tr>
+<tr><td><code>std::weak_ptr&lt;T&gt;</code></td><td><code>{"$ref": N}</code>, with the object inline when the weak pointer is its first reference in the save; an expired one is null</td></tr>
+<tr><td><code>std::unique_ptr&lt;T&gt;</code></td><td><code>{"$val": {...}}</code>, by the static type</td></tr>
+<tr><td>raw pointers (rejected)</td><td>rejected too: the object lives in a smart pointer</td></tr>
+<tr><td>one archive per tracking scope</td><td>one archive per tracking scope: objects stay shared only when one call saves the whole graph</td></tr>
+</tbody></table></div>
+
+<h3 id="containers-and-standard-types">Containers and standard types<a class="hlink" href="#containers-and-standard-types" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Cereal</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>#include &lt;cereal/types/vector.hpp&gt;</code> and the other type headers</td><td>nothing to include: <code>vector</code>, <code>list</code>, <code>deque</code>, <code>forward_list</code>, <code>array</code>, <code>map</code>, <code>unordered_map</code>, <code>set</code>, <code>unordered_set</code>, <code>pair</code>, <code>tuple</code>, <code>optional</code>, <code>variant</code> and the three smart pointers are built in</td></tr>
+<tr><td>maps</td><td>string keys as an object, other keys as an array of <code>[key, value]</code> pairs</td></tr>
+<tr><td><code>std::optional</code>, <code>std::variant</code></td><td><code>[has_value, value]</code> and <code>[index, value]</code></td></tr>
+<tr><td>enums</td><td>the underlying integer, as Cereal writes them</td></tr>
+<tr><td>C arrays, <code>std::bitset</code>, <code>std::chrono</code> durations, <code>std::complex</code>, <code>std::queue</code>, <code>std::stack</code>, <code>std::valarray</code></td><td>no built-in form: a <code>std::array</code> in place of a C array, and the rest converted in the owning function (a duration as its count, a bitset as its string)</td></tr>
+</tbody></table></div>
+
+<h3 id="construction-access-context-errors">Construction, access, context and errors<a class="hlink" href="#construction-access-context-errors" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Cereal</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>friend class cereal::access;</code></td><td><code>friend jai::access;</code> (both lines while both libraries are in the build)</td></tr>
+<tr><td><code>static void load_and_construct(Archive&amp;, cereal::construct&lt;T&gt;&amp;)</code></td><td>the same static member over <code>jai::serialization::construct&lt;T&gt;</code>, with two parameters (no version); it builds a <code>std::shared_ptr&lt;T&gt;</code> whose <code>T</code> has no default constructor</td></tr>
+<tr><td>a <code>cereal::LoadAndConstruct&lt;T&gt;</code> specialization for a type you cannot edit</td><td>no external form: wrap the type, or give it a default constructor</td></tr>
+<tr><td><code>cereal::UserDataAdapter</code> and <code>cereal::get_user_data&lt;T&gt;(ar)</code></td><td><code>jai::from_json&lt;T&gt;(*eng, text, ctx)</code> (and the binary forms) carry a context; inside a load, <code>ar.template get_user_context&lt;Context&gt;()</code> returns a pointer to it, or null when none was passed</td></tr>
+<tr><td><code>cereal::Exception</code></td><td><code>jai::serialization_error</code>, a <code>jai::runtime_error</code> (which derives from <code>std::runtime_error</code>)</td></tr>
+</tbody></table></div>
+
+<h2 id="a-worked-conversion">A worked conversion<a class="hlink" href="#a-worked-conversion" aria-label="link">&#8203;</a></h2>
+<p>A small save game: an <code>Item</code>, an <code>Inventory</code> that owns items, a <code>Player</code> that
+holds its inventory through a <code>shared_ptr</code>, and status effects behind base pointers.</p>
+
+<h3 id="leaf-types">Leaf types<a class="hlink" href="#leaf-types" aria-label="link">&#8203;</a></h3>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (Cereal)</span><pre><code class="lang-cpp">#include &lt;cereal/types/string.hpp&gt;
+#include &lt;cereal/types/vector.hpp&gt;
+
+struct Item {
+    std::string name;
+    int count = 1;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) { ar(CEREAL_NVP(name), CEREAL_NVP(count)); }
+};
+
+class Inventory {
+    friend class cereal::access;
+    std::vector&lt;Item&gt; items;
+    int capacity = 20;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar, std::uint32_t const version) {
+        ar(CEREAL_NVP(items));
+        if (version &gt;= 2) { ar(CEREAL_NVP(capacity)); }
+    }
+};
+CEREAL_CLASS_VERSION(Inventory, 2);</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">#include &lt;jaiscript/serialization/convenience.hpp&gt;
+
+struct Item {
+    std::string name;
+    int count = 1;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) { ar(JAI_NVP(name), JAI_NVP(count)); }
+};
+
+class Inventory {
+    friend jai::access;
+    std::vector&lt;Item&gt; items;
+    int capacity = 20;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) { ar(JAI_NVP(items), JAI_NVP(capacity)); }
+};</code></pre></div>
+<p>The type headers go, because the standard types are built in. The names change spelling. The version gate goes
+too: it existed for Cereal files written before <code>capacity</code> did. Every JaiScript file is written by
+the converted code, so the first JaiScript layout already holds both fields, and the old files reach JaiScript
+through the converter, which reads them with Cereal and its version branch
+(<a href="#converting-existing-files">below</a>). A field added from here on is read under
+<code>ar.has_property</code> (<a href="#versions-in-a-self-describing-format">Versions</a>).</p>
+
+<h3 id="owners-and-shared-pointers">Owners and shared pointers<a class="hlink" href="#owners-and-shared-pointers" aria-label="link">&#8203;</a></h3>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (Cereal)</span><pre><code class="lang-cpp">#include &lt;cereal/types/memory.hpp&gt;
+#include &lt;cereal/archives/json.hpp&gt;
+
+class Player {
+public:
+    std::string name;
+    int hp = 100;
+    std::shared_ptr&lt;Inventory&gt; inventory = std::make_shared&lt;Inventory&gt;();
+    float hpFraction = 1.0f;                     // derived on load, never saved
+
+    template&lt;class Archive&gt;
+    void save(Archive&amp; ar) const { ar(CEREAL_NVP(name), CEREAL_NVP(hp), CEREAL_NVP(inventory)); }
+
+    template&lt;class Archive&gt;
+    void load(Archive&amp; ar) {
+        ar(CEREAL_NVP(name), CEREAL_NVP(hp), CEREAL_NVP(inventory));
+        hpFraction = hp / 100.0f;
+    }
+};
+
+std::ofstream os("player.json");
+{
+    cereal::JSONOutputArchive ar(os);
+    ar(player);
+}</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">class Player {
+public:
+    std::string name;
+    int hp = 100;
+    std::shared_ptr&lt;Inventory&gt; inventory = std::make_shared&lt;Inventory&gt;();
+    float hpFraction = 1.0f;
+
+    template&lt;class Archive&gt;
+    void save(Archive&amp; ar) const { ar(JAI_NVP(name), JAI_NVP(hp), JAI_NVP(inventory)); }
+
+    template&lt;class Archive&gt;
+    void load(Archive&amp; ar) {
+        ar(JAI_NVP(name), JAI_NVP(hp), JAI_NVP(inventory));
+        hpFraction = hp / 100.0f;
+    }
+};
+
+auto eng = jai::engine::make();
+std::ofstream("player.json") &lt;&lt; jai::to_json(*eng, player);
+
+std::stringstream text;
+text &lt;&lt; std::ifstream("player.json").rdbuf();
+Player loaded = jai::from_json&lt;Player&gt;(*eng, text.str());</code></pre></div>
+<p>The class body changes only in its names. The inventory is written as
+<code>{"$id": 1, "$val": {"items": [...], "capacity": 20}}</code>; a second <code>shared_ptr</code> to the same
+inventory in the same save would write <code>{"$id": 1}</code> and load as the same object. A
+<code>std::vector&lt;Item&gt;</code> needs no help: the archives walk the container and call
+<code>Item::serialize</code> per element.</p>
+
+<h3 id="a-polymorphic-hierarchy">A polymorphic hierarchy<a class="hlink" href="#a-polymorphic-hierarchy" aria-label="link">&#8203;</a></h3>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (Cereal)</span><pre><code class="lang-cpp">#include &lt;cereal/types/polymorphic.hpp&gt;
+#include &lt;cereal/types/base_class.hpp&gt;
+
+struct Effect {
+    virtual ~Effect() = default;
+    double remaining = 0;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) { ar(CEREAL_NVP(remaining)); }
+};
+
+struct Burn : Effect {
+    int damagePerTick = 1;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) { ar(cereal::base_class&lt;Effect&gt;(this), CEREAL_NVP(damagePerTick)); }
+};
+
+struct Shield : Effect {
+    int absorb = 0;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) { ar(cereal::base_class&lt;Effect&gt;(this), CEREAL_NVP(absorb)); }
+};
+
+CEREAL_REGISTER_TYPE(Burn)
+CEREAL_REGISTER_TYPE(Shield)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(Effect, Burn)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(Effect, Shield)</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">#include &lt;jaiscript/core/registrar.hpp&gt;
+
+struct Effect {
+    virtual ~Effect() = default;
+    double remaining = 0;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) { ar(JAI_NVP(remaining)); }
+};
+
+struct Burn : Effect {
+    int damagePerTick = 1;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) { Effect::serialize(ar); ar(JAI_NVP(damagePerTick)); }
+};
+
+struct Shield : Effect {
+    int absorb = 0;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) { Effect::serialize(ar); ar(JAI_NVP(absorb)); }
+};
+
+static jai::registrar&lt;Burn, void, jai::bases&lt;Effect&gt;&gt; burnRegistrar("Burn");
+static jai::registrar&lt;Shield, void, jai::bases&lt;Effect&gt;&gt; shieldRegistrar("Shield");</code></pre></div>
+<p>Each registrar gives its class the name the archives write as <code>$type</code> and records the edge to
+<code>Effect</code>, which a load checks before it hands a <code>Burn</code> back through an
+<code>Effect</code> pointer. It registers at program start; the same object also makes the class bindable into
+an engine through <code>jai::bind_registrar</code>, with an optional configure lambda that adds methods and
+properties (<a href="../embedding/08-serialization.html#smart-pointers-polymorphism-graphs">Serialization</a> shows one).
+Give <code>Player</code> a <code>std::vector&lt;std::shared_ptr&lt;Effect&gt;&gt; effects</code> field, archive
+it like the others, and each element is written as
+<code>{"$id": N, "$type": "Burn", "$val": {"remaining": 3.5, "damagePerTick": 2}}</code> and loads as a
+<code>Burn</code>.</p>
+<p>The base's fields land in the derived class's record, beside its own, where Cereal nests them in a record of
+their own. Keep field names distinct across a hierarchy.</p>
+
+<h3 id="root-objects-and-files">Root objects and files<a class="hlink" href="#root-objects-and-files" aria-label="link">&#8203;</a></h3>
+<p><code>jai::to_json(*eng, value)</code> writes one value as the root. Cereal code that writes several root values
+(<code>ar(settings, world)</code>) either gathers them into one struct or opens the root record by hand, the way
+the one-call functions do:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::serialization::json_archive_writer out(2, eng.get());     // indent, engine
+out.begin_object("", 1);
+out("settings", settings);
+out("world", world);
+out.end_object();
+std::string text = out.str();
+
+jai::serialization::json_archive_reader in(text, eng.get());
+std::string typeName;
+std::uint32_t version = 0;
+in.begin_object(typeName, version);
+in("settings", settings);
+in("world", world);
+in.end_object();</code></pre></div>
+<p>The binary pair is the same calls: <code>binary_archive_writer out(eng.get())</code> with
+<code>out.data()</code> for the bytes, and <code>binary_archive_reader in(bytes, eng.get())</code>.</p>
+
+<h2 id="the-property-route">The property route: no serialize functions<a class="hlink" href="#the-property-route" aria-label="link">&#8203;</a></h2>
+<p>Cereal needs a function per type. A class that derives <code>jai::property_owner</code> and declares its fields
+with <code>JAI_PROPERTY</code> needs none: the archives save and load every property by name, the same
+declaration makes the field reflected and script-visible (<a href="../embedding/02-dynamic-binder.html">dynamic_binder</a>),
+and the class carries its own polymorphic identity. A migration is a good moment to make that move for types
+whose functions only list their fields.</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/properties/macros.hpp&gt;
+#include &lt;jaiscript/properties/property_serialization.hpp&gt;
+
+class Effect : public jai::property_owner&lt;Effect&gt; {
+public:
+    JAI_PROPERTY((double), remaining, 0.0);
+};
+
+class Burn : public jai::property_owner&lt;Burn, Effect&gt; {
+public:
+    JAI_PROPERTY((int), damagePerTick, 1);
+};
+
+class Player : public jai::property_owner&lt;Player&gt; {
+public:
+    JAI_PROPERTY((std::string), name, "hero");
+    JAI_PROPERTY((int), hp, 100);
+    JAI_PROPERTY((std::shared_ptr&lt;Inventory&gt;), inventory, std::make_shared&lt;Inventory&gt;());
+    JAI_PROPERTY((std::vector&lt;std::shared_ptr&lt;Effect&gt;&gt;), effects);
+    JAI_TRANSIENT_PROPERTY((float), hpFraction, 1.0f);
+};
+
+auto player = std::make_shared&lt;Player&gt;();
+std::string json = jai::to_json(*eng, player);
+auto loaded = jai::from_json&lt;std::shared_ptr&lt;Player&gt;&gt;(*eng, json);</code></pre></div>
+<ul>
+<li><strong>Nothing to keep in step.</strong> A load reads the properties the record and the class share. A
+property the record lacks keeps its initializer, and one the class no longer declares is skipped, so adding or
+removing a <code>JAI_PROPERTY</code> needs no migration code.</li>
+<li><code>JAI_TRANSIENT_PROPERTY</code> is reflected but never saved: the counterpart of a field a Cereal function
+left out. <code>JAI_NAMED_PROPERTY((type), "saved_name", member)</code> saves under a key other than the member's
+name, which keeps a key stable through a rename.</li>
+<li><code>property_owner&lt;Burn, Effect&gt;</code> records <code>Burn</code>'s name and its edge to
+<code>Effect</code>, so polymorphic saves need no registrar. The name is the bare class name;
+<code>JAI_PROPERTY_OWNER_AS(Burn, "Burn")</code> pins it.</li>
+<li>A <code>property_owner</code> cannot be moved (its property manager points at its members), so a root loads
+through a <code>std::shared_ptr</code>, as above.</li>
+<li>Members that are not properties are not saved. A class that needs more keeps a <code>save</code> /
+<code>load</code> pair, which takes precedence over the automatic one; <code>save_owned_properties(ar)</code> and
+<code>load_owned_properties(ar)</code> write and read every level's properties beside the hand-written
+part (<code>property_mgr.save(ar)</code> covers only the declaring class's level):</li>
+</ul>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">class Player : public jai::property_owner&lt;Player&gt; {
+public:
+    JAI_PROPERTY((int), hp, 100);
+    float hpFraction = 1.0f;
+
+    template&lt;class Archive&gt;
+    void save(Archive&amp; ar) const { save_owned_properties(ar); }
+
+    template&lt;class Archive&gt;
+    void load(Archive&amp; ar) {
+        load_owned_properties(ar);
+        hpFraction = hp.get() / 100.0f;
+    }
+};</code></pre></div>
+
+<h2 id="versions-in-a-self-describing-format">Versions in a self-describing format<a class="hlink" href="#versions-in-a-self-describing-format" aria-label="link">&#8203;</a></h2>
+<p>Cereal's binary archives are positional: a reader asks for exactly what the writer wrote, in the same order, and
+<code>CEREAL_CLASS_VERSION</code> tells it which layout it holds. Both JaiScript formats name every property in
+every record (the binary one through a table of names and sizes ahead of the values), so a reader finds a property
+by name and skips the ones it does not ask for. Most of what a version number did goes away:</p>
+<ul>
+<li>Reordering fields changes nothing, except among fields that hold the same object: the one the file writes the
+object in is read first (<a href="#pitfalls">Pitfalls</a>).</li>
+<li>A removed field is skipped, because nothing asks for it.</li>
+<li>An added field is read under <code>ar.has_property</code>, and keeps its initializer for a record written
+before it existed (a <code>property_owner</code> does this for every property):</li>
+</ul>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">template&lt;class Archive&gt;
+void load(Archive&amp; ar) {
+    ar(JAI_NVP(items));
+    if (ar.has_property("capacity")) { ar(JAI_NVP(capacity)); }
+}</code></pre></div>
+<p>What is left for a version is a field whose meaning changes: a unit, an encoding, one field split into two. The
+archives record no class version for a C++ type, so such a type writes one as a property and defaults it for
+records that predate it:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">template&lt;class Archive&gt;
+void save(Archive&amp; ar) const {
+    ar("format", std::uint32_t(2));
+    ar(JAI_NVP(metersPerSecond));
+}
+
+template&lt;class Archive&gt;
+void load(Archive&amp; ar) {
+    std::uint32_t format = 1;
+    if (ar.has_property("format")) { ar("format", format); }
+    if (format &gt;= 2) {
+        ar(JAI_NVP(metersPerSecond));
+    } else {
+        double kilometersPerHour = 0;
+        ar("speed", kilometersPerHour);
+        metersPerSecond = kilometersPerHour / 3.6;
+    }
+}</code></pre></div>
+<p>A Cereal version history does not carry over. The first JaiScript layout of a type holds every current field, and
+the version branches stay on the Cereal side for as long as the converter needs them. A versioned member function
+still compiles and is still called, but the number it receives is not a record version: leave it unused on the
+JaiScript side.</p>
+
+<h2 id="a-migration-path">A migration path<a class="hlink" href="#a-migration-path" aria-label="link">&#8203;</a></h2>
+<ol>
+<li><strong>Add JaiScript beside Cereal.</strong> Link the library, include
+<code>&lt;jaiscript/serialization/convenience.hpp&gt;</code> where types are serialized, and make one engine the
+save code can reach. Nothing changes on disk yet.</li>
+<li><strong>Make the leaf types dual.</strong> Starting with types that hold only primitives, strings and
+containers of those, give each function a JaiScript branch beside its Cereal one
+(<a href="#both-libraries-in-one-function">below</a>). Both libraries drive the same function, and Cereal's output
+does not change.</li>
+<li><strong>Move up through the owners.</strong> A type is ready when every type it holds is. Containers and smart
+pointers need nothing beyond their element types.</li>
+<li><strong>Register the polymorphic hierarchies.</strong> Add a registrar, or a <code>property_owner</code> base,
+beside each <code>CEREAL_REGISTER_TYPE</code>. Keep Cereal's registrations: the converter still needs them.</li>
+<li><strong>Prove each type round-trips</strong> through both JaiScript formats before anything is saved for real:
+<code>jai::from_json&lt;T&gt;(*eng, jai::to_json(*eng, value))</code> and
+<code>jai::from_binary&lt;T&gt;(*eng, jai::to_binary(*eng, value))</code>, compared with the original. The two
+formats run different code, and a field one of them drops can hide behind the other.</li>
+<li><strong>Switch the writers.</strong> New files go out through JaiScript under a new name (an extension, a
+folder). The loader reads files with the new name through JaiScript and falls back to Cereal for the old
+name.</li>
+<li><strong>Convert the existing data once</strong> (<a href="#converting-existing-files">below</a>).</li>
+<li><strong>Remove Cereal.</strong> When no file in the old format remains, delete the Cereal branches,
+registrations, includes and <code>friend class cereal::access</code> lines, and drop the dependency. Types whose
+functions only list fields can then take the <a href="#the-property-route">property route</a>.</li>
+</ol>
+
+<h3 id="both-libraries-in-one-function">Both libraries in one function<a class="hlink" href="#both-libraries-in-one-function" aria-label="link">&#8203;</a></h3>
+<p><code>jai::serialization::jai_archive&lt;Archive&gt;</code> is true for the JaiScript archives and false for every
+Cereal archive, so an <code>if constexpr</code> on it keeps each library's spelling on its own side and the branch
+not taken is never instantiated:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">struct Effect {
+    virtual ~Effect() = default;
+    double remaining = 0;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) {
+        if constexpr (jai::serialization::jai_archive&lt;Archive&gt;) { ar(JAI_NVP(remaining)); }
+        else { ar(CEREAL_NVP(remaining)); }
+    }
+};
+
+struct Burn : Effect {
+    int damagePerTick = 1;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar) {
+        if constexpr (jai::serialization::jai_archive&lt;Archive&gt;) {
+            Effect::serialize(ar);
+            ar(JAI_NVP(damagePerTick));
+        } else {
+            ar(cereal::base_class&lt;Effect&gt;(this), CEREAL_NVP(damagePerTick));
+        }
+    }
+};
+
+CEREAL_REGISTER_TYPE(Burn)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(Effect, Burn)
+static jai::registrar&lt;Burn, void, jai::bases&lt;Effect&gt;&gt; burnRegistrar("Burn");</code></pre></div>
+<ul>
+<li>Where the two bodies share nothing, two overloads say the same thing: one constrained with
+<code>requires jai::serialization::jai_archive&lt;Archive&gt;</code>, the other with
+<code>requires jai::serialization::not_jai_archive&lt;Archive&gt;</code>.</li>
+<li>A Cereal function with a version parameter keeps it. The JaiScript archives call the versioned member form too,
+so the version branches stay inside the Cereal side.</li>
+<li>A type with <code>load_and_construct</code> keeps one per library. They take different <code>construct</code>
+types, so they overload without constraints.</li>
+<li>Code that already holds a Cereal name-value pair hands it to a JaiScript archive as its two halves:</li>
+</ul>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">template&lt;class Archive, class T&gt;
+void archive_pair(Archive&amp; ar, cereal::NameValuePair&lt;T&gt;&amp; pair) {
+    if constexpr (jai::serialization::jai_archive&lt;Archive&gt;) { ar(pair.name, pair.value); }
+    else { ar(pair); }
+}</code></pre></div>
+
+<h3 id="converting-existing-files">Converting existing files<a class="hlink" href="#converting-existing-files" aria-label="link">&#8203;</a></h3>
+<p>A JaiScript archive cannot read a file Cereal wrote: the two formats share no layout. Existing data crosses once,
+through a program that links both libraries and the dual types. Cereal loads each file, exactly as the old code
+wrote it (the same archive type, the same root shape, Cereal's registrations compiled in), and JaiScript saves
+it:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;cereal/archives/binary.hpp&gt;
+#include &lt;jaiscript/serialization/convenience.hpp&gt;
+
+void convertSave(jai::engine&amp; eng, const std::filesystem::path&amp; from, const std::filesystem::path&amp; to) {
+    SaveGame save;
+    {
+        std::ifstream is(from, std::ios::binary);
+        cereal::BinaryInputArchive in(is);
+        in(save);
+    }
+    std::string text = jai::to_json(eng, save);
+
+    SaveGame check = jai::from_json&lt;SaveGame&gt;(eng, text);
+    if (jai::to_json(eng, check) != text) {
+        throw std::runtime_error("lossy conversion: " + from.string());
+    }
+    std::ofstream(to) &lt;&lt; text;
+}</code></pre></div>
+<p>The check loads the new text back and saves it again: a field the JaiScript <code>load</code> misses shows up as
+a difference. (A type holding an <code>unordered_map</code> or <code>unordered_set</code> can list the same entries
+in another order after a reload; compare those by content.) Content that ships with the program (levels, prefabs,
+tuning tables) converts in one batch: run the converter over it, keep the converted files and delete the old
+ones.</p>
+
+<h3 id="files-you-cannot-convert-in-advance">Files you cannot convert in advance<a class="hlink" href="#files-you-cannot-convert-in-advance" aria-label="link">&#8203;</a></h3>
+<p>Saves on players' machines convert on first load. Ship releases that read a file with the old name through
+Cereal, write it under the new name through JaiScript, and read the new name from then on; remove the Cereal
+reader once the old saves no longer matter. Tell the formats apart by name, never by trying one reader and
+catching its error (<a href="#pitfalls">first pitfall</a>).</p>
+<p>The JaiScript formats belong to the library's 0.x surface: data saved by one 0.x release is not promised to load
+in the next (<a href="../stability.html">Stability</a>). Keep the converter and the original files until the format
+your data depends on has settled.</p>
+
+<h2 id="from-boost-serialization">From Boost.Serialization<a class="hlink" href="#from-boost-serialization" aria-label="link">&#8203;</a></h2>
+<p>Cereal is modeled on Boost.Serialization, and everything above applies to a Boost codebase: the files convert
+once through a program that links both libraries, polymorphic types register, and class versions mostly go away.
+Boost's member functions keep their signatures, because <code>serialize(Archive&amp;, const unsigned int)</code>
+is the versioned member form the JaiScript archives call. What changes is inside them: Boost streams fields with
+<code>&amp;</code>, <code>&lt;&lt;</code> and <code>&gt;&gt;</code>, and the JaiScript archives take named fields
+through their call operator, with no stream operators.</p>
+<div class="tablewrap"><table><thead><tr><th>Boost.Serialization</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td><code>boost::archive::text_oarchive ar(os); ar &lt;&lt; value;</code>, and the <code>binary_</code> and <code>xml_</code> archives</td><td><code>jai::to_json(*eng, value)</code>, <code>jai::to_binary(*eng, value)</code>; no XML format</td></tr>
+<tr><td><code>boost::archive::text_iarchive ar(is); ar &gt;&gt; value;</code></td><td><code>jai::from_json&lt;T&gt;(*eng, text)</code>, <code>jai::from_binary&lt;T&gt;(*eng, blob)</code></td></tr>
+<tr><td><code>ar &amp; hp;</code>, and <code>ar &lt;&lt; hp</code> / <code>ar &gt;&gt; hp</code> in a split pair</td><td><code>ar(JAI_NVP(hp));</code> in every function: each field has a name</td></tr>
+<tr><td><code>ar &amp; BOOST_SERIALIZATION_NVP(hp);</code>, <code>ar &amp; boost::serialization::make_nvp("hp", hp);</code></td><td><code>ar(JAI_NVP(hp));</code>, <code>ar("hp", hp);</code></td></tr>
+<tr><td>member <code>serialize(Archive&amp;, const unsigned int version)</code>, member <code>save(...) const</code> / <code>load(...)</code></td><td>the same signatures; the number they receive is not a record version (<a href="#versions-in-a-self-describing-format">Versions</a>)</td></tr>
+<tr><td><code>BOOST_SERIALIZATION_SPLIT_MEMBER()</code></td><td>not needed: the archives call a member <code>save</code>/<code>load</code> pair directly, so the macro compiles beside them and goes when Boost does</td></tr>
+<tr><td>free <code>serialize(Archive&amp;, T&amp;, const unsigned int)</code>, <code>BOOST_SERIALIZATION_SPLIT_FREE(T)</code></td><td>free <code>serialize(Archive&amp;, T&amp;)</code>, or free <code>save</code> / <code>load</code>, with two parameters: drop the version</td></tr>
+<tr><td><code>boost::serialization::base_object&lt;Base&gt;(*this)</code></td><td><code>Base::serialize(ar, version);</code> (or <code>Base::save</code> / <code>Base::load</code>): the base's fields join the derived record</td></tr>
+<tr><td><code>BOOST_CLASS_EXPORT(T)</code>, <code>BOOST_CLASS_EXPORT_GUID(T, "name")</code>, <code>BOOST_CLASS_EXPORT_KEY</code> / <code>_IMPLEMENT</code>, <code>ar.register_type&lt;T&gt;()</code></td><td><code>static jai::registrar&lt;T, void, jai::bases&lt;Base&gt;&gt; reg("name");</code> or a <code>property_owner</code> base, once per program</td></tr>
+<tr><td><code>boost::serialization::void_cast_register&lt;Derived, Base&gt;()</code></td><td>the registrar's <code>jai::bases&lt;Base&gt;</code></td></tr>
+<tr><td><code>BOOST_CLASS_VERSION(T, n)</code></td><td>no class version (<a href="#versions-in-a-self-describing-format">Versions</a>)</td></tr>
+<tr><td><code>BOOST_CLASS_TRACKING</code>, <code>BOOST_CLASS_IMPLEMENTATION</code></td><td>nothing to set: a <code>shared_ptr</code>'s object is always tracked, and nothing else is</td></tr>
+<tr><td>raw pointers, tracked by address and created on load</td><td>rejected: the object lives in a <code>std::shared_ptr</code> (or a <code>std::unique_ptr</code>, written by its static type)</td></tr>
+<tr><td>an object saved by value and again through a pointer, restored as one object</td><td>two objects: identity belongs to <code>shared_ptr</code>s alone</td></tr>
+<tr><td><code>save_construct_data</code> / <code>load_construct_data</code></td><td>a static <code>load_and_construct</code> over <code>jai::serialization::construct&lt;T&gt;</code></td></tr>
+<tr><td><code>#include &lt;boost/serialization/vector.hpp&gt;</code>, <code>shared_ptr.hpp</code> and the other type headers</td><td>nothing to include (<a href="#containers-and-standard-types">Containers</a>)</td></tr>
+<tr><td><code>boost::serialization::make_array(p, n)</code>, <code>make_binary_object(p, n)</code></td><td>a <code>std::vector</code> or <code>std::array</code> field</td></tr>
+<tr><td><code>friend class boost::serialization::access;</code></td><td><code>friend jai::access;</code></td></tr>
+<tr><td><code>boost::archive::archive_exception</code></td><td><code>jai::serialization_error</code></td></tr>
+</tbody></table></div>
+<p>The effects from <a href="#a-polymorphic-hierarchy">the worked conversion</a>, written for Boost and then for
+JaiScript:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (Boost.Serialization)</span><pre><code class="lang-cpp">#include &lt;boost/serialization/base_object.hpp&gt;
+#include &lt;boost/serialization/export.hpp&gt;
+#include &lt;boost/serialization/nvp.hpp&gt;
+
+struct Effect {
+    virtual ~Effect() = default;
+    double remaining = 0;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar, const unsigned int) { ar &amp; BOOST_SERIALIZATION_NVP(remaining); }
+};
+
+struct Burn : Effect {
+    int damagePerTick = 1;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar, const unsigned int) {
+        ar &amp; boost::serialization::make_nvp("Effect", boost::serialization::base_object&lt;Effect&gt;(*this));
+        ar &amp; BOOST_SERIALIZATION_NVP(damagePerTick);
+    }
+};
+
+BOOST_CLASS_EXPORT(Burn)</code></pre></div>
+<div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">#include &lt;jaiscript/serialization/convenience.hpp&gt;
+#include &lt;jaiscript/core/registrar.hpp&gt;
+
+struct Effect {
+    virtual ~Effect() = default;
+    double remaining = 0;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar, const unsigned int) { ar(JAI_NVP(remaining)); }
+};
+
+struct Burn : Effect {
+    int damagePerTick = 1;
+
+    template&lt;class Archive&gt;
+    void serialize(Archive&amp; ar, const unsigned int version) {
+        Effect::serialize(ar, version);
+        ar(JAI_NVP(damagePerTick));
+    }
+};
+
+static jai::registrar&lt;Burn, void, jai::bases&lt;Effect&gt;&gt; burnRegistrar("Burn");</code></pre></div>
+<p>A <code>std::vector&lt;std::shared_ptr&lt;Effect&gt;&gt;</code> holding a <code>Burn</code> saves as
+<code>{"$id": 1, "$type": "Burn", "$val": {"remaining": 3.5, "damagePerTick": 2}}</code> and loads as a
+<code>Burn</code>. During the transition one function serves both libraries the way it does for Cereal
+(<a href="#both-libraries-in-one-function">above</a>): <code>jai::serialization::jai_archive&lt;Archive&gt;</code> is
+false for every Boost archive, so the Boost body stays in the other branch, and a <code>save</code>/<code>load</code>
+pair keeps its <code>BOOST_SERIALIZATION_SPLIT_MEMBER()</code> until Boost leaves the build:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">class Player {
+    friend class boost::serialization::access;
+    friend jai::access;
+public:
+    std::string name;
+    int hp = 100;
+    float hpFraction = 1.0f;
+
+private:
+    template&lt;class Archive&gt;
+    void save(Archive&amp; ar, const unsigned int) const {
+        if constexpr (jai::serialization::jai_archive&lt;Archive&gt;) { ar(JAI_NVP(name), JAI_NVP(hp)); }
+        else { ar &lt;&lt; name &lt;&lt; hp; }
+    }
+
+    template&lt;class Archive&gt;
+    void load(Archive&amp; ar, const unsigned int) {
+        if constexpr (jai::serialization::jai_archive&lt;Archive&gt;) { ar(JAI_NVP(name), JAI_NVP(hp)); }
+        else { ar &gt;&gt; name &gt;&gt; hp; }
+        hpFraction = hp / 100.0f;
+    }
+    BOOST_SERIALIZATION_SPLIT_MEMBER()
+};</code></pre></div>
+<p>A Boost text or binary archive is positional, like Cereal's binary archives, and reads only through the code
+and the class versions that wrote it. The converter loads each old file with Boost, exactly as the old code
+wrote it, and saves it with JaiScript (<a href="#converting-existing-files">Converting existing files</a>).</p>
+
+<h2 id="pitfalls">Pitfalls<a class="hlink" href="#pitfalls" aria-label="link">&#8203;</a></h2>
+<ul>
+<li><strong>Reading an old file with the new loader.</strong> A <code>property_owner</code> load reads the
+properties it recognizes and keeps the initializers of the rest, so a Cereal file handed to it can load as an
+object of defaults without an error. Keep the formats under different names.</li>
+<li><strong>Positional fields.</strong> Cereal names unnamed values <code>value0</code>, <code>value1</code>;
+JaiScript has no positional form. <code>JAI_NVP</code> takes its argument's text as the key, so
+<code>JAI_NVP(m_hp)</code> saves <code>"m_hp"</code> and <code>JAI_NVP(this-&gt;hp)</code> saves
+<code>"this-&gt;hp"</code>; <code>ar("hp", m_hp)</code> spells the key you want in the file.</li>
+<li><strong>A field the record lacks.</strong> <code>ar("name", v)</code> on a missing property throws
+<code>jai::serialization_error</code> (<code>Property 'name' not found during deserialization</code>). A field a
+Cereal function wrote conditionally is read under <code>ar.has_property("name")</code>.</li>
+<li><strong>A polymorphic <code>unique_ptr</code>.</strong> It is written by its static type, so a
+<code>std::unique_ptr&lt;Effect&gt;</code> holding a <code>Burn</code> saves the <code>Effect</code> fields and
+loads an <code>Effect</code>, with no error. A polymorphic owner is a <code>std::shared_ptr</code>.</li>
+<li><strong>An unregistered derived class.</strong> Saving one through a base pointer throws
+<code>Cannot serialize unregistered polymorphic type '...' through pointer-to-base '...'</code>; loading a
+<code>$type</code> the program does not know throws <code>Unknown polymorphic type: Name</code>, and a
+<code>$type</code> naming a registered class that does not derive from the requested base is rejected.</li>
+<li><strong>The name is in the file.</strong> <code>$type</code> stores the registered name, and an automatic name
+follows the C++ class name, so renaming the class breaks old saves. Pin a name that must outlive a rename (the
+registrar's argument, <code>JAI_PROPERTY_OWNER_AS</code>) before the first save.</li>
+<li><strong>A registration a binary never sees.</strong> A <code>property_owner</code> registers its name when the
+program constructs or binds the type somewhere; a tool that only loads a type registers it with a
+<code>jai::registrar</code>. A registrar in a static library's object file that nothing references is dropped by
+the linker, as Cereal's registrations are.</li>
+<li><strong>A versioned free function.</strong> The archives find free functions with two parameters only, so a
+free <code>serialize(Archive&amp;, T&amp;, std::uint32_t)</code> leaves the type unserializable: the save fails
+with a <code>jai::serialization_error</code> naming it.</li>
+<li><strong>Base and derived fields share a record.</strong> A derived field named like a base field writes the
+same key twice. (In a <code>property_owner</code> chain the derived level wins, as C++ name hiding does.)</li>
+<li><strong>A property saved twice.</strong> A hand-written <code>save</code> that calls
+<code>save_owned_properties(ar)</code> and also writes a <code>JAI_PROPERTY</code> field by name writes that key
+twice.</li>
+<li><strong>Shared objects read out of order.</strong> A <code>shared_ptr</code> writes its object at the first
+reference the save reaches (<code>{"$id": N, "$val": {...}}</code>; a <code>weak_ptr</code> that comes first writes
+it as <code>{"$ref": N, "$val": {...}}</code>) and <code>{"$id": N}</code> at every later one, and the load resolves
+ids in the order <code>load</code> reads its fields. When the save writes <code>inventory</code> and then
+<code>equipped</code>, both holding one object, a <code>load</code> that reads <code>equipped</code> first throws
+<code>jai::serialization_error</code> (<code>Dangling shared_ptr reference: {"$id": N} names an object this archive
+never defined (...)</code>); a <code>weak_ptr</code> read before the field that carries its object loads empty. Read
+such fields in the order the save writes them. A <code>property_owner</code>'s automatic save and load walk its
+properties in one order (each level by name, base levels first), so this concerns a hand-written pair.</li>
+<li><strong>One graph per call.</strong> Object identity lasts one archive, as in Cereal: a <code>shared_ptr</code>
+saved by two separate <code>to_json</code> calls loads as two objects.</li>
+<li><strong>Exception types.</strong> A <code>catch (const cereal::Exception&amp;)</code> becomes
+<code>catch (const jai::serialization_error&amp;)</code>; <code>std::exception</code> covers both while both
+libraries run.</li>
+<li><strong>Enums are numbers.</strong> Both libraries write the underlying integer, so an enumerator inserted
+mid-list renumbers every value after it in old files. Give enumerators explicit values, or save a name.</li>
+</ul>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../embedding/index.html"><span>next &middot; embedding &rarr;</span>Embedding &amp; Engine Guide</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1">
+      <stop offset="0" stop-color="#ff5e3a"/>
+      <stop offset=".35" stop-color="#ffd83a"/>
+      <stop offset=".7" stop-color="#3ac8ff"/>
+      <stop offset="1" stop-color="#ff4fd8"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="#0c0f14"/>
+  <text x="16" y="23.5" text-anchor="middle" font-family="Menlo, Consolas, monospace"
+        font-weight="700" font-size="21" fill="url(#g)">J</text>
+</svg>

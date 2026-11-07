@@ -1,0 +1,1552 @@
+{
+ "completion.enum": [
+  "blue",
+  "green",
+  "red"
+ ],
+ "completion.member_base_ref": [
+  "heal",
+  "hp",
+  "name",
+  "power"
+ ],
+ "completion.member_object": [
+  "heal",
+  "hp",
+  "level",
+  "name",
+  "power"
+ ],
+ "completion.member_partial": [
+  "heal"
+ ],
+ "completion.namespace": [
+  "shout",
+  "twice"
+ ],
+ "completion.scope_locals": [
+  "Actor",
+  "Color",
+  "Hero",
+  "LIMIT",
+  "a",
+  "array",
+  "auto",
+  "blue",
+  "class",
+  "enum",
+  "for",
+  "green",
+  "h",
+  "hp",
+  "import",
+  "int",
+  "jai",
+  "make_party",
+  "namespace",
+  "override",
+  "party",
+  "print",
+  "red",
+  "return",
+  "run",
+  "s",
+  "shade",
+  "string",
+  "this",
+  "to_string",
+  "total",
+  "util",
+  "var",
+  "void"
+ ],
+ "completion.static_less_call": [
+  "heal",
+  "hp",
+  "level",
+  "name",
+  "power"
+ ],
+ "definition.class": {
+  "range": {
+   "end": {
+    "character": 10,
+    "line": 14
+   },
+   "start": {
+    "character": 6,
+    "line": 14
+   }
+  },
+  "uri": "program/lib.jai"
+ },
+ "definition.enum": {
+  "range": {
+   "end": {
+    "character": 10,
+    "line": 2
+   },
+   "start": {
+    "character": 5,
+    "line": 2
+   }
+  },
+  "uri": "program/lib.jai"
+ },
+ "definition.global": {
+  "range": {
+   "end": {
+    "character": 9,
+    "line": 4
+   },
+   "start": {
+    "character": 4,
+    "line": 4
+   }
+  },
+  "uri": "program/lib.jai"
+ },
+ "definition.import_path": {
+  "range": {
+   "end": {
+    "character": 0,
+    "line": 0
+   },
+   "start": {
+    "character": 0,
+    "line": 0
+   }
+  },
+  "uri": "program/lib.jai"
+ },
+ "definition.local": {
+  "range": {
+   "end": {
+    "character": 8,
+    "line": 3
+   },
+   "start": {
+    "character": 5,
+    "line": 3
+   }
+  },
+  "uri": "program/main.jai"
+ },
+ "definition.member_via_element": {
+  "range": {
+   "end": {
+    "character": 10,
+    "line": 22
+   },
+   "start": {
+    "character": 6,
+    "line": 22
+   }
+  },
+  "uri": "program/lib.jai"
+ },
+ "definition.namespace_fn": {
+  "range": {
+   "end": {
+    "character": 10,
+    "line": 28
+   },
+   "start": {
+    "character": 5,
+    "line": 28
+   }
+  },
+  "uri": "program/lib.jai"
+ },
+ "diagnostics.edit_breaks": [
+  {
+   "message": "expected expression",
+   "range": {
+    "end": {
+     "character": 15,
+     "line": 13
+    },
+    "start": {
+     "character": 14,
+     "line": 13
+    }
+   },
+   "severity": 1,
+   "source": "jaiscript parser"
+  },
+  {
+   "message": "expected expression",
+   "range": {
+    "end": {
+     "character": 1,
+     "line": 23
+    },
+    "start": {
+     "character": 0,
+     "line": 23
+    }
+   },
+   "severity": 1,
+   "source": "jaiscript parser"
+  }
+ ],
+ "diagnostics.edit_fixes": [],
+ "diagnostics.errors.broken_leaf.jai": [
+  {
+   "message": "expected ';' after return value",
+   "range": {
+    "end": {
+     "character": 1,
+     "line": 7
+    },
+    "start": {
+     "character": 0,
+     "line": 7
+    }
+   },
+   "severity": 1,
+   "source": "jaiscript parser"
+  }
+ ],
+ "diagnostics.errors.root": [
+  {
+   "message": "cannot return 'string' from 'wrong' declared to return 'int'",
+   "range": {
+    "end": {
+     "character": 7,
+     "line": 8
+    },
+    "start": {
+     "character": 1,
+     "line": 8
+    }
+   },
+   "relatedInformation": [
+    {
+     "location": {
+      "range": {
+       "end": {
+        "character": 9,
+        "line": 7
+       },
+       "start": {
+        "character": 4,
+        "line": 7
+       }
+      },
+      "uri": "errors/root.jai"
+     },
+     "message": "declared here"
+    }
+   ],
+   "severity": 1,
+   "source": "jaiscript"
+  },
+  {
+   "message": "use of undeclared identifier 'missing_function'",
+   "range": {
+    "end": {
+     "character": 17,
+     "line": 13
+    },
+    "start": {
+     "character": 1,
+     "line": 13
+    }
+   },
+   "severity": 1,
+   "source": "jaiscript"
+  }
+ ],
+ "diagnostics.errors.typed_leaf.jai": [
+  {
+   "message": "cannot initialize 'BAD_GLOBAL' declared 'int' with 'string'",
+   "range": {
+    "end": {
+     "character": 14,
+     "line": 4
+    },
+    "start": {
+     "character": 4,
+     "line": 4
+    }
+   },
+   "severity": 1,
+   "source": "jaiscript"
+  }
+ ],
+ "diagnostics.main": [],
+ "highlight.local_sum": [
+  {
+   "kind": 3,
+   "range": {
+    "end": {
+     "character": 8,
+     "line": 3
+    },
+    "start": {
+     "character": 5,
+     "line": 3
+    }
+   }
+  },
+  {
+   "kind": 2,
+   "range": {
+    "end": {
+     "character": 5,
+     "line": 5
+    },
+    "start": {
+     "character": 2,
+     "line": 5
+    }
+   }
+  },
+  {
+   "kind": 2,
+   "range": {
+    "end": {
+     "character": 11,
+     "line": 7
+    },
+    "start": {
+     "character": 8,
+     "line": 7
+    }
+   }
+  }
+ ],
+ "hover.base_ref_method": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\nint power()\n```\n\nmethod of `Actor` - declared in `lib.jai:12`"
+  },
+  "range": {
+   "end": {
+    "character": 68,
+    "line": 19
+   },
+   "start": {
+    "character": 63,
+    "line": 19
+   }
+  }
+ },
+ "hover.class": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\nclass Hero : Actor {\n    int level;\n    Hero(string n, int h);\n    void heal(int amount);\n}\n```\n\nclass - declared in `lib.jai:15`"
+  },
+  "range": {
+   "end": {
+    "character": 5,
+    "line": 11
+   },
+   "start": {
+    "character": 1,
+    "line": 11
+   }
+  }
+ },
+ "hover.doc_comment": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\nint util::twice(int v)\n```\n\nfunction in namespace `util` - declared in `lib.jai:29`\n\nDoubles a value."
+  },
+  "range": {
+   "end": {
+    "character": 26,
+    "line": 17
+   },
+   "start": {
+    "character": 21,
+    "line": 17
+   }
+  }
+ },
+ "hover.enum_value": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\nColor.green = 1\n```\n\nenum value of `Color`, type `int` - declared in `lib.jai:3`"
+  },
+  "range": {
+   "end": {
+    "character": 24,
+    "line": 14
+   },
+   "start": {
+    "character": 19,
+    "line": 14
+   }
+  }
+ },
+ "hover.field": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\nint Actor.hp\n```\n\nfield of `Actor` - declared in `lib.jai:9`"
+  },
+  "range": {
+   "end": {
+    "character": 14,
+    "line": 13
+   },
+   "start": {
+    "character": 12,
+    "line": 13
+   }
+  }
+ },
+ "hover.host_fn": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\nto_string(...)\n```\n\nhost function"
+  },
+  "range": {
+   "end": {
+    "character": 20,
+    "line": 19
+   },
+   "start": {
+    "character": 11,
+    "line": 19
+   }
+  }
+ },
+ "hover.local_auto": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\nauto party\n```\n\nlocal variable in `run`, type `array<Hero>`"
+  },
+  "range": {
+   "end": {
+    "character": 11,
+    "line": 16
+   },
+   "start": {
+    "character": 6,
+    "line": 16
+   }
+  }
+ },
+ "hover.method_override": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\nvoid heal(int amount)\n```\n\nmethod of `Hero` - declared in `lib.jai:23`"
+  },
+  "range": {
+   "end": {
+    "character": 7,
+    "line": 12
+   },
+   "start": {
+    "character": 3,
+    "line": 12
+   }
+  }
+ },
+ "hover.namespace_fn": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\nstring util::shout(string s)\n```\n\nfunction in namespace `util` - declared in `lib.jai:27`"
+  },
+  "range": {
+   "end": {
+    "character": 23,
+    "line": 15
+   },
+   "start": {
+    "character": 18,
+    "line": 15
+   }
+  }
+ },
+ "hover.param": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\narray<int> xs\n```\n\nparameter of `total`"
+  },
+  "range": {
+   "end": {
+    "character": 17,
+    "line": 4
+   },
+   "start": {
+    "character": 15,
+    "line": 4
+   }
+  }
+ },
+ "references.class_Hero": [
+  {
+   "range": {
+    "end": {
+     "character": 5,
+     "line": 11
+    },
+    "start": {
+     "character": 1,
+     "line": 11
+    }
+   },
+   "uri": "program/main.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 14,
+     "line": 11
+    },
+    "start": {
+     "character": 10,
+     "line": 11
+    }
+   },
+   "uri": "program/main.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 10,
+     "line": 14
+    },
+    "start": {
+     "character": 6,
+     "line": 14
+    }
+   },
+   "uri": "program/lib.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 5,
+     "line": 17
+    },
+    "start": {
+     "character": 1,
+     "line": 17
+    }
+   },
+   "uri": "program/lib.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 10,
+     "line": 31
+    },
+    "start": {
+     "character": 6,
+     "line": 31
+    }
+   },
+   "uri": "program/lib.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 11,
+     "line": 32
+    },
+    "start": {
+     "character": 7,
+     "line": 32
+    }
+   },
+   "uri": "program/lib.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 14,
+     "line": 33
+    },
+    "start": {
+     "character": 10,
+     "line": 33
+    }
+   },
+   "uri": "program/lib.jai"
+  }
+ ],
+ "references.field_hp": [
+  {
+   "range": {
+    "end": {
+     "character": 14,
+     "line": 13
+    },
+    "start": {
+     "character": 12,
+     "line": 13
+    }
+   },
+   "uri": "program/main.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 7,
+     "line": 8
+    },
+    "start": {
+     "character": 5,
+     "line": 8
+    }
+   },
+   "uri": "program/lib.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 27,
+     "line": 10
+    },
+    "start": {
+     "character": 25,
+     "line": 10
+    }
+   },
+   "uri": "program/lib.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 32,
+     "line": 10
+    },
+    "start": {
+     "character": 30,
+     "line": 10
+    }
+   },
+   "uri": "program/lib.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 24,
+     "line": 11
+    },
+    "start": {
+     "character": 22,
+     "line": 11
+    }
+   },
+   "uri": "program/lib.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 4,
+     "line": 19
+    },
+    "start": {
+     "character": 2,
+     "line": 19
+    }
+   },
+   "uri": "program/lib.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 36,
+     "line": 22
+    },
+    "start": {
+     "character": 34,
+     "line": 22
+    }
+   },
+   "uri": "program/lib.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 41,
+     "line": 22
+    },
+    "start": {
+     "character": 39,
+     "line": 22
+    }
+   },
+   "uri": "program/lib.jai"
+  }
+ ],
+ "references.local_x": [
+  {
+   "range": {
+    "end": {
+     "character": 12,
+     "line": 4
+    },
+    "start": {
+     "character": 11,
+     "line": 4
+    }
+   },
+   "uri": "program/main.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 10,
+     "line": 5
+    },
+    "start": {
+     "character": 9,
+     "line": 5
+    }
+   },
+   "uri": "program/main.jai"
+  }
+ ],
+ "references.method_heal_base": [],
+ "references.method_power": [
+  {
+   "range": {
+    "end": {
+     "character": 68,
+     "line": 19
+    },
+    "start": {
+     "character": 63,
+     "line": 19
+    }
+   },
+   "uri": "program/main.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 10,
+     "line": 11
+    },
+    "start": {
+     "character": 5,
+     "line": 11
+    }
+   },
+   "uri": "program/lib.jai"
+  }
+ ],
+ "references.namespace": [
+  {
+   "range": {
+    "end": {
+     "character": 16,
+     "line": 15
+    },
+    "start": {
+     "character": 12,
+     "line": 15
+    }
+   },
+   "uri": "program/main.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 19,
+     "line": 17
+    },
+    "start": {
+     "character": 15,
+     "line": 17
+    }
+   },
+   "uri": "program/main.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 14,
+     "line": 25
+    },
+    "start": {
+     "character": 10,
+     "line": 25
+    }
+   },
+   "uri": "program/lib.jai"
+  }
+ ],
+ "rename.field": {
+  "changes": {
+   "program/lib.jai": [
+    {
+     "newText": "health",
+     "range": {
+      "end": {
+       "character": 7,
+       "line": 8
+      },
+      "start": {
+       "character": 5,
+       "line": 8
+      }
+     }
+    },
+    {
+     "newText": "health",
+     "range": {
+      "end": {
+       "character": 27,
+       "line": 10
+      },
+      "start": {
+       "character": 25,
+       "line": 10
+      }
+     }
+    },
+    {
+     "newText": "health",
+     "range": {
+      "end": {
+       "character": 32,
+       "line": 10
+      },
+      "start": {
+       "character": 30,
+       "line": 10
+      }
+     }
+    },
+    {
+     "newText": "health",
+     "range": {
+      "end": {
+       "character": 24,
+       "line": 11
+      },
+      "start": {
+       "character": 22,
+       "line": 11
+      }
+     }
+    },
+    {
+     "newText": "health",
+     "range": {
+      "end": {
+       "character": 4,
+       "line": 19
+      },
+      "start": {
+       "character": 2,
+       "line": 19
+      }
+     }
+    },
+    {
+     "newText": "health",
+     "range": {
+      "end": {
+       "character": 36,
+       "line": 22
+      },
+      "start": {
+       "character": 34,
+       "line": 22
+      }
+     }
+    },
+    {
+     "newText": "health",
+     "range": {
+      "end": {
+       "character": 41,
+       "line": 22
+      },
+      "start": {
+       "character": 39,
+       "line": 22
+      }
+     }
+    }
+   ],
+   "program/main.jai": [
+    {
+     "newText": "health",
+     "range": {
+      "end": {
+       "character": 14,
+       "line": 13
+      },
+      "start": {
+       "character": 12,
+       "line": 13
+      }
+     }
+    }
+   ]
+  }
+ },
+ "rename.local": {
+  "changes": {
+   "program/main.jai": [
+    {
+     "newText": "acc",
+     "range": {
+      "end": {
+       "character": 8,
+       "line": 3
+      },
+      "start": {
+       "character": 5,
+       "line": 3
+      }
+     }
+    },
+    {
+     "newText": "acc",
+     "range": {
+      "end": {
+       "character": 5,
+       "line": 5
+      },
+      "start": {
+       "character": 2,
+       "line": 5
+      }
+     }
+    },
+    {
+     "newText": "acc",
+     "range": {
+      "end": {
+       "character": 11,
+       "line": 7
+      },
+      "start": {
+       "character": 8,
+       "line": 7
+      }
+     }
+    }
+   ]
+  }
+ },
+ "rename.method_hierarchy": {
+  "changes": {
+   "program/lib.jai": [
+    {
+     "newText": "mend",
+     "range": {
+      "end": {
+       "character": 10,
+       "line": 10
+      },
+      "start": {
+       "character": 6,
+       "line": 10
+      }
+     }
+    },
+    {
+     "newText": "mend",
+     "range": {
+      "end": {
+       "character": 10,
+       "line": 22
+      },
+      "start": {
+       "character": 6,
+       "line": 22
+      }
+     }
+    }
+   ],
+   "program/main.jai": [
+    {
+     "newText": "mend",
+     "range": {
+      "end": {
+       "character": 7,
+       "line": 12
+      },
+      "start": {
+       "character": 3,
+       "line": 12
+      }
+     }
+    },
+    {
+     "newText": "mend",
+     "range": {
+      "end": {
+       "character": 14,
+       "line": 17
+      },
+      "start": {
+       "character": 10,
+       "line": 17
+      }
+     }
+    }
+   ]
+  }
+ },
+ "rename.prepare_local": {
+  "placeholder": "sum",
+  "range": {
+   "end": {
+    "character": 8,
+    "line": 3
+   },
+   "start": {
+    "character": 5,
+    "line": 3
+   }
+  }
+ },
+ "rename.refuse_bad_name": {
+  "__error__": "'while' is not a valid name."
+ },
+ "rename.refuse_collision": {
+  "__error__": "Cannot rename 'total': 'run' is already declared in this program."
+ },
+ "rename.refuse_dynamic_receiver": {
+  "__error__": "Cannot rename 'level': 1 use(s) of '.level' on a receiver of unknown type (var or dynamic) cannot be proven to be this member (first at main.jai:22:6)."
+ },
+ "rename.refuse_host": {
+  "__error__": "'print' is defined by the host or the language; it cannot be renamed here."
+ },
+ "signature.ctor": {
+  "activeParameter": 0,
+  "activeSignature": 0,
+  "signatures": [
+   {
+    "label": "Hero(string n, int h)",
+    "parameters": [
+     {
+      "label": [
+       5,
+       13
+      ]
+     },
+     {
+      "label": [
+       15,
+       20
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "signature.method": {
+  "activeParameter": 0,
+  "activeSignature": 0,
+  "signatures": [
+   {
+    "label": "void heal(int amount)",
+    "parameters": [
+     {
+      "label": [
+       10,
+       20
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "signature.namespace_fn": {
+  "activeParameter": 0,
+  "activeSignature": 0,
+  "signatures": [
+   {
+    "label": "int util::twice(int v)",
+    "parameters": [
+     {
+      "label": [
+       16,
+       21
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "status.program": [
+  [
+   "program/lib.jai",
+   0
+  ],
+  [
+   "program/main.jai",
+   0
+  ]
+ ],
+ "symbols.document.lib": [
+  {
+   "children": [
+    {
+     "kind": 22,
+     "name": "red",
+     "range": {
+      "end": {
+       "character": 16,
+       "line": 2
+      },
+      "start": {
+       "character": 13,
+       "line": 2
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 16,
+       "line": 2
+      },
+      "start": {
+       "character": 13,
+       "line": 2
+      }
+     }
+    },
+    {
+     "kind": 22,
+     "name": "green",
+     "range": {
+      "end": {
+       "character": 23,
+       "line": 2
+      },
+      "start": {
+       "character": 18,
+       "line": 2
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 23,
+       "line": 2
+      },
+      "start": {
+       "character": 18,
+       "line": 2
+      }
+     }
+    },
+    {
+     "kind": 22,
+     "name": "blue",
+     "range": {
+      "end": {
+       "character": 29,
+       "line": 2
+      },
+      "start": {
+       "character": 25,
+       "line": 2
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 29,
+       "line": 2
+      },
+      "start": {
+       "character": 25,
+       "line": 2
+      }
+     }
+    }
+   ],
+   "detail": "enum",
+   "kind": 10,
+   "name": "Color",
+   "range": {
+    "end": {
+     "character": 31,
+     "line": 2
+    },
+    "start": {
+     "character": 5,
+     "line": 2
+    }
+   },
+   "selectionRange": {
+    "end": {
+     "character": 10,
+     "line": 2
+    },
+    "start": {
+     "character": 5,
+     "line": 2
+    }
+   }
+  },
+  {
+   "detail": "int",
+   "kind": 13,
+   "name": "LIMIT",
+   "range": {
+    "end": {
+     "character": 9,
+     "line": 4
+    },
+    "start": {
+     "character": 4,
+     "line": 4
+    }
+   },
+   "selectionRange": {
+    "end": {
+     "character": 9,
+     "line": 4
+    },
+    "start": {
+     "character": 4,
+     "line": 4
+    }
+   }
+  },
+  {
+   "children": [
+    {
+     "detail": "string",
+     "kind": 8,
+     "name": "name",
+     "range": {
+      "end": {
+       "character": 12,
+       "line": 7
+      },
+      "start": {
+       "character": 8,
+       "line": 7
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 12,
+       "line": 7
+      },
+      "start": {
+       "character": 8,
+       "line": 7
+      }
+     }
+    },
+    {
+     "detail": "int",
+     "kind": 8,
+     "name": "hp",
+     "range": {
+      "end": {
+       "character": 7,
+       "line": 8
+      },
+      "start": {
+       "character": 5,
+       "line": 8
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 7,
+       "line": 8
+      },
+      "start": {
+       "character": 5,
+       "line": 8
+      }
+     }
+    },
+    {
+     "detail": "void heal(int amount)",
+     "kind": 6,
+     "name": "heal",
+     "range": {
+      "end": {
+       "character": 44,
+       "line": 10
+      },
+      "start": {
+       "character": 6,
+       "line": 10
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 10,
+       "line": 10
+      },
+      "start": {
+       "character": 6,
+       "line": 10
+      }
+     }
+    },
+    {
+     "detail": "int power()",
+     "kind": 6,
+     "name": "power",
+     "range": {
+      "end": {
+       "character": 27,
+       "line": 11
+      },
+      "start": {
+       "character": 5,
+       "line": 11
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 10,
+       "line": 11
+      },
+      "start": {
+       "character": 5,
+       "line": 11
+      }
+     }
+    }
+   ],
+   "kind": 5,
+   "name": "Actor",
+   "range": {
+    "end": {
+     "character": 1,
+     "line": 12
+    },
+    "start": {
+     "character": 6,
+     "line": 6
+    }
+   },
+   "selectionRange": {
+    "end": {
+     "character": 11,
+     "line": 6
+    },
+    "start": {
+     "character": 6,
+     "line": 6
+    }
+   }
+  },
+  {
+   "children": [
+    {
+     "detail": "int",
+     "kind": 8,
+     "name": "level",
+     "range": {
+      "end": {
+       "character": 10,
+       "line": 15
+      },
+      "start": {
+       "character": 5,
+       "line": 15
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 10,
+       "line": 15
+      },
+      "start": {
+       "character": 5,
+       "line": 15
+      }
+     }
+    },
+    {
+     "detail": "Hero(string n, int h)",
+     "kind": 9,
+     "name": "Hero",
+     "range": {
+      "end": {
+       "character": 2,
+       "line": 20
+      },
+      "start": {
+       "character": 1,
+       "line": 17
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 5,
+       "line": 17
+      },
+      "start": {
+       "character": 1,
+       "line": 17
+      }
+     }
+    },
+    {
+     "detail": "void heal(int amount)",
+     "kind": 6,
+     "name": "heal",
+     "range": {
+      "end": {
+       "character": 57,
+       "line": 22
+      },
+      "start": {
+       "character": 6,
+       "line": 22
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 10,
+       "line": 22
+      },
+      "start": {
+       "character": 6,
+       "line": 22
+      }
+     }
+    }
+   ],
+   "detail": ": Actor",
+   "kind": 5,
+   "name": "Hero",
+   "range": {
+    "end": {
+     "character": 1,
+     "line": 23
+    },
+    "start": {
+     "character": 6,
+     "line": 14
+    }
+   },
+   "selectionRange": {
+    "end": {
+     "character": 10,
+     "line": 14
+    },
+    "start": {
+     "character": 6,
+     "line": 14
+    }
+   }
+  },
+  {
+   "children": [
+    {
+     "detail": "string shout(string s)",
+     "kind": 12,
+     "name": "shout",
+     "range": {
+      "end": {
+       "character": 51,
+       "line": 26
+      },
+      "start": {
+       "character": 8,
+       "line": 26
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 13,
+       "line": 26
+      },
+      "start": {
+       "character": 8,
+       "line": 26
+      }
+     }
+    },
+    {
+     "detail": "int twice(int v)",
+     "kind": 12,
+     "name": "twice",
+     "range": {
+      "end": {
+       "character": 35,
+       "line": 28
+      },
+      "start": {
+       "character": 5,
+       "line": 28
+      }
+     },
+     "selectionRange": {
+      "end": {
+       "character": 10,
+       "line": 28
+      },
+      "start": {
+       "character": 5,
+       "line": 28
+      }
+     }
+    }
+   ],
+   "detail": "namespace",
+   "kind": 3,
+   "name": "util",
+   "range": {
+    "end": {
+     "character": 1,
+     "line": 29
+    },
+    "start": {
+     "character": 10,
+     "line": 25
+    }
+   },
+   "selectionRange": {
+    "end": {
+     "character": 14,
+     "line": 25
+    },
+    "start": {
+     "character": 10,
+     "line": 25
+    }
+   }
+  },
+  {
+   "detail": "array<Hero> make_party()",
+   "kind": 12,
+   "name": "make_party",
+   "range": {
+    "end": {
+     "character": 1,
+     "line": 35
+    },
+    "start": {
+     "character": 12,
+     "line": 31
+    }
+   },
+   "selectionRange": {
+    "end": {
+     "character": 22,
+     "line": 31
+    },
+    "start": {
+     "character": 12,
+     "line": 31
+    }
+   }
+  }
+ ],
+ "symbols.workspace.her": [
+  [
+   "Hero",
+   "program/lib.jai"
+  ],
+  [
+   "Hero",
+   "program/lib.jai"
+  ]
+ ]
+}
