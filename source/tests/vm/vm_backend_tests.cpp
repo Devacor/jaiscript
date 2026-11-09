@@ -1811,7 +1811,7 @@ public:
 		test("ref_decl_member_final", [this]() {
 			// Route independence: var&/auto& declarations bind
 			// member-final chains through the same kernel ref params use (the
-			// gloom_idiomatic `auto& p = G.player` encounter). Computed properties keep
+			// GLOOM `auto& p = G.player` encounter). Computed properties keep
 			// the decl's non-lvalue error.
 			const char* src = R"(
 				class Player { int hp = 100; }

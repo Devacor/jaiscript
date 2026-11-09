@@ -27,7 +27,7 @@ struct host_options {
 	std::string csv;                     // perf: also write rows to this file
 	int64_t workers = -1;                // parallel width; -1 engine default, 1 serial (ports: always serial)
 	int64_t capture = -1;                // scene index to text-capture (README material)
-	bool reload_test = false;            // headless hot-reload + backend-swap exercise
+	bool reload_test = false;            // headless hot-reload + scene-jump exercise
 	int64_t width = 0;                   // 0 = autodetect
 	int64_t height = 0;
 	double target_fps = 30.0;
@@ -100,7 +100,7 @@ struct frame_args {
 	double fps = 0.0;
 	double ms_sim = 0.0;       // last measured script cost of this session
 	double ms_draw = 0.0;      // last console write
-	double ms_other = 0.0;     // the other backend's last cost (HUD), 0 when none
+	double ms_other = 0.0;     // always 0: the interactive loop runs one session
 };
 
 // One loaded script runtime. The host drives it: load, boot, then frame per frame.
@@ -120,6 +120,8 @@ public:
 	virtual std::string scene_name() = 0;                 // demo_scene_name()
 	virtual void jump(int64_t idx, double at_t) = 0;      // demo_jump(idx, at_t)
 	virtual bool reload() { return false; }               // hot reload scene files + demo_reload(); false = unsupported
+	// the line the host flashes after a reload; "" when the scripts show the reload themselves
+	virtual std::string reload_notice() { return " reloaded scene scripts from disk "; }
 	virtual std::string stack_trace() { return ""; }
 };
 
@@ -132,9 +134,6 @@ public:
 	virtual std::vector<std::string> backends() const = 0;
 	virtual std::string default_backend() const { return backends().back(); }
 	virtual std::string normalize_backend(const std::string& b) const { return b; }
-	// Sessions the interactive loop keeps live (TAB cycles them); the first is
-	// replaced by the --backend choice.
-	virtual std::vector<std::string> interactive_backends(const host_options&) const { return backends(); }
 	// Adapter-specific flag at argv[i]: returns how many args it consumed (0 = unknown).
 	virtual int parse_flag(int /*argc*/, char** /*argv*/, int /*i*/) { return 0; }
 	virtual std::string usage() const { return ""; }

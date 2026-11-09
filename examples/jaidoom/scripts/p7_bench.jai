@@ -94,7 +94,7 @@ function main() -> int {
 		hud_draw();
 		msg_draw();
 		renderms += lap.delta() * 1000;
-		blit_half();
+		vid_blit();
 		blitms += lap.delta() * 1000;
 		float spent = lap.elapsed() * 1000;
 		if (spent > worst) { worst = spent; }

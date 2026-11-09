@@ -138,6 +138,52 @@ public:
 			)", "keep boom keep", "a raise mid-chain stores nothing");
 		});
 
+		test("a_chain_onto_a_local_appends_each_operand_where_the_chain_reads_it", [this]() {
+			both(R"(
+				string G = "g0";
+				array<string> DEC = ["0", "1", "2"];
+				class Box { string operator[](int i) { G = "g1"; return "b" + to_string(i); } }
+				class T { string n; string operator+(T o) { return n + "&" + o.n; } }
+				string self_reads() {
+					string r = "ab"; r += r + "-" + r;
+					string q = "q"; q += "1" + q + "2";
+					string a = "a"; a = a + DEC[1] + a + DEC[2];
+					return r + " " + q + " " + a;
+				}
+				string pieces() {
+					string s = "";
+					for (int i = 0; i < 3; ++i) { s += G + DEC[i] + "m" + DEC[2 - i]; s = s + "|" + DEC[i]; }
+					return s;
+				}
+				string rebinding_read() { Box bx; string s = ""; s += G + bx[3] + G; G = "g0"; return s; }
+				string raises() {
+					string s = "keep";
+					string err = "";
+					try { s += "a" + DEC[1] + DEC[7] + "b"; } catch (e) { err = "caught"; }
+					try { s = s + "a" + DEC[7]; } catch (e) { err = err + "+caught"; }
+					return s + " " + err;
+				}
+				string kinds() {
+					array<var> parts = ["a", "b", 3, "d"];
+					string s = "";
+					for (int i = 0; i < 4; ++i) {
+						try { s += "<" + parts[i] + ">"; } catch (e) { s += "!"; }
+						try { s = s + "(" + parts[i]; } catch (e) { s = s + "?"; }
+					}
+					return s;
+				}
+				string operators() {
+					T a; a.n = "A";
+					T b; b.n = "B";
+					string s = "s";
+					s += a + b;
+					return s;
+				}
+				self_reads() + " " + pieces() + " " + rebinding_read() + " " + raises() + " " + kinds() + " " + operators()
+			)", "abab-ab q1q2 a1a2 g00m2|0g01m1|1g02m0|2 g0b3g1 keep caught+caught <a>(a<b>(b!?<d>(d sA&B",
+			   "the target before the statement, each operand at its step, a raise storing nothing, user operators untouched");
+		});
+
 		test("a_chain_joins_objects_and_containers_and_refuses_a_scalar_where_the_concatenation_does", [this]() {
 			both(R"(
 				class P { string to_string() { return "P"; } }
@@ -265,6 +311,7 @@ public:
 			const std::string spellings[] = {
 				"s += \"xxxxxxxx\";", "s += 'x';", "s = s + \"xxxxxxxx\";", "s = s + \"x\" + to_string(7) + \"y\";", "h.s += \"xxxxxxxx\";",
 				"h.s += 'x';", "a[0] += \"xxxxxxxx\";", "m[\"k\"] += \"xxxxxxxx\";", "g = g + \"xx\" + \"yy\";", "Holder::st += \"xxxxxxxx\";",
+				"s += w + t[0] + \"yy\";", "s += \"x\" + w;", "s = s + t[0] + w;", "s = s + t[1] + \"y\" + t[0];",
 			};
 			for (const auto& step : spellings) {
 				std::string texts[2];
@@ -275,7 +322,8 @@ public:
 					e->memory_cap(256 * 1024);
 					auto r = e->execute("class Holder { string s; static string st = \"\"; }\nstring g = \"\";\nstring last = \"\";\n"
 					                    "int run() { string s = \"\"; Holder h; array<string> a = [\"\"]; map<string, string> m = {\"k\": \"\"}; int n = 0;\n"
-					                    "try { while (true) { " + step + " ++n; } } catch (err) { last = err; }\nreturn n; }\nint n = run();\nto_string(n) + \"|\" + last");
+					                    "string w = \"wwww\"; array<string> t = [\"tttttt\", \"u\"];\n"
+					                    "try { while (true) { " + step + " ++n; } } catch (err) { last = err + \"@\" + to_string(s.size()); }\nreturn n; }\nint n = run();\nto_string(n) + \"|\" + last");
 					texts[b] = r.to_string();
 				}
 				check_eq(texts[0], texts[1], "both backends trip at the same step: " + step);
@@ -293,12 +341,13 @@ public:
 				class Holder { string s; }
 				int run() {
 					string s = ""; Holder h; array<string> a = [""]; map<string, string> m = {"k": ""};
-					for (int i = 0; i < 200000; ++i) { s += "x"; s = s + "y"; s = s + "z" + to_string(i % 10); h.s += 'q'; a[0] += "w"; m["k"] += "v"; }
-					return s.size() + h.s.size() + a[0].size() + m["k"].size();
+					array<string> d = ["0", "1"]; string w = "w"; string t = "";
+					for (int i = 0; i < 200000; ++i) { s += "x"; s = s + "y"; s = s + "z" + to_string(i % 10); h.s += 'q'; a[0] += "w"; m["k"] += "v"; t += w + d[i & 1] + "m"; t = t + d[0] + w; }
+					return s.size() + h.s.size() + a[0].size() + m["k"].size() + t.size();
 				}
 				run()
 			)");
-			check_eq(static_cast<script_int>(1400000), r.as<script_int>(), "every spelling stays linear");
+			check_eq(static_cast<script_int>(2400000), r.as<script_int>(), "every spelling stays linear");
 		});
 	}
 };

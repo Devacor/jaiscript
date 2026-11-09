@@ -387,6 +387,19 @@ namespace jai::vm {
         bool joins_text = false;   // a template string's run: a scalar piece becomes text (vm_backend::join_text)
     };
 
+    // op_text_append: the target (op_store's or op_compound_store's symbol and frame slot) and the chain's pieces in order, each a constant,
+    // a name read at its step or a compiler temp an earlier instruction of the statement landed (reads_ip: the first such instruction, the
+    // statement's own ip when none). assign: `s = s + ...`, whose snapshot is the target itself, else `s += ...`, whose first piece heads
+    struct text_append_proto {
+        std::vector<fused_operand> pieces;
+        uint32_t symbol = k_invalid_u32;
+        uint32_t slot = k_invalid_u32;
+        uint32_t store_flags = 0;   // assign: op_store's flags for the general tail
+        uint32_t reads_ip = k_invalid_u32;
+        uint32_t release = 0;   // bit k: piece k is a temp the op gives up once it is done (vm_compiler::consumer_releases)
+        bool assign = false;
+    };
+
     // op_binary_fused_decl / op_binary_fused_store: a fused binary whose result lands in
     // a compile-time-known sink with no push and no second dispatch (dest-addressed).
     // decl mode uses node_index (the variable_decl); store mode uses
@@ -602,6 +615,9 @@ namespace jai::vm {
             // indices of the loads and stores through the alias, whose containers the rebind sets and the entry never resolves
             struct rebind { uint32_t copy_ip = 0, cell = 0, source_site = k_invalid_u32; std::vector<uint32_t> dependents; bool iter = false; uint32_t ref_decl = k_invalid_u32; };   // iter: a range-for's by-reference loop variable (the reference carries the range-for's element constraint); ref_decl: a class reference's declaration (its admission runs at each new binding, its constraint rides the flushed reference)
             std::vector<rebind> rebinds;
+            // a C_TEXT_APPEND: the target's cell, its pieces' cells or k_typed_const_bit | constant, the general proto (the charge rule)
+            struct text_append { uint32_t target = 0; uint32_t proto = 0; std::vector<uint32_t> pieces; };
+            std::vector<text_append> text_appends;
             std::vector<uint8_t> site_alias;   // per site: 1 = a site through an alias (its container the rebind's element; skipped by the entry and the hold check)
             std::vector<uint32_t> switch_targets;   // per C_SWITCH: its cases' copy ips, then its no-match copy ip
             std::vector<uint32_t> land_sites;   // the sites a landing after a call checks again (no alias site, no range head), k_land_member_site marking a member site
@@ -725,6 +741,7 @@ namespace jai::vm {
         std::vector<fused_binary_proto> fused_binary_protos;
         std::vector<compound_fused_proto> compound_fused_protos;
         std::vector<concat_proto> concat_protos;
+        std::vector<text_append_proto> text_append_protos;
         std::vector<fused_binary_dst_proto> fused_binary_dst_protos;
         std::vector<fused_index_proto> fused_index_protos;
         std::vector<string_target_site> string_target_sites;
@@ -773,6 +790,7 @@ namespace jai::vm {
             uint32_t receiver_this_field = 0;   // the frame's this-field holding a method graft's receiver: its slot + 1 (0: none)
             bool caller_globals = false;        // the body's program-scope names read in the caller's frame: its names resolve as the program's
             std::vector<uint64_t> global_ids;   // a method graft's program-scope names: the receiver's class takes no member of any
+            std::vector<uint64_t> sibling_ids;  // a method graft's sibling methods the clone calls on the receiver: each a method of the receiver's class
         };
         std::vector<inline_site> inline_sites;
         bool graft_calls = false;   // an inline site's body makes calls (the trace names its frame above them)
@@ -792,8 +810,9 @@ namespace jai::vm {
             // operands[0] op[0] operands[1], then op[k] operands[k + 1] for each chain step;
             // an operand is a slot or a constant index behind k_typed_const_bit
             uint32_t cont_slot = k_invalid_u32;
-            uint32_t operands[4] = {};
-            uint8_t fold_ops[3] = {};
+            static constexpr size_t k_max_chain_ext = 4;   // fused_index_proto::index_chain_ext steps a row holds
+            uint32_t operands[k_max_chain_ext + 2] = {};
+            uint8_t fold_ops[k_max_chain_ext + 1] = {};
             uint8_t fold_count = 0;
             uint8_t decl_expect = 0xFF;
             // an op_operand_temp origin (materialize_typed_reads): the read resolves through this synthetic

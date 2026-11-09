@@ -49,25 +49,62 @@ int clight(string name, int pct) {
 int TS;                        // tile size in pixels (4, 6 or 8); 0 until art_init
 array<int> TEX;                // every tile texture, TS*TS each
 array<int> TEX_OFF;            // (tile * 4 + variant) * 4 + frame -> offset into TEX
-array<int> TILE_ANIM;          // 1 if the tile animates
+array<int> TILE_ANIM;          // how the tile animates: 0 not at all, else one of the clocks below
+array<int> TILE_WET;           // 1 for water and open air: no shore foam against it
+array<int> TILE_FOAMS;         // 1 for open water, which foams where it meets land
+int FOAM_A;
+int FOAM_B;
+
+// water shares one clock so waves run on across tiles; flames flicker per tile; foliage sways in a breeze that rolls
+// across the map
+int ANIM_WATER = 1;
+int ANIM_FLICKER = 2;
+int ANIM_BREEZE = 3;
 
 // a speckle test on the 8x8 design grid, stable across tile sizes
 bool speck(int u, int v, int salt, int permille) { return (hash3(u, v, salt) % 1000) < permille; }
 
 bool disc_hit(int fx, int fy, int cx, int cy, int r) { return (fx - cx) * (fx - cx) + (fy - cy) * (fy - cy) <= r * r; }
 
-int grass_px(int u, int v, int vr) {
-	if (speck(u, v, 11 + vr, 180)) { return rgb(44, 112, 40); }
-	if (speck(u, v, 23 + vr, 140)) { return rgb(96, 176, 64); }
-	return rgb(64, 144, 52);
+// a color nudged by an element's id (a stone, a plank, a brick): a little lighter or darker, warmer or cooler
+int vary(int r, int g, int b, int id, int salt, int lift) {
+	int k = hash3(id, salt, 99) % 3 - 1;
+	int hue = hash3(id, salt, 98) % 3 - 1;
+	return rgb(r + k * 10 + hue * 6 + lift, g + k * 9 + lift, b + k * 8 - hue * 8 + lift);
 }
 
+// one of four tones, by an element's id
+int tone4(int id, int salt, int r0, int g0, int b0, int r1, int g1, int b1, int r2, int g2, int b2, int r3, int g3, int b3, int lift) {
+	int k = hash3(id, salt, 97) % 4;
+	if (k == 0) { return vary(r0, g0, b0, id, salt, lift); }
+	if (k == 1) { return vary(r1, g1, b1, id, salt, lift); }
+	if (k == 2) { return vary(r2, g2, b2, id, salt, lift); }
+	return vary(r3, g3, b3, id, salt, lift);
+}
+
+int grass_px(int u, int v, int vr) {
+	if (speck(u, v, 11 + vr, 170)) { return vr == 2 ? rgb(40, 108, 46) : rgb(48, 116, 42); }
+	if (speck(u, v, 23 + vr, 130)) { return rgb(112, 186, 70); }
+	if (speck(u, v, 29 + vr, 35)) { return rgb(160, 186, 78); }
+	if (vr == 1) { return rgb(86, 158, 56); }
+	if (vr == 2) { return rgb(68, 146, 60); }
+	return rgb(76, 152, 56);
+}
+
+// waves crest along u + 2v and move two design pixels a frame, so a lake's crests line up across its tiles; glints
+// twinkle frame to frame
 int water_px(int u, int v, int f, int r, int g, int b) {
-	int wave = (u + v * 3 + f * 2) % 8;
-	if (wave == 0 && speck(u, v / 2, 5, 600)) { return rgb(r + 60, g + 70, b + 60); }
-	if (wave == 1) { return rgb(r + 22, g + 26, b + 24); }
+	int wave = (u + v * 2 + f * 2) % 8;
+	if (wave == 0 && speck(u, v / 2, 5, 650)) { return rgb(r + 76, g + 78, b + 56); }
+	if (wave == 1) { return rgb(r + 26, g + 28, b + 22); }
+	if (wave == 7) { return rgb(r - 12, g - 12, b - 8); }
+	if (speck(u, v, 301 + f, 22)) { return rgb(r + 150, g + 140, b + 90); }
+	if ((u * 5 + v * 3) % 11 == 0) { return rgb(r + 8, g + 10, b + 12); }
 	return rgb(r, g, b);
 }
+
+// the breeze: how far a crown or a blade leans this frame, in design pixels
+int sway_of(int f) { return f == 1 ? 1 : (f == 3 ? -1 : 0); }
 
 int tex_pixel(int t, int vr, int f, int px, int py, int S) {
 	int u = px * 8 / S;
@@ -80,25 +117,33 @@ int tex_pixel(int t, int vr, int f, int px, int py, int S) {
 		return grass_px(u, v, vr);
 	}
 	if (t == T_TALLGRASS) {
-		if ((u + vr) % 3 == 0 && v < 6) { return v < 2 ? rgb(130, 190, 80) : rgb(60, 140, 50); }
-		return (u + v) % 4 == 0 ? rgb(40, 104, 38) : rgb(70, 150, 56);
+		int bu = u + vr - (v < 3 ? sway_of(f) : 0) + 8;
+		if (bu % 3 == 0 && v < 7) { return v < 2 ? rgb(170, 204, 92) : (v < 4 ? rgb(104, 172, 64) : rgb(56, 132, 48)); }
+		return (u + v) % 4 == 0 ? rgb(38, 100, 40) : rgb(66, 140, 54);
 	}
 	if (t == T_FLOWERS) {
-		if (speck(u, v, 77 + vr, 160)) {
-			array<int> petals = [rgb(240, 80, 90), rgb(250, 220, 80), rgb(190, 110, 230), rgb(250, 250, 250)];
-			return petals[(u * 3 + v + vr) % 4];
+		int pu = u - (v < 4 ? sway_of(f) : 0) + 8;
+		if (speck(pu, v, 77 + vr, 170)) {
+			array<int> petals = [rgb(244, 84, 96), rgb(252, 214, 70), rgb(190, 110, 236), rgb(252, 252, 246), rgb(250, 140, 60)];
+			return petals[(pu * 3 + v + vr) % 5];
 		}
 		return grass_px(u, v, vr);
 	}
 	if (t == T_DIRT) {
-		if (speck(u, v, 31 + vr, 150)) { return rgb(100, 72, 44); }
-		if (speck(u, v, 37 + vr, 90)) { return rgb(150, 116, 74); }
-		return rgb(124, 92, 58);
+		if (speck(u, v, 31 + vr, 150)) { return rgb(110, 76, 46); }
+		if (speck(u, v, 37 + vr, 70)) { return rgb(172, 140, 98); }
+		if (speck(u, v, 39 + vr, 70)) { return rgb(150, 92, 56); }
+		if (speck(u, v, 33 + vr, 30)) { return rgb(186, 172, 150); }
+		return vr % 2 == 0 ? rgb(132, 98, 64) : rgb(124, 94, 64);
 	}
 	if (t == T_ROAD) {
-		int bx = (u + (v / 2 % 2) * 2) % 4;
-		if (v % 2 == 1 && bx == 3 || v % 2 == 0 && speck(u, v, 41, 120)) { return rgb(96, 92, 86); }
-		return speck(u, v, 43 + vr, 300) ? rgb(162, 156, 146) : rgb(146, 140, 130);
+		// setts in a running bond, four to a tile, every one its own stone
+		int row = v / 4;
+		int cu = u + (row + vr) % 2 * 2 + 8;
+		if (v % 4 == 0 || cu % 4 == 0) { return rgb(88, 82, 74); }
+		int id = (cu / 4) * 7 + row * 13 + vr * 31;
+		int lift = v % 4 == 1 ? 10 : (cu % 4 == 3 ? -6 : 0);
+		return tone4(id, 45, 156, 146, 128, 138, 132, 122, 168, 150, 120, 128, 130, 132, lift);
 	}
 	if (t == T_SAND) {
 		if (speck(u, v, 51 + vr, 160)) { return rgb(204, 182, 124); }
@@ -106,13 +151,14 @@ int tex_pixel(int t, int vr, int f, int px, int py, int S) {
 		return rgb(224, 204, 146);
 	}
 	if (t == T_SHALLOW) {
-		if (speck(u, v, 61 + vr, 140)) { return rgb(150, 170, 150); }
-		return water_px(u, v, f, 70, 150, 196);
+		if (speck(u, v, 61 + vr, 90)) { return rgb(136, 176, 168); }
+		return water_px(u, v, f, 64, 152, 200);
 	}
-	if (t == T_DEEP) { return water_px(u, v, f, 28, 66, 146); }
+	if (t == T_DEEP) { return water_px(u, v, f, 26, 72, 156); }
 	if (t == T_SWAMP) {
+		if (speck(u, v, 63 + vr, 70)) { return rgb(92, 128, 56); }
 		if (f == vr && u == 3 && v == 4) { return rgb(120, 150, 110); }
-		return water_px(u, v, f, 38, 78, 58);
+		return water_px(u, v, f, 38, 82, 62);
 	}
 	if (t == T_SEWAGE) { return water_px(u, v, f, 70, 90, 40); }
 	if (t == T_MUD) { return speck(u, v, 71 + vr, 200) ? rgb(70, 50, 30) : rgb(96, 70, 44); }
@@ -121,16 +167,33 @@ int tex_pixel(int t, int vr, int f, int px, int py, int S) {
 		return speck(u, v, 83, 200) ? rgb(58, 66, 36) : rgb(70, 76, 42);
 	}
 	if (t == T_OAK || t == T_PINE || t == T_CYPRESS || t == T_DEADTREE || t == T_BUSH) {
-		int bg = t == T_CYPRESS ? water_px(u, v, f, 38, 78, 58) : (t == T_DEADTREE ? rgb(70, 76, 42) : grass_px(u, v, vr));
+		int bg = t == T_CYPRESS ? water_px(u, v, f, 38, 82, 62) : (t == T_DEADTREE ? rgb(70, 76, 42) : grass_px(u, v, vr));
+		// the crown leans with the breeze, the trunk stays put
+		int lean = sway_of(f) * (fy < 300 ? 125 : (fy < 520 ? 70 : 0));
+		int cx = fx - lean;
+		int cu = u - (fy < 400 ? sway_of(f) : 0) + 8;
 		if (t == T_OAK) {
-			if (disc_hit(fx, fy, 500, 380, 360)) { return speck(u, v, 91 + vr, 300) ? rgb(96, 170, 60) : (fy > 480 ? rgb(30, 92, 32) : rgb(44, 120, 40)); }
-			if (fx > 400 && fx < 600 && fy >= 700) { return rgb(100, 66, 34); }
+			// a deep green crown, sunlit on the top-left, a dark rim below and right
+			if (disc_hit(cx, fy, 500, 400, 420)) {
+				if (!disc_hit(cx, fy, 470, 370, 360)) { return rgb(18, 56, 30); }
+				if (speck(cu, v, 91 + vr, 220)) { return cx + fy < 820 ? rgb(146, 204, 82) : rgb(62, 130, 50); }
+				if (cx + fy < 680) { return vr == 1 ? rgb(118, 176, 56) : rgb(98, 166, 60); }
+				if (cx + fy > 1040) { return rgb(22, 74, 34); }
+				return vr == 1 ? rgb(58, 120, 38) : rgb(36, 102, 44);
+			}
+			if (fx > 400 && fx < 600 && fy >= 700) { return fx < 470 ? rgb(130, 90, 50) : rgb(96, 62, 32); }
+			// the crown's shadow on the grass, cast down and to the right
+			if (disc_hit(fx, fy, 600, 520, 380)) { return speck(u, v, 11 + vr, 300) ? rgb(36, 96, 38) : rgb(50, 112, 44); }
 			return bg;
 		}
 		if (t == T_PINE) {
 			int half = (fy - 60) * 380 / 820;
-			if (fy > 60 && fy < 820 && iabs(fx - 500) < half) { return (fx + fy / 3) % 250 < 60 ? rgb(40, 110, 60) : rgb(24, 80, 44); }
+			if (fy > 60 && fy < 820 && iabs(cx - 500) < half) {
+				if ((cx + fy / 3) % 250 < 60) { return cx < 500 ? rgb(66, 140, 76) : rgb(40, 110, 60); }
+				return cx < 470 ? rgb(34, 98, 54) : rgb(22, 74, 42);
+			}
 			if (fx > 420 && fx < 580 && fy >= 800) { return rgb(96, 64, 34); }
+			if (fy > 780 && iabs(fx - 580) < 330) { return rgb(48, 108, 44); }
 			return bg;
 		}
 		if (t == T_CYPRESS) {
@@ -142,9 +205,11 @@ int tex_pixel(int t, int vr, int f, int px, int py, int S) {
 			if ((iabs(fx - 500) < 90 && fy > 200) || (fy > 250 && fy < 350 && fx > 250 && fx < 750) || (fy > 150 && fy < 250 && (fx < 300 || fx > 700) && fx > 150 && fx < 850)) { return rgb(96, 84, 70); }
 			return bg;
 		}
-		if (disc_hit(fx, fy, 500, 560, 330)) {
-			if (vr == 1 && speck(u, v, 99, 150)) { return rgb(200, 40, 60); }
-			return speck(u, v, 98, 300) ? rgb(70, 150, 60) : rgb(40, 110, 40);
+		if (disc_hit(cx, fy, 500, 560, 330)) {
+			if (vr == 1 && speck(cu, v, 99, 150)) { return rgb(214, 44, 64); }
+			if (vr == 3 && speck(cu, v, 99, 120)) { return rgb(240, 236, 250); }
+			if (cx + fy < 900) { return speck(cu, v, 98, 300) ? rgb(116, 188, 70) : rgb(64, 146, 54); }
+			return speck(cu, v, 98, 300) ? rgb(70, 150, 60) : rgb(36, 102, 42);
 		}
 		return bg;
 	}
@@ -161,23 +226,48 @@ int tex_pixel(int t, int vr, int f, int px, int py, int S) {
 	}
 	if (t == T_MOUNTAIN) {
 		if (v < 2 && speck(u, v, 111, 500)) { return rgb(240, 244, 250); }
-		return speck(u, v, 113 + vr, 300) ? rgb(96, 84, 72) : rgb(122, 108, 92);
+		if (u + v < 4) { return rgb(150, 134, 112); }
+		return speck(u, v, 113 + vr, 300) ? rgb(96, 84, 72) : (u > v + 3 ? rgb(108, 94, 82) : rgb(126, 110, 92));
 	}
 	if (t == T_CAVEWALL || t == T_BASALT) {
-		bool crack = speck(u, v, 121 + vr, 120);
-		if (t == T_BASALT) { return crack ? rgb(150, 40, 20) : (v < 2 ? rgb(70, 56, 56) : rgb(44, 34, 34)); }
-		return crack ? rgb(40, 34, 30) : (v < 2 ? rgb(96, 86, 76) : rgb(70, 62, 56));
+		// rock blocks in staggered courses: lit on the top-left, a dark seam below and right
+		int row = v / 3;
+		int bu = u + (row * 2 + vr) % 4 + 8;
+		int su = bu % 4;
+		int sv = v % 3;
+		int id = (bu / 4) * 5 + row * 11 + vr * 17;
+		if (su == 0 || sv == 2) {
+			if (t == T_BASALT && speck(u, v, 121 + vr, 260)) { return rgb(176, 52, 22); }
+			return t == T_BASALT ? rgb(26, 20, 22) : rgb(46, 40, 36);
+		}
+		int lift = su == 1 || sv == 0 ? 16 : (speck(u, v, 123 + vr, 150) ? -14 : 0);
+		if (t == T_BASALT) { return tone4(id, 125, 66, 52, 52, 56, 44, 46, 74, 58, 54, 52, 44, 50, lift); }
+		return tone4(id, 127, 112, 100, 86, 98, 90, 82, 120, 104, 86, 92, 88, 84, lift);
 	}
-	if (t == T_CAVEFLOOR) { return speck(u, v, 131 + vr, 180) ? rgb(76, 68, 60) : rgb(96, 86, 76); }
+	if (t == T_CAVEFLOOR) {
+		if (speck(u, v, 131 + vr, 160)) { return rgb(78, 70, 62); }
+		if (speck(u, v, 135 + vr, 60)) { return rgb(124, 112, 98); }
+		return vr % 2 == 0 ? rgb(98, 88, 78) : rgb(104, 92, 78);
+	}
 	if (t == T_SEWERFLOOR) { return speck(u, v, 133 + vr, 160) ? rgb(80, 110, 50) : rgb(72, 76, 66); }
 	if (t == T_WOODFLOOR) {
-		if (v % 3 == 2) { return rgb(96, 64, 38); }
-		return (u + v * 5) % 7 == 0 ? rgb(130, 90, 52) : rgb(156, 110, 64);
+		// planks two design pixels wide, joints staggered row to row, each plank its own board
+		int row = v / 3;
+		if (v % 3 == 2) { return rgb(84, 54, 32); }
+		int ju = u + row * 3 + vr + 8;
+		if (ju % 6 == 5) { return rgb(104, 68, 40); }
+		int id = row * 7 + (ju / 6) * 3 + vr * 13;
+		int lift = v % 3 == 0 ? 10 : (speck(u, v, 145 + vr, 180) ? -12 : 0);
+		return tone4(id, 147, 174, 122, 70, 152, 102, 58, 188, 142, 88, 132, 88, 52, lift);
 	}
 	if (t == T_STONEFLOOR || t == T_RUINFLOOR) {
-		if (u % 4 == 3 || v % 4 == 3) { return rgb(96, 96, 92); }
-		if (t == T_RUINFLOOR && speck(u, v, 141 + vr, 200)) { return rgb(70, 110, 70); }
-		return speck(u, v, 143, 200) ? rgb(142, 142, 136) : rgb(128, 128, 122);
+		// ashlar paving in sandstone, warm gray, slate and rose: a long slab over two short ones
+		bool top = v < 4;
+		if (v % 4 == 0 || u == 0 || !top && u == 4) { return rgb(92, 86, 78); }
+		if (t == T_RUINFLOOR && speck(u, v, 141 + vr, 200)) { return speck(u, v, 142, 400) ? rgb(98, 140, 72) : rgb(70, 112, 62); }
+		int id = (top ? 0 : 1 + u / 4) + vr * 3 + (t == T_RUINFLOOR ? 40 : 0);
+		int lift = v % 4 == 1 || u == 1 || !top && u == 5 ? 12 : (v % 4 == 3 ? -8 : 0);
+		return tone4(id, 149, 166, 152, 124, 146, 142, 134, 124, 132, 144, 156, 130, 120, lift);
 	}
 	if (t == T_CARPET) {
 		if (u == 0 || u == 7 || v == 0 || v == 7) { return rgb(200, 160, 50); }
@@ -192,18 +282,25 @@ int tex_pixel(int t, int vr, int f, int px, int py, int S) {
 			array<int> flame = [rgb(255, 220, 90), rgb(255, 150, 40), rgb(255, 240, 160), rgb(240, 110, 30)];
 			return flame[(f + u + v) % 4];
 		}
-		if (mortar) { return rgb(110, 100, 90); }
-		return v < 2 ? rgb(170, 84, 60) : rgb(148, 68, 48);
+		if (mortar) { return rgb(128, 116, 100); }
+		int id = ((u + off + 8) / 4) * 3 + row * 11 + vr * 7;
+		return tone4(id, 155, 178, 88, 62, 160, 74, 52, 192, 106, 72, 148, 86, 66, v % 2 == 0 ? 12 : 0);
 	}
 	if (t == T_WOODWALL) {
-		if (u % 3 == 2) { return rgb(76, 50, 26); }
-		return v < 2 ? rgb(136, 94, 52) : rgb(112, 76, 40);
+		// log courses: a lit top, a dark seam, each log its own wood
+		int row = v / 3;
+		if (v % 3 == 2) { return rgb(62, 40, 22); }
+		int id = row * 5 + vr * 9 + (u >= 4 ? 1 : 0) * (row % 2);
+		int lift = v % 3 == 0 ? 16 : (u % 4 == 0 && v % 3 == 1 ? -18 : 0);
+		return tone4(id, 157, 140, 94, 52, 122, 80, 44, 154, 108, 60, 112, 78, 48, lift);
 	}
 	if (t == T_RUINWALL || t == T_ICEWALL) {
 		bool seam = v % 3 == 2 || (u + (v / 3) * 2) % 4 == 3;
-		if (t == T_ICEWALL) { return seam ? rgb(90, 140, 200) : (speck(u, v, 151, 200) ? rgb(220, 240, 255) : rgb(130, 180, 230)); }
-		if (speck(u, v, 153 + vr, 180)) { return rgb(76, 116, 70); }
-		return seam ? rgb(80, 84, 80) : rgb(116, 120, 114);
+		if (t == T_ICEWALL) { return seam ? rgb(90, 140, 200) : (speck(u, v, 151, 200) ? rgb(220, 240, 255) : (u + v < 5 ? rgb(160, 204, 240) : rgb(130, 180, 230))); }
+		if (speck(u, v, 153 + vr, 180)) { return speck(u, v, 154, 400) ? rgb(104, 146, 74) : rgb(76, 116, 70); }
+		if (seam) { return rgb(72, 76, 72); }
+		int id = ((u + (v / 3) * 2 + 8) / 4) * 3 + (v / 3) * 7 + vr * 5;
+		return tone4(id, 159, 124, 126, 116, 112, 116, 112, 132, 124, 108, 104, 112, 116, v % 3 == 0 ? 12 : 0);
 	}
 	if (t == T_DOOR) {
 		if (u == 0 || u == 7 || v == 0) { return rgb(76, 50, 26); }
@@ -307,7 +404,8 @@ int tex_pixel(int t, int vr, int f, int px, int py, int S) {
 		return water_px(u, v, f, 38, 78, 58);
 	}
 	if (t == T_REEDS) {
-		if ((u + vr) % 2 == 0 && v >= 1) { return v <= 2 ? rgb(150, 110, 60) : rgb(120, 150, 70); }
+		int ru = u + vr - (v < 3 ? sway_of(f) : 0) + 8;
+		if (ru % 2 == 0 && v >= 1) { return v <= 2 ? (v == 1 ? rgb(116, 72, 40) : rgb(156, 108, 58)) : (v < 5 ? rgb(132, 164, 72) : rgb(96, 136, 60)); }
 		return rgb(96, 70, 44);
 	}
 	if (t == T_GRAVE) {
@@ -373,10 +471,48 @@ int tex_pixel(int t, int vr, int f, int px, int py, int S) {
 	return rgb(255, 0, 255);
 }
 
-bool tile_animates(int t) {
-	return t == T_SHALLOW || t == T_DEEP || t == T_SWAMP || t == T_SEWAGE || t == T_LAVA || t == T_GATE || t == T_FIRE
-		|| t == T_FORGE || t == T_SCONCE || t == T_SKY || t == T_KELP || t == T_CRYSTAL || t == T_GOLDPILE || t == T_RAINBOW
-		|| t == T_CORAL || t == T_LILY || t == T_CYPRESS || t == T_ALCHEMY || t == T_SHRINE || t == T_WELL;
+bool tile_wet(int t) {
+	return t == T_SHALLOW || t == T_DEEP || t == T_SWAMP || t == T_SEWAGE || t == T_KELP || t == T_CORAL || t == T_LILY
+		|| t == T_CYPRESS || t == T_SKY || t == T_VOID;
+}
+
+int tile_animates(int t) {
+	if (t == T_SHALLOW || t == T_DEEP || t == T_SWAMP || t == T_SEWAGE || t == T_KELP || t == T_CORAL || t == T_LILY
+		|| t == T_CYPRESS || t == T_SKY) { return ANIM_WATER; }
+	if (t == T_OAK || t == T_PINE || t == T_BUSH || t == T_TALLGRASS || t == T_FLOWERS || t == T_REEDS) { return ANIM_BREEZE; }
+	if (t == T_LAVA || t == T_GATE || t == T_FIRE || t == T_FORGE || t == T_SCONCE || t == T_CRYSTAL || t == T_GOLDPILE
+		|| t == T_RAINBOW || t == T_ALCHEMY || t == T_SHRINE || t == T_WELL) { return ANIM_FLICKER; }
+	return 0;
+}
+
+// the live file's season, baked into the land's textures: autumn leaves, winter snow, spring blossom
+int season_px(int t, int c) {
+	if (SEASON == 0 || c < 0) { return c; }
+	bool ground = t == T_GRASS || t == T_TALLGRASS || t == T_FLOWERS;
+	bool leaf = t == T_OAK || t == T_PINE || t == T_BUSH || t == T_REEDS || t == T_CYPRESS;
+	if (!ground && !leaf) { return c; }
+	int r = PAL_R[c];
+	int g = PAL_G[c];
+	int b = PAL_B[c];
+	int lum = (r * 3 + g * 6 + b) / 10;
+	bool green = g > r + 6 && g > b;
+	if (SEASON == 2) {
+		if (ground) { return rgb(176 + lum / 4, 188 + lum / 5, 210 + lum / 6); }
+		if (green) { return lum > 100 ? rgb(226 + lum / 10, 234 + lum / 12, 248) : rgb(38 + lum / 3, 70 + lum / 3, 76 + lum / 3); }
+		return c;
+	}
+	if (!green) { return c; }
+	if (SEASON == 1) {
+		if (ground) { return rgb(g * 82 / 100 + 22, g * 66 / 100, b / 2); }
+		int band = lum < 70 ? 0 : (lum < 115 ? 1 : 2);
+		if ((c * 7) % 5 == 0 && band > 0) { band = band - 1; }
+		if (band == 0) { return rgb(130 + lum / 3, 40 + lum / 5, 22); }
+		if (band == 1) { return rgb(204 + lum / 6, 92 + lum / 5, 28); }
+		return rgb(242, 172 + lum / 8, 52);
+	}
+	if (ground) { return rgb(r * 90 / 100, g * 112 / 100 + 8, b * 90 / 100); }
+	if (t == T_OAK && lum > 110) { return rgb(246, 176 + lum / 12, 206); }
+	return rgb(r * 92 / 100, g * 110 / 100, b);
 }
 
 void textures_build(int S) {
@@ -384,9 +520,14 @@ void textures_build(int S) {
 	TEX = [];
 	TEX_OFF = [];
 	TILE_ANIM = [];
+	TILE_WET = [];
+	TILE_FOAMS = [];
 	for (int t = 0; t < TILES_DEF.size(); ++t) {
-		bool anim = tile_animates(t);
-		TILE_ANIM.push(anim ? 1 : 0);
+		int anim_kind = tile_animates(t);
+		bool anim = anim_kind != 0;
+		TILE_ANIM.push(anim_kind);
+		TILE_WET.push(tile_wet(t) ? 1 : 0);
+		TILE_FOAMS.push(t == T_SHALLOW || t == T_DEEP ? 1 : 0);
 		for (int vr = 0; vr < 4; ++vr) {
 			int base_off = -1;
 			for (int f = 0; f < 4; ++f) {
@@ -395,7 +536,7 @@ void textures_build(int S) {
 				if (f == 0) { base_off = off; }
 				TEX_OFF.push(off);
 				for (int py = 0; py < S; ++py) {
-					for (int px = 0; px < S; ++px) { TEX.push(tex_pixel(t, vr, f, px, py, S)); }
+					for (int px = 0; px < S; ++px) { TEX.push(season_px(t, tex_pixel(t, vr, f, px, py, S))); }
 				}
 			}
 		}
@@ -551,12 +692,15 @@ void icons_init() {
 
 void art_init(int tile_size) {
 	pal_reset();
+	palette_users_reset();
 	colors_init();
 	font_init();
 	sprites_init();
 	icons_init();
 	COL_BLACK = rgb(0, 0, 0);
 	COL_WHITE = rgb(255, 255, 255);
+	FOAM_A = rgb(228, 242, 244);
+	FOAM_B = rgb(158, 206, 224);
 	textures_build(tile_size);
 	SPR_CACHE = {};
 	SPRPIX = [];

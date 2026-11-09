@@ -2,9 +2,10 @@
 # The milestone tier: every gate, at milestone depth, on both tiers of tools/ci/targeted.sh. The Debug suites on the
 # interpreter, the VM and the VM reference, then on the Release build the same suites, a 3000-program run of each
 # differential (BATTERY_FUZZ_ITERATIONS: the interpreter against the VM, the VM against the VM reference), every example's
-# hashes (GLOOM with and without workers and at 600 ticks, the demoreel and the crawler on the VM, their one backend; Gator
-# Quest and JaiDOOM's timedemo, where the checkout has it, on both through the runner), the embedding quickstart, the
-# language server, the one-file build's include list, the runner's selftest and the documentation site.
+# hashes (GLOOM with and without workers and at 600 ticks, the demoreel and the crawler on the VM, their hosts' one backend,
+# and the two through the runner on both; Gator Quest and JaiDOOM's timedemo, where the checkout has it, on both through the
+# runner), the embedding quickstart, the language server, the one-file build's include list, the runner's selftest and the
+# documentation site.
 #
 #   tools/ci/battery.sh [--build]
 #

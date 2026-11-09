@@ -5,12 +5,18 @@
 #include <jaiscript/testing/foundry.hpp>
 #include "../case_table.hpp"
 #include <map>
+#include <set>
 #include <jaiscript/core/engine.hpp>
 #include <jaiscript/detail/class_runtime.hpp>
 #include <jaiscript/core/class_registry.hpp>
 #include <jaiscript/core/dynamic_binder.hpp>
 #include <jaiscript/detail/parallel_transform.hpp>   // parallel_capture_kind (classification pins)
 #include <jaiscript/stdlib/stdlib.hpp>
+#include "fuzz/fuzz_parallel_band.hpp"
+#include <jaiscript/detail/engine_access.hpp>
+#include <jaiscript/core/script_namespace.hpp>
+#include <jaiscript/stdlib/spider.hpp>
+#include <jaiscript/stdlib/web_text.hpp>
 #include <jaiscript/core/jaibite.hpp>
 #include <jaiscript/detail/string_symbolizer.hpp>
 #include <jaiscript/thread_pool.hpp>
@@ -919,6 +925,10 @@ public:
 			expect_error("var& r = g;", "reference declaration would alias enclosing state 'g'");
 			expect_error("helper_ref(g[0]);", "argument passes enclosing state 'g' to reference parameter 'a' of 'helper_ref' (captured reads are read-only; 'helper_ref' only reads it: declare it const int& a)");
 			expect_error("for (auto& v : g) { }", "cannot iterate captured state 'g' by reference");
+			// ::g is the program's g whatever a local of the name says
+			expect_error("var g = 0; ::g = [9];", "body writes enclosing state 'g'");
+			expect_error("var g = [0]; ::g[0] = 5;", "body writes enclosing state 'g'");
+			expect_error("array<int> mine = [1]; parallel_for (auto& v : mine) { v = 2; }", "a nested parallel_for is not allowed in a parallel body");
 		});
 
 		test("captured_reads_deterministic_1_2_8", [this]() {
@@ -944,6 +954,53 @@ public:
 			auto r8 = e->execute(src);
 			check_true(arrays_equal(r1, r2));
 			check_true(arrays_equal(r1, r8));
+			// a ::name reads the worker's copy of the program's variable or function, a local of the name notwithstanding
+			const std::string qualified = R"(
+				array<int> grid = [3, 5, 7];
+				int sq(int v) { return v * v; }
+				int K = 100;
+				class W { int v = 0; int K = 1; void m() { v = ::K + K; } }
+				array<W> ws = [W(), W()];
+				array<int> idx = [];
+				for (int i = 0; i < 64; ++i) { idx.push(i); }
+				array<int> out = idx;
+				parallel_for (int i : idx) { int sq = 1; int grid = 2; out[i] = ::sq(i) + ::grid[i % 3] + sq + grid; }
+				parallel_for (auto& w : ws) { w.m(); }
+				int scoped() { int K = 2; array<int> local = [0, 0]; parallel_for (int i : [0, 1]) { local[i] = ::K + i; } return local[0] + local[1]; }
+				return to_json(out[0]) + " " + to_json(out[63]) + " " + to_json(ws[1].v) + " " + to_json(scoped());
+			)";
+			auto q = make_engine();
+			jai::stdlib::register_all(*q);
+			for (size_t workers : {size_t(1), size_t(2), size_t(8)}) {
+				q->parallel_thread_count(workers);
+				check_eq(std::string("6 3975 101 201"), q->execute(qualified).as<std::string>(), "::name reads, workers " + std::to_string(workers));
+			}
+			auto conflict = q->execute("int K = 5; array<int> out = [0, 0]; var f() { int K = 2; try { parallel_for (int i : [0, 1]) { out[i] = ::K + K; } } catch (e) { return e; } return \"no-error\"; } f();");
+			check_true(conflict.as<std::string>().rfind("parallel_for: '::K' names the program's 'K' and the body also reads a nearer 'K'", 0) == 0, conflict.as<std::string>());
+			// a const reference to captured state reads the worker's own copy: a declaration, a by-reference loop, a field
+			const std::string const_refs = R"(
+				array<array<int>> grid = [[1, 2], [3, 4], [5, 6]];
+				array<int> table = [10, 20, 30];
+				class Cfg { array<int> items = [7, 8, 9]; }
+				Cfg cfg;
+				array<int> idx = [0, 1, 2, 3, 4, 5];
+				array<int> out = [0, 0, 0, 0, 0, 0];
+				parallel_for (int i : idx) {
+					const auto& row = grid[i % 3]; const int& t = table[i % 3]; const auto& items = cfg.items;
+					int s = 0;
+					for (const auto& v : table) { s += v; }
+					for (const auto& r : grid) { s += r[1]; }
+					out[i] = row[0] + row[1] + t + items[i % 3] + s;
+				}
+				return to_json(out);
+			)";
+			for (size_t workers : {size_t(1), size_t(2), size_t(8)}) {
+				q->parallel_thread_count(workers);
+				check_eq(std::string("[92,107,122,92,107,122]"), q->execute(const_refs).as<std::string>(), "const references, workers " + std::to_string(workers));
+			}
+			// a writing method through a const loop variable raises as the serial loop does, on every worker
+			const std::string const_call = "class V { int a = 7; void bump() { a += 1; } } array<V> ws = [V(), V()]; try { parallel_for (const auto& w : ws) { w.bump(); } } catch (e) { return e; } return \"no-error\";";
+			check_true(q->execute(const_call).as<std::string>().rfind("Cannot call 'bump' on 'w': 'w' is const and 'bump' writes its receiver", 0) == 0, q->execute(const_call).as<std::string>());
 		});
 
 		test("captured_snapshot_equals_barrier_content", [this]() {
@@ -1111,6 +1168,37 @@ public:
 				return "no-error";
 			)");
 			check_true(r3.as<std::string>().find("parallel_transform: member access reaches captured state 'm' (captured reads are read-only, and only a captured object has members) at 3:") != std::string::npos, r3.as<std::string>());
+
+			// a chain on a computed value: a call's result and a conditional read as any expression, and a store or a reference
+			// through a conditional names the arm it picks; a call that may return a reference stays refused as a store root
+			const std::string computed = R"(
+				class V { int a = 1; }
+				V g1; V g2; g2.a = 5;
+				V& pick() { return g1; }
+				V mk(int k) { V v; v.a = k; return v; }
+				array<int> idx = [0, 1, 2, 3, 4, 5, 6, 7];
+				array<int> out = [0, 0, 0, 0, 0, 0, 0, 0];
+				parallel_for (int i : idx) {
+					V p; V q; int a = 0; int b = 0; array<int> s = [0]; array<int> t = [0];
+					(i > 3 ? p : q).a = 4; (i > 3 ? a : b) = 5; (i > 3 ? s : t)[0] = 6; ++a = a + 1;
+					auto& r = i > 5 ? a : b; r = r + 1;
+					out[i] = mk(i).a + (i > 3 ? g1 : g2).a + pick().a + p.a * 10 + q.a * 100 + a * 1000 + b * 10000 + s[0] * 100000 + t[0] * 1000000;
+				}
+				to_json(out);
+			)";
+			for (size_t workers : {size_t(1), size_t(8)}) {
+				e->parallel_thread_count(workers);
+				check_eq(std::string("[6061416,6061417,6061418,6061419,616146,616147,607148,607149]"), e->execute(computed).as<std::string>(), "computed roots, workers " + std::to_string(workers));
+			}
+			const auto refused = [&](const char* body) {
+				auto got = e->execute(std::string("class V { int a = 1; } V g1; V& pick() { return g1; } int ga = 0; array<int> idx = [0, 1]; try { parallel_for (int i : idx) { ") + body + " } } catch (e) { return e; } return \"no-error\";");
+				return got.as<std::string>();
+			};
+			check_true(refused("pick().a = 9;").rfind("parallel_for: member store must root at a local variable in a parallel body", 0) == 0, refused("pick().a = 9;"));
+			check_true(refused("int b = 0; (i > 0 ? ga : b) = 5;").rfind("parallel_for: body writes enclosing state 'ga'", 0) == 0, refused("int b = 0; (i > 0 ? ga : b) = 5;"));
+			check_true(refused("int b = 0; auto& r = i > 0 ? ga : b; r = 7;").rfind("parallel_for: reference declaration would alias enclosing state 'ga'", 0) == 0,
+			           refused("int b = 0; auto& r = i > 0 ? ga : b; r = 7;"));
+			check_true(refused("++ga = 7;").rfind("parallel_for: body writes enclosing state 'ga'", 0) == 0, refused("++ga = 7;"));
 		});
 
 		// === Element members (transformmembers): a body reads members of its own element ===
@@ -1931,6 +2019,43 @@ public:
 			const std::string method = error_of(e, prelude + "parallel_for (auto& w : ws) { w.m(grid); }");
 			check_true(method.rfind("parallel_for: argument passes enclosing state 'grid' to reference parameter 'g' of 'W::m', which writes it", 0) == 0, method);
 			check_eq((int64_t)4, e->execute(prelude + "parallel_for (auto& w : ws) { w.n(grid); } return ws[0].v + ws[1].v - 4;").as_int());
+			// a conditional's arms bind a reference only where the parameter is one: a by-value parameter reads the arm picked
+			check_eq(std::string("[34,12,18]"), e->execute(prelude + "int twice(int v) { return v * 2; } int a0 = 5; int b0 = 7;"
+			                                               " parallel_for (int i : idx) { int lo = i; int hi = i + 10; out[i] = twice(i > 0 ? lo : hi) + twice(i == 1 ? a0 : b0); }"
+			                                               " return to_json(out);").as<std::string>());
+			const std::string arm = error_of(e, prelude + "int bump(int& v) { v += 1; return v; } int a0 = 5;"
+			                                    " parallel_for (int i : idx) { int mine = 0; out[i] = bump(i > 0 ? mine : a0); }");
+			check_true(arm.rfind("parallel_for: argument passes enclosing state 'a0' to reference parameter 'v' of 'bump', which writes it", 0) == 0, arm);
+			const std::string method_arm = error_of(e, prelude + "parallel_for (auto& w : ws) { array<int> mine = [1]; w.m(w.v > 0 ? mine : grid); }");
+			check_true(method_arm.rfind("parallel_for: argument passes enclosing state 'grid' to reference parameter 'g' of 'W::m', which writes it", 0) == 0, method_arm);
+			const std::string cast = error_of(e, prelude + "parallel_for (int i : idx) { out[i] = cast<int&>(grid[i]); }");
+			check_true(cast.rfind("parallel_for: cast<T&> is not allowed in a parallel body at 7:", 0) == 0, cast);
+			// a member of captured state is that state's storage: a writing T& bound to it, by an argument or a default, refuses
+			const std::string objects = prelude + "int ga = 1; int gb = 2; class C { int f = 1; array<int> a = [1]; C(int& x = ga) {} } C gc;"
+			                                      " void setf(int& x) { x = 9; } void setd(int& x = ga) { x = 9; } int readd(int& x = ga) { return x; }"
+			                                      " class D { int v = 0; void m(int& x = gc.f) { x = 9; } } array<D> ds = [D(), D()];";
+			const std::string member = error_of(e, objects + " parallel_for (int i : idx) { setf(gc.f); }");
+			check_true(member.rfind("parallel_for: argument passes enclosing state 'gc' to reference parameter 'x' of 'setf', which writes it", 0) == 0, member);
+			const std::string member_element = error_of(e, objects + " parallel_for (int i : idx) { setf(gc.a[0]); }");
+			check_true(member_element.rfind("parallel_for: argument passes enclosing state 'gc' to reference parameter 'x' of 'setf', which writes it", 0) == 0, member_element);
+			const std::string member_method = error_of(e, objects + " parallel_for (auto& w : ws) { w.m(gc.a); }");
+			check_true(member_method.rfind("parallel_for: argument passes enclosing state 'gc' to reference parameter 'g' of 'W::m', which writes it", 0) == 0, member_method);
+			const std::string nested = error_of(e, objects + " void outer() { setf(gc.f); } parallel_for (int i : idx) { outer(); }");
+			check_true(nested.rfind("parallel_for: argument passes enclosing state 'gc' to reference parameter 'x' of 'setf', which writes it", 0) == 0, nested);
+			const std::string defaulted = error_of(e, objects + " parallel_for (int i : idx) { setd(); }");
+			check_true(defaulted.rfind("parallel_for: reference parameter 'x' of 'setd' defaults to enclosing state 'ga', which writes it", 0) == 0, defaulted);
+			const std::string default_read = error_of(e, objects + " parallel_for (int i : idx) { out[i] = readd(); }");
+			check_true(default_read.rfind("parallel_for: reference parameter 'x' of 'readd' defaults to enclosing state 'ga' (captured reads are read-only;"
+			                              " 'readd' only reads it: declare it const int& x)", 0) == 0, default_read);
+			const std::string default_member = error_of(e, objects + " parallel_for (auto& d : ds) { d.m(); }");
+			check_true(default_member.rfind("parallel_for: reference parameter 'x' of 'D::m' defaults to enclosing state 'gc', which writes it", 0) == 0, default_member);
+			const std::string default_arm = error_of(e, objects + " bool pick = true; void setc(int& x = pick ? ga : gb) { x = 9; } parallel_for (int i : idx) { setc(); }");
+			check_true(default_arm.rfind("parallel_for: reference parameter 'x' of 'setc' defaults to enclosing state 'ga', which writes it", 0) == 0, default_arm);
+			const std::string default_ctor = error_of(e, objects + " parallel_for (int i : idx) { C made(); }");
+			check_true(default_ctor.rfind("parallel_for: reference parameter 'x' of 'C' defaults to enclosing state 'ga'", 0) == 0, default_ctor);
+			// a default a call overrides binds nothing, and a const T& default is a read
+			check_eq(std::string("[1,1,1]"), e->execute(objects + " int keepd(const int& x = ga) { return x; }"
+			                                            " parallel_for (int i : idx) { int mine = 0; setd(mine); out[i] = mine / 9 * keepd(); } return to_json(out);").as<std::string>());
 		});
 
 		test("a_loop_variable_a_reference_parameter_writes_is_written", [this]() {
@@ -1949,6 +2074,13 @@ public:
 			check_true(function.rfind("parallel_for: body writes enclosing state 'out' at an index the body changes at 6:", 0) == 0, function);
 			const std::string method = error_of(e, prelude + "parallel_for (auto& b, int i : bs, idx) { b.reset(i); out[i] = 1; }");
 			check_true(method.rfind("parallel_for: body writes enclosing state 'out' at an index the body changes at 6:", 0) == 0, method);
+			const std::string arm = error_of(e, prelude + "parallel_for (int i : idx) { int other = 0; zero(i > 3 ? i : other); out[i] = out[i] + 1; }");
+			check_true(arm.rfind("parallel_for: body writes enclosing state 'out' at an index the body changes at 6:", 0) == 0, arm);
+			const std::string method_arm = error_of(e, prelude + "parallel_for (auto& b, int i : bs, idx) { int other = 0; b.reset(i > 3 ? i : other); out[i] = 1; }");
+			check_true(method_arm.rfind("parallel_for: body writes enclosing state 'out' at an index the body changes at 6:", 0) == 0, method_arm);
+			// a by-value element a conditional's arm hands a writing T& is the iteration's copy, never the array's slot
+			check_eq(std::string("[1,2,3,4,5,6,7,8]"), e->execute(prelude + "array<int> vals = [1, 2, 3, 4, 5, 6, 7, 8];"
+			                                                      " parallel_for (int v : vals) { int other = 0; zero(v > 2 ? v : other); } return to_json(vals);").as<std::string>());
 			check_eq(std::string("[1,2,3,4,5,6,7,8]"), e->execute(prelude + "parallel_for (int i : idx) { out[i] = peek(i) + 1; } return to_json(out);").as<std::string>());
 			// a callee's own variable of the loop variable's name is not the loop variable
 			check_eq(std::string("[0,0,1,3,6,10,15,21]"), e->execute(prelude + "int sum_below(int x) { int s = 0; for (int i = 0; i < x; i++) { s += i; } return s; }"
@@ -2542,7 +2674,7 @@ public:
 				{"array<shared_ptr<C>> other = hs; other[3] = hs[1]; try { parallel_for (auto& h, auto& o : hs, other) { h.x = 1; } } catch (err) { return err; } return \"ran\";",
 				 "parallel_for: elements 1 and 3 hold the same object (an object a body reaches through a handle element belongs to one element)"},
 				{"var rows = []; for (int i = 0; i < 64; i++) { rows.push([registry[i]]); } try { parallel_for (auto& r : rows) { r[0].x = 1; } } catch (err) { return err; } return \"ran\";",
-				 "parallel_for: element 0 cannot be proven exclusive (only value-semantic shapes are: primitives, strings, value containers, flat value-class instances and distinct handles to them)"},
+				 "parallel_for: element 0 cannot be proven exclusive (only value-semantic shapes are: primitives, strings, math vectors, value containers, flat value-class instances and distinct handles to them)"},
 				{"int bump(shared_ptr<C> h) { return h.x + 5; } var out = parallel_transform(hs, bump); return out[63];", "5"},
 			};
 			for (const auto& [body, expected] : cases) {
@@ -3001,8 +3133,8 @@ public:
 		test("conversions_reach_every_class_a_body_can_hold", [this, parallel_matches_serial, parallel_error]() {
 			// a body converts an instance it reaches by any road: a captured object, a captured var holding one, a captured
 			// subclass instance, a field of a field of the element (a condition too), a value an admitted function returns and an element of a var
-			// array mixing classes; each converts as the serial loop does. A captured container of instances and an element whose
-			// var field holds one are refused before any element runs
+			// array mixing classes, and an instance a captured array or map holds; each converts as the serial loop does. An element
+			// whose var field holds one is refused before any element runs
 			const std::string classes = R"(
 				class Num {
 					int v = 3;
@@ -3038,12 +3170,20 @@ public:
 				for (auto& m : mixed) { total += m.v; }
 				to_string(total);
 			)", "conversion roads");
+			parallel_matches_serial(classes + R"(
+				array<Num> caps = [Num(5), Num(6)];
+				map<string, Num> named = {"a": Num(7)};
+				parallel_for (int x : xs) { int k = caps[x % 2]; int j = named["a"]; out[x] = k + j + caps[1].v + named["a"].to_int(); }
+				int total = 0;
+				for (int v : out) { total += v; }
+				to_string(total);
+			)", "captured containers of instances");
 			struct refusal { const char* name; const char* source; const char* text; };
 			const refusal refusals[] = {
-				{ "captured array", "array<Num> caps = [Num(5)]; parallel_for (int x, auto& o : xs, out) { int k = caps[0]; o = k; }",
-				  "parallel_for: captured name 'caps': value is not value-semantic (object)" },
-				{ "captured map", "map<string, Num> caps = {\"a\": Num(7)}; parallel_for (int x, auto& o : xs, out) { int k = caps[\"a\"]; o = k; }",
-				  "parallel_for: captured name 'caps': value is not value-semantic (object)" },
+				{ "captured handles", "array<shared_ptr<Num>> hs = [make_shared<Num>(1)]; parallel_for (int x : xs) { out[x] = hs[0].v; }",
+				  "parallel_for: captured name 'hs' is not value-semantic (a shared_ptr in a container)" },
+				{ "captured table store", "array<Num> caps = [Num(5)]; parallel_for (int x : xs) { caps[0].v = x; }",
+				  "parallel_for: member store reaches captured state 'caps' (captured reads are read-only)" },
 				{ "var field", "class Holder { var f = 0; } array<Holder> hs; for (int i = 0; i < 8; ++i) { Holder h; h.f = Num(i); hs.push(h); } parallel_for (auto& h : hs) { int k = h.f; h.f = k; }",
 				  "parallel_for: element 0 cannot be proven exclusive" },
 			};
@@ -3052,6 +3192,38 @@ public:
 					const std::string got = parallel_error(classes + r.source, vm);
 					check_true(got.rfind(r.text, 0) == 0, std::string(r.name) + (vm ? " vm" : " interp") + ": expected '" + r.text + "', got '" + got + "'");
 				}
+			}
+		});
+
+		test("math_vectors_are_values_to_the_element_and_capture_proofs", [this, parallel_matches_serial, parallel_error]() {
+			// A math vector is a value: an array of them, a class holding them (at any depth) and a var array of them bind in place,
+			// even when every element shares one node (pushed copies of one instance), and a captured vector, or a container of
+			// them, reads its components through a worker's own copy; a captured vector is still read-only
+			const std::string decls = R"(
+				using math::vec2; using math::vec3; using math::ivec2; using math::color;
+				class P { vec2 pos; vec2 vel = vec2(1.0, 0.5); }
+				class Holder { P p; vec3 v3; ivec2 cell = ivec2(1, 2); color c = color(0.1, 0.2, 0.3, 1.0); }
+				vec2 gravity = vec2(0.0, -2.0);
+				array<vec2> table = [vec2(1, 2), vec2(3, 4)];
+				map<string, vec2> named = {"a": vec2(5, 6)};
+				P proto;
+				Holder h0;
+				vec2 one = vec2(1.0, 1.0);
+				array<P> ps; array<Holder> hs; array<vec2> pts; var boxed = []; array<float> outs;
+				for (int i = 0; i < 200; ++i) { ps.push(proto); hs.push(h0); pts.push(one); boxed.push(one); outs.push(0.0); }
+			)";
+			parallel_matches_serial(decls + R"(
+				parallel_for (auto& p : ps) { p.vel += gravity; p.pos += p.vel; }
+				parallel_for (auto& q : pts) { q.x += 1.0; q += table[1]; }
+				parallel_for (auto& h : hs) { h.p.pos += h.p.vel; h.v3 = h.v3 + vec3(1.0, 2.0, 3.0); h.cell.y += 1; h.c.r = 0.9; }
+				parallel_for (auto& b : boxed) { b += vec2(0.5, 0.5); }
+				parallel_for (int i = 0; i < 200; ++i) { outs[i] = pts[i].x + gravity.y + table[0].x + named["a"].y; }
+				to_string(ps[199].pos) + to_string(proto.pos) + to_string(pts[0]) + to_string(one) + to_string(hs[7].p.pos) + to_string(hs[7].cell) +
+					to_string(hs[7].c) + to_string(h0.c) + to_string(boxed[3]) + to_string(outs[5]);
+			)", "math vectors");
+			for (bool vm : {false, true}) {
+				const std::string got = parallel_error(decls + "parallel_for (auto& o : outs) { gravity.x = o; }", vm);
+				check_eq(std::string("parallel_for: member store reaches captured state 'gravity' (captured reads are read-only) at 13:44"), got, vm ? "vm" : "interp");
 			}
 		});
 
@@ -3421,6 +3593,118 @@ public:
 				try { got = std::to_string(e->execute(program).as_int()); } catch (const std::exception& ex) { got = std::string("error ") + ex.what(); }
 				check_eq(std::to_string(expected), got, std::string("reference parameters ") + (vm ? "vm" : "interp"));
 				check_true(detail::engine_access::get_current_parameter_storage(*e) == nullptr, std::string("no call's storage outlives the region ") + (vm ? "vm" : "interp"));
+			}
+		});
+
+		test("generated_bodies_run_as_the_serial_loop", [this]() {
+			// the parallel band's seeds: an admitted body prints the serial loop's output at 1, 3 and 8 workers on the interpreter,
+			// the vm and its reference mode; a hazard body is refused naming what it wrote (source/tests/fuzz/fuzz_parallel_band.hpp)
+			for (uint64_t seed = 0; seed < 24; ++seed) {
+				for (bool hazard : {false, true}) {
+					const jai::fuzz::parallel::generated g = jai::fuzz::parallel::generate(seed, hazard);
+					check_eq(std::string(), jai::fuzz::parallel::check(g), "seed " + std::to_string(seed) + (hazard ? " (hazard)" : "") + "\n" + g.program);
+				}
+			}
+		});
+
+		// Each library builtin is parallel unless the library marks it serial; a new one takes its row here, so the choice is made
+		test("every_library_builtin_is_classified_parallel_or_serial", [this]() {
+			auto e = make_engine();
+			jai::stdlib::register_all(*e);
+			jai::stdlib::register_web(*e);
+			jai::stdlib::register_spider(*e);
+			std::set<std::string> names;
+			for (const std::string& name : detail::engine_access::host_function_names(*e)) { names.insert(name); }
+			auto* sym = detail::engine_access::get_symbolizer(*e);
+			for (const auto& [space_id, space] : detail::engine_access::script_namespaces(*e)) {
+				if (!space) { continue; }
+				for (const auto& [member_id, value] : space->variables) {
+					if (value.is_function() && !space->functions.count(member_id)) {
+						names.insert(std::string(sym->get_string(space_id)) + "::" + std::string(sym->get_string(member_id)));
+					}
+				}
+			}
+			const std::set<std::string> serial = {
+				"__jai_parallel_range",
+				"app_cache_dir", "app_data_dir", "array::filter", "array::map", "array::sort", "crypto::sha256_file", "extend",
+				"file_data", "from_base64", "from_binary", "from_json", "import_recheck_interval", "map::filter", "parallel_reduce",
+				"parallel_transform", "print", "reflect::bases", "reflect::bind", "reflect::call", "reflect::classes",
+				"reflect::construct", "reflect::construct_shared", "reflect::fields", "reflect::function_arguments",
+				"reflect::functions", "reflect::generation", "reflect::get", "reflect::globals", "reflect::has_field",
+				"reflect::has_method", "reflect::instances", "reflect::invoke", "reflect::is_cpp_bound", "reflect::is_enabled",
+				"reflect::method_arguments", "reflect::methods", "reflect::scoped_template_dirs",
+				"reflect::scoped_template_output_limit", "reflect::set", "reflect::template_output_limit", "reflect::type_name",
+				"resolve_path", "sleep", "spider::Response", "spider::catch", "spider::get", "spider::post", "spider::sling",
+				"template#dynamic", "template#html", "template#raw", "template#scoped", "template#scoped_file", "template#splice",
+				"time::date", "time::date_from_unix", "time::date_now", "time::engine_elapsed", "time::execute_elapsed",
+				"time::local_date", "time::local_now", "time::now", "time::stopwatch", "time::unix_ms", "time::unix_time",
+				"time::utc_date", "time::utc_now", "to_base64", "to_binary", "to_json"
+			};
+			const std::set<std::string> parallel = {
+				"array::append", "array::concat", "array::fill", "array::resize", "array::reverse", "array::slice", "base64_decode",
+				"base64_encode", "bin_dir", "binary::bytes", "binary::layout", "binary::reader", "binary::text", "binary::width",
+				"binary::writer", "crypto::equals", "crypto::hmac_sha256", "crypto::hmac_sha256_bytes", "crypto::hmac_sha512",
+				"crypto::hmac_sha512_bytes", "crypto::md5", "crypto::md5_bytes", "crypto::password_hash", "crypto::password_verify",
+				"crypto::random_bytes", "crypto::random_hex", "crypto::random_int", "crypto::sha1", "crypto::sha1_bytes",
+				"crypto::sha256", "crypto::sha256_bytes", "crypto::sha512", "crypto::sha512_bytes", "current_script_dir",
+				"current_script_path", "executable_dir", "executable_path", "file_name", "format", "format_value",
+				"is_registered_type", "math::abs", "math::acos", "math::angle_between", "math::asin", "math::atan", "math::atan2",
+				"math::cbrt", "math::ceil", "math::clamp", "math::color", "math::cos", "math::cosh", "math::cross", "math::degrees",
+				"math::degrees_to_radians", "math::distance", "math::distance_squared", "math::dot", "math::exp", "math::exp2",
+				"math::floor", "math::fmod", "math::hypot", "math::ifloor", "math::is_inf", "math::is_nan", "math::itrunc",
+				"math::ivec2", "math::ivec3", "math::length", "math::length_squared", "math::lerp", "math::log", "math::log10",
+				"math::log2", "math::max", "math::min", "math::mix", "math::mix_hsv", "math::mix_in", "math::mix_in_out",
+				"math::mix_out", "math::mix_out_in", "math::mix_rgb", "math::normalize", "math::perpendicular", "math::pow",
+				"math::project", "math::radians", "math::radians_to_degrees", "math::reflect", "math::remap", "math::rotate",
+				"math::round", "math::saturate", "math::sign", "math::sin", "math::sinh", "math::sqrt", "math::tan", "math::tanh",
+				"math::trunc", "math::unmix", "math::unmix_in", "math::unmix_in_out", "math::unmix_out", "math::unmix_out_in",
+				"math::vec2", "math::vec3", "math::vec4", "math::wrap", "math::wrap_add", "math::wrap_mul", "math::wrap_sub", "merge",
+				"pair", "parent_dir", "random", "regex", "regex::match", "root_script_dir", "root_script_path", "same_object",
+				"skip_flush_t", "skip_newline_t", "string::append", "string::from_bytes", "string::from_code", "string::is_valid_utf8",
+				"string::join", "string::pad_left", "string::pad_right", "string::repeat", "string::replace", "string::to_lower",
+				"string::to_upper", "string::trim", "thread_count", "to_char", "to_string", "type_of", "utf8_string", "vformat",
+				"web::build_query", "web::form_decode", "web::form_encode", "web::html", "web::html_escape", "web::html_unescape",
+				"web::parse_query", "web::parse_query_all", "web::parse_url", "web::url", "web::url_decode", "web::url_encode",
+				"working_dir"
+			};
+			std::string table;
+			for (const std::string& name : names) {
+				const bool is_serial = detail::engine_access::host_function_serial(*e, name);
+				const bool listed = is_serial ? serial.count(name) != 0 : parallel.count(name) != 0;
+				if (!listed) { table += std::string(is_serial ? "serial   " : "parallel ") + name + "\n"; }
+			}
+			for (const auto* listed : {&serial, &parallel}) {
+				for (const std::string& name : *listed) {
+					if (!names.count(name)) { table += "gone     " + name + "\n"; }
+				}
+			}
+			check_eq(std::string(), table, "library builtins whose row is missing or wrong");
+			for (size_t workers : {size_t(1), size_t(8)}) {
+				auto run = make_engine();
+				jai::stdlib::register_all(*run);
+				run->parallel_thread_count(workers);
+				const std::string got = run->execute(R"(
+					string glyph(int x) { return string::repeat(to_string(to_char(65 + x % 26)), 2); }
+					array<int> xs;
+					for (int i = 0; i < 520; ++i) { xs.push(i); }
+					array<string> out = parallel_transform(xs, glyph);
+					out[0] + out[25] + out[519];
+				)").as<std::string>();
+				check_eq(std::string("AAZZZZ"), got, "to_char and string:: in a parallel body, workers " + std::to_string(workers));
+				// a worker's copy of format still formats its literal: in the body, a callee, an element's method, a reference argument
+				const std::string formatted = run->execute(R"(
+					string tag(int x) { return format("<{0}>", x); }
+					class Cell { int v = 0; string label = ""; void name() { label = format("c{0}", v); } }
+					array<int> idx = [0, 1, 2];
+					array<string> out = ["", "", ""];
+					array<Cell> cells = [Cell(), Cell(), Cell()];
+					array<int> vals = [7, 8, 9];
+					parallel_for (int i : idx) { out[i] = format("{0}-{1}", i, i * 2) + tag(i); }
+					parallel_for (auto& c, int i : cells, idx) { c.v = i; c.name(); }
+					parallel_for (auto& v, int i : vals, idx) { out[i] = out[i] + format("={0}", v); }
+					to_json(out) + cells[2].label;
+				)").as<std::string>();
+				check_eq(std::string(R"(["0-0<0>=7","1-2<1>=8","2-4<2>=9"]c2)"), formatted, "format in a parallel body, workers " + std::to_string(workers));
 			}
 		});
 

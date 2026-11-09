@@ -27,6 +27,7 @@ string TM_ADDR;              // join page
 string TM_JPORT;
 int TM_SESSION;              // the join in progress
 int TM_T0;
+int TM_F0;                    // the frame the title came up (the logo's entrance and the sky's clock run from it)
 bool TM_SAID;
 string TM_JOIN_ADDR;
 int TM_JOIN_PORT;
@@ -419,20 +420,26 @@ array<string> saved_gators() {
 	return out;
 }
 
+// the title circles the lake by Gatorland's Lilygate: river, bridge, beach and meadow
+int TITLE_LAKE_X = 40;
+int TITLE_LAKE_Y = 41;
+
 // runs until a choice: single, host (listening), join (welcomed on TM_SESSION) or quit.
 // CHOSEN_NAME / CHOSEN_HUE hold the gator.
 string title_screen(bool has_save, int auto_frames) {
 	CV = new ClientView();
 	CV.slot = -1;
-	int last = time::now() * 1000;
+	int last = loop_clock_ms();
 	int acc = 0;
 	float ang = 0.0;
-	int cx = W_ARRIVE_X[0];
-	int cy = W_ARRIVE_Y[0];
+	int cx = TITLE_LAKE_X;
+	int cy = TITLE_LAKE_Y;
 	music_play(-1);
 	int frames = 0;
+	TM_F0 = FRAME;
 	while (true) {
-		NOW_MS = time::now() * 1000;
+		int frame_start = time::now() * 1000;
+		NOW_MS = loop_clock_ms();
 		int dt = imin(250, NOW_MS - last);
 		last = NOW_MS;
 		acc = acc + dt;
@@ -457,8 +464,8 @@ string title_screen(bool has_save, int auto_frames) {
 		while (acc >= TICK_MS) {
 			// a slow circle over Swampton keeps the townsfolk and critters awake
 			ang = ang + 0.004;
-			TITLE_X = cx + math::itrunc(math::cos(ang) * 14.0);
-			TITLE_Y = cy + math::itrunc(math::sin(ang) * 9.0);
+			TITLE_X = cx + math::itrunc(math::cos(ang) * 7.0);
+			TITLE_Y = cy + math::itrunc(math::sin(ang) * 4.0);
 			CAMERA_W = 0;
 			CAMERA_X = TITLE_X;
 			CAMERA_Y = TITLE_Y;
@@ -467,13 +474,13 @@ string title_screen(bool has_save, int auto_frames) {
 			cv_apply(CV, snapshot_view(-1, 0, TITLE_X, TITLE_Y));
 			acc = acc - TICK_MS;
 		}
+		title_time_lapse(CV, FRAME - TM_F0);
 		process_events(CV);
 		particles_update();
 		string out = title_frame(has_save);
 		print(HOME + out, skip_newline);
 		FRAME = FRAME + 1;
-		int spent = time::now() * 1000 - NOW_MS;
-		if (spent < 33) { sleep((33 - spent) / 1000.0); }
+		loop_frame_end(frame_start);
 	}
 	return "";
 }
@@ -481,27 +488,23 @@ string title_screen(bool has_save, int auto_frames) {
 // the world behind, the logo, the gator preview and the prompt; the page in the pane
 string title_frame(bool has_save) {
 	render_world(CV);
-	int scale = VW >= 150 ? 3 : 2;
+	int t = FRAME - TM_F0;
+	int scale = VW >= 145 ? 4 : (VW >= 110 ? 3 : 2);
 	string logo = "GATOR QUEST";
-	int lw = text_px_width(logo, scale);
-	int ly = VH / 6;
-	draw_text_px(logo, (VW - lw) / 2 + 1, ly + 1, rgb(20, 40, 10), -1, scale);
-	draw_text_px(logo, (VW - lw) / 2, ly, FRAME % 40 < 20 ? rgb(130, 220, 80) : rgb(160, 240, 100), COL_BLACK, scale);
+	int lw = logo_width(logo, scale);
+	int ly = VH / 8 + 2;
+	draw_logo(logo, (VW - lw) / 2, ly, scale, t);
 	string sub = TM_PAGE == "host" ? "HOST A GAME" : (TM_PAGE == "join" || TM_PAGE == "connecting" || TM_PAGE == "failed" ? "JOIN A GAME" : "A SWAMP IN NEED OF A HERO");
-	draw_text_px(sub, (VW - text_px_width(sub, 1)) / 2, ly + 6 * scale + 3, rgb(250, 220, 120), COL_BLACK, 1);
-	int off = sprite_compiled(sprite_of("gator"), "hue" + to_string(TM_HUE), crgb("leather"), crgb("straw"), crgb("steel"));
-	int gx = VW / 2 - TS;
-	int gy = VH / 2 - TS / 2;
-	for (int py = 0; py < TS * 2; ++py) {
-		for (int px = 0; px < TS * 2; ++px) {
-			int c = SPRPIX[off + (py / 2) * TS + px / 2];
-			if (c >= 0) { pset(gx + px, gy + py - (FRAME / 8) % 2, c); }
-		}
-	}
+	if (TM_PAGE == "main") { sub = sub.substr(0, iclamp(t - 40, 0, sub.size())); }
+	draw_text_px(sub, (VW - text_px_width(sub, 1)) / 2, ly + 5 * scale + 6, rgb(250, 220, 120), COL_BLACK, 1);
+	int gs = VH >= 130 ? 4 : (VH >= 100 ? 3 : 2);
+	int gy = ly + 5 * scale + 16;
+	draw_title_gator(TM_HUE, VW / 2, gy, gs);
+	int below = gy + 8 * gs + 3;
 	string prompt = "NAME: " + string::to_upper(tm_shown_name()) + (FRAME % 20 < 10 && TM_PAGE == "main" ? "~" : " ");
-	draw_text_px(prompt, (VW - text_px_width(prompt, 1)) / 2, gy + TS * 2 + 4, rgb(255, 255, 255), COL_BLACK, 1);
+	draw_text_px(prompt, (VW - text_px_width(prompt, 1)) / 2, below, rgb(255, 255, 255), COL_BLACK, 1);
 	string huel = "< " + string::to_upper(HUE_NAMES[TM_HUE]) + " >";
-	draw_text_px(huel, (VW - text_px_width(huel, 1)) / 2, gy + TS * 2 + 11, rgb(200, 230, 180), COL_BLACK, 1);
+	draw_text_px(huel, (VW - text_px_width(huel, 1)) / 2, below + 7, rgb(200, 230, 180), COL_BLACK, 1);
 	string go = title_prompt(has_save);
 	int gc = TM_PAGE == "failed" ? rgb(250, 110, 90) : (FRAME % 30 < 20 ? rgb(255, 230, 120) : rgb(200, 170, 80));
 	draw_text_px(go, (VW - text_px_width(go, 1)) / 2, VH - 8, gc, COL_BLACK, 1);
@@ -525,8 +528,8 @@ int run_title_shots() {
 	layout(wh[0].to_int(150), wh.size() > 1 ? wh[1].to_int(44) : 44);
 	CV = new ClientView();
 	CV.slot = -1;
-	TITLE_X = W_ARRIVE_X[0] + 14;
-	TITLE_Y = W_ARRIVE_Y[0];
+	TITLE_X = TITLE_LAKE_X + 7;
+	TITLE_Y = TITLE_LAKE_Y;
 	CAMERA_W = 0;
 	CAMERA_X = TITLE_X;
 	CAMERA_Y = TITLE_Y;
@@ -535,6 +538,17 @@ int run_title_shots() {
 		cv_apply(CV, snapshot_view(-1, 0, TITLE_X, TITLE_Y));
 	}
 	title_setup("", false, 28777);
+	// a couple of seconds of the title's sky and its critters, so the pages show what a player sees
+	TM_F0 = FRAME;
+	for (int f = 0; f < 75; ++f) {
+		NOW_MS = NOW_MS + 33;
+		title_time_lapse(CV, FRAME - TM_F0);
+		process_events(CV);
+		particles_update();
+		render_world(CV);
+		FRAME = FRAME + 1;
+	}
+	int frame_hash = 0;
 	TM_NAME = "Chomps";
 	TM_HUE = 3;
 	RECENT_ADDR = ["192.168.1.20", "gatorbox.local"];
@@ -543,10 +557,12 @@ int run_title_shots() {
 	array<string> pages = ["main", "host", "join", "connecting", "failed"];
 	for (int i = 0; i < pages.size(); ++i) {
 		tm_open(pages[i]);
+		if (pages[i] == "host") { TM_ADDRS = ["192.168.1.20"]; TM_HOSTNAME = "gatorbox"; }
 		if (pages[i] == "join") { TM_ADDR = "192.168.1.20"; TM_SEL = 3; }
 		if (pages[i] == "connecting") { TM_JOIN_ADDR = "192.168.1.20"; TM_JOIN_PORT = 28777; TM_JOIN_NAME = "Chomps"; TM_SAID = true; TM_T0 = NOW_MS - 2000; }
 		if (pages[i] == "failed") { TM_FAIL_TITLE = "NAME TAKEN"; TM_FAIL = "The host said: a gator named Chomps is already here. Type another name on the Connect row and try again."; }
 		string frame = title_frame(false);
+		frame_hash = mix32(frame_hash, text_checksum(frame));
 		string name = dir + "/title_" + pages[i];
 		write_file(name + ".ans", frame);
 		string sketch = "";
@@ -565,6 +581,6 @@ int run_title_shots() {
 		write_file(name + ".txt", sketch + title_keys_hint() + "\n");
 		png_write_canvas(name + ".png", 3);
 	}
-	print(`wrote ${pages.size()} title page captures to ${dir}`);
+	print(`wrote ${pages.size()} title page captures to ${dir} (FRAME_HASH ${frame_hash})`);
 	return 0;
 }

@@ -1,7 +1,5 @@
-// The showcase look's first-person weapon: the gun in hand at the bottom of
-// the view, swaying with the walk, kicking on every shot, lit by the floor's
-// torchlight and by its own muzzle flash. Art uses the sprite format of
-// defs.jai; uppercase palette keys glow.
+// The showcase look's first-person weapon art, in the sprite format of
+// defs.jai; uppercase palette keys glow. Renderer.draw_viewmodel() draws it.
 
 var VIEWMODEL_SRC = {
 	"vm_pistol": {"pal": {"k": [22, 20, 26], "m": [84, 88, 98], "l": [150, 156, 168], "s": [214, 160, 120],
@@ -169,63 +167,10 @@ var VIEWMODEL_SRC = {
 		"kcccccccckkkkcccccccck"]}
 };
 
-var VIEWMODELS = {};
+map<string, shared_ptr<Art>> VIEWMODELS = {};
 array<string> VIEWMODEL_NAMES = ["vm_pistol", "vm_scatter", "vm_hex"];
 
 function parse_viewmodels() -> void {
 	VIEWMODELS = {};
 	for (auto kv : VIEWMODEL_SRC) { VIEWMODELS[kv.first] = parse_art(kv.second); }
-}
-
-// palette code -> index for a weapon art under this floor's light, brighter in its own flash
-function viewmodel_lut(string name, bool flashing) -> array<int> {
-	string key = `${name}:${flashing}`;
-	if (G.lutc.has(key)) { return G.lutc[key]; }
-	auto& mood = MOODS[G.map_i];
-	var& art = VIEWMODELS[name];
-	var& rgbs = art["rgb"];
-	array<string> keys = art["keys"];
-	math::color light = math::mix_rgb(mood.light, rgb(255, 255, 255), 0.4) * (flashing ? 1.25 : 0.85);
-	array<int> lut = [0];
-	for (int c = 1; c < rgbs.size(); ++c) {
-		math::color color = rgb(rgbs[c][0], rgbs[c][1], rgbs[c][2]);
-		string k = keys[c];
-		if (k >= "A" && k <= "Z") { lut.push(color_idx(color)); }
-		else { lut.push(color_idx(math::clamp(color * light, 0.0, 1.0))); }
-	}
-	G.lutc[key] = lut;
-	return lut;
-}
-
-function draw_viewmodel(var& pix) -> void {
-	if (G.automap) { return; }
-	bool firing = G.cooldown > WEAPONS[G.weapon]["cd"] - 4 || G.gun_kick > 0;
-	string name = VIEWMODEL_NAMES[G.weapon];
-	if (firing && G.muzzle > 0) { name = name + "_fire"; }
-	var& art = VIEWMODELS[name];
-	int aw = art["w"];
-	int ah = art["h"];
-	var& apix = art["pix"];
-	array<int> lut = viewmodel_lut(name, G.muzzle > 0);
-	int vw = G.vw;
-	int vh = G.vh;
-	// art pixels are square: a view pixel is PIXW x PIXH of a 1:2 cell
-	float scale = vh * 0.4 / 24.0;
-	int ph = math::itrunc(ah * scale);
-	int pw = ph * aw * 2 * PIXW / (ah * PIXH);
-	int sway = math::itrunc(math::sin(G.bob * 0.5) * vw * 0.025);
-	int lift = math::itrunc(math::abs(math::cos(G.bob * 0.5)) * scale * 1.5) + G.gun_kick * math::itrunc(scale * 0.9);
-	int x0 = vw / 2 - pw / 2 + sway;
-	int y0 = vh - ph + lift;
-	int cx0 = imax(0, x0);
-	int cx1 = imin(vw, x0 + pw);
-	int cy1 = imin(vh, y0 + ph);
-	for (int y = imax(0, y0); y < cy1; ++y) {
-		int row = ((y - y0) * ah / ph) * aw;
-		int base = y * vw;
-		for (int x = cx0; x < cx1; ++x) {
-			int code = apix[row + (x - x0) * aw / pw];
-			if (code > 0) { pix[base + x] = lut[code]; }
-		}
-	}
 }

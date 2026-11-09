@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <stdexcept>
 
 #include <jaiscript/testing/unattended.hpp>
@@ -23,10 +24,8 @@ namespace {
 // Load order matters only in that base classes execute before derived ones.
 // main.jai is last and is NEVER hot-reloaded (it owns the persistent globals).
 const char* kSceneFiles[] = {
-	"util.jai", "reel.jai", "plasma.jai", "starfield.jai", "tunnel.jai",
-	"donut.jai", "julia.jai", "lava.jai", "pipes.jai", "fire.jai",
-	"sand.jai", "boids.jai", "kinstein.jai", "voxelspace.jai", "marcher.jai",
-	"cloth.jai", "chrome.jai", "skull.jai", "finale.jai", "main.jai",
+	"util.jai", "music.jai", "reel.jai", "donut.jai", "julia.jai", "lava.jai", "pipes.jai", "fire.jai", "boids.jai",
+	"globhunter.jai", "voxelspace.jai", "chrome.jai", "skull.jai", "fluid.jai", "show.jai", "finale.jai", "intro.jai", "main.jai",
 };
 
 struct jai_flags {
@@ -36,7 +35,37 @@ struct jai_flags {
 	bool debug_wait = false;             // also hold boot until a debugger attaches
 	int64_t debug_port = 52472;
 	std::string coverage;                // the vm's execution-coverage census, written at exit (a build with JAISCRIPT_VM_COVERAGE)
+	std::string pix;                     // the cell shape: half, sext or auto (the script's default)
 };
+
+// The first diagnostic of a failed load as the reel shows it: "file.jai:line:col: error: ...", then the source line and
+// its caret when the listing has them, tabs as spaces so the caret keeps its column.
+std::string first_diagnostic(const std::string& what, const std::string& file) {
+	std::vector<std::string> lines;
+	size_t start = 0;
+	while (start <= what.size()) {
+		size_t nl = what.find('\n', start);
+		std::string line = what.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+		if (!line.empty() && line.back() == '\r') { line.pop_back(); }
+		for (char& c : line) { if (c == '\t') { c = ' '; } }
+		lines.push_back(line);
+		if (nl == std::string::npos) { break; }
+		start = nl + 1;
+	}
+	size_t at = 0;
+	while (at < lines.size() && lines[at].find(": error") == std::string::npos) { ++at; }
+	if (at == lines.size()) {
+		at = 0;
+		while (at < lines.size() && lines[at].find_first_not_of(' ') == std::string::npos) { ++at; }
+		return at < lines.size() ? file + ": " + lines[at] : file + ": reload failed";
+	}
+	std::string result = lines[at];
+	if (size_t named = result.find(file + ":"); named != std::string::npos) { result = result.substr(named); }
+	for (size_t k = at + 1; k <= at + 2 && k < lines.size() && lines[k].rfind("    ", 0) == 0; ++k) {
+		result += "\n" + lines[k].substr(4);
+	}
+	return result;
+}
 
 jai::script_value call_script(jai::engine& eng, const char* fn_name,
                               const std::vector<jai::script_value>& args) {
@@ -81,6 +110,8 @@ public:
 			"",
 #endif
 			"demoreel_scenes", "main.jai");
+		// the FINALE imports scenes/live/ while it runs
+		eng_->add_global("SCENES_DIR", eng_->make_value(fs::canonical(fs::path(dir_)).generic_string()));
 #ifdef JAISCRIPT_ENABLE_DEBUGGER
 		if (flags_.debug) {
 			// execute_file per scene so each node carries its real .jai path and VS Code
@@ -94,7 +125,10 @@ public:
 				std::string line;
 				std::getline(std::cin, line);
 			}
-			for (const char* f : kSceneFiles) { eng_->execute_file(fs::canonical(fs::path(dir_) / f).string()); }
+			for (const char* f : kSceneFiles) {
+				eng_->execute_file(fs::canonical(fs::path(dir_) / f).string());
+				loaded_[f] = demoreel::slurp_file(dir_ + "/" + f);
+			}
 			kind_ = "file";
 			return;
 		}
@@ -105,6 +139,7 @@ public:
 			if (body.empty()) { throw std::runtime_error("missing scene script: " + dir_ + "/" + f); }
 			source += body;
 			source += "\n";
+			loaded_[f] = std::move(body);
 		}
 		// parse once: the concatenated source goes through engine->jaibite() (or a
 		// saved .jaibite in --precompiled mode), then executes to define everything
@@ -124,6 +159,7 @@ public:
 	std::string load_kind() override { return kind_; }
 
 	void boot(int64_t w, int64_t h, int64_t seed, const std::string& backend, bool smoke, bool hud) override {
+		if (!flags_.pix.empty()) { eng_->execute("demo_pixels(\"" + flags_.pix + "\");"); }
 		eng_->execute("demo_boot(" + std::to_string(w) + ", " + std::to_string(h) + ", " +
 			std::to_string(seed) + ", \"" + backend + "\", " + (smoke ? "true" : "false") + ", " +
 			(hud ? "true" : "false") + ");");
@@ -152,23 +188,34 @@ public:
 		call_script(*eng_, "demo_jump", { jai::script_value(idx, e), jai::script_value(at_t, e) });
 	}
 
-	// live coding: re-execute every scene file (not main.jai), then rebuild the
-	// current scene so build()-time changes show immediately
+	// live coding: re-execute every scene file (not main.jai), then rebuild the current scene so build()-time changes
+	// show immediately. A file that fails to parse or check changes nothing, so its previous code keeps running; the reel
+	// shows which files changed, or the first failure.
 	bool reload() override {
 		namespace fs = std::filesystem;
+		std::string changed;
+		std::string failed;
 		for (const char* f : kSceneFiles) {
 			if (std::string(f) == "main.jai") { continue; }
-			if (kind_ == "file") {
-				eng_->execute_file(fs::canonical(fs::path(dir_) / f).string());
-				continue;
-			}
 			std::string body = demoreel::slurp_file(dir_ + "/" + f);
 			if (body.empty()) { continue; }
-			eng_->execute(body);
+			try {
+				eng_->execute_file_source(fs::canonical(fs::path(dir_) / f).string(), body);
+			} catch (const std::exception& ex) {
+				if (failed.empty()) { failed = first_diagnostic(ex.what(), f); }
+				loaded_[f].clear();   // its fix reports as a reload
+				continue;
+			}
+			if (body != loaded_[f]) {
+				changed += (changed.empty() ? "" : " ") + std::string(f);
+				loaded_[f] = std::move(body);
+			}
 		}
-		call_script(*eng_, "demo_reload", {});
+		call_script(*eng_, "demo_reload", { eng_->make_value(changed), eng_->make_value(failed) });
 		return true;
 	}
+
+	std::string reload_notice() override { return ""; }
 
 	std::string stack_trace() override { return eng_->format_stack_trace(); }
 
@@ -182,6 +229,7 @@ private:
 	std::shared_ptr<jai::engine> eng_;
 	std::string dir_;
 	std::string kind_ = "prse";
+	std::map<std::string, std::string> loaded_;   // each scene file's source as last loaded
 };
 
 class jai_adapter : public demoreel::script_adapter {
@@ -200,6 +248,7 @@ public:
 		if (a == "--precompiled") { flags_.precompiled = true; return 1; }
 		if (a == "--jaibite" && has_value()) { flags_.jaibite_path = argv[i + 1]; return 2; }
 		if (a == "--coverage" && has_value()) { flags_.coverage = argv[i + 1]; return 2; }
+		if (a == "--pix" && has_value()) { flags_.pix = argv[i + 1]; return 2; }
 #ifdef JAISCRIPT_ENABLE_DEBUGGER
 		if (a == "--debug") { flags_.debug = true; return 1; }
 		if (a == "--debug-wait") { flags_.debug = true; flags_.debug_wait = true; return 1; }
@@ -213,6 +262,7 @@ public:
 			"  --precompiled    boot from demoreel.jaibite (saved on first run)\n"
 			"  --jaibite PATH   .jaibite path for --precompiled\n"
 			"  --coverage PATH  write the vm's execution-coverage census to PATH at exit (a build with JAISCRIPT_VM_COVERAGE)\n"
+			"  --pix MODE       cells: sext (2x3 sextants), half (1x2 half blocks) or auto (sextants within the pixel budget)\n"
 #ifdef JAISCRIPT_ENABLE_DEBUGGER
 			"  --debug          listen for a VS Code attach the whole run\n"
 			"  --debug-wait     like --debug, but also hold boot until you attach + press Enter\n"

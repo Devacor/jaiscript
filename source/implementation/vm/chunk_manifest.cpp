@@ -178,6 +178,13 @@ namespace {
 				for (const auto& o : ch.concat_protos[i].pieces) { out << operand(ch, o) << " "; }
 				out << "]\n";
 			}
+			out << pre << "text_append_protos " << ch.text_append_protos.size() << "\n";
+			for (size_t i = 0; i < ch.text_append_protos.size(); ++i) {
+				const text_append_proto& p = ch.text_append_protos[i];
+				out << pre << " " << i << (p.assign ? " assign" : " compound") << " sym=" << symidx(ch, p.symbol) << " slot=" << u(p.slot) << " flags=" << p.store_flags << " reads=" << u(p.reads_ip) << " pieces=[";
+				for (const auto& o : p.pieces) { out << operand(ch, o) << " "; }
+				out << "]\n";
+			}
 			out << pre << "fused_binary_dst_protos " << ch.fused_binary_dst_protos.size() << "\n";
 			for (size_t i = 0; i < ch.fused_binary_dst_protos.size(); ++i) {
 				const fused_binary_dst_proto& p = ch.fused_binary_dst_protos[i];
@@ -277,6 +284,7 @@ namespace {
 				out << "\n" << pre << "  entry_cells";
 				for (uint32_t c : l.entry_cells) { out << " " << c; }
 				if (!l.param_cells.empty()) { out << "\n" << pre << "  param_cells"; for (uint32_t c : l.param_cells) { out << " " << c; } out << " kinds=" << std::hex << l.param_kinds << std::dec; }
+				if (!l.text_appends.empty()) { out << "\n" << pre << "  text_appends"; for (const auto& ta : l.text_appends) { out << " (c" << ta.target << " p" << ta.proto; for (const uint32_t pc : ta.pieces) { out << ":" << pc; } out << ")"; } }
 				if (!l.boundaries.empty()) { out << "\n" << pre << "  boundaries"; for (const auto& bd : l.boundaries) { out << " (" << bd.start << " " << bd.end << " " << bd.resume << " " << static_cast<int64_t>(bd.define == 0xFFFFFFFFu ? -1 : bd.define) << ")"; } }
 				out << "\n" << pre << "  site_env_cache";
 				for (uint32_t c : l.site_env_cache) { out << " " << u(c); }

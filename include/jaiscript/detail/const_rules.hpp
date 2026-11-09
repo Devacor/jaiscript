@@ -602,7 +602,7 @@ namespace jai::detail {
 				if (!cur.is_object() || cur.is_null()) { return std::nullopt; }
 				auto instance = cur.get_class_instance();
 				if (!instance) { return std::nullopt; }
-				const uint64_t id = m->member_id != UINT64_MAX ? m->member_id : (symbolizer->frozen() ? UINT64_MAX : symbolizer->intern(m->member));
+				const uint64_t id = m->member_id != UINT64_MAX ? m->member_id : symbolizer->find(m->member).value_or(UINT64_MAX);
 				if (id == UINT64_MAX) { return std::nullopt; }
 				const script_value* field = instance->find_field_value(id);
 				if (!field) { return std::nullopt; }
@@ -637,16 +637,18 @@ namespace jai::detail {
 		v.field_type = [eng, symbolizer](std::string_view cls, std::string_view field, bool& is_field) -> const type_info* {
 			is_field = false;
 			auto def = engine_access::get_class_definition(eng, std::string(cls));
-			if (!def || symbolizer->frozen()) { return nullptr; }
-			const uint64_t id = symbolizer->intern(field);
-			if (!def->find_field_declaring_class(id)) { return nullptr; }
+			// a lookup, never an intern: a parallel worker runs this with the interner frozen, and a name no program interned is no field
+			const std::optional<uint64_t> id = def ? symbolizer->find(field) : std::nullopt;
+			if (!id || !def->find_field_declaring_class(*id)) { return nullptr; }
 			is_field = true;
-			return def->get_field_declared_type(id).get();
+			return def->get_field_declared_type(*id).get();
 		};
 		v.methods = [eng, symbolizer](std::string_view cls, std::string_view name, std::vector<const function_decl*>& out) -> bool {
 			auto def = engine_access::get_class_definition(eng, std::string(cls));
-			if (!def || symbolizer->frozen()) { return false; }
-			const uint64_t id = symbolizer->intern(name);
+			const std::optional<uint64_t> found = def ? symbolizer->find(name) : std::nullopt;
+			if (!def) { return false; }
+			if (!found) { return true; }   // no class declares a name no program interned
+			const uint64_t id = *found;
 			// the nearest class of the chain that declares the name (an override hides its base's overloads)
 			std::vector<const class_definition*> stack{def.get()};
 			while (!stack.empty()) {

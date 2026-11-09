@@ -338,9 +338,14 @@ namespace jai::vm {
         op_ctor_scope,      // a=the constructor's parameter count: a prologue that evaluates charges what the interpreter's scope for it does
         op_member_temp_this, // a=nodes index (member_expr), b=temp slot, c=the base's this-field slot + 1: op_member_temp over a member-class body's bare field
         op_mfold,           // a=chunk::member_folds index: the member temps here folded into the consumer after them (their fields read in place); a miss runs the first member temp
+        // `s += x0 + ... + xn;` and `s = s + x1 + ... + xn;` onto a private string local (vm_compiler::try_emit_text_append): each piece
+        // appends to the target's own node at its step, under the chain's charges; a raise restores the target's length first, and a piece
+        // that joins no plain text (a non-string target, a registered operator) hands the chain to the general `+` and store
+        op_text_append,     // a = text_append_protos index
+        op_c_text_append,   // a = the loop's text_appends index: the pieces' string cells appended to the target slot's own node, else a miss
     };
     inline constexpr size_t k_opcode_space = 512;   // tables indexed by opcode (the coverage report's) are this long
-    static_assert(static_cast<size_t>(opcode::op_mfold) < k_opcode_space, "the opcode space is full: widen k_opcode_space");
+    static_assert(static_cast<size_t>(opcode::op_c_text_append) < k_opcode_space, "the opcode space is full: widen k_opcode_space");
     static_assert(static_cast<uint32_t>(opcode::op_d_jne) < 256 && static_cast<uint32_t>(opcode::op_t_load) < 256, "a cell instruction packs a typed opcode above k_cell_op_shift in 8 bits");
     // op_capture_arg forms: where the callee stands while its arguments evaluate
     inline constexpr uint32_t capture_form_probe = 0;    // the pending callee register (op_probe_callee)
@@ -686,6 +691,8 @@ namespace jai::vm {
             case opcode::op_concat_pending: return "CONCAT_PENDING";
             case opcode::op_concat_store: return "CONCAT_STORE";
             case opcode::op_concat_operands: return "CONCAT_OPERANDS";
+            case opcode::op_text_append: return "TEXT_APPEND";
+            case opcode::op_c_text_append: return "C_TEXT_APPEND";
             case opcode::op_sleep: return "SLEEP";
             case opcode::op_format_call: return "FORMAT_CALL";
             case opcode::op_c_load_f: return "C_LOAD_F";

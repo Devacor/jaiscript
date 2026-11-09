@@ -32,7 +32,7 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li class="current"><a href="../guide/05-control-flow.html" aria-current="page">Control Flow</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li class="current"><a href="../guide/05-control-flow.html" aria-current="page">Control Flow</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>05</nav>
 <article class="chapter"><h1 id="control-flow">Control Flow<a class="hlink" href="#control-flow" aria-label="link">&#8203;</a></h1>
 <p>Everything you expect from C++ control flow, minus its sharpest edge: <code>switch</code> never falls through by accident, and a runaway loop cannot outlive its execution budget. <code>if/else</code>, <code>while</code>, C-style <code>for</code>, range-based <code>for</code>, <code>break</code>/<code>continue</code>, and <code>try/catch/throw</code>. All of it unwinds correctly out of loops and nested frames on both backends.</p>
@@ -116,6 +116,28 @@ magic: 20 (fell through into enchanted)
 enchanted: 5
 fists: 1</code></pre></div>
 <p>Note <code>enchanted</code> alone gives <code>0 += 5</code> = 5, and no match lands in <code>default</code>. Switches nest, <code>return</code> works from inside a case, and <code>break</code>/<code>continue</code> in a loop-enclosed switch affect the loop, never leak into the switch.</p>
+<p>A case body holds statements, as in C++. A variable declared in a case needs the body in braces, which also keeps the variable to that case:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string order = "heal";
+switch (order) {
+    case "heal": {
+        int amount = 5;
+        print("healed {}", amount);
+    }
+    default: print("nothing");
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">healed 5</code></pre></div>
+<p>Without the braces the declaration is a parse error:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string order = "heal";
+switch (order) {
+    case "heal":
+        int amount = 5;
+        print("healed {}", amount);
+    default: print("nothing");
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: parse failed:
+&lt;script&gt;:4:9: error: a declaration in a case body needs the body in braces: case value: { ... }
+            int amount = 5;
+            ^</code></pre></div>
 <h2 id="try-catch-throw">try / catch / throw<a class="hlink" href="#try-catch-throw" aria-label="link">&#8203;</a></h2>
 <p>Any value can be thrown. <code>catch (e)</code> binds the error, and <code>catch</code> without a variable is allowed. A bare <code>throw;</code> inside a catch re-throws, and one with no active exception raises the catchable <code>Bare throw with no active exception thrown.</code> <code>throw</code> is an expression, so it composes (<code>x &gt; 0 ? x : throw "negative"</code>). Uncaught script throws surface to the C++ host as exceptions (with a captured script stack trace).</p>
 <div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">try {

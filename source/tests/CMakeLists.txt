@@ -94,6 +94,9 @@ else()
         else()
             target_link_options(jaiscript_tests PRIVATE "LINKER:/STACK:134217728")
         endif()
+    elseif(APPLE)
+        # macOS gives the main thread 8 MB, fewer Debug interpreter frames than the deep-recursion tests reach
+        target_link_options(jaiscript_tests PRIVATE "LINKER:-stack_size,0x8000000")
     endif()
 endif()
 

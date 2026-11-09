@@ -41,7 +41,7 @@ function main() -> int {
 	print(`interned colors: ${PAL_FG.size()}   textures composited: ${texready}   flats: ${FLATS.size()}`);
 	bmp_write("p3_view.bmp");
 	print("wrote p3_view.bmp");
-	if (show) { print(blit_half(), skip_newline); }
+	if (show) { print(vid_blit(), skip_newline); }
 
 	int mid = PIX[(VH / 2) * VW + VW / 2];
 	print(`center pixel palette idx ${mid} rgb ${PAL_R[mid]},${PAL_G[mid]},${PAL_B[mid]}`);

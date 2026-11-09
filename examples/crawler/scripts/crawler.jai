@@ -3,27 +3,29 @@
 // save goes beside scripts/ whatever the working directory.
 //
 //   jaiscript crawler.jai                                   play, seed 1337
-//   jaiscript crawler.jai -- seed 7 god dev load
+//   jaiscript crawler.jai -- seed 7 god load
 //   jaiscript crawler.jai -- colors 256 ascii               the 256-colour cube, ASCII glyphs
 //   jaiscript crawler.jai -- smoke turns 1500 seed 6        headless autopilot, prints STATE_HASH
 //   jaiscript crawler.jai -- input "n11;wwwww" quiet        scripted keys (';' enter, '^' esc)
 //   jaiscript --backend=interp crawler.jai -- smoke backend interp
 //
-// Flags mirror main.cpp, leading dashes optional: seed N, smoke, turns N, input KEYS, quiet, dev,
-// god, load, save PATH, backend LABEL, colors 24|256, ascii. Shim only: view N (forward view
+// Flags mirror main.cpp, leading dashes optional: seed N, smoke, turns N, reload-every N, anim,
+// input KEYS, quiet, god, load, save PATH, backend LABEL, colors 24|256, ascii. Shim only: view N (forward view
 // rows), layout single|multi, screen CxR, dump PATH (every smoke frame and a FRAME_HASH),
-// shots N, bench N.
+// shots N, bench N; with dump, anim keeps every in-between frame of the steps, turns and effects.
 //
 // The runner's keyboard: shift+letter gives the uppercase commands, TAB descends and SPACE
 // waits (stand-ins for '>' and '.'), Ctrl+C leaves. Its POSIX keyboard has no shift, so esc
-// opens the pause page, whose lowercase keys save, quit and reload.
+// opens the pause page, whose lowercase keys save, quit and reload. Saving a script file
+// reloads it, as R does.
 
 import "host_capture.jai";
 
 var HOST_SEED = 1337;
 var HOST_SMOKE = false;
 var HOST_TURNS = 250;
-var HOST_DEV = false;
+var HOST_RELOAD_EVERY = 0;
+var HOST_ANIM = false;      // anim: a headless run builds the animations' in-between frames (a dump keeps them)
 var HOST_GOD = false;
 var HOST_LOAD = false;
 var HOST_SCRIPTED = false;
@@ -36,6 +38,7 @@ var SHIM_QUIET = false;
 var SHIM_INPUT = "";
 var SHIM_COLORS = "";
 var SHIM_DUMP = "";         // dump PATH: every smoke turn's frame to PATH.ans, and the FRAME_HASH
+
 var SHIM_BENCH = 0;         // bench N: re-render the final smoke view N times, print ms/frame
 var SHIM_SHOT_EVERY = 0;    // shots N (with dump): PATH_tT.bmp and .txt every N turns
 var SHIM_VIEW_ROWS = 0;
@@ -57,6 +60,7 @@ function shim_flag_name(string a) -> string {
 		int taken = 2;
 		if (flag == "seed") { HOST_SEED = value.to_int(HOST_SEED); }
 		else if (flag == "turns" || flag == "frames") { HOST_TURNS = value.to_int(HOST_TURNS); }
+		else if (flag == "reload-every") { HOST_RELOAD_EVERY = value.to_int(0); }
 		else if (flag == "input") { SHIM_INPUT = value; }
 		else if (flag == "save") { SAVE_PATH = value; }
 		else if (flag == "backend") { HOST_BACKEND = value; }
@@ -77,10 +81,11 @@ function shim_flag_name(string a) -> string {
 			taken = 1;
 			if (flag == "smoke") { HOST_SMOKE = true; }
 			else if (flag == "quiet") { SHIM_QUIET = true; }
-			else if (flag == "dev") { HOST_DEV = true; }
+			else if (flag == "dev") { }   // hot reload is always on; accepted for muscle memory
 			else if (flag == "god") { HOST_GOD = true; }
 			else if (flag == "load") { HOST_LOAD = true; }
 			else if (flag == "ascii") { HOST_ASCII = true; }
+			else if (flag == "anim") { HOST_ANIM = true; }
 			else { print(`crawler shim: unknown arg '${ARGS[i]}'`); }
 		}
 		i += taken;
@@ -101,13 +106,20 @@ array<string> SHIM_ENDING = [];   // with dump: the death or victory pages a smo
 
 function draw(string frame) -> void {
 	if (SHIM_QUIET) {
-		if (SHIM_DUMP != "") { SHIM_ENDING.push(frame); }
+		if (SHIM_DUMP == "") { return; }
+		if (HOST_ANIM && G != null && !G.over) { SHIM_FRAMES.push(frame); } else { SHIM_ENDING.push(frame); }
 		return;
 	}
 	print("\x1b[H" + frame + "\x1b[0m", skip_newline);
 }
 
 function frame_mark() -> void { }   // the native host's --time probe
+
+// a script file's fingerprint for the hot-reload watcher, "" when it is missing
+function file_stamp(string name) -> string {
+	string path = root_script_dir() + "/" + name;
+	return file_exists(path) ? crypto::sha256_file(path) : "";
+}
 
 function host_log(string line) -> void {
 	if (SHIM_QUIET) { print(line); } else { SHIM_HELD_LOG.push(line); }
@@ -240,12 +252,14 @@ import "main.jai";
 
 array<string> SHIM_FRAMES = [];
 float SHIM_FRAME_MS = 0.0;
+int SHIM_PROBES = 0;        // the frames the probe built and timed (an anim dump holds more)
 
 function shim_view_probe() -> void {
 	time::stopwatch build;
 	build.start();
 	string frame = frame_join(frame_lines(game_view_lines()));
 	SHIM_FRAME_MS += build.elapsed() * 1000;
+	SHIM_PROBES += 1;
 	SHIM_FRAMES.push(frame);
 	if (SHIM_SHOT_EVERY > 0 && G.turn % SHIM_SHOT_EVERY == 0) { shim_dump_view(`${SHIM_DUMP}_t${G.turn}`); }
 }
@@ -317,7 +331,7 @@ function shim_probe_report() -> void {
 		string path = SHIM_DUMP + ".ans";
 		write_file(path, SHIM_FRAMES.join(""));
 		print(`FRAME_HASH: ${crypto::sha256_file(path)} (${SHIM_FRAMES.size()} frames -> ${path})`);
-		print(`frame build: ${SHIM_FRAME_MS:.0f} ms total, ${SHIM_FRAME_MS / imax(1, SHIM_FRAMES.size()):.3f} ms/frame`);
+		print(`frame build: ${SHIM_FRAME_MS:.0f} ms total, ${SHIM_FRAME_MS / imax(1, SHIM_PROBES):.3f} ms/frame, rows ${VIEW_WORKERS != 0 ? "parallel" : "serial"}`);
 		if (SHIM_ENDING.size() > 0) { write_file(SHIM_DUMP + "_end.ans", SHIM_ENDING.join("")); }
 	}
 	if (SHIM_BENCH > 0) {

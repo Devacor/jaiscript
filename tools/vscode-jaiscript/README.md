@@ -31,7 +31,7 @@ code tools/vscode-jaiscript        # F5 opens an Extension Development Host
 or link it into your extensions folder
 (`mklink /J "%USERPROFILE%\.vscode\extensions\snapjaw.jaiscript" tools\vscode-jaiscript` on
 Windows), or package it: `npm install`, `npx @vscode/vsce package`, then
-`code --install-extension jaiscript-0.5.1.vsix`.
+`code --install-extension jaiscript-0.5.2.vsix`.
 
 Build the server like any other target, `cmake --build build --target jaiscript_lsp`; the binary
 lands in `build/bin/` (see `docs/BUILD.md`). The extension looks for it in this order: the

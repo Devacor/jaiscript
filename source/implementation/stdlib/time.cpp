@@ -71,7 +71,6 @@ namespace stdlib {
     // time:: namespace (docs/site/guide/14-time.html): clocks through the engine's time source
     // (engine_time::source), stopwatches and calendar dates
     void register_time_functions(engine& eng_ref) {
-        detail::engine_access::library_registration library(eng_ref);
         engine* eng = &eng_ref;
         using R = checked_result<script_value>;
         using args_t = std::vector<const script_value*>;
@@ -176,6 +175,7 @@ namespace stdlib {
             });
         }
 
+        detail::engine_access::serial_namespace(eng_ref, "time");
         auto& ns = detail::engine_access::script_namespaces(eng_ref)[detail::engine_access::symbolize(eng_ref, "time")];
         if (!ns) { ns = std::make_shared<script_namespace_data>(); }
         using svt = script_value_type;

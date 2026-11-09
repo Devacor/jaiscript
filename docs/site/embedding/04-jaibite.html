@@ -36,12 +36,15 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>04</nav>
 <article class="chapter"><h1 id="jaibite-parse-once-ship-precompiled"><code>jaibite</code>: Parse Once, Ship Precompiled<a class="hlink" href="#jaibite-parse-once-ship-precompiled" aria-label="link">&#8203;</a></h1>
 <p>A <code>jai::jaibite</code> (<code>include/jaiscript/core/jaibite.hpp</code>) is an engine-bound, pre-parsed
-script handle: <code>engine-&gt;jaibite(source)</code> lexes and parses <strong>once</strong>; every
+script handle. <code>engine-&gt;jaibite(source)</code> lexes and parses <strong>once</strong>; every
 <code>bite.execute()</code> after that skips straight to execution. On the VM backend the bite also
-caches its compiled bytecode chunk, so re-execution is pure dispatch. It buys you two things:
-scripts you run repeatedly stop paying the parse, and shipped games boot from precompiled bites
+caches its compiled bytecode chunk, so re-execution is pure dispatch. It buys you two things:</p>
+<ul>
+<li>scripts you run repeatedly stop paying the parse;</li>
+<li>shipped games boot from precompiled bites
 instead of source, usually without you managing a single file, because the engine maintains the
-disk cache for you (below).</p>
+disk cache for you (below).</li>
+</ul>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">// compiled and run against the library
 eng-&gt;add_function(&quot;host_bonus&quot;, [](jai::script_int base) -&gt; jai::script_int { return base + 100; });
 eng-&gt;execute(&quot;var acc = 0;&quot;);
@@ -55,13 +58,13 @@ eng-&gt;execute(bite);      // 300 — equivalent engine-side form</code></pre><
 private execution pipeline, so the pre-parsed path can never drift semantically. Everything that
 works across repeated <code>execute()</code> calls (state persistence, class redefinition, try/catch,
 coroutine handles) works identically across repeated <code>bite.execute()</code> runs. Both backends
-behave identically here; the test suite holds them to it.</p>
+behave identically here, and the test suite holds them to it.</p>
 <p>The rules:</p>
 <ul><li><strong>The one rule: never share a live <code>jaibite</code> across engines.</strong> A bite carries
 interned symbol IDs that are specific to the engine that parsed it. To move a script between engines
 (or processes, or machines) go through <code>save()</code>/<code>jaibite_load()</code>. The save/load
-path relocates every symbol into the loading engine. Everything else about bites is convenience;
-this rule is the contract.</li>
+path relocates every symbol into the loading engine. Everything else about bites is convenience.
+This rule is the contract.</li>
 <li><strong>A bite in hand has already passed the front end.</strong> Parse errors throw at
 <code>jaibite()</code> creation, and so do static-check errors. Checking is strict, so
 <code>jaibite()</code> throws <code>jai::static_check_error</code> at creation exactly like
@@ -71,39 +74,48 @@ at <code>execute()</code>.</li>
 <code>script_exception</code> rather than crashing.</li>
 <li><code>bite.valid()</code>: false for a default-constructed/empty bite.</li></ul>
 <h2 id="when-a-jaibite-pays">When a jaibite pays<a class="hlink" href="#when-a-jaibite-pays" aria-label="link">&#8203;</a></h2>
+<p>Anything you run
+per-frame or per-entity belongs in a bite. The measured regime table is in
+<a href="11-performance.html#embedding-costs">Performance</a>.</p>
 <p>Creation costs the parse: once, and backend-identical. After that, a warm
 <code>bite.execute()</code> is the cheapest way the engine offers to run script, and the VM&#x27;s
-one-time compile (a fraction of the parse) amortizes within the first few executions. Anything you run
-per-frame or per-entity belongs in a bite; the measured regime table is in
-<a href="11-performance.html#embedding-costs">Performance</a>. (The engine&#x27;s 64-entry LRU
-source cache gives repeated <code>execute(same_string)</code> most of the same win without the handle;
-the bite adds determinism, with no cache eviction, and save/load.)</p>
+one-time compile (a fraction of the parse) amortizes within the first few executions.</p>
+<p>The engine&#x27;s 64-entry LRU
+source cache gives repeated <code>execute(same_string)</code> most of the same win without the handle.
+The bite adds determinism, with no cache eviction, and save/load.</p>
 <h2 id="the-automatic-disk-cache">Instant boot: the automatic disk cache<a class="hlink" href="#the-automatic-disk-cache" aria-label="link">&#8203;</a></h2>
 <p>You usually don&#x27;t need to ship bites by hand at all. Whenever the engine loads a script
 <em>file</em> (<code>execute_file</code>, script-side <code>include</code> in all forms, script-side
-<code>import</code>), it keeps the parse in a <code>.cache</code> folder beside the source
-(<code>scripts/foo.jai</code> gets <code>scripts/.cache/foo.jai.jaibite</code>, the folder made when missing;
-default ON), and next launch loads that instead of parsing. The parse simply leaves the boot path: a measured game
+<code>import</code>), it keeps the parse in a <code>.cache</code> folder beside the source, and next launch loads that instead of parsing.
+<code>scripts/foo.jai</code> gets <code>scripts/.cache/foo.jai.jaibite</code>, the folder made when missing
+(default ON).</p>
+<p>The parse simply leaves the boot path: a measured game
 file&#x27;s load-and-run drops to well under half, the parse replaced by a small binary read (numbers in
 <a href="11-performance.html#embedding-costs">Performance</a>). Across a game&#x27;s whole script tree,
 that is the difference between a boot that parses and a boot that doesn&#x27;t.</p>
 <p>The cache is designed so you can forget it exists:</p>
 <ul><li><strong>Matching cache</strong> (its header records the exact source text, by size and hash, <em>and</em>
-the registration fingerprint matches): loaded instead of parsed, and the parse is skipped entirely. Mtimes
-never decide: a source copied into place with an older timestamp is judged by its bytes. A trusted
-checked-clean stamp also skips the static re-check, exactly like <code>jaibite_load</code>. A parse of a unit that
+the registration fingerprint matches): loaded instead of parsed, and the parse is skipped entirely.<ul>
+<li>Mtimes
+never decide: a source copied into place with an older timestamp is judged by its bytes.</li>
+<li>A trusted
+checked-clean stamp also skips the static re-check, exactly like <code>jaibite_load</code>.</li>
+<li>A parse of a unit that
 reopens a namespace records the namespace classes it looked up (a bare <code>Point</code> inside <code>namespace geo</code>
-reads as <code>geo::Point</code> where the engine holds one); a cache whose lookups this engine answers otherwise is
-parsed again.</li><li><strong>Anything else</strong> (other source text, corrupt/truncated cache, fingerprint mismatch)
+reads as <code>geo::Point</code> where the engine holds one). A cache whose lookups this engine answers otherwise is
+parsed again.</li></ul></li><li><strong>Anything else</strong> (other source text, corrupt/truncated cache, fingerprint mismatch)
 silently falls back to parsing the source and rewrites the cache. The <code>.jai</code> on disk always
 wins; hot reload is unaffected. The cache is written to a temporary file and renamed into place, so
 another engine or process never reads part of one.</li><li><strong>Write failures are silent and tolerated</strong> (read-only asset dirs, shipped games): the
-cache is an optimization, never an error, and a source text that could not write its cache does not try
-again on every load. <code>eng-&gt;jaibite_cache_write_failures()</code> counts them for diagnostics.</li><li><strong>String executes never touch disk</strong>; hosts that read files through their own VFS can
-route through <code>eng-&gt;execute_file_source(resolvedPath, content)</code> to keep the cache. Opt out
-per engine with <code>eng-&gt;jaibite_cache(false)</code>. An engine whose filesystem privilege is disabled (<code>eng-&gt;disable(jai::filesystem)</code>, <a href="05-safety-rails.html">Safety Rails</a>) skips the cache entirely, and an explicit <code>jaibite_load(path)</code> or <code>bite.save(path)</code> throws a <code>jai::runtime_error</code> reading <code>Insufficient privilege: filesystem.</code>; the byte forms (<code>save_bytes</code>, <code>jaibite_load_bytes</code>) still work.</li></ul>
+cache is an optimization, never an error. A source text that could not write its cache does not try
+again on every load. <code>eng-&gt;jaibite_cache_write_failures()</code> counts them for diagnostics.</li><li><strong>String executes never touch disk</strong>. Hosts that read files through their own VFS can
+route through <code>eng-&gt;execute_file_source(resolvedPath, content)</code> to keep the cache.</li>
+<li>Opt out
+per engine with <code>eng-&gt;jaibite_cache(false)</code>.</li>
+<li>An engine whose filesystem privilege is disabled (<code>eng-&gt;disable(jai::filesystem)</code>, <a href="05-safety-rails.html">Safety Rails</a>) skips the cache entirely. An explicit <code>jaibite_load(path)</code> or <code>bite.save(path)</code> throws a <code>jai::runtime_error</code> reading <code>Insufficient privilege: filesystem.</code> The byte forms (<code>save_bytes</code>, <code>jaibite_load_bytes</code>) still work.</li></ul>
 <p>The cache stores the parsed AST, so it is backend-agnostic: both backends skip the parse, and the VM
-reuses its lazily compiled chunk in-memory as always. The whole matrix (a matching cache loading
+reuses its lazily compiled chunk in-memory as always.</p>
+<p>The whole matrix (a matching cache loading
 while the source is unparseable, older-mtime and same-mtime replacements, corrupt and truncated
 fallback and rewrite, fingerprint mismatch, unwritable caches, a cache directory and a shipped
 <code>.cache</code>) is covered by the test suite. Add <code>.cache/</code> to your <code>.gitignore</code>.</p>
@@ -115,8 +127,9 @@ eng-&gt;jaibite_cache_path(bundle_root + &quot;/scripts/foo.jai&quot;);   // &lt
 <ul><li>Every cache is written below the directory at the source&#x27;s path relative to the root. A source outside
 the root, or any source when no root is given, mirrors its own path (a relative path as given, a drive as the
 first folder), so a cache path depends only on the source path.</li><li>When the directory holds no valid cache for a source, a valid one in the <code>.cache</code> folder beside the
-source still loads, and is never rewritten there: a build step that runs the scripts once leaves <code>.cache</code>
-folders a bundle can ship, and the first launch skips the parse. Sources the engine cannot open as files (an APK&#x27;s
+source still loads, and is never rewritten there. So a build step that runs the scripts once leaves <code>.cache</code>
+folders a bundle can ship, and the first launch skips the parse.</li>
+<li>Sources the engine cannot open as files (an APK&#x27;s
 assets, read by the host and passed to <code>execute_file_source</code>) have no readable <code>.cache</code>; their
 caches fill the directory on first launch.</li><li>An unwritable directory costs nothing: the parse runs in memory, the write is tried once per source text and
 counted, never reported. An empty directory restores the <code>.cache</code> folder beside each source.</li></ul>
@@ -139,30 +152,34 @@ registered there returns <code>7</code>.</p>
 <p>What is serialized is the <strong>parsed AST, never the compiled chunk</strong>. A loaded bite
 recompiles lazily like a fresh one. Loading <strong>re-interns every symbol and type name into the
 loading engine</strong>, which is exactly why one <code>.jaibite</code> file serves any engine while live
-bites serve only their own. <code>save_bytes()</code> exists specifically for host VFS/pack-file routing.
-<code>jaibite_load*</code> throws <code>jai::runtime_error</code> on a missing file, bad format, version
+bites serve only their own. <code>save_bytes()</code> exists specifically for host VFS/pack-file routing.</p>
+<p><code>jaibite_load*</code> throws <code>jai::runtime_error</code> on a missing file, bad format, version
 mismatch, or corrupt data (<code>jaibite: failed to open file: level.jaibite</code>,
 <code>jaibite: truncated header</code>, ...).</p>
 <p>The format is <strong>versioned</strong>, and the number moves whenever the
-parser gains a node, so a bite is readable only by builds that share its format version. An explicit
-<code>jaibite_load*</code> of a file from another version throws <code>jaibite: unsupported format version M (expected N)</code>, where M is the file&#x27;s version and N the build&#x27;s, <code>jai::detail::k_jaibite_version</code>;
-a stale file in the automatic disk cache is simply reparsed and rewritten, silently. Practical
+parser gains a node, so a bite is readable only by builds that share its format version.</p>
+<ul>
+<li>An explicit
+<code>jaibite_load*</code> of a file from another version throws <code>jaibite: unsupported format version M (expected N)</code>, where M is the file&#x27;s version and N the build&#x27;s, <code>jai::detail::k_jaibite_version</code>.</li>
+<li>A stale file in the automatic disk cache is simply reparsed and rewritten, silently.</li>
+</ul>
+<p>Practical
 rule: ship bites from the same build you ship the engine from, and never hand-carry a
 <code>.jaibite</code> across versions.</p>
-<p>The guarantee behind all of this is differential: for every script shape (functions, defaults, ref
-params, classes with inheritance and statics, lambdas with captures, coroutines, containers,
-try/catch, uncaught-throw error text, registered C++ types), a fresh-parsed bite and a
+<p>The guarantee behind all of this is differential, a standing test battery, not a
+design intention. A fresh-parsed bite and a
 <code>load(save(bite))</code> bite <strong>in a different engine</strong> must produce identical results
-<em>and identical error text</em>, twice each, on both backends: a standing test battery, not a
-design intention.</p>
+<em>and identical error text</em>, twice each, on both backends, for every script shape: functions, defaults, ref
+params, classes with inheritance and statics, lambdas with captures, coroutines, containers,
+try/catch, uncaught-throw error text, registered C++ types.</p>
 <h2 id="registration-fingerprint">Registration fingerprint<a class="hlink" href="#registration-fingerprint" aria-label="link">&#8203;</a></h2>
 <p>A bite compiled against your engine&#x27;s API surface may land in an engine with a different one.
 <code>engine::registration_fingerprint()</code> hashes the registered surface: overloaded functions,
 plain global function registrations (with an arity-class marker), classes, and template types.
-<code>save_bytes()</code> stamps it into the header; <code>jaibite_load*</code> compares it against the
+<code>save_bytes()</code> stamps it into the header. <code>jaibite_load*</code> compares it against the
 loading engine and sets <code>bite.registration_mismatch()</code> on difference.</p>
-<p>The flag itself is advisory; what a mismatch costs is a fresh check. The bite&#x27;s checked-clean
-stamp is trusted only under a matching fingerprint (below), so a mismatched bite is re-checked against
+<p>The flag itself is advisory: what a mismatch costs is a fresh check. The bite&#x27;s checked-clean
+stamp is trusted only under a matching fingerprint (below). So a mismatched bite is re-checked against
 the loading engine at load, and a name the loading engine does not have fails there, before anything runs.
 A bite whose source put that use in a <code>[[warn_mode]]</code> region loads and runs, and the error surfaces
 at <code>execute()</code> only if the script actually touches the missing registration:</p>
@@ -182,25 +199,35 @@ risky.execute();                                  // throws &quot;Undefined vari
 <code>jai::static_check_error</code> at creation, the same gate <code>execute()</code> passes through, and the
 report rides the bite (see <a href="06-static-checking.html">Static Checking</a>):</p>
 <ul><li><code>bite.checked_clean()</code>: checked, no error-severity diagnostics.</li><li><code>bite.check_diagnostics()</code>: the <code>check_report</code>.</li><li><code>save()</code> stamps a checked-clean bit beside the fingerprint, so a bake step&#x27;s strict
-check travels with the file.</li><li>On load the stamp is <strong>trusted only when the registration fingerprint matches</strong> the
-saving engine, the stamp names this library's checker revision (a newer checker has rules an older stamp never ran)
-<em>and</em> the declarations the check resolved outside the file mean the same in the loading engine (below); otherwise
-the bite is re-checked against the loading engine&#x27;s surface (an error throws at load).</li><li>A bite is checked <strong>once</strong>. Registrations arriving later don&#x27;t re-trigger;
+check travels with the file.</li><li>On load the stamp is <strong>trusted only when</strong> all three hold:<ul>
+<li><strong>the registration fingerprint matches</strong> the
+saving engine;</li>
+<li>the stamp names this library's checker revision (a newer checker has rules an older stamp never ran);</li>
+<li><em>and</em> the declarations the check resolved outside the file mean the same in the loading engine (below).</li>
+</ul>
+Otherwise
+the bite is re-checked against the loading engine&#x27;s surface (an error throws at load).</li><li>A bite is checked <strong>once</strong>. Registrations arriving later don&#x27;t re-trigger:
 re-create the bite to re-check. Parse-time type proofs (fast-path annotations the checker stamps on the
 AST, nothing you configure; see <a href="06-static-checking.html#proofs">Static Checking, Proofs</a>) are
 independent of the stamp: a loaded bite re-derives them.</li>
 <li id="the-stamp-holds-its-context">The stamp <strong>holds for the context the file was checked in</strong>. It records every
 name the check resolved outside the file (a global, function, class or enum another unit of the program declares or the
-engine holds, a namespace and its members) and what each resolved to: the unit that declared it, a cell&#x27;s type, a
-script declaration by the unit that ran it, a host function&#x27;s overloads and a bound class&#x27;s methods, fields and bases
-by their C++ signatures (the registration fingerprint holds only their names). A load trusts the stamp only where each of those names resolves the same, so
+engine holds, a namespace and its members) and what each resolved to:<ul>
+<li>the unit that declared it;</li>
+<li>a cell&#x27;s type;</li>
+<li>a
+script declaration by the unit that ran it;</li>
+<li>a host function&#x27;s overloads and a bound class&#x27;s methods, fields and bases
+by their C++ signatures (the registration fingerprint holds only their names).</li>
+</ul></li>
+<li>A load trusts the stamp only where each of those names resolves the same. So
 a leaf that checked clean inside one program (<a href="06-static-checking.html#programs">its names declared by a
 sibling unit</a>) is checked again when a <em>different</em> program reaches it, or when the sibling&#x27;s declaration
 changes, and gets exactly the verdict a fresh parse would. A re-check that comes out clean writes the cache again under
 the new context.</li>
 <li>A parse that read a bare class name inside a namespace (<code>Point</code> inside <code>namespace geo</code> is
 <code>geo::Point</code> where the engine holds one) holds only where the loading engine holds the same namespace classes.
-The disk cache parses such a file again; a saved bite has no text to parse, so <code>jaibite_load*</code> refuses it with
+The disk cache parses such a file again. A saved bite has no text to parse, so <code>jaibite_load*</code> refuses it with
 a <code>jai::static_check_error</code> naming each class (<code>the bite was parsed where no namespace declared class
 'Point'; here one does: save it again from source</code>). Load it where the namespaces it was saved under have
 run.</li></ul><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/03-backends.html"><span>&larr; previous</span>Backends: Interpreter vs VM</a><a class="next" rel="next" href="../embedding/05-safety-rails.html"><span>next &rarr;</span>Safety Rails</a></nav></article>

@@ -545,6 +545,7 @@ namespace spider_detail {
 			})
 			.build();
 
+		detail::engine_access::serial_namespace(eng_ref, "spider");
 		auto& ns = detail::engine_access::script_namespaces(eng_ref)[detail::engine_access::symbolize(eng_ref, "spider")];
 		if (!ns) { ns = std::make_shared<script_namespace_data>(); }
 		auto def = [&](const char* a_name, uint8_t a_min, uint8_t a_max, std::vector<svt> a_params, script_function a_call, bool a_network) {

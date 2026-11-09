@@ -18,6 +18,7 @@ array<int> DEMO_TICS = [];
 int DEMO_POS = 0;
 int DEMO_SEED = 0;
 string DEMO_MAP = "";
+string DEMO_WAD = "";         // the IWAD the tape was recorded on ("" in a tape older than the field)
 int DEMO_SKILL = 2;
 bool DEMO_NM = false;
 
@@ -30,6 +31,7 @@ function demo_q(float v) -> int {
 function demo_rec_begin(string mapname, int skill, int seed) -> void {
 	DEMO_SEED = seed;
 	DEMO_MAP = mapname;
+	DEMO_WAD = WAD_BASE;
 	DEMO_SKILL = skill;
 	DEMO_NM = NIGHTMARE;
 	DEMO_TICS = [];
@@ -69,7 +71,7 @@ function demo_feed() -> bool {
 
 function demo_write(string path) -> bool {
 	path = data_path(path);
-	var d = {"seed": DEMO_SEED, "mapname": DEMO_MAP, "skill": DEMO_SKILL,
+	var d = {"seed": DEMO_SEED, "mapname": DEMO_MAP, "wad": DEMO_WAD, "skill": DEMO_SKILL,
 		"nightmare": DEMO_NM, "tics": DEMO_TICS};
 	write_file(path, to_json(d));
 	return file_exists(path);
@@ -84,6 +86,7 @@ function demo_load(string path) -> bool {
 	if (d == null || !d.has("tics") || !d.has("seed") || !d.has("mapname")) { return false; }
 	DEMO_SEED = d["seed"] + 0;
 	DEMO_MAP = "" + d["mapname"];
+	DEMO_WAD = d.has("wad") ? "" + d["wad"] : "";
 	DEMO_SKILL = d["skill"] + 0;
 	DEMO_NM = d.has("nightmare") && d["nightmare"] == true;
 	DEMO_TICS = [];

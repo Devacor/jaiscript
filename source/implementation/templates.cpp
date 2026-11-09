@@ -1075,6 +1075,7 @@ scoped_file resolve_scoped_file(engine& eng, const std::string& path, const std:
 }
 
 void register_library(engine& eng) {
+	for (std::string_view name : {k_joiner, k_splice, k_raw, k_dynamic, k_scoped, k_scoped_file}) { eng.serial_function(std::string(name)); }
 	dynamic_binder<html_text>(eng, "web::html")
 		.constructor<>()
 		.method("to_string", &html_text::to_string)

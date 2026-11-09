@@ -115,7 +115,6 @@ namespace atomic_detail {
 } // namespace atomic_detail
 
 	void register_atomics(engine& eng_ref) {
-		detail::engine_access::library_registration library(eng_ref);
 		atomic_detail::bind_atomic_int(eng_ref);
 		atomic_detail::bind_atomic_float(eng_ref);
 		atomic_detail::bind_atomic_bool(eng_ref);

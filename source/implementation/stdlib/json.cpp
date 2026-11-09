@@ -554,8 +554,9 @@ namespace stdlib {
 
     // Register JSON and binary serialization functions with an engine
     void register_json_functions(engine& eng_ref) {
-        detail::engine_access::library_registration library(eng_ref);
         engine* eng = &eng_ref;
+        // an archive reaches the engine's class registry and the objects a value holds
+        for (const char* name : {"to_json", "from_json", "to_binary", "from_binary", "to_base64", "from_base64"}) { eng_ref.serial_function(name); }
 
         eng_ref.add_variadic_function("to_json", [eng](const std::vector<script_value>& args) -> script_value {
             if (args.size() == 1) {

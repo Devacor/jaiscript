@@ -407,6 +407,14 @@ namespace jai::vm {
         }
         const script_value* worker_block_constants_for(const chunk& code);
         environment* worker_root_env_ = nullptr;   // slot root env (identity stable per slot)
+        // ::name's scope: the program's; a parallel worker's is the root of its own chain, which holds its copies of the program's
+        // names (KEEP BYTE-PARALLEL with interpreter::program_scope)
+        environment* program_scope() const noexcept {
+            if (!parallel_worker_) { return engine_->get_global_environment().get(); }
+            environment* result = environment_.get();
+            while (result->parent_raw()) { result = result->parent_raw(); }
+            return result;
+        }
 
         // Compile a per-worker function copy's body on the MAIN thread at the region
         // barrier (compilation interns; workers must only ever hit) and pin the chunk on
@@ -2346,7 +2354,7 @@ namespace jai::vm {
         }
         bool inline_globals_hold(const frame& f, const chunk::inline_site& site);
         bool inline_forward_callees_hold(const chunk::inline_site& site);
-        bool inline_method_verdict(const chunk::inline_site& site, const class_definition* cd);
+        bool inline_method_verdict(const chunk::inline_site& site, const class_definition* cd, const class_definition* ctx);
         bool comparison_free(const script_value& v);
         const uint64_t* layout_gen_ = nullptr;   // engine::layout_generation
         void bind_member_layout(frame& f, const chunk& body, class_instance* receiver = nullptr);
@@ -2461,6 +2469,7 @@ namespace jai::vm {
         // lands raw in a raw caller's cell, else boxes through its return pad. Both switch the block loop's frame through raw_switch_
         // in_loop: the frame-program loop follows the callee itself (*in_loop names it; raw_switch_ untouched)
         bool raw_call_enter(frame& f, const chunk::cell_loop& loop, const vm_instruction& ins, op_status& st, frame** in_loop = nullptr);
+        const script_value* raw_env_value(const chunk& body, const chunk::cell_loop& loop, uint32_t k) const;
         static constexpr size_t k_raw_small_cells = 16;   // a small program's cells clear with fixed-size stores (the vectors keep at least this many)
         frame& raw_push(frame& f, const chunk::cell_loop& loop, uint32_t index, const chunk::cell_loop::call_plan& plan);
         void raw_pop(call_record& rec);
@@ -2538,7 +2547,8 @@ namespace jai::vm {
 #if defined(_MSC_VER)
         __declspec(noinline)
 #endif
-        op_status exec_c_append(frame& f, size_t& ip, const vm_instruction& ins, const cell_regs& cr);   // the compound plus with run-time kinds: strings in place
+        op_status exec_c_append(frame& f, size_t& ip, const vm_instruction& ins, const cell_regs& cr);
+        op_status exec_c_text_append(frame& f, size_t& ip, const vm_instruction& ins, const cell_regs& cr);   // a statement's pieces appended to a slot's string in place   // the compound plus with run-time kinds: strings in place
 #if defined(_MSC_VER)
         __declspec(noinline)
 #endif
@@ -2657,6 +2667,10 @@ namespace jai::vm {
         op_status exec_concat_store(frame& f, const vm_instruction& ins);
         op_status exec_concat_store_member(frame& f, const vm_instruction& ins);
         op_status exec_concat_store_index(frame& f, const vm_instruction& ins);
+        op_status exec_text_append(frame& f, const vm_instruction& ins);
+        op_status text_append_rows(frame& f, const vm_instruction& ins);
+        const script_value* text_piece(frame& f, const fused_operand& piece, std::optional<script_value>& scratch, uint32_t& env_role);
+        op_status text_append_general(frame& f, const text_append_proto& p, size_t next, script_value* held, script_value acc, bool has_acc, uint32_t env_role);
         script_value* text_builder_target(frame& f, const vm_instruction& ins, const script_value& snapshot, type_info*& field_tag);
         op_status exec_size_temp(frame& f, const vm_instruction& ins);
         const builtin_method* open_receiver_builtin(const call_site& site, size_t kind, uint32_t receiver_rule) const;

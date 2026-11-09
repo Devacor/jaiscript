@@ -109,6 +109,7 @@ namespace value_text_walk {
 	class walker {
 	public:
 		walker(const own_text_hook& hook, size_t limit, engine* eng) : hook_(hook), limit_(limit), eng_(eng), scratch_(std::monostate{}, eng) {}
+		walker(own_text_hook&&, size_t, engine*) = delete;   // hook_ is a reference: a temporary hook dies before the walk reads it
 
 		checked_result<std::string> run(const script_value& root, bool nested_root = false) {
 			auto entered = enter(root, nullptr, nested_root);
@@ -419,7 +420,8 @@ JAI_NOINLINE error_propagator map_key_missing_error(string_symbolizer* sym, cons
 		}
 	}
 	const auto code = make_error_code(runtime_error_code::map_key_not_found);
-	value_text_walk::walker walk(own_text_hook{}, SIZE_MAX, k.payload_engine());
+	const own_text_hook no_hook{};
+	value_text_walk::walker walk(no_hook, SIZE_MAX, k.payload_engine());
 	auto text = walk.run(k, true);
 	if (!text) { return error_propagator{code, map_key_not_found_slotless, 0, 0}; }
 	if (sym->frozen()) {   // a parallel region: a key text the program already interned still names the key

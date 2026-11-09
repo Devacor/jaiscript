@@ -5,6 +5,9 @@
 var RESET = ESC + "[0m";
 var gfx = Gfx();
 var reel = null;
+// the cell shape: "half" blocks, "sext"ants, or "" for sextants while the grid stays within PIX_BUDGET pixels
+var PIX_MODE = "";
+var PIX_BUDGET = 48000;
 
 function demo_boot(int w, int h, int seed, string backend, bool smoke, bool hud_on) -> void {
 	reel = Reel(w, h, seed, backend, smoke, hud_on);
@@ -14,9 +17,13 @@ function demo_frame(float t, float dt, string key, float fps, float ms_sim, floa
 	return reel.frame(t, dt, key, fps, ms_sim, ms_draw, ms_other);
 }
 
+function demo_pixels(string mode) -> void { PIX_MODE = mode == "auto" ? "" : mode; }
 function demo_scene_index() -> int { return reel.cur_idx; }
 function demo_scene_time() -> float { return reel.scene_t; }
 function demo_jump(int idx, float at_t) -> void { reel.jump(idx, at_t); }
-function demo_reload() -> void { reel.reload_current(); }
+function demo_reload(string changed, string failed) -> void {
+	reel.reload_current();
+	reel.reloaded(changed, failed);
+}
 function demo_scene_count() -> int { return reel.nscenes; }
 function demo_scene_name() -> string { return reel.cur.name; }

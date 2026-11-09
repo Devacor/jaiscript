@@ -68,7 +68,7 @@ function gloom_ray_chunk_step(var& t) -> void {
 	}
 }
 
-// One wall ray (the serial helper for hitscan/tracers; ray_record builds its
+// One wall ray (the serial helper for hitscan and tracers; World.wall_dist builds its
 // element). Same DDA as the chunk body. Element: [posx, posy, rdx, rdy, mw,
 // pack0, ...]. Returns [perp_dist, side, kind, texcol 0..63].
 function gloom_ray(var t) -> var {

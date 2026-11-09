@@ -81,6 +81,10 @@ function generate_floor(int floor) -> FloorPlan {
 	}
 	FloorPlan plan{room_center(G.rooms[0]), room_center(G.rooms[G.rooms.size() - 1])};
 	G.tiles[idx(plan.stairs.x, plan.stairs.y)] = TILE_STAIRS;
+	if (has_welcome()) {
+		Spot statue = welcome_layout().statue;
+		G.tiles[idx(statue.x, statue.y)] = TILE_STATUE;
+	}
 	if (RNG.chance(40)) { place_landmark(TILE_STATUE, plan); }
 	if (RNG.chance(30)) { place_landmark(TILE_MURAL, plan); }
 	return plan;
@@ -97,6 +101,36 @@ function place_landmark(int tile, FloorPlan plan) -> void {
 		G.tiles[idx(lx, ly)] = tile;
 		return;
 	}
+}
+
+// Floor 1's welcome: in the first room, JAI's statue a few steps ahead of where you wake, the
+// bones of the last one down at your feet with their blade, and a Grublin by the statue. It is
+// laid out from the room alone, so the view finds the bones again without saving where they are.
+class Welcome { int face; Spot find; Spot statue; Spot greeter; }
+
+function has_welcome() -> bool { return G.floor == 1 && G.rooms.size() >= 2; }
+
+function welcome_layout() -> Welcome {
+	Room room = G.rooms[0];
+	Spot start = room_center(room);
+	array<int> reach = [start.y - room.y, room.x + room.w - 1 - start.x, room.y + room.h - 1 - start.y, start.x - room.x];
+	int face = 1;
+	for (int f = 0; f < 4; ++f) {
+		if (reach[f] > reach[face]) { face = f; }
+	}
+	int dx = FACE_DX[face];
+	int dy = FACE_DY[face];
+	int far = imin(3, reach[face]);
+	Welcome w;
+	w.face = face;
+	w.find = Spot{start.x + dx, start.y + dy};
+	w.statue = Spot{start.x + dx * far, start.y + dy * far};
+	if (reach[face] >= far + 1) {
+		w.greeter = Spot{start.x + dx * (far + 1), start.y + dy * (far + 1)};
+	} else {
+		w.greeter = Spot{w.statue.x + FACE_DX[(face + 1) % 4], w.statue.y + FACE_DY[(face + 1) % 4]};
+	}
+	return w;
 }
 
 // floor 10: one great hall, a corridor in from the west, and Devacor's defaced mural

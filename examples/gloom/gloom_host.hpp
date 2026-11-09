@@ -39,6 +39,8 @@ struct host_options {
 	std::string look;                // reference | showcase; resolved by run_gloom (reference under --smoke)
 	int truecolor = -1;              // 1 24-bit, 0 xterm-256; resolved by run_gloom from the terminal
 	bool ascii = false;              // plain ASCII cells for terminals without block glyphs
+	bool mute = false;               // no sound effects (adapters with sound only)
+	bool dev = false;                // reload the look's scripts when they change (adapters with hot reload only)
 	const char* argv0 = "";
 };
 

@@ -78,8 +78,11 @@ namespace jai::detail {
         std::string message;
     };
 
-    // A library builtin a parallel body may call: pure math and to_string (everything else the library registers is serial)
-    bool parallel_pure_function(std::string_view name);
+    // A chunk's copy of a builtin formatter and the chunk's own literal entry for it (an engine::format_literal_row)
+    struct format_literal_alias {
+        const void* copy = nullptr;
+        const void* row = nullptr;
+    };
 
     struct parallel_region_table {
         struct entry {
@@ -102,6 +105,8 @@ namespace jai::detail {
             object_borrows* borrows = nullptr;
             // The parameter storage of the bound call this thread is in (engine::get_current_parameter_storage while a region runs)
             mutable parameter_storage* call_storage = nullptr;
+            // engine::format_literal_for answers a chunk's copy of print or format with the chunk's own row
+            const std::vector<format_literal_alias>* format_aliases = nullptr;
             size_t element() const noexcept { return cursors && !cursors->empty() ? cursors->front().element_cursor_index() : SIZE_MAX; }
         };
         std::vector<entry> entries;
@@ -124,7 +129,7 @@ namespace jai::detail {
     // How a captured enclosing name is provisioned into the workers, decided at the
     // barrier from the LIVE value (admission only collects the touches):
     //   scalar   - plain per-worker copy (null/int/float/char/bool; bound primitives decode)
-    //   string   - per-worker detached copy (string storage is shared under plain copy)
+    //   string   - per-worker detached copy (a string's or a math vector's storage is shared under plain copy)
     //   borrow   - zero-copy view of the shared container (all-primitive content AND
     //              every body touch is a subscript read - the raw-read fast tier)
     //   snapshot - one per-worker detached deep copy at the barrier (everything else:
@@ -165,6 +170,8 @@ namespace jai::detail {
             bool borrow_eligible = true;   // every touch was a subscript read root
             const ast_node* bare_use = nullptr;   // a use of the value itself (not a member chain or a method receiver)
             const ast_node* member_use = nullptr;   // a member chain rooted at it: only a captured object has members
+            const ast_node* qualified_use = nullptr;   // a ::name use: the program's variable, never the enclosing function's local
+            bool unqualified_use = false;
         };
         // A method called on a chain rooted at a captured name (cam.len(), cam.inner.len()): the barrier refuses one that writes
         // its object, and a container's mutating builtin
@@ -204,6 +211,7 @@ namespace jai::detail {
             uint64_t enclosing_arguments = 0;   // the argument positions any call of the name passes enclosing state at
             const ast_node* enclosing_site = nullptr;
             std::vector<std::pair<size_t, size_t>> loop_variable_arguments;   // (argument position, loop variable position)
+            size_t fewest_arguments = SIZE_MAX;   // a call passing fewer binds the defaults past it
         };
         // Host static methods the bodies call, by the class name as written (Name::method(...)): pinned per worker
         struct static_call {

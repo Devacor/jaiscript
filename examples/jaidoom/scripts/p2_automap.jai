@@ -63,7 +63,7 @@ function main() -> int {
 		}
 	}
 
-	print(blit_half());
+	print(vid_blit());
 
 	// side artifact for headless verification: pixel-grid silhouette at cell resolution
 	var preview = "";

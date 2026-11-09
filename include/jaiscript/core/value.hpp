@@ -2684,6 +2684,7 @@ namespace detail {
         // never sees the write); tag, engine and stamp stay untouched
         const script_vec_node& unchecked_vec_node() const noexcept { return *storage_.vec_node(); }
         script_value_type unchecked_vec_kind() const noexcept { return current_type(); }
+        bool unchecked_vec_node_shared() const noexcept { return !storage_.vec_node().unique(); }
         void unchecked_set_vec_word(size_t i, uint32_t bits) {
             strong_ptr<script_vec_node>& node = storage_.vec_node();
             if (!node.unique()) [[unlikely]] { unshare_vec_node(); }

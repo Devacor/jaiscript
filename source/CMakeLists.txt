@@ -168,6 +168,11 @@ foreach(jaiscript_target ${jaiscript_library_targets})
         CXX_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON
     )
+    # Apple arm64 compares type_info by address for a hidden type and by name otherwise, so a library type's RTTI must take
+    # one form in every TU that names it: types keep default visibility (symbols stay hidden), consumers included
+    if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${jaiscript_target} PUBLIC "SHELL:-Xclang -ftype-visibility=default")
+    endif()
 
     # The DAP connector uses Winsock and crypto:: the system's BCryptGenRandom. MSVC picks them up via
     # #pragma comment(lib) - GCC/Clang GNU drivers ignore that mechanism, so the

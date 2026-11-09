@@ -2,7 +2,7 @@
   "name": "jaiscript",
   "displayName": "JaiScript",
   "description": "JaiScript language support: the jaiscript_lsp language server (diagnostics from the strict checker, go to definition, references, hover, completion, signature help, rename, symbols), syntax highlighting and attach debugging for the JaiScript embedded scripting language.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "publisher": "snapjaw",
   "engines": {
     "vscode": "^1.91.0"

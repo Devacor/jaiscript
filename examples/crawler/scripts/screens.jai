@@ -126,7 +126,7 @@ function page_dim(int x0, int y0, int x1, int y1, float k) -> void {
 }
 
 // ----------------------------------------------------------- the pixel font ---
-// 5x7 capitals, one string of 35 cells per letter.
+// 5x7 capitals and digits, one string of 35 cells per glyph.
 map<string, string> FONT = {
 	"A": ".###.#...##...#######...##...##...#", "B": "####.#...##...#####.#...##...#####.",
 	"C": ".###.#...##....#....#....#...#.###.", "D": "####.#...##...##...##...##...#####.",
@@ -140,7 +140,12 @@ map<string, string> FONT = {
 	"S": ".#####....#.....###.....#....#####.", "T": "#####..#....#....#....#....#....#..",
 	"U": "#...##...##...##...##...##...#.###.", "V": "#...##...##...##...##...#.#.#...#..",
 	"W": "#...##...##...##.#.##.#.###.###...#", "X": "#...##...#.#.#...#...#.#.#...##...#",
-	"Y": "#...##...#.#.#...#....#....#....#..", "Z": "#####....#...#...#...#...#....#####"
+	"Y": "#...##...#.#.#...#....#....#....#..", "Z": "#####....#...#...#...#...#....#####",
+	"0": ".###.#...##..###.#.###..##...#.###.", "1": "..#...##....#....#....#....#...###.",
+	"2": ".###.#...#....#...#...#...#...#####", "3": "####.....#....#.###.....#....#####.",
+	"4": "...#...##..#.#.#..#.#####...#....#.", "5": "######....####.....#....##...#.###.",
+	"6": ".###.#....#....####.#...##...#.###.", "7": "#####....#...#...#...#....#....#...",
+	"8": ".###.#...##...#.###.#...##...#.###.", "9": ".###.#...##...#.####....#....#.###."
 };
 
 // Draws text in the pixel font, each font pixel sx pixels wide and sy tall, its strokes
@@ -249,12 +254,15 @@ function title_screen(bool can_continue) -> string {
 	page_open(page_size_cols(), page_size_rows());
 	shaft_build();
 	float descent = 0.0;
+	int frame = 0;
 	while (true) {
 		shaft_frame(descent);
-		title_overlay(can_continue);
+		shaft_life(frame);
+		title_overlay(can_continue, frame);
 		page_present();
 		string key = HOST_INTERACTIVE ? poll_key(0.05) : read_key();
 		descent += 0.06;
+		frame += 1;
 		if (key == "") { continue; }
 		if (key == "n" || key == "enter") { return "n"; }
 		if (key == "c" && can_continue) { return "c"; }
@@ -264,7 +272,66 @@ function title_screen(bool can_continue) -> string {
 	return "q";
 }
 
-function title_overlay(bool can_continue) -> void {
+// What lives in the Well: embers rising out of the glow toward you, and pairs of eyes in the
+// brickwork that open, watch and blink. Placed by the presentation hash, never the game's Rng.
+function shaft_life(int frame) -> void {
+	float cx = PAGE_W / 2.0;
+	float cy = PAGE_H * 1.2;
+	float rim = imin(PAGE_W, PAGE_H * 2) * 0.66;
+	array<int> ember = [pal(0xF4FFB4), pal(0xC8F05A), pal(0xFFC850), pal(0xFF7A28), pal(0x8A3014)];
+	for (int k = 0; k < 40; ++k) {
+		int h = lat(k, 7, 23);
+		float a = (h % 628) / 100.0;
+		int life = 40 + h % 30;
+		float t = ((frame + h % life) % life) / (life * 1.0);
+		float r = rim * (0.06 + 1.1 * t * t);
+		float wobble = math::sin(t * 9.0 + k) * 0.18;
+		int x = cx + math::cos(a + wobble) * r;
+		int y = cy + math::sin(a + wobble) * r / 1.1;
+		page_plot(x, y, ember[iclamp(t * 5, 0, 4)]);
+		if (t > 0.55) { page_plot(x + 1, y, ember[iclamp(t * 5, 0, 4)]); }
+	}
+	array<int> eye = [pal(0xFF3020), pal(0xFFD040), pal(0x7CFF50)];
+	for (int k = 0; k < 7; ++k) {
+		int h = lat(k, 3, 61);
+		if ((frame / 12 + h) % 9 < 2 || (frame + h) % 37 == 0) { continue; }   // shut, or mid-blink
+		float a = (h % 628) / 100.0;
+		float z = 1.6 + (h / 628 % 30) / 10.0;
+		int x = cx + math::cos(a) * rim / z;
+		int y = cy + math::sin(a) * rim / z / 1.1;
+		if (y < 0 || y >= PAGE_H * 2 - 1) { continue; }
+		int c = eye[k % 3];
+		int gap = z < 2.6 ? 3 : 2;
+		page_plot(x, y, c);
+		page_plot(x + gap, y, c);
+	}
+}
+
+function page_plot(int x, int y, int c) -> void {
+	if (x < 0 || y < 0 || x >= PAGE_W || y >= PAGE_H * 2) { return; }
+	PAGE_PIX[y * PAGE_W + x] = c;
+}
+
+// a highlight that crosses the logo every few seconds, leaning like light off wet stone
+function logo_shine(int x0, int y0, int w, int h, int frame) -> void {
+	int sweep = (frame % 90) * (w + h + 40) / 50 - h - 20;
+	if (sweep > w + h) { return; }
+	map<int, int> lit = {};
+	int back = PAGE_PIX[imax(0, y0 - 1) * PAGE_W + imax(0, x0 - 1)];
+	for (int y = imax(0, y0); y < imin(PAGE_H * 2, y0 + h); ++y) {
+		for (int x = imax(0, x0); x < imin(PAGE_W, x0 + w); ++x) {
+			int d = x - x0 - sweep - (y0 + h - y) / 2;
+			if (d < 0 || d > 3) { continue; }
+			int c = PAGE_PIX[y * PAGE_W + x];
+			int rgb = VPAL_RGB[c];
+			if (((rgb >> 16) & 255) + ((rgb >> 8) & 255) < 220) { continue; }   // the letters only, not the plate
+			if (!lit.has(c)) { lit[c] = pal(mix_rgb(rgb, 0xFFFFFF, d == 1 || d == 2 ? 0.75 : 0.4)); }
+			PAGE_PIX[y * PAGE_W + x] = lit[c];
+		}
+	}
+}
+
+function title_overlay(bool can_continue, int frame) -> void {
 	OVERLAYS = [];
 	bool big = PAGE_W >= 110 && PAGE_H >= 34;
 	int sx = big ? 2 : 1;
@@ -273,6 +340,7 @@ function title_overlay(bool can_continue) -> void {
 	int logo_w = 8 * 6 * sx - sx;
 	page_dim((PAGE_W - logo_w) / 2 - 3 * sx, logo_y - sy * 2, (PAGE_W + logo_w) / 2 + 3 * sx, logo_y + 9 * sy, 0.35);
 	font_text("GRUBWELL", -1, logo_y, sx, sy, 0xFFE68C, 0x7AAE3C, true);
+	logo_shine((PAGE_W - logo_w) / 2, logo_y, logo_w, 7 * sy, frame);
 	int under = (logo_y + 7 * sy + 3) / 2;
 	page_text((PAGE_W - 26) / 2, under, back_line(INK_DIM, "dungeons of the unwashed"));
 	array<Line> menu = [key_row("N", "new descent", 5)];
@@ -280,7 +348,9 @@ function title_overlay(bool can_continue) -> void {
 	menu.push(key_row("?", "how to play", 5));
 	menu.push(key_row("Q", "leave", 5));
 	int w = 34;
-	page_box((PAGE_W - w) / 2, PAGE_H - menu.size() - 4, w, "", menu, 0x4A5A36, INK_TITLE);
+	page_box((PAGE_W - w) / 2, PAGE_H - menu.size() - 5, w, "", menu, 0x4A5A36, INK_TITLE);
+	string live = "R reloads the scripts mid-run, and so does saving one: edit them while you play";
+	if (live.size() + 4 <= PAGE_W) { page_text((PAGE_W - live.size()) / 2, PAGE_H - 2, back_line(INK_MAGIC, live)); }
 	page_text(1, PAGE_H - 1, back_line(INK_FAINT, `seed ${HOST_SEED}`));
 	string credit = "written in JaiScript";
 	page_text(PAGE_W - credit.size() - 1, PAGE_H - 1, back_line(INK_FAINT, credit));
@@ -306,6 +376,7 @@ function how_to_play() -> void {
 		key_row("m v", "the map; one view or four", 8),
 		key_row(">", "descend the stairs", 8),
 		key_row("esc", "every other key", 8),
+		key_row("R", "reload the scripts; saving one does too", 8),
 		Line(),
 		line_of(INK_FAINT, "One key is one turn. Death is permanent.")];
 	int w = 60;
@@ -474,7 +545,7 @@ function run_summary_lines() -> array<Line> {
 }
 
 function death_screen() -> void {
-	if (G.smoke && VIEW_PROBE == null) { return; }   // a dump captures the ending too
+	if (G.smoke && VIEW_PROBE == null && !HOST_ANIM) { return; }   // a dump or an --anim run draws the ending too
 	page_from_view();
 	array<int> base = PAGE_PIX;
 	for (int frame = 0; frame <= 6; ++frame) {
@@ -488,7 +559,43 @@ function death_screen() -> void {
 	if (HOST_INTERACTIVE) { read_key(); }
 }
 
+// The one that killed you, large, in full colour over the washed-out view, when it was a monster.
+function killer_portrait() -> void {
+	string glyph = "";
+	int rgb = 0;
+	for (auto kv : BESTIARY) {
+		if (kv.second.name == G.death_cause) {
+			glyph = kv.second.glyph;
+			rgb = kv.second.ink;
+		}
+	}
+	if (glyph == "") { return; }
+	int a = glyph_art(glyph);
+	int h = PAGE_H * 2 * 11 / 20;
+	int w = h * ART_W[a] / ART_H[a];
+	page_art(a, rgb, PAGE_W - w - imax(2, PAGE_W / 14), PAGE_H * 2 - h - 2, w, h);
+}
+
+// art a at w x h pixels on the page, lit full: the body roles take rgb and its shade and highlight
+function page_art(int a, int rgb, int x0, int y0, int w, int h) -> void {
+	array<int> colors;
+	for (int i = 0; i < ROLE_RGB.size(); ++i) { colors.push(pal(ROLE_RGB[i])); }
+	colors[1] = pal(rgb);
+	colors[2] = pal(scale_rgb(rgb, 0.55));
+	colors[3] = pal(mix_rgb(rgb, 0xFFFFFF, 0.45));
+	int aw = ART_W[a];
+	int ah = ART_H[a];
+	int off = ART_OFF[a];
+	for (int y = imax(0, y0); y < imin(PAGE_H * 2, y0 + h); ++y) {
+		for (int x = imax(0, x0); x < imin(PAGE_W, x0 + w); ++x) {
+			int code = ART_TEX[off + ((x - x0) * aw) / w + (((y - y0) * ah) / h) * aw];
+			if (code >= 0) { PAGE_PIX[y * PAGE_W + x] = colors[code]; }
+		}
+	}
+}
+
 function death_overlay() -> void {
+	killer_portrait();
 	bool big = PAGE_W >= 110;
 	int sx = big ? 2 : 1;
 	int sy = big ? 3 : 2;
@@ -513,7 +620,7 @@ array<int> RAINBOW = [0xFF3030, 0xFF9020, 0xFFE040, 0x50E060, 0x40C8FF, 0x6060FF
 // The stolen fire comes home: flames climb the screen in rainbow bands rising like the colour
 // climbing the Well. The flames run on their own little LCG, never the game's Rng.
 function victory_screen() -> void {
-	if (G.smoke && VIEW_PROBE == null) { return; }   // a dump captures the ending too
+	if (G.smoke && VIEW_PROBE == null && !HOST_ANIM) { return; }   // a dump or an --anim run draws the ending too
 	page_open(page_size_cols(), page_size_rows());
 	int w = PAGE_W;
 	int h = PAGE_H * 2;

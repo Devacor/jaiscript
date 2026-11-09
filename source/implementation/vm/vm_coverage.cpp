@@ -79,7 +79,7 @@ namespace {
 		case opcode::op_index_fused: case opcode::op_index_store_fused: case opcode::op_index_compound_operand: case opcode::op_index_fused_decl: case opcode::op_iter_init: case opcode::op_iter_next:
 		case opcode::op_iter_pop: case opcode::op_iter_entry: case opcode::op_destructure: case opcode::op_parallel_element: case opcode::op_deref_top:
 			return fam::element;
-		case opcode::op_concat_append: case opcode::op_concat_pending: case opcode::op_concat_operands: case opcode::op_concat_store: return fam::string;
+		case opcode::op_concat_append: case opcode::op_concat_pending: case opcode::op_concat_operands: case opcode::op_concat_store: case opcode::op_text_append: return fam::string;
 		case opcode::op_new: case opcode::op_array: case opcode::op_map: case opcode::op_closure: return fam::alloc;
 		case opcode::op_binary: case opcode::op_binary_fused: case opcode::op_binary_fused_decl: case opcode::op_binary_fused_store: case opcode::op_binary_fused_temp:
 		case opcode::op_unary: case opcode::op_unary_temp: case opcode::op_math: case opcode::op_math_temp: case opcode::op_compound_store: case opcode::op_compound_fused:
@@ -106,7 +106,7 @@ namespace {
 		case opcode::op_c_arith_p: case opcode::op_c_arith_any: case opcode::op_c_arith2: case opcode::op_c_arith_load:
 		case opcode::op_c_add_ff: case opcode::op_c_sub_ff: case opcode::op_c_mul_ff: case opcode::op_c_add_ffk: case opcode::op_c_sub_ffk: case opcode::op_c_mul_ffk:
 		case opcode::op_c_add_ii: case opcode::op_c_sub_ii: case opcode::op_c_add_iik: case opcode::op_c_sub_iik: case opcode::op_c_neg: case opcode::op_c_bnot:
-		case opcode::op_c_lnot: case opcode::op_c_cmpval: case opcode::op_c_append:
+		case opcode::op_c_lnot: case opcode::op_c_cmpval: case opcode::op_c_append: case opcode::op_c_text_append:
 			return fam::cell_arith;
 		case opcode::op_c_cmp_p: case opcode::op_c_jcmp_p: case opcode::op_c_jcmp2: case opcode::op_c_cmp_any:
 		case opcode::op_c_jcmp_any: case opcode::op_c_jump: case opcode::op_c_back: case opcode::op_c_back_step: case opcode::op_c_cfor_back: case opcode::op_c_range:
@@ -219,7 +219,7 @@ namespace {
 		switch (ins.op) {
 		case opcode::op_decl_ref_ident: case opcode::op_decl_ref_value: case opcode::op_ref_return_bind: case opcode::op_ref_return_lvalue: case opcode::op_ref_target_store:
 			return "reference / alias";
-		case opcode::op_concat_append: case opcode::op_concat_pending: case opcode::op_concat_operands: case opcode::op_concat_store: return "string operation";
+		case opcode::op_concat_append: case opcode::op_concat_pending: case opcode::op_concat_operands: case opcode::op_concat_store: case opcode::op_text_append: return "string operation";
 		default: break;
 		}
 		switch (family_of(ins.op)) {

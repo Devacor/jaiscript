@@ -25,7 +25,7 @@ A configure with no system SQLite, no network and neither path set fails with a 
 
 ```
 jai_spider examples/guestbook/app.jai
-/\(o.o)/\  jai_spider 0.5.1-beta
+/\(o.o)/\  jai_spider 0.5.2-beta
 jai_spider: spinning examples/guestbook/app.jai on http://127.0.0.1:8080/ (files from .../guestbook/public)
 GET / 200 1.21 ms
 GET /style.css 200 0.31 ms (file)

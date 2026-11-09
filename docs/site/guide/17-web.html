@@ -32,12 +32,25 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li class="current"><a href="../guide/17-web.html" aria-current="page">The web:: Library</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li class="current"><a href="../guide/17-web.html" aria-current="page">The web:: Library</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>17</nav>
 <article class="chapter"><h1 id="web">The <code>web::</code> Library<a class="hlink" href="#web" aria-label="link">&#8203;</a></h1>
-<p>The text a web page and a URL are made of: HTML escaping, percent-encoding, query strings and URLs, as plain functions over strings. The library is opt-in: a host registers it with <code>jai::stdlib::register_web(engine)</code>, apart from <code>register_all</code>, so an engine that never serves a page carries none of it. The standalone runner and the <a href="../embedding/19-jai-spider.html">jai_spider</a> host register it, so every sample on this page runs as it is (the <a href="#spider"><code>spider::</code></a> samples reach the network, so they show their calls without running them). Pages made from files are <a href="19-templates.html">HTML Templates</a>: <code>template</code>, <code>scoped_template</code> and their <code>web::html</code> value are on every engine, without this library.</p>
+<p>The text a web page and a URL are made of: HTML escaping, percent-encoding, query strings and URLs, as plain functions over strings.</p>
+<ul>
+<li>The library is opt-in: a host registers it with <code>jai::stdlib::register_web(engine)</code>, apart from <code>register_all</code>, so an engine that never serves a page carries none of it.</li>
+<li>The standalone runner and the <a href="../embedding/19-jai-spider.html">jai_spider</a> host register it, so every sample on this page runs as it is. The <a href="#spider"><code>spider::</code></a> samples reach the network, so they show their calls without running them.</li>
+<li>Pages made from files are <a href="19-templates.html">HTML Templates</a>: <code>template</code>, <code>scoped_template</code> and their <code>web::html</code> value are on every engine, without this library.</li>
+</ul>
 <h2 id="html">HTML text<a class="hlink" href="#html" aria-label="link">&#8203;</a></h2>
-<p><code>web::html_escape(s)</code> makes text safe to put in a page: it writes <code>&amp;</code> <code>&lt;</code> <code>&gt;</code> <code>&quot;</code> <code>&#x27;</code> as <code>&amp;amp;</code> <code>&amp;lt;</code> <code>&amp;gt;</code> <code>&amp;quot;</code> <code>&amp;#39;</code> (the set PHP&#x27;s <code>htmlspecialchars</code> escapes with <code>ENT_QUOTES</code>), so the result holds in element text and in a quoted attribute alike, and leaves every other byte, UTF-8 included, as it is. <code>web::html_unescape(s)</code> reads character references the way a browser reads them in text: the 2231 HTML5 named references (<code>&amp;eacute;</code>, <code>&amp;nLt;</code>), the legacy names a browser also takes without the <code>;</code> (<code>&amp;copy</code>, <code>&amp;amp</code>; the longest name that fits wins, so <code>&amp;notit;</code> is <code>&#xAC;it;</code>), and numeric references, <code>&amp;#233;</code> or <code>&amp;#xE9;</code> with the <code>;</code> optional, written out as UTF-8. A reference to 0, a surrogate or a value past U+10FFFF becomes U+FFFD, and 0x80 to 0x9F read as their windows-1252 characters (<code>&amp;#150;</code> is <code>&#x2013;</code>), as in a browser. An unknown name, a <code>&amp;</code> that starts no reference and anything else stay exactly as written, so <code>web::html_unescape(web::html_escape(s)) == s</code> for every <code>s</code>. Both return the argument&#x27;s kind: a <code>utf8_string</code> in, a <code>utf8_string</code> out.</p>
+<p><code>web::html_escape(s)</code> makes text safe to put in a page, and <code>web::html_unescape(s)</code> reads it back. Both return the argument&#x27;s kind: a <code>utf8_string</code> in, a <code>utf8_string</code> out.</p>
+<p><strong>Escaping.</strong> <code>web::html_escape(s)</code> writes <code>&amp;</code> <code>&lt;</code> <code>&gt;</code> <code>&quot;</code> <code>&#x27;</code> as <code>&amp;amp;</code> <code>&amp;lt;</code> <code>&amp;gt;</code> <code>&amp;quot;</code> <code>&amp;#39;</code> (the set PHP&#x27;s <code>htmlspecialchars</code> escapes with <code>ENT_QUOTES</code>). So the result holds in element text and in a quoted attribute alike. It leaves every other byte, UTF-8 included, as it is.</p>
+<p><strong>Unescaping.</strong> <code>web::html_unescape(s)</code> reads character references the way a browser reads them in text:</p>
+<ul>
+<li>the 2231 HTML5 named references (<code>&amp;eacute;</code>, <code>&amp;nLt;</code>);</li>
+<li>the legacy names a browser also takes without the <code>;</code> (<code>&amp;copy</code>, <code>&amp;amp</code>). The longest name that fits wins, so <code>&amp;notit;</code> is <code>&#xAC;it;</code>;</li>
+<li>numeric references, <code>&amp;#233;</code> or <code>&amp;#xE9;</code> with the <code>;</code> optional, written out as UTF-8.</li>
+</ul>
+<p>A reference to 0, a surrogate or a value past U+10FFFF becomes U+FFFD, and 0x80 to 0x9F read as their windows-1252 characters (<code>&amp;#150;</code> is <code>&#x2013;</code>), as in a browser. An unknown name, a <code>&amp;</code> that starts no reference and anything else stay exactly as written, so <code>web::html_unescape(web::html_escape(s)) == s</code> for every <code>s</code>.</p>
 <div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string name = &quot;Tom &amp; Jerry&#x27;s &lt;b&gt;show&lt;/b&gt;&quot;;
 print(`&lt;p title=&quot;${web::html_escape(name)}&quot;&gt;${web::html_escape(name)}&lt;/p&gt;`);
 print(web::html_unescape(&quot;caf&amp;eacute; &amp;copy 2026 &amp;#x1F642; &amp;#150; &amp;#0; &amp;bogus; AT&amp;T&quot;));
@@ -49,7 +62,14 @@ café © 2026 🙂 – � &amp;bogus; AT&amp;T
 true
 utf8_string</code></pre></div>
 <h2 id="percent-encoding">Percent-encoding<a class="hlink" href="#percent-encoding" aria-label="link">&#8203;</a></h2>
-<p>Two encodings, each with its decoder. <code>web::url_encode(s)</code> is RFC 3986 percent-encoding, for a path segment or any other part of a URL: the unreserved characters <code>A-Z a-z 0-9 - . _ ~</code> stay as they are and every other byte of the string, each byte of a UTF-8 character included, is written <code>%XX</code> in upper-case hex (PHP&#x27;s <code>rawurlencode</code>). <code>web::form_encode(s)</code> is the <code>application/x-www-form-urlencoded</code> encoding a form submits and a query string carries: <code>A-Z a-z 0-9 * - . _</code> stay, a space is <code>+</code>, and every other byte is <code>%XX</code> (PHP&#x27;s <code>urlencode</code>). <code>web::url_decode</code> turns each <code>%XX</code> back into its byte, and <code>web::form_decode</code> does that and reads <code>+</code> as a space. A <code>%</code> that is not followed by two hex digits is kept as written, as a browser keeps it, so decoding never fails; the result is the decoded bytes, which need not be valid UTF-8.</p>
+<p>Two encodings, each with its decoder.</p>
+<div class="tablewrap"><table><thead><tr><th>Function</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>web::url_encode(s)</code></td><td>RFC 3986 percent-encoding, for a path segment or any other part of a URL. The unreserved characters <code>A-Z a-z 0-9 - . _ ~</code> stay as they are and every other byte of the string, each byte of a UTF-8 character included, is written <code>%XX</code> in upper-case hex (PHP&#x27;s <code>rawurlencode</code>).</td></tr>
+<tr><td><code>web::form_encode(s)</code></td><td>the <code>application/x-www-form-urlencoded</code> encoding a form submits and a query string carries. <code>A-Z a-z 0-9 * - . _</code> stay, a space is <code>+</code>, and every other byte is <code>%XX</code> (PHP&#x27;s <code>urlencode</code>).</td></tr>
+<tr><td><code>web::url_decode</code></td><td>turns each <code>%XX</code> back into its byte</td></tr>
+<tr><td><code>web::form_decode</code></td><td>does that and reads <code>+</code> as a space</td></tr>
+</tbody></table></div>
+<p>A <code>%</code> that is not followed by two hex digits is kept as written, as a browser keeps it, so decoding never fails. The result is the decoded bytes, which need not be valid UTF-8.</p>
 <div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string title = &quot;Snap Jaw/Social? 50% off &amp; more&quot;;
 print(web::url_encode(title));
 print(web::url_decode(web::url_encode(title)) == title);
@@ -64,7 +84,21 @@ Snap+Jaw%2FSocial%3F+50%25+off+%26+more
 two words &amp; more
 a+b a b</code></pre></div>
 <h2 id="queries">Query strings<a class="hlink" href="#queries" aria-label="link">&#8203;</a></h2>
-<p><code>web::parse_query(s)</code> reads <code>a=1&amp;b=two+words</code> (a leading <code>?</code> is skipped) into a <code>map&lt;string, string&gt;</code>: each key and value is form-decoded, a key without <code>=</code> has an empty value, an empty key is dropped, and a key that repeats keeps its last value. <code>web::parse_query_all(s)</code> keeps every value instead, a <code>map&lt;string, var&gt;</code> of <code>array&lt;string&gt;</code> in the order they came. <code>web::build_query(m)</code> writes a map back: keys and values form-encoded, joined with <code>&amp;</code>, in the map&#x27;s key order (a map orders its keys, so the same map always builds the same query). A value is a string, a number or a bool (written as <code>to_string</code> writes it); an array repeats its key once per element; a null value leaves its key out. Any other value raises <code>web::build_query: the value of &#x27;m&#x27; is a map</code> (or <code>... is not text, a number, a bool or an array of them</code>).</p>
+<p><code>web::parse_query(s)</code> reads <code>a=1&amp;b=two+words</code> (a leading <code>?</code> is skipped) into a <code>map&lt;string, string&gt;</code>:</p>
+<ul>
+<li>each key and value is form-decoded;</li>
+<li>a key without <code>=</code> has an empty value;</li>
+<li>an empty key is dropped;</li>
+<li>a key that repeats keeps its last value.</li>
+</ul>
+<p><code>web::parse_query_all(s)</code> keeps every value instead, a <code>map&lt;string, var&gt;</code> of <code>array&lt;string&gt;</code> in the order they came.</p>
+<p><code>web::build_query(m)</code> writes a map back: keys and values form-encoded, joined with <code>&amp;</code>, in the map&#x27;s key order (a map orders its keys, so the same map always builds the same query). Each value:</p>
+<ul>
+<li>a string, a number or a bool is written as <code>to_string</code> writes it;</li>
+<li>an array repeats its key once per element;</li>
+<li>a null value leaves its key out;</li>
+<li>any other value raises <code>web::build_query: the value of &#x27;m&#x27; is a map</code> (or <code>... is not text, a number, a bool or an array of them</code>).</li>
+</ul>
 <div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, string&gt; q = web::parse_query(&quot;?page=2&amp;sort=new+first&amp;tag=a&amp;tag=b&amp;draft&quot;);
 print(to_json(q));
 map&lt;string, var&gt; all = web::parse_query_all(&quot;tag=a&amp;tag=b&amp;tag=c+d&quot;);
@@ -76,7 +110,13 @@ print(to_json(web::parse_query(web::build_query({&quot;k&amp;&quot;: &quot;v=1&q
 draft=false&amp;page=2&amp;q=jai+script&amp;tags=a&amp;tags=b+c
 {&quot;k&amp;&quot;:&quot;v=1&quot;,&quot;x&quot;:&quot;a b&quot;}</code></pre></div>
 <h2 id="urls">URLs<a class="hlink" href="#urls" aria-label="link">&#8203;</a></h2>
-<p><code>web::parse_url(s)</code> splits an RFC 3986 URI reference into a <code>web::url</code>: <code>scheme</code>, <code>user</code>, <code>password</code>, <code>host</code>, <code>port</code> (an <code>int</code>, 0 when the URL names none), <code>path</code>, <code>query</code> and <code>fragment</code>, each as written, nothing decoded. A reference without a scheme or a host (<code>/search?q=jai</code>, <code>//cdn.example/x</code>, <code>page.html#top</code>) parses too, and an IPv6 host keeps its brackets. A port that is not a number from 0 to 65535, or a bracket that does not close, raises <code>web::parse_url: &#x27;http://example.org:99999/&#x27; has a malformed host or port</code>. A <code>web::url</code> is a value: change its fields and <code>to_string()</code> joins them back, writing <code>//</code> and the authority only when there is a host, a user or a port, and <code>?</code> and <code>#</code> only before a non-empty query and fragment. It writes the parts as they are: encode a path segment with <code>web::url_encode</code> and a query with <code>web::build_query</code> first.</p>
+<p><code>web::parse_url(s)</code> splits an RFC 3986 URI reference into a <code>web::url</code>: <code>scheme</code>, <code>user</code>, <code>password</code>, <code>host</code>, <code>port</code> (an <code>int</code>, 0 when the URL names none), <code>path</code>, <code>query</code> and <code>fragment</code>, each as written, nothing decoded.</p>
+<ul>
+<li>A reference without a scheme or a host (<code>/search?q=jai</code>, <code>//cdn.example/x</code>, <code>page.html#top</code>) parses too.</li>
+<li>An IPv6 host keeps its brackets.</li>
+<li>A port that is not a number from 0 to 65535, or a bracket that does not close, raises <code>web::parse_url: &#x27;http://example.org:99999/&#x27; has a malformed host or port</code>.</li>
+</ul>
+<p>A <code>web::url</code> is a value: change its fields and <code>to_string()</code> joins them back. It writes <code>//</code> and the authority only when there is a host, a user or a port, and <code>?</code> and <code>#</code> only before a non-empty query and fragment. It writes the parts as they are: encode a path segment with <code>web::url_encode</code> and a query with <code>web::build_query</code> first.</p>
 <div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">web::url u = web::parse_url(&quot;https://ada:pw@snapjaw.example:8443/posts/7?sort=new#comments&quot;);
 print(u.scheme, &quot; | &quot;, u.user, &quot; | &quot;, u.password, &quot; | &quot;, u.host, &quot; | &quot;, u.port, &quot; | &quot;, u.path, &quot; | &quot;, u.query, &quot; | &quot;, u.fragment);
 u.path = &quot;/posts/8&quot;;
@@ -126,7 +166,12 @@ spider::Response gone = spider::catch(&quot;https://api.example.org/scores/7&quo
 <tr><td><code>type</code></td><td>how the content is sent: <code>"json"</code>, <code>"text"</code>, <code>"form"</code> (a map as <code>application/x-www-form-urlencoded</code>, as <code>web::build_query</code> spells it) or a media type such as <code>"text/csv"</code> for text content</td></tr>
 <tr><td><code>redirects</code></td><td>how many redirects to follow, 0 to 100 (default 5); 0 answers the redirect itself</td></tr>
 </tbody></table></div>
-<p>An unknown key, or a value of the wrong kind, raises before anything is sent (<code>spider::catch: unknown option &#x27;retries&#x27; (method, headers, timeout, type, redirects)</code>), and so does a header name that is not a token, a header value holding a line break or NUL, and a header the transport writes itself (<code>Host</code>, <code>Content-Length</code>, <code>Transfer-Encoding</code>, <code>Connection</code>: <code>spider::catch: header &#x27;Host&#x27; is the transport&#x27;s to set</code>).</p>
+<p>These raise before anything is sent:</p>
+<ul>
+<li>an unknown key, or a value of the wrong kind (<code>spider::catch: unknown option &#x27;retries&#x27; (method, headers, timeout, type, redirects)</code>);</li>
+<li>a header name that is not a token, or a header value holding a line break or NUL;</li>
+<li>a header the transport writes itself (<code>Host</code>, <code>Content-Length</code>, <code>Transfer-Encoding</code>, <code>Connection</code>: <code>spider::catch: header &#x27;Host&#x27; is the transport&#x27;s to set</code>).</li>
+</ul>
 <h3 id="spider-response"><code>spider::Response</code><a class="hlink" href="#spider-response" aria-label="link">&#8203;</a></h3>
 <p>An HTTP answer: what a client call returns, and what a <a href="../embedding/19-jai-spider.html">jai_spider</a> handler answers with. An error status is an answer like any other, not an error: <code>ok()</code> tells them apart.</p>
 <div class="tablewrap"><table><thead><tr><th>Member</th><th>What it is</th></tr></thead><tbody>
@@ -142,7 +187,13 @@ spider::Response gone = spider::catch(&quot;https://api.example.org/scores/7&quo
 </tbody></table></div>
 <p>A response is a value: assigning one copies its headers and cookies, and <code>r.headers["X-Trace"] = id</code> writes that response&#x27;s own map.</p>
 <h3 id="spider-redirects">Redirects, timeouts and errors<a class="hlink" href="#spider-redirects" aria-label="link">&#8203;</a></h3>
-<p>A 301, 302, 303, 307 or 308 answer with a Location is followed, up to <code>redirects</code> times, against the URL that answered (a relative Location resolves as a browser resolves it). As browsers do, a 303 turns any method but HEAD into a GET without a body, a 301 or 302 turns a POST into a GET, and a 307 or 308 sends the same request again. Authorization and Cookie headers are dropped when a redirect leaves the origin they were given for, and a redirect from https to http is refused. The answer&#x27;s <code>url</code> says where the call ended.</p>
+<p>A 301, 302, 303, 307 or 308 answer with a Location is followed, up to <code>redirects</code> times, against the URL that answered (a relative Location resolves as a browser resolves it). The answer&#x27;s <code>url</code> says where the call ended. As browsers do:</p>
+<ul>
+<li>a 303 turns any method but HEAD into a GET without a body;</li>
+<li>a 301 or 302 turns a POST into a GET;</li>
+<li>a 307 or 308 sends the same request again.</li>
+</ul>
+<p>Authorization and Cookie headers are dropped when a redirect leaves the origin they were given for, and a redirect from https to http is refused.</p>
 <p>What stops a call raises a catchable error naming the call, the URL and the reason:</p>
 <div class="tablewrap"><table><thead><tr><th>Error</th><th>When</th></tr></thead><tbody>
 <tr><td><code>spider::catch: http://example.org/slow: timed out after 5 s</code></td><td>the call took longer than its <code>timeout</code></td></tr>

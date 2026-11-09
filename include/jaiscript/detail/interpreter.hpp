@@ -898,10 +898,18 @@ namespace jai {
         // chain. A member METHOD or C++ PROPERTY hit answers nullptr - it shadows (never
         // fall past the class scope to a same-named global) but only value/callee/ref-bind
         // sites mint, so pointer callers land on their existing miss paths.
+        // ::name's scope: the program's; a parallel worker's is the root of its own chain, which holds its copies of the program's
+        // names (KEEP BYTE-PARALLEL with vm_backend::program_scope)
+        environment* program_scope() const noexcept {
+            if (!parallel_worker_) { return get_global_environment().get(); }
+            environment* result = environment_.get();
+            while (result->parent_raw()) { result = result->parent_raw(); }
+            return result;
+        }
         [[nodiscard]] JAI_FORCEINLINE script_value* resolve_local_or_env(size_t slot_index, uint64_t symbol_id, bool global_only = false) noexcept {
             if (global_only) [[unlikely]] {
                 // ::name - GLOBAL env only (locals, captures, member scope all skipped)
-                return get_global_environment()->get_value_ptr(symbol_id);
+                return program_scope()->get_value_ptr(symbol_id);
             }
             if (slot_index != SIZE_MAX && !call_stack_.empty()) {
                 if (auto* ptr = call_stack_.back().get_local(slot_index)) {

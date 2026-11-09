@@ -84,7 +84,6 @@ namespace stdlib {
 	}
 
     void register_container_types(engine& eng) {
-        detail::engine_access::library_registration library(eng);
         dynamic_binder<script_pair>(eng, "pair")
             .constructor<>()  // Will automatically use engine-aware constructor
             .constructor<script_value, script_value>()

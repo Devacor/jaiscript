@@ -7,9 +7,12 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <future>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <utility>
 #if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
@@ -131,6 +134,66 @@ namespace jai {
             pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
 #endif
         }
+
+        // macOS starts a std::thread on 512 KB where Linux gives 8 MB, so a parallel body's native-depth guard would trip sixteen
+        // times sooner there: an Apple worker asks for Linux's stack
+        class worker_thread {
+        public:
+            template<class Body>
+            void start(Body body) {
+#if defined(__APPLE__)
+                struct start_block {
+                    Body body;
+                    std::promise<std::thread::id> id;
+                };
+                auto block = std::make_unique<start_block>(start_block{std::move(body), {}});
+                std::future<std::thread::id> id = block->id.get_future();
+                pthread_attr_t attr;
+                pthread_attr_init(&attr);
+                pthread_attr_setstacksize(&attr, size_t(8) << 20);
+                const int error = pthread_create(&handle_, &attr, [](void* raw) -> void* {
+                    std::unique_ptr<start_block> start(static_cast<start_block*>(raw));
+                    start->id.set_value(std::this_thread::get_id());
+                    start->body();
+                    return nullptr;
+                }, block.get());
+                pthread_attr_destroy(&attr);
+                if (error != 0) { throw std::system_error(error, std::generic_category(), "thread_pool: a worker thread did not start"); }
+                block.release();
+                started_ = true;
+                id_ = id.get();
+#else
+                thread_ = std::thread(std::move(body));
+                id_ = thread_.get_id();
+#endif
+            }
+
+            std::thread::id get_id() const noexcept { return id_; }
+            bool joinable() const noexcept {
+#if defined(__APPLE__)
+                return started_;
+#else
+                return thread_.joinable();
+#endif
+            }
+            void join() {
+#if defined(__APPLE__)
+                pthread_join(handle_, nullptr);
+                started_ = false;
+#else
+                thread_.join();
+#endif
+            }
+
+        private:
+#if defined(__APPLE__)
+            pthread_t handle_{};
+            bool started_ = false;
+#else
+            std::thread thread_;
+#endif
+            std::thread::id id_;
+        };
     }
 
     struct thread_pool::state {
@@ -165,7 +228,7 @@ namespace jai {
         };
 
         struct worker {
-            std::thread thread;
+            worker_thread thread;
             std::thread::id id;
             std::mutex pinned_mutex;             // guards pinned; a submitter holding mutex_ takes it inside
             task_ring pinned;
@@ -192,7 +255,7 @@ namespace jai {
                 }
                 for (size_t i = 0; i < worker_count; ++i) {
                     if (faults) { faults->checkpoint("pool.thread_start", i); }
-                    workers_[i]->thread = std::thread([this, i, speed] {
+                    workers_[i]->thread.start([this, i, speed] {
                         if (speed == fast_threads) { opt_out_of_power_throttling(); }
                         run_worker(i);
                     });

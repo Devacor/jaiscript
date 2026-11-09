@@ -1007,6 +1007,7 @@ namespace jai {
         // the vm backend that keeps this declaration alive until its retire point (vm_backend::retain_method_decl): its frames name it raw
         mutable const void* vm_retainer = nullptr;
         mutable uint8_t vm_lean_bind = 0;   // vm: 1 = every parameter a by-value slot in order an in-place argument may already be, 2 = not
+        mutable uint64_t vm_lean_kinds = 0;   // vm: the lean bind as storage kinds (vm_backend.cpp lean_kinds_of; 0 = not yet computed)
         // a lambda's graft declaration without a declared return type: the kind its returns certainly yield (1 int, 2 float, 3 bool)
         mutable uint8_t graft_return_kind = 0;
 

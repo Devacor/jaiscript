@@ -758,7 +758,7 @@ checked_result<void> interpreter::visit_identifier_expr(identifier_expr* expr) {
     // ::name - GLOBAL env only (locals, captures, member scope all skipped).
     // KEEP BYTE-PARALLEL with vm exec_load's global-only door.
     if (expr->global_qualified) {
-        if (script_value* g = get_global_environment()->get_value_ptr(expr->symbol_id)) {
+        if (script_value* g = program_scope()->get_value_ptr(expr->symbol_id)) {
             push_value(g->deref());
             return checked_result<void>();
         }
@@ -2183,7 +2183,7 @@ checked_result<void> interpreter::assign_identifier(assignment_expr* expr, scrip
 
     // ::name resolves and stores against the GLOBAL env only
     environment* ident_env = identifier->global_qualified
-        ? get_global_environment().get() : environment_.get();
+        ? program_scope() : environment_.get();
 
     // Get the current value to check if it's a reference (environment path)
     if (!member_wins && ident_env->contains(identifier->symbol_id)) {
@@ -6934,7 +6934,7 @@ std::optional<checked_result<script_value>> interpreter::named_storage_reference
         script_value* storage = nullptr;
         if (ident->global_qualified) {
             // ::name - GLOBAL env only (slots, captures, member scope all skipped)
-            storage = get_global_environment()->get_value_ptr(ident->symbol_id);
+            storage = program_scope()->get_value_ptr(ident->symbol_id);
         } else {
             if (ident->slot_index != SIZE_MAX && !call_stack_.empty()) {
                 storage = call_stack_.back().get_local(ident->slot_index);
@@ -8403,7 +8403,7 @@ checked_result<bool> interpreter::bind_site_reference(const expression* argExpr,
 
         // ::name ref args bind against the GLOBAL env only
         if (identExpr->global_qualified) {
-            script_value* g = get_global_environment()->get_value_ptr(symbol_id);
+            script_value* g = program_scope()->get_value_ptr(symbol_id);
             if (!g) {
                 return checked_result<bool>(
                     make_error_code(runtime_error_code::undefined_variable),

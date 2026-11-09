@@ -176,7 +176,6 @@ namespace random_detail {
 
 	void register_random_functions(engine& eng_ref) {
 		using namespace random_detail;
-		detail::engine_access::library_registration library(eng_ref);
 		engine* eng = &eng_ref;
 		using R = checked_result<script_value>;
 

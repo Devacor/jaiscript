@@ -1624,6 +1624,19 @@ bool looks_like_script_path(const std::string& line, std::string& path_out) {
 	return true;
 }
 
+// A pasted path to an existing file that is not a script (a CMakeLists.txt, a .lua): named as a file, never parsed as code
+bool looks_like_other_file_path(const std::string& line, std::string& path_out) {
+	std::string t = trim(line);
+	if (t.size() >= 2 && ((t.front() == '"' && t.back() == '"') || (t.front() == '\'' && t.back() == '\''))) {
+		t = t.substr(1, t.size() - 2);
+	}
+	if (t.find_first_of("/\\") == std::string::npos) { return false; }
+	std::error_code ec;
+	if (!fs::is_regular_file(t, ec)) { return false; }
+	path_out = t;
+	return true;
+}
+
 const char* repl_help =
 	":help                 this text\n"
 	":load <path>          run a .jai file into this session (pasting/dropping a path works too)\n"
@@ -1828,6 +1841,10 @@ struct repl_session {
 					load_file(path, out);
 					continue;
 				}
+				if (looks_like_other_file_path(t, path)) {
+					out << con->red("'" + path + "' is a file, not a JaiScript script: only a .jai file runs from the prompt") << "\n";
+					continue;
+				}
 			} else if (trim(line).empty()) {
 				// blank line in continuation force-submits (escape hatch for a stuck bracket)
 				execute_chunk(buffer, out);
@@ -1965,6 +1982,8 @@ int run_selftest(const console_state& con) {
 	{ // REPL scripted session: multi-line, auto-print, typo recovery, meta-commands, path paste
 		fs::path pasted = dir / "pasted.jai";
 		spill_file(pasted.string(), "int pasted_marker = 777;\nprint(\"pasted ran\");\n");
+		fs::path not_script = dir / "CMakeLists.txt";
+		spill_file(not_script.string(), "project(x)\n");
 		std::ostringstream out;
 		std::istringstream in(
 			"int a = 2;\n"
@@ -1983,6 +2002,7 @@ int run_selftest(const console_state& con) {
 			"2 + 2\n"
 			"\"" + pasted.string() + "\"\n"
 			"pasted_marker\n"
+			+ not_script.string() + "\n"
 			":reset\n"
 			":help\n"
 			":quit\n");
@@ -2002,6 +2022,7 @@ int run_selftest(const console_state& con) {
 		expect(text.find("4") != std::string::npos, "repl: post-switch execute works");
 		expect(text.find("pasted ran") != std::string::npos, "repl: pasted .jai path runs into the session");
 		expect(text.find("777") != std::string::npos, "repl: pasted file's globals visible");
+		expect(text.find("is a file, not a JaiScript script") != std::string::npos, "repl: a pasted path to another kind of file is named, not parsed");
 		expect(text.find(":backend vm|interp") != std::string::npos, "repl: :help prints");
 	}
 

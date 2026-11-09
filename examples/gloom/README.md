@@ -12,7 +12,10 @@ GLOOM is the crawler's bigger sibling and a deliberate dogfood of the language's
 larger features: **`parallel_transform`** drives the wall rays and the particle pool,
 **coroutine handles living in fields** drive every enemy brain and the demo pilot,
 `new`/`shared_ptr` holds the world and its registries, and template strings (with
-`:spec` formats) build the HUD.
+`:spec` formats) build the HUD. The scripts are written as you would write them today:
+subsystem classes (World, Player, Renderer, Hud, Pilot), an enemy hierarchy whose
+subclasses override one coroutine brain, typed records (`Input`, `Particle`,
+`WallChunk`, `Billboard`), enums and `math::ivec2` paths.
 
 ## Run it
 
@@ -36,21 +39,30 @@ build/bin/jaiscript examples/gloom/gloom.jai
 
 GLOOM draws in two looks over one renderer:
 
-- **showcase** (the default when you play): each floor has its own lighting. Torchlight tints what is near, distance
-  fades into the floor's haze, and walls turned from the light take a cool shadow. Walls carry real textures: staggered
-  bricks, riveted plates, conduits, cracked blocks, plank doors whose lock lights glow in the dark, and an exit switch
-  over hazard stripes. Floor and ceiling fade to the same haze at the horizon. Sprites keep more light than walls so a
-  threat reads down a dark corridor, and their eyes, the spitter's gob and every projectile glow at full brightness.
-  The gun is in your hand at the bottom of the view, swaying as you walk and kicking on every shot. Under the view sit a
-  status bar and a panel with big numerals, bars, a face that bleeds as you do, the arms rack and keycards. The title,
-  floor tally (the numbers count up), death and victory pages are pixel art too.
+- **showcase** (the default when you play): a ray per pixel column, textured floors and ceilings, and light. Each floor
+  has its mood and its stone: sandstone flagstones, coolant glowing up through grating, a foundry floor split by
+  cracks of embers, the throne's checkered red. Lamps hang from the ceiling over pools of light, and the muzzle flash,
+  every projectile and every blast carry light of their own color (`lights.jai`): a grid of light texels, four to a
+  tile edge, where light flows through open tiles only, so it rounds corners and stops at walls, and falls off in an
+  ordered stipple. Every surface reads its texel and looks its color up in a table per light level, so a lit pixel
+  costs what an unlit one does. Walls carry staggered bricks, riveted plates, conduits, cracked blocks, plank doors
+  whose lock lights glow (and light the floor in front of them), and an exit switch that casts green. Sprites and the
+  gun take the light they stand in.
+  Hits land (`feel.jai`): the view shakes with blows and blasts and bobs as you walk, the scattergun kicks, a marker
+  flicks at the aim point on a hit and flares red on a kill, the screen washes red when you bleed and gold on a
+  pickup, the corners darken, and blood and scorch marks stay on the floor where they fell (old blood dries). A floor
+  opens with an iris and its name. Feel watches the game from outside, frame by frame, and never writes to it, so
+  `STATE_HASH` is the same in both looks. Every shot, roar, door and pickup has a sound, synthesized at boot into
+  8-bit WAVs by `sound.jai` (no audio file ships) and played where the host has sound (the runner and `jai_gloom`, on
+  Windows). Under the view sit a status bar and a panel with big numerals, bars, a face that bleeds as you do, the arms
+  rack and keycards. The title burns, the floor tally counts up, and the death and victory pages are pixel art too.
 - **reference** (`--look reference`): the frames of [reference/README.md](reference/README.md) section 4.2, the ones
   the Lua, LuaJIT, Squirrel and ChaiScript ports reproduce byte for byte. `--smoke` draws it unless told otherwise, so
   the published comparison times the same frames in every language.
 
-Both looks run the same simulation and the same per-pixel renderer: everything that differs is a table built at boot
-or on map load (wall tones, texture strips, sprite shading, particle colors), plus the gun and the panel. The view is a
-pixel grid blitted through **sub-cell block glyphs**:
+Both looks run the same simulation. The reference look casts one ray per cell column over a prebaked floor and
+ceiling; the showcase look casts one per pixel column and textures and lights every pixel, at about 7 ms a frame at
+100x40 on the VM (the reference look takes under 1). The view is a pixel grid blitted through **sub-cell block glyphs**:
 
 | mode | pixels/cell | glyphs | notes |
 |---|---|---|---|
@@ -88,7 +100,25 @@ jai_gloom.exe --look reference       # the frames the ports draw
 jai_gloom.exe --seed 7
 jai_gloom.exe --workers 0            # serial script loop instead of parallel_transform
 jai_gloom.exe --bench 300            # autopilot plays while you read ms/frame numbers
+jai_gloom.exe --dev                  # edit scripts/tune.jai while you play; the look reloads on save
+jai_gloom.exe --mute                 # no sound
 ```
+
+### Hot reload: `--dev`
+
+`scripts/tune.jai` holds the showcase look's dials: the ambient light, the lamps, the light each weapon, projectile
+and blast throws, the shake, the bob, the vignette, sound on or off. With `--dev`, save it while you play and the next
+frame shows the change; the status bar names the file and how long the tables took to rebuild (about 100 ms). The
+floor, the monsters, your health and the blood on the floor carry on. Save a mistake and the reload is rejected with
+its line, and the game keeps the look it had. `look.jai`, `lights.jai`, `feel.jai` and `sound.jai` reload the same
+way (`dev.jai`): each frame imports them as one group, the engine re-runs only what changed after checking every
+changed file, and state declared without an initializer keeps its value. The simulation is never in the group, so no
+reload can move `STATE_HASH`. The HUD shows `DEV: edit tune.jai` while it listens, and the core count when
+`--workers` grants workers.
+
+`gloom.jai -- --reload-test` checks all of that headless, in a scratch copy of the folder (it edits `tune.jai`): an
+edit changes the frame and keeps `STATE_HASH`, a broken edit is rejected and changes nothing, and restoring the file
+draws the first frame again byte for byte.
 
 | key | action |
 |---|---|
@@ -126,24 +156,12 @@ jaiscript.exe gloom.jai                          # play (esc quits)
 jaiscript.exe gloom.jai -- --smoke --ticks 300   # headless parity self-test vs section 3.5
 jaiscript.exe gloom.jai -- --bench 300           # autopilot + sim/draw split
 jaiscript.exe gloom.jai -- --256color            # force xterm-256 (the shim guesses as the exe does)
+jaiscript.exe gloom.jai -- --dev                 # play, reloading tune.jai and the look as you save them
+jaiscript.exe gloom.jai -- --reload-test         # the hot-reload self-test (in a scratch copy: it edits tune.jai)
 ```
 
 `--smoke` exits 0 only when `STATE_HASH` matches the reference checkpoint
 table.
-
-### The same game, written idiomatically
-
-`../gloom_idiomatic` is GLOOM as you would write it today: subsystem classes
-(World, Player, Renderer, Hud, Pilot), an enemy hierarchy whose subclasses
-override one coroutine brain, typed records (`Input`, `Particle`, `WallChunk`,
-`Billboard`), enums and `math::ivec2` paths. It draws the same frames and
-reaches the same `STATE_HASH` in both looks, so the native host plays it too:
-
-```bash
-jai_gloom.exe --scripts ../gloom_idiomatic/scripts
-jai_gloom.exe --smoke --ticks 300 --scripts ../gloom_idiomatic/scripts   # the hashes above
-jaiscript.exe ../gloom_idiomatic/gloom_idiomatic.jai                     # or its own shim
-```
 
 ## The game
 
@@ -178,7 +196,8 @@ in `render.jai`:
 - **Wall rays** — shared inputs ride inside every element, so elements are
   column *chunks* (16 of them), each carrying the map snapshot packed
   15-tiles-per-int64; the DDA inner loop is pure shift/mask. One ray per cell
-  column; sprites and particles keep full sub-cell resolution. This is the
+  column in the reference look, one per pixel column in the showcase look;
+  sprites and particles keep full sub-cell resolution. This is the
   hand-chunking reference shape; a body with captured reads could read a global
   snapshot instead.
 - **Particles** — the 288-slot pool is a flat value array stepped by one pure
@@ -237,9 +256,12 @@ jai_gloom.exe --smoke --ticks 300 --look showcase
 ```
 
 At 300 ticks, seed 666, the reference look's frames hash to `7fecc09815bb64e0`
-and the showcase look's to `6559224cca20d1f0`; `STATE_HASH` is 3580805725 under
-both, since the look never touches the simulation. `tools/ci/gates.sh gloom` checks
-all three.
+and the showcase look's to `1b6efa4fcae4e573`; `STATE_HASH` is 3580805725 under
+both, since the look never touches the simulation. The showcase look also prints
+its sound bank's hash and the cues it would have played. `tools/ci/gates.sh gloom`
+checks both looks, the showcase look in every pixel mode (quad, sext, half,
+ascii), the sound line, the shim's own smoke and its `--reload-test`;
+`gloom-workers` repeats the quad and sext showcase runs at eight workers.
 
 The autopilot is itself a coroutine handle in a Game field: it fights what it
 sees, loots what it can absorb, hunts the secrets it "remembers", opens what its
@@ -261,11 +283,19 @@ scripts/particles.jai  pool class (access labels), burst kit, color ramps
 scripts/enemies.jai the Enemy class: coroutine brains in fields, pain, deaths
 scripts/combat.jai  LOS, hitscan, projectiles, explosions, player damage
 scripts/sim.jai     movement + sliding, use (doors/secrets/exit), pickups
-scripts/look.jai    the showcase look: floor moods, wall textures, sprite shading
-scripts/render.jai  raycast view: chunked rays, strip cache, billboards,
-                    particles, automap, half/quad/sext/ascii row builders
+scripts/tune.jai    the showcase look's dials, the file --dev is for
+scripts/look.jai    the showcase look: floor moods, wall, floor and ceiling textures,
+                    the lit tables, sprite shading
+scripts/lights.jai  the showcase look's light grid: lamps, fixtures, flashes, blasts
+scripts/render.jai  raycast view: chunked rays, the showcase view's per-pixel floors
+                    and ceilings and decals, the reference view's strip cache,
+                    billboards, particles, automap, half/quad/sext/ascii row builders
 scripts/viewmodel.jai  the showcase look's gun in hand
 scripts/canvas.jai  half-block canvas and pixel font for the showcase panel and pages
+scripts/feel.jai    the showcase look watching the game: shake, bob, hit markers,
+                    tints, vignette, decals, the floor's opening, sound cues
+scripts/sound.jai   the effect synthesizer and cue player
+scripts/dev.jai     --dev hot reload and --reload-test
 scripts/hud.jai     the reference look's status strip, panel and pages
 scripts/screens.jai the showcase look's status bar, panel and pages
 scripts/game.jai    Game class (typed shared_ptr global), fixed-timestep tick,

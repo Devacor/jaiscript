@@ -35,27 +35,41 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding</summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li class="current"><a href="../embedding/14-language-server.html" aria-current="page">Editor Support: the Language Server</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li></ol></details></aside>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>14</nav>
 <article class="chapter"><h1 id="editor-support-the-language-server">Editor Support: the Language Server<a class="hlink" href="#editor-support-the-language-server" aria-label="link">&#8203;</a></h1>
-<p><code>jaiscript_lsp</code> is the JaiScript language server. It speaks the Language Server Protocol over stdin/stdout and answers from the engine&#x27;s own lexer, parser and strict checker, so what the editor underlines is what the engine reports when the program loads. The VS&nbsp;Code extension in <code>tools/vscode-jaiscript/</code> launches it for every <code>.jai</code> file; any other LSP client can run it the same way.</p>
+<p><code>jaiscript_lsp</code> is the JaiScript language server. It speaks the Language Server Protocol over stdin/stdout and answers from the engine&#x27;s own lexer, parser and strict checker, so what the editor underlines is what the engine reports when the program loads. The VS&nbsp;Code extension in <code>tools/vscode-jaiscript/</code> launches it for every <code>.jai</code> file. Any other LSP client can run it the same way.</p>
 <div class="callout"><p><strong>One checker, two places.</strong> The server does not reimplement the language. It parses with the engine&#x27;s parser, checks with the checker that gates <code>execute()</code> (<a href="06-static-checking.html">Static Checking</a>), and builds navigation from the same parse and the checker&#x27;s inferred types. A clean program shows no diagnostics in the editor for the same reason it loads: the checker&#x27;s false-positive contract.</p></div>
 <h2 id="quick-start">Quick start<a class="hlink" href="#quick-start" aria-label="link">&#8203;</a></h2>
 <ol><li>Build the server from the JaiScript folder: <code>cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release</code>, then <code>cmake --build build --target jaiscript_lsp</code>. The executable is <code>build/bin/jaiscript_lsp</code> (<code>.exe</code> on Windows).</li>
-<li>Open <code>tools/vscode-jaiscript</code> in VS&nbsp;Code and press F5, or link or install the extension (<a href="#vs-code">below</a>). Run from <code>tools/vscode-jaiscript</code>, the extension finds the server step 1 built without any setting; otherwise set <code>jaiscript.languageServer.path</code> to the executable, or put its folder on <code>PATH</code>.</li>
+<li>Open <code>tools/vscode-jaiscript</code> in VS&nbsp;Code and press F5, or link or install the extension (<a href="#vs-code">below</a>). Run from <code>tools/vscode-jaiscript</code>, the extension finds the server step 1 built without any setting. Otherwise set <code>jaiscript.languageServer.path</code> to the executable, or put its folder on <code>PATH</code>.</li>
 <li>Open a <code>.jai</code> file. Diagnostics appear as you type; F12 goes to a definition, Shift+F12 lists references, F2 renames.</li>
 <li>Scripts written for your own host: declare its names with <code>extern</code>, or build a server with your registrations (<a href="#host-surface">The host surface</a>).</li></ol>
 <p>If the server is not found the extension says so (<code>jaiscript_lsp was not found</code>); point <code>jaiscript.languageServer.path</code> at the executable.</p>
 <h2 id="what-it-does">What it does<a class="hlink" href="#what-it-does" aria-label="link">&#8203;</a></h2>
 <ul>
-<li><strong>Diagnostics as you type.</strong> Parse errors and every checker finding, errors and warnings, with the checker&#x27;s own text. The edited file is re-checked on each change; the other files of its program are re-checked in the background when a change alters what they can see (a declaration, a signature, a field). An error in an imported file is reported in that file, at its line. A file that does not parse reports its parse error, and the names it declares stay declared for the files that import it: one syntax error is one diagnostic, not a list of undeclared identifiers elsewhere.</li>
+<li><strong>Diagnostics as you type.</strong> Parse errors and every checker finding, errors and warnings, with the checker&#x27;s own text.<ul>
+<li>The edited file is re-checked on each change. The other files of its program are re-checked in the background when a change alters what they can see (a declaration, a signature, a field).</li>
+<li>An error in an imported file is reported in that file, at its line.</li>
+<li>A file that does not parse reports its parse error, and the names it declares stay declared for the files that import it: one syntax error is one diagnostic, not a list of undeclared identifiers elsewhere.</li>
+</ul></li>
 <li><strong>Go to definition and find references</strong> for functions, classes, fields, methods, constructors, globals, locals, parameters, enums and their values, and namespace members, across imports and includes. Definition on the path of an <code>import</code> or <code>include</code> opens that file.</li>
 <li><strong>Hover</strong>: a variable&#x27;s declared type, or for <code>auto</code> the type the checker inferred; a function&#x27;s or method&#x27;s signatures; a class with its fields and methods; an enum value with its number; a host function with the parameter types it was registered with.</li>
-<li><strong>Completion</strong>: locals and parameters in scope, the enclosing class&#x27;s members, the program&#x27;s globals, functions, classes, enums and namespaces, the host&#x27;s functions and classes, and keywords; after <code>.</code>, the receiver&#x27;s members (inherited ones included, registered C++ classes included) or the builtin methods of an array, map or string; after <code>::</code>, a namespace&#x27;s members, a class&#x27;s statics or an enum&#x27;s values.</li>
+<li><strong>Completion</strong>: locals and parameters in scope, the enclosing class&#x27;s members, the program&#x27;s globals, functions, classes, enums and namespaces, the host&#x27;s functions and classes, and keywords.<ul>
+<li>after <code>.</code>, the receiver&#x27;s members (inherited ones included, registered C++ classes included) or the builtin methods of an array, map or string;</li>
+<li>after <code>::</code>, a namespace&#x27;s members, a class&#x27;s statics or an enum&#x27;s values.</li>
+</ul></li>
 <li><strong>Signature help</strong> inside a call&#x27;s parentheses, every overload, the current parameter highlighted.</li>
 <li><strong>Rename</strong> across every file of the program. A rename that cannot be proven complete is refused with the reason instead of applied halfway (see <a href="#rename">Rename</a>).</li>
 <li><strong>Document symbols</strong> (the outline: classes with their members, functions, globals, enums, namespaces) and <strong>workspace symbols</strong> (every declaration in the workspace&#x27;s <code>.jai</code> files, fuzzy-matched).</li>
 </ul>
 <h2 id="programs">Programs: what is checked together<a class="hlink" href="#programs" aria-label="link">&#8203;</a></h2>
-<p>A file whose top-level <code>import</code> and <code>include</code> declarations carry literal paths is the root of a <em>program</em>, and the checker checks a program as one: a function in one file may use a global or a class another file declares, in any import order (<a href="../guide/13-strict-checking.html#across-files">Across files</a>). The server gives each file the view the engine gives it when its program runs. It reads the workspace&#x27;s import graph, walks up from the file to the files nothing imports (the program&#x27;s roots), and checks the file against the names and class declarations of every unit in those roots&#x27; closures. A file shared by two programs sees both. A file nothing imports is its own root.</p>
-<p>Paths resolve with the engine&#x27;s one ladder: the importing file&#x27;s folder, then the configured include paths, then the working directory, which the server sets to the first workspace folder. The file an editor has open is read from the editor, unsaved changes included; every other file is read from disk and re-read when it changes.</p>
+<p>A file whose top-level <code>import</code> and <code>include</code> declarations carry literal paths is the root of a <em>program</em>, and the checker checks a program as one. A function in one file may use a global or a class another file declares, in any import order (<a href="../guide/13-strict-checking.html#across-files">Across files</a>).</p>
+<p>The server gives each file the view the engine gives it when its program runs. It reads the workspace&#x27;s import graph, walks up from the file to the files nothing imports (the program&#x27;s roots), and checks the file against the names and class declarations of every unit in those roots&#x27; closures. A file shared by two programs sees both. A file nothing imports is its own root.</p>
+<p>Paths resolve with the engine&#x27;s one ladder:</p>
+<ol>
+<li>the importing file&#x27;s folder;</li>
+<li>then the configured include paths;</li>
+<li>then the working directory, which the server sets to the first workspace folder.</li>
+</ol>
+<p>The file an editor has open is read from the editor, unsaved changes included; every other file is read from disk and re-read when it changes.</p>
 <h2 id="host-surface">The host surface<a class="hlink" href="#host-surface" aria-label="link">&#8203;</a></h2>
 <p>A script can call what its host registers, and the checker knows those names only from the engine it checks against. The server builds that engine from a <em>host profile</em>:</p>
 <div class="tablewrap"><table>
@@ -65,7 +79,11 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <tr><td><code>stdlib</code></td><td><code>jai::stdlib::register_all</code> alone.</td></tr>
 <tr><td><code>bare</code></td><td>a fresh engine: the language and the engine-core builtins every engine has (<code>print</code>, <code>format_value</code>, <code>math::</code>, <code>binary::</code>, <code>extend</code>, <code>same_object</code>, <code>parallel_transform</code>, the file-location functions), without the standard library's <code>to_string</code>, <code>type_of</code>, <code>to_json</code>, <code>time::</code> or <code>reflect::</code> (whose <code>is_enabled</code> alone is core).</td></tr>
 </tbody></table></div>
-<p>Scripts written for another host (a game engine with its own bound classes) have two routes. Names the host provides can be declared in the scripts with <code>extern</code>, which the checker, and therefore the server, reads as declarations (<a href="06-static-checking.html">Static Checking</a>). Or the host builds its own server: the server is six source files over the library, and <code>runner_host.cpp</code> is the one that registers the surface; a host replaces it with a file that calls its own registration function.</p>
+<p>Scripts written for another host (a game engine with its own bound classes) have two routes:</p>
+<ul>
+<li>Names the host provides can be declared in the scripts with <code>extern</code>, which the checker, and therefore the server, reads as declarations (<a href="06-static-checking.html">Static Checking</a>).</li>
+<li>Or the host builds its own server. The server is six source files over the library, and <code>runner_host.cpp</code> is the one that registers the surface. A host replaces it with a file that calls its own registration function.</li>
+</ul>
 <h2 id="building">Building the server<a class="hlink" href="#building" aria-label="link">&#8203;</a></h2>
 <p>The server is the <code>jaiscript_lsp</code> CMake target (<code>JAISCRIPT_BUILD_LSP</code>, on by default when JaiScript is the top-level CMake project and off as a subproject). It has no dependency beyond the library and what the runner links.</p>
 <div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain">cmake --build build --target jaiscript_lsp       # -&gt; build/bin/jaiscript_lsp(.exe)
@@ -86,9 +104,16 @@ code tools/vscode-jaiscript          # then press F5 and open a .jai file there
 # 3. package it
 cd tools/vscode-jaiscript
 npm install
-npx @vscode/vsce package             # jaiscript-0.5.1.vsix
-code --install-extension jaiscript-0.5.1.vsix</code></pre></div>
-<p>The extension finds the server in this order: <code>jaiscript.languageServer.path</code> when it is set; <code>server/jaiscript_lsp</code> (<code>.exe</code> on Windows) inside the extension folder, where a packaged build carries it; the JaiScript folder&#x27;s build trees, two levels above the extension folder (so found when the extension runs from <code>tools/vscode-jaiscript</code>): <code>build/bin</code>, then <code>build-debug/bin</code>, then the trees Visual Studio&#x27;s CMake presets create there (Release before Debug); then <code>PATH</code>. Rebuilding the extension itself is <code>npm install</code> and <code>npm run compile</code> (a type check, then the bundle).</p>
+npx @vscode/vsce package             # jaiscript-0.5.2.vsix
+code --install-extension jaiscript-0.5.2.vsix</code></pre></div>
+<p>The extension finds the server in this order:</p>
+<ol>
+<li><code>jaiscript.languageServer.path</code> when it is set;</li>
+<li><code>server/jaiscript_lsp</code> (<code>.exe</code> on Windows) inside the extension folder, where a packaged build carries it;</li>
+<li>the JaiScript folder&#x27;s build trees, two levels above the extension folder (so found when the extension runs from <code>tools/vscode-jaiscript</code>): <code>build/bin</code>, then <code>build-debug/bin</code>, then the trees Visual Studio&#x27;s CMake presets create there (Release before Debug);</li>
+<li>then <code>PATH</code>.</li>
+</ol>
+<p>Rebuilding the extension itself is <code>npm install</code> and <code>npm run compile</code> (a type check, then the bundle).</p>
 <div class="tablewrap"><table>
 <thead><tr><th>setting</th><th>default</th><th>meaning</th></tr></thead>
 <tbody>
@@ -98,7 +123,7 @@ code --install-extension jaiscript-0.5.1.vsix</code></pre></div>
 <tr><td><code>jaiscript.languageServer.includePaths</code></td><td><code>[]</code></td><td>include paths for <code>import</code> and <code>include</code></td></tr>
 <tr><td><code>jaiscript.languageServer.log</code></td><td><code>false</code></td><td>log requests and timings to the <em>JaiScript Language Server</em> output channel</td></tr>
 </tbody></table></div>
-<p>A settings change restarts the server; <em>JaiScript: Restart Language Server</em> in the command palette does it by hand. The debugger attach (<a href="12-debugging.html">Debugging</a>) is the same extension and works with or without the server.</p>
+<p>A settings change restarts the server. <em>JaiScript: Restart Language Server</em> in the command palette does it by hand. The debugger attach (<a href="12-debugging.html">Debugging</a>) is the same extension and works with or without the server.</p>
 <h2 id="rename">Rename<a class="hlink" href="#rename" aria-label="link">&#8203;</a></h2>
 <p>A rename edits the declaration and every use in every file of the declaring file&#x27;s programs. Renaming a method renames it in every class of its hierarchy that declares the name, so an override keeps overriding. A rename is refused, with the reason, when the server cannot prove the edit complete or correct:</p>
 <ul>
@@ -108,7 +133,13 @@ code --install-extension jaiscript-0.5.1.vsix</code></pre></div>
 <li>a name the host or the language defines.</li>
 </ul>
 <h2 id="performance">Performance<a class="hlink" href="#performance" aria-label="link">&#8203;</a></h2>
-<p>A change re-parses the edited file and re-checks it against its program&#x27;s tables. The other files&#x27; parses stay cached, the program&#x27;s tables are rebuilt from cached per-file declarations only when a file&#x27;s declarations change, and only such a change sends the rest of the program to be re-checked, one file at a time between requests. Navigation reads a per-file model built from the same check and kept until the file or its program changes.</p>
+<p>A change re-parses the edited file and re-checks it against its program&#x27;s tables.</p>
+<ul>
+<li>The other files&#x27; parses stay cached.</li>
+<li>The program&#x27;s tables are rebuilt from cached per-file declarations only when a file&#x27;s declarations change.</li>
+<li>Only such a change sends the rest of the program to be re-checked, one file at a time between requests.</li>
+</ul>
+<p>Navigation reads a per-file model built from the same check and kept until the file or its program changes.</p>
 <p>Measured on Gator Quest (<code>examples/gatorquest</code>: 36 files, 13,980 lines; a Release build on a desktop Windows machine; times from the request sent to the answer received, over stdio):</p>
 <div class="tablewrap"><table>
 <thead><tr><th>operation</th><th>time</th></tr></thead>
@@ -124,12 +155,20 @@ code --install-extension jaiscript-0.5.1.vsix</code></pre></div>
 <h2 id="other-editors">Other editors<a class="hlink" href="#other-editors" aria-label="link">&#8203;</a></h2>
 <p>Any LSP client runs the server as a stdio process for the <code>jaiscript</code> language and <code>.jai</code> files. The initialization options mirror the extension&#x27;s settings:</p>
 <div class="codeblock cb-plain"><span class="cb-label">initializationOptions</span><pre><code class="lang-plain">{ "host": "runner", "includePaths": ["scripts/shared"] }</code></pre></div>
-<p>The server declares its capabilities in the usual way (<code>textDocumentSync</code> incremental, hover, definition, references, document highlights, completion on <code>.</code>, <code>::</code> and <code>-&gt;</code>, signature help on <code>(</code> and <code>,</code>, rename with prepare, document and workspace symbols) and reads file changes from <code>workspace/didChangeWatchedFiles</code> for <code>**/*.jai</code>.</p>
+<p>The server reads file changes from <code>workspace/didChangeWatchedFiles</code> for <code>**/*.jai</code>, and declares its capabilities in the usual way:</p>
+<ul>
+<li><code>textDocumentSync</code> incremental;</li>
+<li>hover, definition, references, document highlights;</li>
+<li>completion on <code>.</code>, <code>::</code> and <code>-&gt;</code>;</li>
+<li>signature help on <code>(</code> and <code>,</code>;</li>
+<li>rename with prepare;</li>
+<li>document and workspace symbols.</li>
+</ul>
 <h2 id="limits">What it does not see<a class="hlink" href="#limits" aria-label="link">&#8203;</a></h2>
 <ul>
 <li><strong>Dynamic values.</strong> A member used on a <code>var</code> has no definition to go to and nothing to hover, and a <code>var</code> variable hovers as <code>var</code>: the checker&#x27;s precision map (<a href="06-static-checking.html">Static Checking</a>) is the server&#x27;s too. Declared types, <code>auto</code> and references to declared types navigate.</li>
-<li><strong>Run-time structure.</strong> Scripts are never executed. Members a script adds with <code>extend</code>, names a host registers after load, and files reached by a computed <code>import(expr)</code> are outside what it knows; <code>extern</code> declares the names.</li>
-<li><strong>A declaration that does not parse.</strong> While a declaration has a syntax error, the parser&#x27;s error is what the editor shows for it; checker findings stay for the code before the error and for whole declarations after it, and the file&#x27;s other declarations keep their navigation. Inside the broken declaration, completion and signature help work from the text before the cursor.</li>
+<li><strong>Run-time structure.</strong> Scripts are never executed. Members a script adds with <code>extend</code>, names a host registers after load, and files reached by a computed <code>import(expr)</code> are outside what it knows. <code>extern</code> declares the names.</li>
+<li><strong>A declaration that does not parse.</strong> While a declaration has a syntax error, the parser&#x27;s error is what the editor shows for it. Checker findings stay for the code before the error and for whole declarations after it, and the file&#x27;s other declarations keep their navigation. Inside the broken declaration, completion and signature help work from the text before the cursor.</li>
 </ul>
 <nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/13-script-extensible.html"><span>&larr; previous</span>Script-Extensible Objects: extend</a><a class="next" rel="next" href="../embedding/15-math-adapters.html"><span>next &rarr;</span>Math Adapters: Host Vector Types</a></nav></article>
 </main>

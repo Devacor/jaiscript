@@ -3907,6 +3907,28 @@ JAI_NOINLINE checked_result<statement_ptr> parser::fallthrough_statement() {
     return fallthrough;
 }
 
+// A case body holds statements, as in C++: a declaration there names the braces it needs, once, and the switch parses on
+JAI_NOINLINE checked_result<statement_ptr> parser::case_body_statement() {
+    const size_t start = current_;
+    const size_t errors_before = errors_.size();
+    const std::optional<token> pushed_before = pushed_back_token_;
+    const token at = peek();
+    auto stmt = statement();
+    if (stmt) { return stmt; }
+    current_ = start;
+    errors_.resize(errors_before);
+    pushed_back_token_ = pushed_before;
+    auto decl = declaration();
+    if (decl && decl.value() && decl.value()->get_type() != node_type::statement_decl && errors_.size() == errors_before) {
+        report_error("a declaration in a case body needs the body in braces: case value: { ... }", at);
+        return statement_ptr(std::make_shared<block_stmt>(at.location, std::vector<declaration_ptr>{}));
+    }
+    current_ = start;
+    errors_.resize(errors_before);
+    pushed_back_token_ = pushed_before;
+    return statement();
+}
+
 checked_result<statement_ptr> parser::block_statement() {
     stack_.guard(peek().location);
     const token& leftBrace = previous();
@@ -6067,8 +6089,7 @@ checked_result<statement_ptr> parser::switch_statement() {
                     break;
                 }
 
-                // Parse regular statement
-                auto stmt_result = statement();
+                auto stmt_result = case_body_statement();
                 if (!stmt_result) {
                     in_switch_case_ = oldInSwitchCase;
                     return stmt_result.error();
@@ -6111,7 +6132,7 @@ checked_result<statement_ptr> parser::switch_statement() {
                     break;
                 }
 
-                auto stmt_result = statement();
+                auto stmt_result = case_body_statement();
                 if (!stmt_result) {
                     in_switch_case_ = oldInSwitchCase;
                     return stmt_result.error();

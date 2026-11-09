@@ -62,6 +62,21 @@ function make_equipment(int floor) -> Item {
 	return item;
 }
 
+// the blade by the bones on floor 1: made by hand, so it costs the Rng nothing
+string LASTLIGHT_NAME = "Lastlight Fang";
+
+function make_lastlight() -> Item {
+	Item blade;
+	blade.kind = "weapon";
+	blade.glyph = ")";
+	blade.name = LASTLIGHT_NAME;
+	blade.rarity = "rare";
+	blade.atk = 3;
+	blade.bonus["crit"] = 5;
+	blade.ink = rarity_ink("rare");
+	return blade;
+}
+
 function make_potion() -> Item {
 	Item item;
 	item.kind = "potion";
@@ -134,6 +149,7 @@ function give_item(var& player, Item item) -> bool {
 	if (item.kind == "gold") {
 		player.gold += item.amount;
 		log_ink(INK_GOLD, `You pocket ${item.amount} gold.`);
+		fx_screen(`+${item.amount} GOLD`, INK_GOLD);
 		return true;
 	}
 	if (player.inventory.size() >= PACK_SIZE) {
@@ -142,6 +158,7 @@ function give_item(var& player, Item item) -> bool {
 	}
 	player.inventory.push(item);
 	log_msg(`You pick up ${paint(item.ink, item_label(item))}${item_stats_label(item)}.`);
+	if (item.is_gear()) { announce_find(player, item); }
 	return true;
 }
 
@@ -188,11 +205,13 @@ function drink_potion(var& player, int slot_index) -> void {
 		case "mend": {
 			int healed = restore_stat(player.hp, player.total_max_hp(), potion.power);
 			log_ink(INK_GOOD, `You feel knitted together (+${healed} HP).`);
+			fx_screen(`+${healed}`, INK_GOOD);
 			break;
 		}
 		case "greatmend": {
 			int healed = restore_stat(player.hp, player.total_max_hp(), potion.power);
 			log_ink(INK_GOOD, `Warmth floods you (+${healed} HP).`);
+			fx_screen(`+${healed}`, INK_GOOD);
 			break;
 		}
 		case "focus": {
@@ -281,6 +300,22 @@ function smart_equip(var& player) -> bool {
 	}
 	log_msg("Nothing in the pack beats what you're wearing.");
 	return false;
+}
+
+// A find is weighed against what you wear: how much better or worse, and the better ones get a
+// banner in the view, louder by rarity.
+function announce_find(var& player, Item item) -> void {
+	var worn = player.worn(item.kind);
+	if (worn == null) {
+		log_ink(INK_GOOD, `  Your ${item.kind} slot is empty: E puts it on.`);
+	} else {
+		int delta = gear_score(item) - gear_score(worn);
+		if (delta > 0) { log_ink(INK_GOOD, `  Better than your ${worn.name} (+${delta}): E equips it.`); }
+		else if (delta < 0) { log_ink(INK_DIM, `  Worse than your ${worn.name} (${delta}).`); }
+		else { log_ink(INK_DIM, `  About as good as your ${worn.name}.`); }
+	}
+	if (item.rarity == "common" || item.rarity == "uncommon") { return; }
+	fx_banner(string::to_upper(item.rarity), string::to_upper(item.name), rarity_ink(item.rarity));
 }
 
 function gear_score(Item item) -> int {

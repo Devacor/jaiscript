@@ -732,6 +732,12 @@ bool class_definition::flat_field_type(const type_info_ptr& t, std::vector<const
     case script_value_type::jai_bool_type:
     case script_value_type::jai_char_type:
     case script_value_type::jai_string_type:
+    case script_value_type::jai_vec2_type:
+    case script_value_type::jai_ivec2_type:
+    case script_value_type::jai_vec3_type:
+    case script_value_type::jai_ivec3_type:
+    case script_value_type::jai_vec4_type:
+    case script_value_type::jai_color_type:
         return true;
     case script_value_type::jai_array_type:
         return flat_field_type(t->element_type(), in_progress, host_values);

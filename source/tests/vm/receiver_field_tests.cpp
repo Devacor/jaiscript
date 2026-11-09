@@ -362,6 +362,91 @@ public:
 			)";
 			all(script, "", "polymorphic receivers");
 		});
+
+		test("a_body_calling_its_siblings_grafts_with_them_on_the_receiver", [this]() {
+			// GLOOM's ray march: a method calling a sibling by bare name grafts into a method of its class, the sibling a level down, and an
+			// explicit `this.m()` statement grafts like a bare one; a free function's call keeps the method's frame, where its siblings graft;
+			// a sibling private to the class takes the real call from outside its family; a sibling a subclass overrides keeps its call
+			const std::string script = R"(
+				class World {
+				public:
+					int mw = 8;
+					int mh = 8;
+					array<int> tiles;
+					World() { for (int i = 0; i < 64; ++i) { tiles.push(i % 7 == 0 ? 1 : 0); } }
+					int tile_at(int x, int y) {
+						if (x < 0 || y < 0 || x >= mw || y >= mh) { return 1; }
+						return tiles[y * mw + x];
+					}
+					bool solid_at(int x, int y) { return tile_at(x, y) != 0; }
+					bool los_clear(float ax, float ay, float bx, float by) {
+						float t = 0.0;
+						while (t < 1.0) {
+							if (solid_at(math::ifloor(ax + (bx - ax) * t), math::ifloor(ay + (by - ay) * t))) { return false; }
+							t += 0.05;
+						}
+						return true;
+					}
+					int counted(int n) { int s = 0; for (int i = 0; i < n; ++i) { s += this.weight(i); } return s; }
+					int weight(int i) { return twice(i) + bias(); }
+				private:
+					int twice(int i) { return i * 2; }
+					int bias() { return mw - 7; }
+				}
+				class Ray {
+				public:
+					int lit(int x) { return x % 3 == 0 ? 1 : 0; }
+					bool dark(int x) { return lit(x) == 0; }
+					int span(int n) { int s = 0; for (int x = 0; x < n; ++x) { if (dark(x)) { ++s; } } return s; }
+				}
+				class Holes : Ray {
+				public:
+					override int lit(int x) { if (x == 4) { return 1; } return super::lit(x); }
+				}
+				class Peer {
+				public:
+					World w = World();
+					int weights(int n) { int s = 0; for (int i = 0; i < n; ++i) { s += w.weight(i); } return s; }
+				}
+				int weights(int n) { World w = World(); int s = 0; for (int i = 0; i < n; ++i) { s += w.weight(i); } return s; }
+				string go() {
+					World w = World();
+					string out = "";
+					for (int i = 0; i < 12; ++i) { out += w.los_clear(0.5, 0.5 + i % 6, 7.5, 7.2 - i % 4) ? "1" : "0"; }
+					Ray r = Ray();
+					Holes h = Holes();
+					Peer p = Peer();
+					return out + "|" + to_string(w.counted(10)) + "|" + to_string(weights(10)) + "|" + to_string(p.weights(10)) + "|" +
+					       to_string(r.span(12)) + "|" + to_string(h.span(12));
+				}
+				go();
+			)";
+			all(script, "", "a body calling its siblings");
+			const std::string l = listing(script);
+			for (const char* name : { "-- inlined solid_at", "-- inlined tile_at", "-- inlined weight", "-- inlined twice" }) {
+				check_true(l.find(name) != std::string::npos, std::string(name) + " grafts: " + l);
+			}
+			const std::string raising = R"(
+				class Grid {
+					int div = 0;
+					int cell(int x) { return 10 / (x - div); }
+					int probe(int x) { return cell(x) + 1; }
+					int sweep() { int s = 0; for (int x = 3; x >= 0; --x) { s += probe(x); } return s; }
+				}
+				Grid g = Grid();
+				g.sweep();
+			)";
+			auto traced = [&](which w) {
+				auto e = make_for(w);
+				std::string out;
+				try { e->execute(raising); out = "no raise"; } catch (const std::exception& ex) { out = ex.what(); }
+				for (const auto& frame : e->last_stack_trace()) { out += " | " + frame.function + ":" + std::to_string(frame.line); }
+				return out;
+			};
+			const std::string oracle = traced(which::interp);
+			check_eq(oracle, traced(which::vm), "a raise in a grafted body's sibling on the vm");
+			check_eq(oracle, traced(which::vm_reference), "a raise in a grafted body's sibling on the vm-reference backend");
+		});
 	}
 };
 

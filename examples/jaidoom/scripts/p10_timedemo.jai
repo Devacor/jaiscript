@@ -8,6 +8,11 @@
 //   jaiscript p10_timedemo.jai                       (../demo.json or demo.json)
 //   jaiscript p10_timedemo.jai -- mytape.json 200x140
 //   jaiscript p10_timedemo.jai -- simonly            (playsim isolated, no render)
+//   jaiscript p10_timedemo.jai -- 120x78 sext        (the same 120x39 cells as 2x3 sextants: 240x117 pixels)
+//   jaiscript p10_timedemo.jai -- 120x78 sext fit 0  (sextants from the two extreme pixels, not the mean colors)
+//   jaiscript p10_timedemo.jai -- workers 1          (the blit's rows through parallel_transform)
+//   jaiscript p10_timedemo.jai -- tics 700           (stop after 700 tics)
+// FRAME_HASH is the last frame's terminal text, STATE_HASH the playsim's state: the gate pins both.
 
 import "sim_random.jai";
 import "wad.jai";
@@ -44,9 +49,14 @@ function main() -> int {
 	int bw = 120;
 	int bh = 78;
 	bool simonly = false;
+	int limit = 0;
 	for (int a = 0; a < ARGS.size(); ++a) {
 		var arg = ARGS[a];
 		if (arg == "simonly") { simonly = true; }
+		else if (arg == "sext") { SEXTANTS = true; }
+		else if (arg == "fit" && a + 1 < ARGS.size()) { SEXT_FIT = ARGS[a + 1].to_int(1); a += 1; }
+		else if (arg == "tics" && a + 1 < ARGS.size()) { limit = ARGS[a + 1].to_int(0); a += 1; }
+		else if (arg == "workers" && a + 1 < ARGS.size()) { BLIT_WORKERS = ARGS[a + 1].to_int(0); a += 1; }
 		else if (arg.ends_with(".json")) { tape = arg; }
 		else {
 			int xat = arg.find("x");
@@ -60,7 +70,7 @@ function main() -> int {
 	if (tape == "") { tape = data_path("demo.json"); }
 	if (!wad_load(wadpath)) { print("wad_load failed"); return 1; }
 	if (!demo_load(tape)) { print(`no demo at ${tape}`); return 1; }
-	vid_init(bw, bh);
+	vid_init_cells(bw, bh / 2);
 	hud_init();
 
 	// demo_play_start's launch sequence, minus the menu/terminal machinery
@@ -75,13 +85,14 @@ function main() -> int {
 	if (!game_start_map(DEMO_MAP)) { print(`no map ${DEMO_MAP}`); return 1; }
 
 	int ntics = DEMO_TICS.size() / 6;
-	print(`timedemo: ${tape}  map ${DEMO_MAP} skill ${DEMO_SKILL}${DEMO_NM ? " NIGHTMARE" : ""}  ${ntics} tics  vid ${bw}x${bh}${simonly ? " SIMONLY" : ""}`);
+	print(`timedemo: ${tape}  map ${DEMO_MAP} skill ${DEMO_SKILL}${DEMO_NM ? " NIGHTMARE" : ""}  ${ntics} tics  vid ${VW}x${VH}${SEXTANTS ? " sext" : ""}${simonly ? " SIMONLY" : ""}`);
 
 	float sim_s = 0.0;
 	float rend_s = 0.0;
 	float blit_s = 0.0;
 	float worst = 0.0;
 	int frame_bytes = 0;
+	string frame = "";
 	time::stopwatch run;
 	time::stopwatch tic;
 	run.start();
@@ -100,13 +111,13 @@ function main() -> int {
 			}
 			hud_draw();
 			rend_s += tic.delta();
-			var frame = blit_half();
+			frame = vid_blit();
 			frame_bytes = frame.size();
 			blit_s += tic.delta();
 		}
 		float spent = tic.elapsed();
 		if (spent > worst) { worst = spent; }
-		if (LEVEL_DONE) { break; }
+		if (LEVEL_DONE || (limit > 0 && GAME_TIC >= limit)) { break; }
 	}
 	int wall = run.elapsed() * 1000;
 	if (wall < 1) { wall = 1; }
@@ -117,8 +128,15 @@ function main() -> int {
 
 	print(`played ${played} tics in ${wall} ms  =  ${mspt:.2} ms/tic  (${speedup:.1}x realtime, ${math::itrunc(played * 1000.0 / wall)} tics/sec)`);
 	print(`split: sim ${sim_s * 1000 / imax(1, played):.2}  render ${rend_s * 1000 / imax(1, played):.2}  blit ${blit_s * 1000 / imax(1, played):.2}  (ms/tic, aggregate)  worst tic ${worst * 1000:.1} ms  frame ${frame_bytes} bytes`);
+	if (!simonly) { print(`FRAME_HASH: ${text_hash(frame)}  (the last frame's terminal text)`); }
 	print(`STATE_HASH: ${demo_state_hash()}  (run twice: identical hash = uncapped replay is deterministic)`);
 	return 0;
+}
+
+function text_hash(string s) -> int {
+	int result = 2166136261;
+	for (int i = 0; i < s.size(); ++i) { result = ((result ^ (s[i] + 0)) * 16777619) & 4294967295; }
+	return result;
 }
 
 function imax(int a, int b) -> int { return a > b ? a : b; }

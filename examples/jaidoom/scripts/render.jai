@@ -8,6 +8,7 @@ import "map.jai";
 import "vid.jai";
 import "tex.jai";
 import "things.jai";
+import "tune.jai";
 
 float VIEW_X = 0.0;
 float VIEW_Y = 0.0;
@@ -24,6 +25,40 @@ float EYE_Z = -100000.0;      // explicit view height; sentinel = derive from se
 int EXTRA_LIGHT = 0;          // brighter bands while the muzzle flashes
 float WBOB_X = 0.0;           // weapon bob, 320-space pixels (game_tic drives it)
 float WBOB_Y = 0.0;
+
+// smooth motion: frames between tics draw each mobj between where the last two tics left it (1 = the current tic)
+float LERP_F = 1.0;
+array<float> LERP_MOX = [];   // mobj positions at the previous tic
+array<float> LERP_MOY = [];
+array<float> LERP_MOZ = [];
+array<float> DRAW_X = [];     // where this frame draws each mobj
+array<float> DRAW_Y = [];
+array<float> DRAW_Z = [];
+
+function lerp_snapshot() -> void {
+	LERP_MOX = MO_X;
+	LERP_MOY = MO_Y;
+	LERP_MOZ = MO_Z;
+}
+
+// a mobj that moved further than a running step since the last tic (a teleport, a reused slot) snaps
+function lerp_mobjs() -> void {
+	int n = MO_X.size();
+	DRAW_X = MO_X;
+	DRAW_Y = MO_Y;
+	DRAW_Z = MO_Z;
+	if (LERP_F >= 1.0) { return; }
+	int had = LERP_MOX.size() < n ? LERP_MOX.size() : n;
+	float f = LERP_F;
+	for (int m = 0; m < had; ++m) {
+		float jx = MO_X[m] - LERP_MOX[m];
+		float jy = MO_Y[m] - LERP_MOY[m];
+		if (jx * jx + jy * jy >= 64.0 * 64.0) { continue; }
+		DRAW_X[m] = LERP_MOX[m] + jx * f;
+		DRAW_Y[m] = LERP_MOY[m] + jy * f;
+		DRAW_Z[m] = LERP_MOZ[m] + (MO_Z[m] - LERP_MOZ[m]) * f;
+	}
+}
 
 array<int> SEG_FSEC = [];
 array<int> SEG_BSEC = [];
@@ -499,8 +534,9 @@ function render_view(float px, float py, float ang) -> void {
 	VCOS = math::cos(ang);
 	CENTERX = VW / 2;
 	CENTERY = VIEWH / 2;
-	FOCAL = 1.0 * CENTERX;
-	FOCALY = FOCAL * PXASPECT;
+	float fov = FOV < 30.0 ? 30.0 : (FOV > 150.0 ? 150.0 : FOV);
+	FOCAL = fov == 90.0 ? 1.0 * CENTERX : CENTERX / math::tan(fov * math::PI / 360.0);
+	FOCALY = FOCAL * PXASPECT * PIXEL_Y;
 
 	pix_clear(0);
 	if (CLIPTOP.size() != VW) {
@@ -557,13 +593,14 @@ int SPR_DBG_YMAX = -1;
 // (mobj entries are the index, masked entries are -(k+1) into MSEG)
 function draw_things() -> void {
 	SPRITES_DRAWN = 0;
+	lerp_mobjs();
 	array<int> order = [];
 	array<float> depth = [];
 	int n = MO_X.size();
 	for (int m = 0; m < n; ++m) {
 		if (MO_STATE[m] == 0) { continue; }
-		float dx = MO_X[m] - VIEW_X;
-		float dy = MO_Y[m] - VIEW_Y;
+		float dx = DRAW_X[m] - VIEW_X;
+		float dy = DRAW_Y[m] - VIEW_Y;
 		float dep = dx * VCOS + dy * VSIN;
 		if (dep < 4.0) { continue; }
 		int j = order.size() - 1;
@@ -707,8 +744,10 @@ function draw_masked(int sg) -> void {
 }
 
 function draw_sprite(int m) -> void {
-	float dx = MO_X[m] - VIEW_X;
-	float dy = MO_Y[m] - VIEW_Y;
+	float mx = DRAW_X[m];
+	float my = DRAW_Y[m];
+	float dx = mx - VIEW_X;
+	float dy = my - VIEW_Y;
 	float dep = dx * VCOS + dy * VSIN;
 	float lat = dx * VSIN - dy * VCOS;
 	float xc = CENTERX + lat / dep * FOCAL;
@@ -716,7 +755,7 @@ function draw_sprite(int m) -> void {
 	int fi = MO_FRAME[m];
 	if (fi >= MO_ANIM[m].size()) { fi = MO_ANIM[m].size() - 1; }
 	string frame = MO_ANIM[m].substr(fi, 1);
-	float rel = math::atan2(VIEW_Y - MO_Y[m], VIEW_X - MO_X[m]) - MO_ANG[m];
+	float rel = math::atan2(VIEW_Y - my, VIEW_X - mx) - MO_ANG[m];
 	while (rel < 0.0) { rel = rel + math::TAU; }
 	int rot = math::itrunc((rel + math::PI / 8.0) / (math::PI / 4.0)) & 7;
 	int lump = sprite_lookup(MO_SPR[m], frame, rot);
@@ -730,7 +769,7 @@ function draw_sprite(int m) -> void {
 	float xscale = FOCAL / dep;
 	float yscale = FOCALY / dep;
 	float x0f = xc - SPR_LO[lump] * xscale;
-	float topz = MO_Z[m] + SPR_TO[lump];
+	float topz = DRAW_Z[m] + SPR_TO[lump];
 	float y0f = CENTERY - (topz - VIEW_Z) * yscale;
 	float dv = dep / FOCALY;                          // world units per screen row
 
@@ -742,7 +781,7 @@ function draw_sprite(int m) -> void {
 	int st = MO_STATE[m];
 	int band = 0;
 	if (st != 8 && MO_SPR[m] != "BEXP" && MO_SPR[m] != "BAL1" && MO_SPR[m] != "MISL") {
-		band = light_band(SE_LIGHT[sector_at(MO_X[m], MO_Y[m])], dep);
+		band = light_band(SE_LIGHT[sector_at(mx, my)], dep);
 	}
 	int pcm = band * 256;
 	bool fuzz = MO_TYPE[m] == 58;                    // spectre: warp the pixels behind it
@@ -830,13 +869,14 @@ function draw_psprite(int lump, float x0f, float y0f, float scale) -> void {
 	int xa = math::itrunc(x0f < 0.0 ? 0.0 : x0f);
 	int xb = math::itrunc(x0f + w * scale);
 	if (xb >= VW) { xb = VW - 1; }
+	float yscale = scale * PIXEL_Y;
 	for (int sx = xa; sx <= xb; ++sx) {
 		int tc = math::itrunc((sx - x0f) / scale);
 		if (tc < 0 || tc >= w) { continue; }
 		int base = tc * h;
 		int ya = math::itrunc(y0f < 0.0 ? 0.0 : y0f);
 		for (int y = ya; y < VIEWH; ++y) {
-			int iv = math::itrunc((y - y0f) / scale);
+			int iv = math::itrunc((y - y0f) / yscale);
 			if (iv < 0 || iv >= h) { continue; }
 			int texel = tp[base + iv];
 			if (texel >= 0) { pix[y * VW + sx] = palcm[texel]; }
@@ -853,7 +893,7 @@ function draw_psprite(int lump, float x0f, float y0f, float scale) -> void {
 function psprite_place(int lump, float scale) -> void {
 	float texmid = 68.5 + SPR_TO[lump];
 	PSP_X0 = VW / 2.0 + (1.0 - 160.0 - SPR_LO[lump]) * scale + WBOB_X * scale;
-	PSP_Y0 = VIEWH / 2.0 - texmid * scale + WBOB_Y * scale;
+	PSP_Y0 = VIEWH / 2.0 - texmid * scale * PIXEL_Y + WBOB_Y * scale * PIXEL_Y;
 }
 
 function draw_weapon(string spr4, string frame) -> void {

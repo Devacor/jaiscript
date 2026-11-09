@@ -43,7 +43,7 @@ function main() -> int {
 		float py = wy[leg] + (wy[leg + 1] - wy[leg]) * s;
 		float ang = wa[leg] + (wa[leg + 1] - wa[leg]) * s;
 		render_view(px, py, ang);
-		print(out_prefix + blit_half(), skip_newline);
+		print(out_prefix + vid_blit(), skip_newline);
 	}
 
 	print(ESC + "[0m" + ESC + "[?25h");   // restore

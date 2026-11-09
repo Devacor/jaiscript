@@ -60,7 +60,7 @@ class Shot:
 
 
 def gloom(name, tick):
-    return Shot(name, "gloom", ["gloom.jai", "--", "--smoke", "--look", "showcase", "--ticks", str(tick + 1),
+    return Shot(name, "gloom", ["gloom.jai", "--", "--smoke", "--look", "showcase", "--truecolor", "--ticks", str(tick + 1),
                                 "--dump-frame", str(tick)], "gloom_frame_shim.txt")
 
 
@@ -78,18 +78,21 @@ CRAWLER = ["scripts/crawler.jai", "--", "screen", "135x37"]
 GATORQUEST_TOUR = ["scripts/gatorquest.jai", "--", "tour", "screen", "150x44", "out", "{out}"]
 
 SHOTS = [
-    gloom("gloom-title", 1),
-    gloom("gloom-fight", 680),
+    gloom("gloom-title", 5),
+    gloom("gloom-fight", 252),
     gloom("gloom-tally", 3065),
     Shot("grubwell-title", "crawler", CRAWLER + ["input", "n"], "-", 0, (135, 37)),
-    Shot("grubwell-fight", "crawler", CRAWLER + ["smoke", "seed", "6", "turns", "201", "dump", "{out}/run"],
-         "run.ans", 200, (135, 37), "erase"),
+    Shot("grubwell-fight", "crawler", CRAWLER + ["smoke", "seed", "6", "turns", "300", "anim", "dump", "{out}/run"],
+         "run.ans", 629, (135, 37), "erase"),
+    Shot("grubwell-welcome", "crawler", CRAWLER + ["smoke", "seed", "6", "turns", "2", "dump", "{out}/run"],
+         "run.ans", 0, (135, 37), "erase"),
+    Shot("grubwell-reload", "crawler", CRAWLER + ["smoke", "seed", "6", "turns", "62", "anim", "reload-every", "60", "dump",
+                                                  "{out}/run"], "run.ans", 188, (135, 37), "erase"),
     Shot("grubwell-victory", "crawler", CRAWLER + ["smoke", "god", "seed", "5", "turns", "3000", "dump", "{out}/run"],
          "run_end.ans", -1, (135, 37), "erase"),
-    demoreel("demoreel-spongeworks", 12, 2),
-    demoreel("demoreel-chrome", 14, 11),
-    demoreel("demoreel-finale", 17, 3),
-    demoreel("demoreel-credits", 17, 17),
+    demoreel("demoreel-chrome", 8, 11),
+    demoreel("demoreel-finale", 11, 34.0),
+    demoreel("demoreel-credits", 11, 84.8),
     Shot("gatorquest-title", "gatorquest", ["scripts/gatorquest.jai", "--", "shot", "title", "out", "{out}"],
          "title_main.ans"),
     Shot("gatorquest-town", "gatorquest", GATORQUEST_TOUR, "01_swampton_morning.ans"),

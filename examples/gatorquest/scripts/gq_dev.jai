@@ -16,7 +16,7 @@ map<string, string> DEV_STAMP;   // module -> "modified:size" when it last ran
 // every module the running game can reload, in load order (this file and the entry file are not)
 array<string> DEV_MODULES = ["gq_enums.jai", "gq_types.jai", "gq_state.jai", "gq_cstate.jai", "gq_util.jai", "gq_defs.jai",
 	"gq_data.jai", "gq_world.jai", "gq_mobs.jai", "gq_items.jai", "gq_combat.jai", "gq_ai.jai", "gq_magic.jai", "gq_quests.jai",
-	"gq_actions.jai", "gq_sim.jai", "gq_bot.jai", "gq_proto.jai", "gq_vid.jai", "gq_art.jai", "gq_render.jai", "gq_audio.jai",
+	"gq_actions.jai", "gq_sim.jai", "gq_bot.jai", "gq_proto.jai", "gq_vid.jai", "gq_art.jai", "gq_render.jai", "gq_fx.jai", "gq_audio.jai",
 	"gq_predict.jai", "gq_hud.jai", "gq_game.jai", "gq_net.jai", "gq_save.jai", "gq_title.jai", "gq_png.jai", "gq_tests.jai",
 	"gq_serve.jai", "gq_endgame.jai", "gq_predtest.jai", "gq_menutest.jai"];
 
@@ -28,14 +28,17 @@ string dev_stamp(string module) {
 void dev_start() {
 	DEV_STAMP = {};
 	for (int i = 0; i < DEV_MODULES.size(); ++i) { DEV_STAMP[DEV_MODULES[i]] = dev_stamp(DEV_MODULES[i]); }
+	if (LIVE_PATH != "") { DEV_STAMP[LIVE_PATH] = dev_stamp(LIVE_PATH); }
 }
 
 // the frame's reload: one import of the whole list; the stamps name what ran only on a frame where something did
 array<string> dev_poll() {
 	array<string> msgs;
 	bool ran = false;
+	array<string> group = DEV_MODULES;
+	if (LIVE_PATH != "") { group.push(LIVE_PATH); }
 	try {
-		ran = import(DEV_MODULES);
+		ran = import(group);
 	} catch (e) {
 		string text = to_string(e);
 		string module = "?";
@@ -47,13 +50,13 @@ array<string> dev_poll() {
 		return msgs;
 	}
 	if (!ran) { return msgs; }
-	for (int i = 0; i < DEV_MODULES.size(); ++i) {
-		string module = DEV_MODULES[i];
+	for (int i = 0; i < group.size(); ++i) {
+		string module = group[i];
 		string stamp = dev_stamp(module);
 		if (stamp == DEV_STAMP.get(module, "")) { continue; }
 		DEV_STAMP[module] = stamp;
 		DEV_RELOADS = DEV_RELOADS + 1;
-		msgs.push("Reloaded " + module);
+		msgs.push("Reloaded " + (module == LIVE_PATH ? "gq_live.jai" : module));
 		dev_after_reload(module);
 	}
 	return msgs;
@@ -61,6 +64,7 @@ array<string> dev_poll() {
 
 // derived client state that a reloaded file feeds
 void dev_after_reload(string name) {
+	if (name == LIVE_PATH) { live_apply(); }
 	if (name == "gq_art.jai" || name == "gq_vid.jai" || name == "gq_data.jai") {
 		TS = 0;
 		SHADE_WORLD = -1;

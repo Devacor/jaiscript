@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
 		else if (a == "--log") { log = true; }
 		else if (a == "--stdio" || a.rfind("--clientProcessId", 0) == 0) {}
 		else if (a == "--help" || a == "-h") { usage(); return 0; }
-		else if (a == "--version") { std::cout << "jaiscript_lsp 0.5.1-beta\n"; return 0; }
+		else if (a == "--version") { std::cout << "jaiscript_lsp 0.5.2-beta\n"; return 0; }
 		else { std::cerr << "jaiscript_lsp: ignoring unknown argument " << a << " (--help lists the flags)\n"; }
 	}
 	jai_lsp::server s(make_engine, host, includes, log, max_message);

@@ -40,6 +40,7 @@ array<string> FT_S;
 array<int> FT_COL;
 array<int> FT_T;
 array<int> FT_SCALE;
+array<float> FT_VY;
 
 // ---- projectiles
 array<float> PR_X0;
@@ -64,6 +65,54 @@ string BANNER;
 int BANNER_F;
 int BANNER_COL;
 string BANNER_SUB;
+
+// ---- world life, combat feedback, the hot-reload card and the live tweaks (gq_fx.jai)
+array<float> CR_X;             // critters: birds, butterflies, fireflies, leaping fish (tile units)
+array<float> CR_Y;
+array<float> CR_VX;
+array<float> CR_VY;
+array<int> CR_KIND;            // 0 free
+array<int> CR_T;               // frames left
+array<int> CR_COL;
+int CR_WORLD;
+map<int, int> ALERT_F;         // serial -> frame its "!" went up
+map<int, int> BARK_F;          // serial -> frame it last spoke
+int BARK_SER;                  // who is speaking (-1 nobody)
+string BARK_TEXT;
+int BARK_T;
+int BARK_NEXT;
+map<int, int> KB_F;            // serial -> frame its knockback ends
+map<int, int> KB_DX;
+map<int, int> KB_DY;
+array<int> SL_AX;              // slashes: attacker tile, victim tile, start frame, hit or whiff
+array<int> SL_AY;
+array<int> SL_VX;
+array<int> SL_VY;
+array<int> SL_T;
+array<int> SL_HIT;
+int HITSTOP_F;                 // frames the others stay frozen on a heavy blow
+float HITSTOP_VT;
+int HURT_F;
+int BOLT_F;                    // the storm's lightning bolt
+int BOLT_X;
+int BOLT_SEED;
+array<float> SW_X;             // the season's leaves, snow or petals (screen pixels)
+array<float> SW_Y;
+array<int> CLOUD_COV;          // cloud coverage 0..16 at the view's tile corners
+bool CLOUD_ON;
+int CLOUD_TX0;
+int CLOUD_TY0;
+int CLOUD_CW;
+int RELOAD_F;
+bool RELOAD_OK;
+string RELOAD_WHAT;
+string RELOAD_KEPT;
+int ARRIVE_F;                  // the camera's swoop down onto a new session
+int SEASON;                    // 0 summer, 1 autumn, 2 winter, 3 spring: the textures baked
+int LIVE_SEASON;               // ... and the one the live file asks for
+int LIVE_TORCH;
+int LIVE_FIREFLIES;
+string LIVE_PATH;              // the live tweak file ("" none)
 
 // ---- UI
 string UI_MODE;                // play, pack, skills, journal, spells, craft, dialog, shop_buy, shop_sell, bank, chat, help, map, menu, worn
@@ -178,4 +227,8 @@ void client_state_init() {
 	PRED_WALL_DIR = -1;
 	CLOCK_SEEN = -1;
 	LAST_MOVE_SENT = -2;
+	BARK_SER = -1;
+	CR_WORLD = -1;
+	LIVE_TORCH = 5;
+	LIVE_FIREFLIES = 16;
 }

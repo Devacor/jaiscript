@@ -67,7 +67,10 @@ struct inline_context {
 	std::vector<std::pair<const binary_expr*, std::shared_ptr<identifier_expr>>> guarded_reads;     // their clones
 	std::shared_ptr<identifier_expr> receiver;                     // a method graft: `this` and the bare fields read through the caller's receiver
 	bool receiver_this = false;                                    // a method graft on the caller's own `this`: the body's bare fields are the caller's
+	bool caller_this = false;                                      // the statement's own clone: its `this` is the caller's
 	std::vector<uint64_t> global_ids;                              // a method graft's bare program-scope names (the guard: no member of the receiver takes one)
+	std::vector<uint64_t> sibling_ids;                             // a method graft's sibling methods called by bare name, called on the receiver (the guard: each still a method there)
+	bool siblings = false;                                         // the graft compiles in a method body, where a sibling the clone calls grafts as in the method's own
 	std::function<bool(const identifier_expr*)> caller_global;     // the caller's frame reads this bare program-scope name as the program's (its class takes no member of it)
 	std::function<bool(const identifier_expr*)> caller_field;      // the caller's class lays this bare field out as a plain field of its own receiver
 	bool caller_globals = false;                                   // a bare program-scope name read in the caller's frame
@@ -573,6 +576,7 @@ expression_ptr clone_expr(const expression_ptr& e, inline_context& c) {
 	case node_type::this_expr:
 		if (c.receiver) { return copy_identifier(c.receiver.get(), e->location, c); }
 		if (c.receiver_this) { return c.make<this_expr>(e->location); }
+		if (c.caller_this) { ++c.nodes; return e; }
 		c.fail("an expression the graft does not take"); return nullptr;
 	case node_type::binary_expr: {
 		auto* b = static_cast<const binary_expr*>(e.get());
@@ -665,7 +669,19 @@ expression_ptr clone_expr(const expression_ptr& e, inline_context& c) {
 		}   // the statement's clone keeps its calls (the plan ordered them)
 		std::vector<expression_ptr> args;
 		for (const auto& a : ce->arguments) { args.push_back(clone_expr(a, c)); }
-		auto callee = clone_expr(ce->callee, c);
+		expression_ptr callee;
+		if (c.method_graft() && c.siblings && ce->callee && ce->callee->get_type() == node_type::identifier_expr && ever_stamped(ce->proven_method_decl)) {
+			// a sibling method called by bare name resolves on the method's own receiver: the clone calls it on the graft's receiver
+			auto* id = static_cast<const identifier_expr*>(ce->callee.get());
+			if (id->slot_index != SIZE_MAX || id->global_qualified || id->symbol_id == UINT64_MAX) { c.fail("a bare name in a method the graft cannot resolve"); return nullptr; }
+			if (std::find(c.sibling_ids.begin(), c.sibling_ids.end(), id->symbol_id) == c.sibling_ids.end()) { c.sibling_ids.push_back(id->symbol_id); }
+			c.calls = true;
+			c.writes_global = c.writes_member = c.writes_ref = true;
+			expression_ptr object = c.receiver ? expression_ptr(copy_identifier(c.receiver.get(), id->location, c)) : expression_ptr(c.make<this_expr>(id->location));
+			callee = c.make<member_expr>(id->location, object, id->name, id->symbol_id, false, false);
+		} else {
+			callee = clone_expr(ce->callee, c);
+		}
 		if (!c.ok) return nullptr;
 		auto n = c.make<call_expr>(ce->location, callee, std::move(args));
 		n->proven_method_decl = ce->proven_method_decl;
@@ -859,7 +875,7 @@ void call_events(const expression_ptr& e, std::vector<std::shared_ptr<call_expr>
 	if (!e || unsupported) return;
 	if (detail::const_site_of(e.get())) { unsupported = true; return; }   // a const guard runs where the node is reached
 	switch (e->get_type()) {
-	case node_type::literal_expr: case node_type::identifier_expr: return;
+	case node_type::literal_expr: case node_type::identifier_expr: case node_type::this_expr: return;
 	case node_type::binary_expr: { auto* b = static_cast<const binary_expr*>(e.get()); call_events(b->left, out, unsupported); call_events(b->right, out, unsupported); return; }
 	case node_type::unary_expr: call_events(static_cast<const unary_expr*>(e.get())->operand, out, unsupported); return;
 	case node_type::member_expr: { auto* m = static_cast<const member_expr*>(e.get()); if (!m->is_static) { call_events(m->object, out, unsupported); } return; }
@@ -1095,6 +1111,7 @@ bool vm_compiler::plan_hoist(const expression_ptr& root, bool statement_position
 	probe.returns_proven = fn->graft_return_kind != 0;
 	probe.receiver = out.receiver;
 	probe.receiver_this = out.receiver_this;
+	probe.siblings = method_frame();
 	probe.caller_global = [this](const identifier_expr* id) { return this_global_of(id, false); };
 	probe.caller_field = [this](const identifier_expr* id) { return this_field_slot_of(id, false) != 0; };
 	probe.ref_slots.assign(fn->local_count, 0); probe.ref_stored.assign(fn->local_count, 0); probe.ref_store_unproven.assign(fn->local_count, 0);
@@ -1238,9 +1255,9 @@ bool vm_compiler::plan_hoist(const expression_ptr& root, bool statement_position
 	const bool ref_params = std::any_of(fn->parameters.begin(), fn->parameters.end(), [](const parameter& p) { return p.is_reference; });
 	if (in_place && probe.writes_ref && ref_params) { out.why = "a name before the call the body may write through its reference"; return false; }
 	if ((out.receiver || out.receiver_this) && free_identifier && probe.writes_member) { out.why = "a name before the call a method may write"; return false; }   // an identifier before the call may alias the receiver's instance
-	// the frame's own receiver or a field of it: a body that calls costs its graft more than the frame it saves, and a call or a store into a
-	// field named like the receiver's (the caller's own field, when the receiver is the caller) could move the field the clone reads
-	if ((out.receiver_this || out.receiver_field) && probe.calls) { out.why = "a method of the frame's receiver whose body calls"; return false; }
+	// a field holding the receiver: a call, or a store into a field named like it (the caller's own field, when the receiver is the caller),
+	// could move the receiver the clone reads
+	if (out.receiver_field && probe.calls) { out.why = "a method of the frame's receiver whose body calls"; return false; }
 	// a store through another object, or a bare store under the receiver field's own name, may be the caller's field
 	if (out.receiver_field && (probe.writes_member || (probe.writes_global && std::find(probe.field_ids.begin(), probe.field_ids.end(), out.receiver_field->symbol_id) != probe.field_ids.end()))) {
 		out.why = "a body that may store into the field holding its receiver"; return false;
@@ -1448,6 +1465,7 @@ expression_ptr vm_compiler::compile_hoist(const hoist_plan& plan, const expressi
 		c.returns_proven = fn->graft_return_kind != 0;
 		c.receiver = plan.receiver;
 		c.receiver_this = plan.receiver_this;
+		c.siblings = method_frame();
 		c.caller_global = [this](const identifier_expr* id) { return this_global_of(id, true); };
 		c.caller_field = [this](const identifier_expr* id) { return this_field_slot_of(id, true) != 0; };
 		graft_param_types(call.get(), fn, nullptr, c.slot_types);
@@ -1525,6 +1543,7 @@ expression_ptr vm_compiler::compile_hoist(const hoist_plan& plan, const expressi
 	inlining_off_ = true;   // the spills, the graft's statements and the fallback compile plainly
 	inline_context sc;      // the statement's clone: the spilled operands and the call become temps
 	sc.budget = SIZE_MAX;
+	sc.caller_this = true;
 	sc.alias_pins = &alias_pins_;
 	sc.callee_probes = &callee_probes_;
 	sc.staged_arguments = &staged_arguments_;
@@ -1710,6 +1729,7 @@ expression_ptr vm_compiler::compile_hoist(const hoist_plan& plan, const expressi
 	chunk_->inline_sites[site_index].field_class = ctx.field_class;
 	chunk_->inline_sites[site_index].field_ids = ctx.field_ids;
 	chunk_->inline_sites[site_index].global_ids = ctx.global_ids;
+	chunk_->inline_sites[site_index].sibling_ids = ctx.sibling_ids;
 	chunk_->inline_sites[site_index].caller_globals = ctx.caller_globals;
 	chunk_->inline_sites[site_index].env_reads = ctx.reads_env && !plan.receiver;
 	// the callee's names count as declared while the graft compiles (a slot identifier compiles to its slot only under a declared
@@ -1957,6 +1977,7 @@ bool vm_compiler::try_condition_graft(const expression_ptr& cond, std::vector<si
 	chunk_->inline_sites[site_index].field_class = ctx.field_class;
 	chunk_->inline_sites[site_index].field_ids = ctx.field_ids;
 	chunk_->inline_sites[site_index].global_ids = ctx.global_ids;
+	chunk_->inline_sites[site_index].sibling_ids = ctx.sibling_ids;
 	chunk_->inline_sites[site_index].caller_globals = ctx.caller_globals;
 	chunk_->inline_sites[site_index].env_reads = ctx.reads_env && !plan.receiver && !plan.receiver_this;
 	const bool was_off = inlining_off_;

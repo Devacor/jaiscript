@@ -22,10 +22,10 @@
 namespace jai::vm {
 
 	// probe: the callee resolved at its own place, ahead of the argument values; push: recv.push(v) onto a frame-slot array
-	enum class ir : uint8_t { arith, mov, cmp, load, store, math, jump, guard, placeholder, neg, bnot, call, land, skip, lnot, cmpval, exit, append, probe, push, bail, rebind, range, size, ret, boundary, depth, dispatch };   // dispatch: a switch's table over a (a switch_tables index), b the subject's slot (its case tests follow, the successor); ret: a frame program's return (no successor); range: a range-for's head (the index against the container's live size, the exit on exhaustion); rebind: an element alias's declaration (its source table's element becomes the container of the alias's sites); bail: a planned miss at its own origin inside a conditional span; boundary: a statement the general form runs while the block stays parked (its successor the statement's end, target)
+	enum class ir : uint8_t { arith, mov, cmp, load, store, math, jump, guard, placeholder, neg, bnot, call, land, skip, lnot, cmpval, exit, append, probe, push, bail, rebind, range, size, ret, boundary, depth, dispatch, text };   // text: a text append (a the target slot, pieces its operands in order, proto the general proto); dispatch: a switch's table over a (a switch_tables index), b the subject's slot (its case tests follow, the successor); ret: a frame program's return (no successor); range: a range-for's head (the index against the container's live size, the exit on exhaustion); rebind: an element alias's declaration (its source table's element becomes the container of the alias's sites); bail: a planned miss at its own origin inside a conditional span; boundary: a statement the general form runs while the block stays parked (its successor the statement's end, target)
 
 	inline const char* ir_name(ir k) {
-		static const char* const names[] = { "arith", "mov", "cmp", "load", "store", "math", "jump", "guard", "placeholder", "neg", "bnot", "call", "land", "skip", "lnot", "cmpval", "exit", "append", "probe", "push", "bail", "rebind", "range", "size", "ret", "boundary", "depth", "dispatch" };
+		static const char* const names[] = { "arith", "mov", "cmp", "load", "store", "math", "jump", "guard", "placeholder", "neg", "bnot", "call", "land", "skip", "lnot", "cmpval", "exit", "append", "probe", "push", "bail", "rebind", "range", "size", "ret", "boundary", "depth", "dispatch", "text" };
 		return names[static_cast<size_t>(k)];
 	}
 
@@ -49,6 +49,7 @@ namespace jai::vm {
 		uint32_t member = k_invalid_u32;         // load: the member_expr node of a member read site (container = the base slot; the field resolved at entry)
 		bool branch = false;                     // land: the call's result as a truth jump to target (sense as cmp's), b the landed slot
 		uint32_t ref_decl = k_invalid_u32;       // rebind: a typed class reference declaration whose admission must run at binding
+		uint32_t pieces[8] = {}; uint8_t npieces = 0;   // text: the joined operands, as a, b and c are
 	};
 
 	// one loop's operations with the span of the general form they stand for: ops[k] stands for the instruction
@@ -83,7 +84,7 @@ namespace jai::vm {
 	// an operation that does work of its own (what a park and a resume, or a block entry and a flush, are weighed against)
 	inline bool ir_work(const ir_op& o) {
 		switch (o.kind) {
-		case ir::arith: case ir::load: case ir::store: case ir::math: case ir::neg: case ir::bnot: case ir::lnot: case ir::cmpval: case ir::append: case ir::push: case ir::size: case ir::call:
+		case ir::arith: case ir::load: case ir::store: case ir::math: case ir::neg: case ir::bnot: case ir::lnot: case ir::cmpval: case ir::append: case ir::push: case ir::size: case ir::call: case ir::text:
 			return true;
 		case ir::cmp: return !o.head;
 		default: return false;

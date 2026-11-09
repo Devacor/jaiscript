@@ -1,4 +1,3 @@
-// Persistent globals that must exist before anything else loads.
-// The world handle G lives in game.jai (typed shared_ptr<Game>, declared under
-// the class); RNG is the host-bound seeded rng and the ONLY randomness allowed.
+// RNG is the host-bound seeded generator, the only randomness the game may
+// touch. The world handle G lives in game.jai.
 var RNG = null;

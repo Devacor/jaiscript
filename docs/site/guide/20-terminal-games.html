@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Terminal Game in One File</title>
+<meta name="description" content="A real-time game run by the standalone runner: read_key and key_down polling, frame pacing with a stopwatch and sleep, frames drawn with ANSI escape codes, the terminal's size, sound, and saves.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="A Terminal Game in One File">
+<meta property="og:description" content="A real-time game run by the standalone runner: read_key and key_down polling, frame pacing with a stopwatch and sleep, frames drawn with ANSI escape codes, the terminal's size, sound, and saves.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li class="current"><a href="../guide/20-terminal-games.html" aria-current="page">A Terminal Game in One File</a><ol class="page-toc" data-page-toc></ol></li></ol></details></aside>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>20</nav>
+<article class="chapter"><h1 id="terminal-games">A Terminal Game in One File<a class="hlink" href="#terminal-games" aria-label="link">&#8203;</a></h1>
+<p>The standalone runner, <code>jaiscript</code>, reads the keyboard, reports the terminal&#x27;s size and plays sound. With <code>print</code> and the language&#x27;s clocks, that is everything a real-time game needs, and the whole game fits in one <code>.jai</code> file you run with <code>jaiscript game.jai</code>. This chapter builds one: input polling, frame pacing, drawing with ANSI escape codes, sound and saves.</p>
+<p>These functions belong to the runner, not to the language. A C++ host that embeds JaiScript registers its own input, timing and audio (<a href="../embedding/index.html">Embedding</a>); the rest of the game code is the same.</p>
+<h2 id="the-console-surface">The console surface<a class="hlink" href="#the-console-surface" aria-label="link">&#8203;</a></h2>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>Gives</th></tr></thead><tbody><tr><td><code>read_key() -&gt; string</code></td><td>the next queued key press, without waiting: <code>""</code> when none is queued, else a name such as <code>"left"</code>, <code>"esc"</code>, <code>"space"</code> or a lowercase letter</td></tr><tr><td><code>key_down(name) -&gt; bool</code></td><td>whether the key is held now</td></tr><tr><td><code>term_cols()</code>, <code>term_rows()</code> <code>-&gt; int</code></td><td>the terminal&#x27;s size in characters (80 by 25 when it cannot be read)</td></tr><tr><td><code>env_var(name) -&gt; string</code></td><td>an environment variable, <code>""</code> when unset: <code>COLORTERM</code> says whether 24-bit colour works</td></tr><tr><td><code>load_sound(path)</code>, <code>play_sound(path)</code> <code>-&gt; Sound</code></td><td>a WAV, MIDI or MP3 file to play, or <code>null</code></td></tr><tr><td><code>sleep(seconds)</code>, <code>time::stopwatch</code></td><td>waiting and measuring, from the language itself (<a href="14-time.html">Time</a>)</td></tr></tbody></table></div>
+<p>The full rules for each, the names <code>read_key</code> returns included, are in the reference&#x27;s <a href="../reference/index.html#runner-host-api">runner host API</a>.</p>
+<h2 id="the-whole-game">The whole game<a class="hlink" href="#the-whole-game" aria-label="link">&#8203;</a></h2>
+<p>Rockfall is a complete game: rocks fall, the <code>@</code> dodges them with the arrow keys or <code>a</code> and <code>d</code>, and the score counts the rocks that missed. Save it as <code>rockfall.jai</code> and run <code>jaiscript rockfall.jai</code>. The sections below take it apart.</p>
+<div class="codeblock cb-jai" data-host="runner terminal game"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">// rockfall.jai: dodge the falling rocks. Arrows or a/d move, esc quits.
+string ESC = "\x1b";
+int cols = term_cols() &lt; 60 ? term_cols() : 60;
+int rows = term_rows() &lt; 25 ? term_rows() - 2 : 23;
+bool truecolor = env_var("COLORTERM") == "truecolor" || env_var("COLORTERM") == "24bit";
+
+string color(int r, int g, int b) {
+    if (truecolor) { return `${ESC}[38;2;${r};${g};${b}m`; }
+    return `${ESC}[38;5;${16 + r / 51 * 36 + g / 51 * 6 + b / 51}m`;   // the xterm-256 colour cube
+}
+
+class Rock { int x = 0; float y = 0.0; float speed = 8.0; }
+array&lt;Rock&gt; rocks;
+random rng(7);
+int player = cols / 2;
+int score = 0;
+var crash = load_sound("crash.wav");   // null without the file, or off Windows: the game runs silent
+
+print(ESC + "[?1049h" + ESC + "[?25l" + ESC + "[2J", skip_newline);   // alternate screen, hidden cursor, cleared
+time::stopwatch clock;
+clock.start();
+float step = 1.0 / 30.0;
+bool running = true;
+while (running) {
+    float frame_start = clock.elapsed();
+
+    for (string key = read_key(); key != ""; key = read_key()) {   // every press queued since the last frame
+        if (key == "esc") { running = false; }
+    }
+    if ((key_down("left") || key_down("a")) &amp;&amp; player &gt; 0) { player -= 1; }
+    if ((key_down("right") || key_down("d")) &amp;&amp; player &lt; cols - 1) { player += 1; }
+
+    if (rng.next_int(0, 2) == 0) {
+        Rock r;
+        r.x = rng.next_int(0, cols - 1);
+        r.speed = rng.next_float(6.0, 14.0);
+        rocks.push(r);
+    }
+    for (auto&amp; r : rocks) { r.y += r.speed * step; }
+    for (auto&amp; r : rocks) {
+        if (r.y &gt;= rows - 1 &amp;&amp; r.y &lt; rows &amp;&amp; r.x == player) { running = false; }
+    }
+    int before = rocks.size();
+    rocks.filter([](Rock r) { return r.y &lt; rows; });   // keeps what is still falling
+    score += before - rocks.size();
+
+    string frame = ESC + "[H" + color(150, 150, 165);   // cursor home: each frame overwrites the last
+    for (int y = 0; y &lt; rows; ++y) {
+        string line = string::repeat(" ", cols);
+        for (auto&amp; r : rocks) {
+            if (math::ifloor(r.y) == y) { line[r.x] = '*'; }
+        }
+        if (y == rows - 1) {
+            line = line.substr(0, player) + color(255, 140, 0) + "@" + color(150, 150, 165) + line.substr(player + 1);
+        }
+        frame += line + "\n";
+    }
+    frame += ESC + "[0m" + `score ${score}   esc quits` + ESC + "[K";
+    print(frame, skip_newline);   // one write per frame, flushed
+
+    float spent = clock.elapsed() - frame_start;
+    if (spent &lt; step) { sleep(step - spent); }
+}
+if (crash != null) { crash.play(); sleep(0.5); }
+print(ESC + "[0m" + ESC + "[?25h" + ESC + "[?1049l", skip_newline);   // the main screen back, as it was
+print(`You dodged ${score} rocks.`);</code></pre></div>
+<p>Every frame does the same four things: read the input, update the world, draw it, then wait out the rest of the frame. Nothing in the loop blocks, so the game runs at the same speed whether or not a key is pressed.</p>
+<h2 id="reading-the-keyboard">Reading the keyboard<a class="hlink" href="#reading-the-keyboard" aria-label="link">&#8203;</a></h2>
+<p>The two input calls answer different questions:</p>
+<ul><li><code>read_key()</code> returns one press at a time from a queue, in order, and <code>""</code> once the queue is empty. Drain it every frame with a loop, as Rockfall does, so no press waits a frame behind another. Use it for actions that happen once per press: a menu choice, a jump, <code>esc</code> to quit.</li><li><code>key_down(name)</code> says whether a key is held at this moment. Use it for movement, which should continue as long as the key is down and stop when it is released.</li></ul>
+<p>A POSIX terminal sends no key releases. There a key reads as held for half a second after its last press or auto-repeat, and <code>"shift"</code>, <code>"ctrl"</code> and <code>"alt"</code> never read as held. On Windows the console reports releases, so a key reads as held exactly while it is down, and <code>read_key</code> also returns <code>"shift"</code>, <code>"ctrl"</code> and <code>"alt"</code>.</p>
+<h2 id="frame-pacing">Frame pacing<a class="hlink" href="#frame-pacing" aria-label="link">&#8203;</a></h2>
+<p>A stopwatch measures how long the frame took, and <code>sleep</code> waits out the rest of its time slot. The world moves by a fixed <code>step</code> each frame, so its speed does not depend on how fast the machine is:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">time::stopwatch clock;
+clock.start();
+float step = 1.0 / 30.0;
+for (int frame = 0; frame &lt; 6; ++frame) {
+    float frame_start = clock.elapsed();
+    // input, update and drawing go here
+    float spent = clock.elapsed() - frame_start;
+    if (spent &lt; step) { sleep(step - spent); }
+}
+print(`six frames took at least ${6 * step:.2f} s: ${clock.elapsed() &gt;= 5.5 * step}`);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">six frames took at least 0.20 s: true</code></pre></div>
+<p><code>sleep(seconds)</code> takes a float, and zero or less returns at once. A frame that runs long simply skips its sleep. A game that must keep its world speed even when frames run long moves the world by the frame&#x27;s measured time, <code>clock.delta()</code>, instead of the fixed step.</p>
+<h2 id="drawing-a-frame">Drawing a frame<a class="hlink" href="#drawing-a-frame" aria-label="link">&#8203;</a></h2>
+<p>A terminal draws what it is sent, and escape sequences move the cursor and change colours. A game builds each frame as one string and prints it once with <code>skip_newline</code>, which writes the string, adds no newline and flushes, so the frame appears whole. Starting the string with the cursor-home sequence makes each frame overwrite the last, without clearing the screen and flickering:</p>
+<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string ESC = "\x1b";
+string frame_of(array&lt;string&gt; grid, int score) {
+    string result = ESC + "[H";                  // cursor home
+    for (auto&amp; row : grid) { result += row + "\n"; }
+    return result + `score ${score}` + ESC + "[K";   // [K clears the rest of the line
+}
+print(to_json(frame_of(["  *  ", "     ", "  @  "], 3)));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">"\u001b[H  *  \n     \n  @  \nscore 3\u001b[K"</code></pre></div>
+<p><code>to_json</code> shows the escape character as <code>\u001b</code>; in the string it is the one byte <code>"\x1b"</code>. The sequences a game uses most:</p>
+<div class="tablewrap"><table><thead><tr><th>Sequence</th><th>Effect</th></tr></thead><tbody><tr><td><code>ESC + "[?1049h"</code>, <code>ESC + "[?1049l"</code></td><td>enter the alternate screen, and leave it: the game draws on a screen of its own, and the shell&#x27;s text comes back afterwards</td></tr><tr><td><code>ESC + "[?25l"</code>, <code>ESC + "[?25h"</code></td><td>hide the cursor, and show it again</td></tr><tr><td><code>ESC + "[2J"</code>, <code>ESC + "[H"</code></td><td>clear the screen; move the cursor to the top-left corner</td></tr><tr><td><code>ESC + "[K"</code></td><td>clear from the cursor to the end of the line, so a shorter line leaves nothing of a longer one behind</td></tr><tr><td><code>ESC + "[38;2;R;G;Bm"</code>, <code>ESC + "[48;2;R;G;Bm"</code></td><td>24-bit text and background colour, where <code>env_var("COLORTERM")</code> is <code>"truecolor"</code> or <code>"24bit"</code></td></tr><tr><td><code>ESC + "[38;5;Nm"</code></td><td>one of the 256 xterm colours, which every modern terminal takes: Rockfall&#x27;s <code>color</code> falls back to it</td></tr><tr><td><code>ESC + "[0m"</code></td><td>back to the default colours</td></tr></tbody></table></div>
+<p>A game that builds a frame from several <code>print</code> calls ends all but the last with <code>skip_flush</code>, which writes without a newline or a flush, and the last with <code>skip_newline</code>, which flushes them together (<a href="01-hello.html">Hello &amp; Basics</a>).</p>
+<p>When a game ends, it leaves the alternate screen, shows the cursor and resets the colours. The runner does the same for a script that stops without doing it, through an error or Ctrl+C (<a href="../reference/index.html#runner-ctrl-c">Ctrl+C</a>).</p>
+<h2 id="terminal-size">The terminal&#x27;s size<a class="hlink" href="#terminal-size" aria-label="link">&#8203;</a></h2>
+<p><code>term_cols()</code> and <code>term_rows()</code> are the window&#x27;s size in characters, read each time they are called. Rockfall reads them once and caps them at a 60 by 23 field; a game that follows a resized window reads them each frame and clears the screen (<code>ESC + "[2J"</code>) when they change. A frame one row shorter than the window keeps the last line free, so the terminal never scrolls.</p>
+<h2 id="sound">Sound<a class="hlink" href="#sound" aria-label="link">&#8203;</a></h2>
+<p><code>load_sound(path)</code> opens a WAV, MIDI or MP3 file and returns a <code>Sound</code> at once while the file loads in the background. Load each effect once and play it whenever it is needed; <code>play()</code> restarts it, <code>play(true)</code> loops it and <code>volume(level)</code> sets its level. <code>play_sound(path)</code> loads and plays a sound in one call and lets it finish even when the result is dropped. Every Sound is its own voice, so music and effects play at once.</p>
+<p>Sound plays on Windows. Elsewhere, and for a file that is missing, <code>load_sound</code> returns <code>null</code>, so a game that checks for <code>null</code>, as Rockfall does, runs silent instead of failing. A game can write its own effects: <code>binary::writer</code> builds a WAV file&#x27;s bytes, and <code>write_file</code> saves them (<a href="09-containers-strings.html#binary-data">Binary data</a>).</p>
+<h2 id="saves">Saves and paths<a class="hlink" href="#saves" aria-label="link">&#8203;</a></h2>
+<p><code>read_file</code> and <code>write_file</code> resolve a relative path from the working directory, while <code>import</code> and <code>include</code> resolve from the script&#x27;s folder. A game that keeps its saves beside its script builds the path from <code>root_script_dir()</code>, and one that keeps them per user builds it from <code>app_data_dir(name)</code> (<a href="10-modules.html#where-files-are">Where files are</a>). <code>to_json</code> and <code>from_json</code> turn the game&#x27;s state into text and back, and writing a temporary file then moving it over the old one with <code>move_file</code> keeps a save whole if the game stops halfway through writing it.</p>
+<h2 id="where-next">Bigger games<a class="hlink" href="#where-next" aria-label="link">&#8203;</a></h2>
+<p>The <a href="../examples/index.html">example games</a> are this chapter at full size: GLOOM, GRUBWELL, Gator Quest and JaiDoom all draw to a terminal through one string per frame, and read the keyboard with <code>read_key</code> and <code>key_down</code>; GLOOM, Gator Quest and JaiDoom play sound. Gator Quest also reloads its own scripts while it runs, which <a href="10-modules.html#reloading-from-a-running-program">Modules</a> shows how to do.</p>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/19-templates.html"><span>&larr; previous</span>HTML Templates</a><a class="next" rel="next" href="../embedding/01-embedding-quickstart.html"><span>next &middot; embedding &rarr;</span>Embedding Quickstart</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

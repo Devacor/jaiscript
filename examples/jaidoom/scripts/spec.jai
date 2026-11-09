@@ -344,9 +344,10 @@ function tag_floor(int tag, int mode, int speed, int texline) -> bool {
 			if (t > SE_CEILH[s]) { t = SE_CEILH[s]; }
 			if (t < cur) { t = cur; }
 		}
-		if (texline >= 0) {
+		if (texline >= 0) {                          // raise-and-change: doom's new floor drops the old one's damage too
 			int fs = LD_SIDE0[texline];
 			if (fs >= 0) { adopt_floorpic(s, SD_SEC[fs]); }
+			SE_SPECIAL[s] = 0;
 		}
 		mover_start(s, 0, t, speed, -1, 0);
 		any = true;

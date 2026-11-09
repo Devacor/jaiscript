@@ -17,7 +17,6 @@ namespace stdlib {
     // string as an argument and return a new one, leaving the argument untouched.
     // ASCII byte semantics (chars are bytes 0..255 under the promotion rules).
     void register_string_functions(engine& eng_ref) {
-        detail::engine_access::library_registration library(eng_ref);
         auto& ns = detail::engine_access::script_namespaces(eng_ref)[detail::engine_access::symbolize(eng_ref, "string")];
         if (!ns) { ns = std::make_shared<script_namespace_data>(); }
         engine* eng = &eng_ref;

@@ -46,13 +46,16 @@ struct host_options {
 	std::string backend = "vm";
 	uint32_t miss_every = 0;     // engine::cells_miss_every (--miss-every N; a build with JAISCRIPT_MISS_INJECTION)
 	bool smoke = false;
-	bool dev = false;
 	bool god = false;
 	bool load = false;
 	bool quiet = false;          // no frames (smoke implies it)
 	bool time_turns = false;     // key->frame latency summary on exit
 	int64_t turns = 250;         // smoke turn budget
+	int64_t reload_every = 0;    // the smoke pilot hot-reloads the scripts every N turns
+	bool anim = false;           // a headless run still builds every animation frame
 	std::string colors;          // "24" or "256"; empty = detect
+	int64_t screen_cols = 0;     // --screen CxR: lay out as if the console were C x R (headless runs)
+	int64_t screen_rows = 0;
 	bool ascii = false;          // plain ASCII glyphs, for terminals without Unicode block characters
 	std::string scripted_input;  // keys fed to read_key(); empty = interactive
 	std::string scripts_dir;
@@ -494,9 +497,11 @@ void print_usage() {
 		"  --god           tourist mode: no damage, monstrous stats\n"
 		"  --colors 24|256 colour depth (default: 24-bit when COLORTERM says so or on a Windows console)\n"
 		"  --ascii         plain ASCII glyphs, for terminals without Unicode block characters\n"
-		"  --dev           'R' hot-reloads the scripts mid-run\n"
 		"  --smoke         headless deterministic autoplay; prints a state hash\n"
 		"  --turns N       smoke turn budget (default 250)\n"
+		"  --reload-every N  the smoke pilot hot-reloads the scripts every N turns\n"
+		"  --anim          a headless run still builds every animation frame\n"
+		"  --screen CxR    lay out as if the console were C x R (with --smoke)\n"
 		"  --input KEYS    scripted keys (e.g. \"n11;wwdwg>\"; ';'=enter '^'=esc)\n"
 		"  --quiet         no frames (useful with --input)\n"
 		"  --time          key->frame latency summary on exit\n"
@@ -530,7 +535,19 @@ int main(int argc, char** argv) {
 		else if (a == "--input") { opt.scripted_input = next_arg("--input"); }
 		else if (a == "--quiet") { opt.quiet = true; }
 		else if (a == "--time") { opt.time_turns = true; }
-		else if (a == "--dev") { opt.dev = true; }
+		else if (a == "--reload-every") { opt.reload_every = std::stoll(next_arg("--reload-every")); }
+		else if (a == "--anim") { opt.anim = true; }
+		else if (a == "--screen") {
+			const std::string size = next_arg("--screen");
+			const auto x = size.find('x');
+			if (x == std::string::npos) {
+				std::fprintf(stderr, "--screen takes CxR, e.g. 135x37\n");
+				return 2;
+			}
+			opt.screen_cols = std::stoll(size.substr(0, x));
+			opt.screen_rows = std::stoll(size.substr(x + 1));
+		}
+		else if (a == "--dev") { /* hot reload is always on; accepted for muscle memory */ }
 		else if (a == "--god") { opt.god = true; }
 		else if (a == "--load") { opt.load = true; }
 		else if (a == "--colors") { opt.colors = next_arg("--colors"); }
@@ -590,6 +607,16 @@ int main(int argc, char** argv) {
 		std::error_code ec;
 		return std::filesystem::remove(path, ec);
 	});
+	// a script file's size and write time, "" when it is missing: the hot-reload watcher's view of it
+	eng->add_function("file_stamp", [scripts_dir](const std::string& name) -> std::string {
+		std::error_code ec;
+		const std::filesystem::path path = std::filesystem::path(scripts_dir) / name;
+		const auto size = std::filesystem::file_size(path, ec);
+		if (ec) { return ""; }
+		const auto written = std::filesystem::last_write_time(path, ec);
+		if (ec) { return ""; }
+		return std::to_string(size) + ":" + std::to_string(static_cast<long long>(written.time_since_epoch().count()));
+	});
 
 	jai::dynamic_binder<crawler_rng>(*eng, "Rng")
 		.constructor<jai::script_int>()
@@ -603,7 +630,8 @@ int main(int argc, char** argv) {
 	eng->add_global("HOST_SEED", eng->make_value(opt.seed));
 	eng->add_global("HOST_SMOKE", eng->make_value(opt.smoke));
 	eng->add_global("HOST_TURNS", eng->make_value(opt.turns));
-	eng->add_global("HOST_DEV", eng->make_value(opt.dev));
+	eng->add_global("HOST_RELOAD_EVERY", eng->make_value(opt.reload_every));
+	eng->add_global("HOST_ANIM", eng->make_value(opt.anim));
 	eng->add_global("HOST_GOD", eng->make_value(opt.god));
 	eng->add_global("HOST_LOAD", eng->make_value(opt.load));
 	eng->add_global("HOST_SCRIPTED", eng->make_value(console.input_was_scripted));
@@ -624,6 +652,9 @@ int main(int argc, char** argv) {
 
 	try {
 		eng->execute("import \"main.jai\";");
+		if (opt.screen_cols > 0) {
+			eng->execute("SCREEN_COLS = " + std::to_string(opt.screen_cols) + "; SCREEN_ROWS = " + std::to_string(opt.screen_rows) + ";");
+		}
 		eng->execute("crawler_main();");
 	} catch (const std::exception& ex) {
 		restore_terminal();

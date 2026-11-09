@@ -520,10 +520,10 @@ struct engine::implementation {
     // pointer stored in _cpp_object.
     std::unordered_map<const void*, weaker_ptr<class_instance>> script_layers_;
     std::unordered_set<std::string> serial_functions_;
+    std::unordered_set<std::string> serial_namespaces_;
     std::unordered_set<std::string> nodiscard_callables_;
     std::unordered_set<std::string> host_function_names_;
     std::unordered_set<std::string> host_global_names_;
-    int library_registration_depth_ = 0;
     size_t script_layer_sweep_watermark_ = 64;
     // Layers of slotless objects extended through this engine: nothing else can own them,
     // so the engine does until script_layer_detach (the layer keeps its object alive).
@@ -2945,7 +2945,6 @@ uint64_t engine::compound_operator_id(uint64_t op_id) const noexcept {
 }
 
 void engine::initialize_engine_reference() {
-    library_registration library(*this);
     // Pass the engine reference to the conversion registry
     impl->conversions->set_engine(this);
 
@@ -3265,6 +3264,13 @@ void engine::initialize_engine_reference() {
     // regex, regex::match and regex::escape (detail/regex_library.hpp): engine-core, so a constant pattern compiles once at load
     detail::regex_library::register_library(*this);
     detail::template_library::register_library(*this);
+    // the library's builtins that touch what other threads share: output, scheduling, a nested region, an object's class, a
+    // callback into script; every other one is parallel
+    for (const char* name : {"print", "sleep", "extend", "parallel_transform", "parallel_reduce", "array::map", "array::filter", "array::sort", "map::filter"}) {
+        serial_function(name);
+    }
+    serial_function(std::string(parallel_for_stmt::k_counted_range));
+    serial_namespace("reflect");
 }
 
 
@@ -4207,7 +4213,6 @@ void engine::add_global(const std::string& name, script_value value, bool is_ser
     if (value.is_function()) { impl->host_function_names_.insert(name); }
     impl->host_global_names_.insert(name);
     if (value.is_function() && numeric_operator_takes_numbers(name, 2, {})) { set_has_custom_numeric_operators(true); }
-    if (impl->library_registration_depth_ > 0 && value.is_function() && !detail::parallel_pure_function(name)) { impl->serial_functions_.insert(name); }
     impl->global_environment_->define(id, std::move(value));
     ++impl->definition_epoch_;
     impl->refresh_operator_entry(name);
@@ -4337,9 +4342,17 @@ void engine::nodiscard_function(const std::string& callable) { impl->nodiscard_c
 
 bool engine::is_nodiscard_function(const std::string& callable) const { return impl->nodiscard_callables_.count(callable) != 0; }
 
-bool engine::host_function_serial(const std::string& name) const { return impl->serial_functions_.count(name) != 0; }
+void engine::serial_namespace(const std::string& space) { impl->serial_namespaces_.insert(space); }
+
+bool engine::host_function_serial(const std::string& name) const {
+    if (impl->serial_functions_.count(name)) { return true; }
+    const size_t cut = name.rfind("::");
+    return cut != std::string::npos && impl->serial_namespaces_.count(name.substr(0, cut)) != 0;
+}
 
 bool engine::host_function_registered(const std::string& name) const { return impl->host_function_names_.count(name) != 0; }
+
+std::vector<std::string> engine::host_function_names() const { return {impl->host_function_names_.begin(), impl->host_function_names_.end()}; }
 bool engine::host_global_registered(const std::string& name) const { return impl->host_global_names_.count(name) != 0; }
 
 uint64_t engine::host_function_writeback(const std::string& name) const {
@@ -4357,15 +4370,10 @@ uint64_t engine::host_function_writeback(const std::string& name) const {
     return result;
 }
 
-engine::library_registration::library_registration(engine& a_engine) : eng(a_engine) { ++eng.impl->library_registration_depth_; }
-
-engine::library_registration::~library_registration() { --eng.impl->library_registration_depth_; }
-
 void engine::register_overload_impl(const std::string& name, size_t arity, script_function func,
                                     const std::vector<param_type_info>& paramTypes, bool createSetOnFirst) {
     if (numeric_operator_takes_numbers(name, arity, paramTypes)) { set_has_custom_numeric_operators(true); }
     impl->host_function_names_.insert(name);
-    if (impl->library_registration_depth_ > 0 && !detail::parallel_pure_function(name)) { impl->serial_functions_.insert(name); }
     ++impl->check_surface_epoch_;   // the static checker can see registered functions
     const script_value_type result = impl->staged_host_result_;
     impl->staged_host_result_ = script_value_type::jai_null_type;
@@ -5937,6 +5945,13 @@ const engine::format_literal_row* engine::format_literal_for(const void* functio
     for (const auto& row : impl->format_literal_rows_) {
         if (row.identity == function) { return &row; }
     }
+    const detail::parallel_region_table* region = parallel_region_active_ && impl->parallel_ ? impl->parallel_->active_region : nullptr;
+    const detail::parallel_region_table::entry* here = region ? region->find_entry(std::this_thread::get_id()) : nullptr;
+    if (here && here->format_aliases) {
+        for (const auto& alias : *here->format_aliases) {
+            if (alias.copy == function) { return static_cast<const format_literal_row*>(alias.row); }
+        }
+    }
     return nullptr;
 }
 
@@ -6069,6 +6084,8 @@ void engine::register_location_builtins() {
     });
     add_function("app_data_dir", [this](const std::string& app) -> std::string { return app_data_dir(app); }, privilege::filesystem);
     add_function("app_cache_dir", [this](const std::string& app) -> std::string { return app_cache_dir(app); }, privilege::filesystem);
+    // the file system, the import settings and the host's directory resolvers are shared
+    for (const char* name : {"resolve_path", "file_data", "import_recheck_interval", "app_data_dir", "app_cache_dir"}) { serial_function(name); }
 }
 
 std::string engine::format_stack_trace() const {

@@ -64,6 +64,7 @@ class Game {
 				if (bi < 0) { return; }
 				if (cheb(monsters[bi].x, monsters[bi].y, player.x, player.y) <= monsters[bi].range && sees_player(monsters[bi])) {
 					log_ink(INK_DIM, "HOLLOW FIRE floods the corridor: heatless light, lightless heat.");
+					fx_bolt(4, monsters[bi].x + 0.5, monsters[bi].y + 0.5, player.x, player.y, 0xDCDCE6);
 					int dmg = imax(2, monsters[bi].atk - entity_def(player) + RNG.roll(0, 3));
 					log_ink(INK_BAD, `The gray torrent sears you for ${dmg} (HP ${player_hp_after(dmg)}/${player.total_max_hp()}).`);
 					hurt_entity(player, dmg, "hollow fire");
@@ -143,6 +144,18 @@ function random_open_tile(int min_dist_from_player) -> var {
 function populate_floor() -> void {
 	G.monsters = [];
 	G.ground = [];
+	int count = 3 + G.floor;
+	if (has_welcome()) {
+		Welcome w = welcome_layout();
+		Item relic = make_lastlight();
+		relic.x = w.find.x;
+		relic.y = w.find.y;
+		G.ground.push(relic);
+		if (tile_at(w.greeter.x, w.greeter.y) == TILE_FLOOR) {
+			spawn_monster("grublin", w.greeter.x, w.greeter.y);
+			count -= 1;
+		}
+	}
 	if (G.floor >= 10) {
 		spawn_monster("vexadrach", 50, 10);
 		spawn_monster("drakelet", 46, 7);
@@ -151,7 +164,6 @@ function populate_floor() -> void {
 		return;
 	}
 	SpawnTable table = spawn_table(G.floor);
-	int count = 3 + G.floor;
 	for (int i = 0; i < count; ++i) {
 		var spot = random_open_tile(7);
 		if (spot == null) { continue; }
@@ -177,8 +189,12 @@ function populate_floor() -> void {
 	}
 }
 
-// face the first open cardinal, in a fixed scan order
+// face the first open cardinal, in a fixed scan order; floor 1 faces its welcome
 function face_open_direction() -> void {
+	if (has_welcome()) {
+		G.facing = welcome_layout().face;
+		return;
+	}
 	for (int f = 0; f < 4; ++f) {
 		if (is_walkable(G.player.x + FACE_DX[f], G.player.y + FACE_DY[f])) {
 			G.facing = f;
@@ -198,18 +214,36 @@ function enter_floor() -> void {
 	G.mural_used = false;
 	G.player.stubborn_spent = false;
 	G.boss_co = null;
+	MONSTER_BRAINS = {};
 	populate_floor();
 	face_open_direction();
 	view_cache_invalidate();
 	compute_fov();
+	FLOOR_START = G.player;
+	FLOOR_START_TURN = G.turn;
 	if (G.floor == 10) {
 		log_ink(INK_BAD, "The air tastes of ash and unspent color. HE is here.");
+		fx_banner("FLOOR 10", "HE IS HERE", INK_BAD);
 	} else {
 		log_ink(INK_TITLE, `Floor ${G.floor}: ${theme_name(G.floor)}.`);
+		fx_banner(`FLOOR ${G.floor}`, string::to_upper(theme_name(G.floor)), theme_of(G.floor).glow);
 	}
+	if (has_welcome()) { log_ink(INK_DIM, "Bones at your feet, and a blade glinting among them. Past JAI's statue, something grunts."); }
+}
+
+// You as you came down the stairs: a Player value, so the copy holds still while you change, and
+// the stairs down can say what this floor gave and took.
+Player FLOOR_START;
+int FLOOR_START_TURN;
+
+function floor_summary() -> void {
+	Player now = G.player;
+	string levels = now.level > FLOOR_START.level ? `, level ${FLOOR_START.level} to ${now.level}` : "";
+	log_ink(INK_DIM, `Floor ${G.floor} behind you after ${G.turn - FLOOR_START_TURN} turns: ${now.kills - FLOOR_START.kills} kills, +${now.gold - FLOOR_START.gold} gold${levels}.`);
 }
 
 function start_new_game(Species species, Profession calling, string hero_name) -> void {
+	NOTICED = {};
 	G.player = Player(species, calling);
 	if (hero_name != "") { G.player.name = hero_name; }
 	G.player.god = HOST_GOD;
@@ -322,11 +356,15 @@ function on_step_tile() -> void {
 		if (!G.mural_used) {
 			G.mural_used = true;
 			int healed = restore_stat(G.player.hp, G.player.total_max_hp(), 999);
-			if (healed > 0) { log_ink(INK_GOOD, `Painted warmth closes your wounds (+${healed} HP).`); }
+			if (healed > 0) {
+				log_ink(INK_GOOD, `Painted warmth closes your wounds (+${healed} HP).`);
+				fx_screen(`+${healed}`, INK_GOOD);
+			}
 			else { log_ink(INK_DIM, "The colors hum, content that you are whole."); }
 		}
 	}
 	int gi = ground_index_at(G.player.x, G.player.y);
+	if (gi >= 0 && G.ground[gi].name == LASTLIGHT_NAME) { log_ink(INK_DIM, "The bones of the last one down. Their blade still holds a little light."); }
 	if (gi >= 0) { log_msg(`You see ${paint(G.ground[gi].ink, item_label(G.ground[gi]))} at your feet. (g to grab)`); }
 }
 
@@ -361,6 +399,7 @@ function try_descend() -> bool {
 		log_msg("There is nothing below floor 10 but the story's end.");
 		return false;
 	}
+	floor_summary();
 	G.floor += 1;
 	enter_floor();
 	return true;
@@ -414,10 +453,7 @@ function handle_key(string key) -> bool {
 			return false;
 		}
 		case "R": {
-			if (HOST_DEV) {
-				reload_scripts();
-				log_ink(INK_MAGIC, "Scripts reloaded. The Well shivers as its rules are rewritten.");
-			}
+			live_reload("R");
 			return false;
 		}
 	}
@@ -431,6 +467,7 @@ function monsters_act() -> void {
 		if (!m.alive) { continue; }
 		if (!m.aggro && cheb(m.x, m.y, G.player.x, G.player.y) > 14) { continue; }
 		monster_act(m);
+		notice_player(m);
 	}
 	array<Monster> living;
 	for (auto m : G.monsters) {
@@ -500,7 +537,7 @@ function game_loop() -> void {
 			if (G.over) { break; }
 			if (!G.smoke) { render_game(); }
 		}
-		string key = G.autopilot ? autopilot_key() : read_key();
+		string key = next_key();
 		bool acted = handle_key(key);
 		if (G.over) { break; }
 		if (acted) {
@@ -508,8 +545,12 @@ function game_loop() -> void {
 			G.last_dmg_src = "";
 			monsters_act();
 			if (!G.over) { world_tick(); }
+			flush_spawns();
 			G.turn += 1;
 			if (G.smoke) { accumulate_hash(); }
+			fx_prune();
+			fx_animate();
+			if (HOST_RELOAD_EVERY > 0 && G.turn % HOST_RELOAD_EVERY == 0) { pilot_reload(); }
 			if (G.smoke && G.turn >= HOST_TURNS) {
 				G.over = true;
 				G.quit = true;
@@ -532,6 +573,19 @@ function game_loop() -> void {
 	} else if (G.saved) {
 		host_log("Saved. Rest well; the Well keeps your place.");
 	}
+}
+
+// Interactive play waits for a key a quarter second at a time, and between looks reloads the
+// scripts when one was saved: edit a file mid-run and the Well changes under you.
+function next_key() -> string {
+	if (G.autopilot) { return autopilot_key(); }
+	if (!HOST_INTERACTIVE) { return read_key(); }
+	while (true) {
+		string key = poll_key(0.25);
+		if (key != "") { return key; }
+		if (watch_scripts()) { render_game(); }
+	}
+	return "";
 }
 
 // ------------------------------------------------------------ autopilot ---
@@ -642,12 +696,15 @@ function load_game() -> bool {
 	if (save.version != SAVE_VERSION) { return false; }
 	RNG.set_state(save.rng);
 	G = save.game;
+	MONSTER_BRAINS = {};
 	G.over = false;
 	G.quit = false;
 	G.saved = false;
 	G.smoke = HOST_SMOKE;
 	G.autopilot = HOST_SMOKE;
 	view_cache_invalidate();
+	FLOOR_START = G.player;
+	FLOOR_START_TURN = G.turn;
 	log_ink(INK_INFO, `Welcome back to floor ${G.floor}, ${G.player.name}.`);
 	return true;
 }
@@ -662,6 +719,7 @@ function print_run_summary(string label) -> void {
 	host_log(`hp: ${p.hp}/${p.total_max_hp()}  kills: ${p.kills}  gold: ${p.gold}  items: ${p.inventory.size()}`);
 	host_log(`weapon: ${p.weapon == null ? "-" : p.weapon.name}  armor: ${p.armor == null ? "-" : p.armor.name}`);
 	host_log(`victory: ${G.victory}  dead: ${!p.alive}  cause: ${G.death_cause}`);
+	if (RELOAD_COUNT + RELOAD_REFUSED > 0) { host_log(`hot reloads: ${RELOAD_COUNT} kept the run, ${RELOAD_REFUSED} refused`); }
 	host_log(`STATE_HASH: ${G.hash}`);
 	for (int i = imax(0, G.msgs.size() - 6); i < G.msgs.size(); ++i) { host_log(`  log| ${plain_text(G.msgs[i])}`); }
 }

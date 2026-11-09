@@ -16,7 +16,9 @@ int prand(int n) {
 float prandf() { return prand(10000) / 10000.0; }
 
 // ---- per-world night tints
-array<int> WORLD_TINT = [18, 22, 48, 18, 34, 22, 8, 26, 50, 22, 32, 20, 30, 42, 64, 64, 16, 8, 60, 70, 104, 26, 26, 12, 34, 22, 10];
+array<int> WORLD_TINT = [22, 30, 66, 18, 36, 44, 8, 26, 50, 22, 32, 20, 30, 42, 64, 64, 16, 8, 60, 70, 104, 26, 26, 12, 34, 22, 10];
+// how warm torchlight, dawn and dusk run in each realm (percent): ice and the deep stay cooler, the sky not at all
+array<int> WORLD_WARM = [100, 100, 60, 100, 45, 100, 0, 100, 100];
 
 void ensure_shade(ClientView& v) {
 	int ghost = v.ghost;
@@ -24,7 +26,8 @@ void ensure_shade(ClientView& v) {
 	SHADE_WORLD = v.world;
 	SHADE_GHOST = ghost;
 	int w = v.world;
-	shade_build(WORLD_TINT[w * 3], WORLD_TINT[w * 3 + 1], WORLD_TINT[w * 3 + 2], ghost != 0);
+	// the day/night realms get warm sunlight
+	shade_build(WORLD_TINT[w * 3], WORLD_TINT[w * 3 + 1], WORLD_TINT[w * 3 + 2], ghost != 0, WORLD_WARM[w], WORLDS[w].ambient == 0 ? 22 : 0);
 }
 
 // 0..15 ambient light for the view
@@ -36,9 +39,9 @@ int ambient_level(ClientView& v) {
 		int hour = (v.tod * 24 / DAY_TICKS + 7) % 24;
 		int minute = (v.tod * 24 * 60 / DAY_TICKS) % 60;
 		if (hour >= 8 && hour < 18) { lvl = 15; }
-		else if (hour >= 20 || hour < 5) { lvl = 2; }
-		else if (hour >= 18) { lvl = 15 - ((hour - 18) * 60 + minute) * 13 / 120; }
-		else { lvl = 2 + ((hour - 5) * 60 + minute) * 13 / 180; }
+		else if (hour >= 20 || hour < 5) { lvl = 3; }
+		else if (hour >= 18) { lvl = 15 - ((hour - 18) * 60 + minute) * 12 / 120; }
+		else { lvl = 3 + ((hour - 5) * 60 + minute) * 12 / 180; }
 	}
 	if (v.weather == 3) { lvl = lvl - 3; }
 	else if (v.weather == 4) { lvl = lvl - 2; }
@@ -144,6 +147,7 @@ void draw_tiles(ClientView& v, int camx, int camy, int amb) {
 					float flick = (t == T_FIRE || t == T_SCONCE || t == T_FORGE) ? (prand(10) - 5) * 0.05 : 0.0;
 					light_emit(tx + 0.5, ty + 0.5, l + 0.5 + flick, t == T_LAVA ? 11 : 14);
 				}
+				else if (t == T_DOOR && amb <= 9) { light_emit(tx + 0.5, ty + 0.9, 2.3, 10); }
 			}
 		}
 		float vt = render_tick(v);
@@ -153,7 +157,7 @@ void draw_tiles(ClientView& v, int camx, int camy, int amb) {
 			bool me = v.m_ser[i] == v.my_ser;
 			if (me) {
 				// your torch, with a lively flicker
-				float r = v.buff_night > 0 ? 8.5 : 5.2;
+				float r = v.buff_night > 0 ? 8.5 : LIVE_TORCH + 0.2;
 				light_emit(mob_vx(v, i, vt) + 0.5, mob_vy(v, i, vt) + 0.5, r + (prand(7) - 3) * 0.06, 15);
 			} else if (v.m_slot[i] >= 0) {
 				light_emit(mob_vx(v, i, vt) + 0.5, mob_vy(v, i, vt) + 0.5, 3.5, 12);
@@ -164,8 +168,26 @@ void draw_tiles(ClientView& v, int camx, int camy, int amb) {
 		for (int p = 0; p < P_X.size(); ++p) {
 			if ((P_FLAGS[p] & 1) != 0 && P_LIFE[p] > 0 && p % 3 == 0) { light_emit(P_X[p], P_Y[p], 1.6, 10); }
 		}
+		fx_lights();
+	}
+	fx_vignette(amb);
+	// past a walled realm's edge the rock fades into the dark over four tiles
+	if (w != 0 && w != 6) {
+		for (int ly = 0; ly < LG_H; ++ly) {
+			int wy = LG_Y0 + ly;
+			int oy = wy < 0 ? -wy : (wy >= W_H[w] ? wy - W_H[w] + 1 : 0);
+			for (int lx = 0; lx < LG_W; ++lx) {
+				int wx = LG_X0 + lx;
+				int ox = wx < 0 ? -wx : (wx >= W_W[w] ? wx - W_W[w] + 1 : 0);
+				int out = imax(ox, oy);
+				if (out > 0) { LG[ly * LG_W + lx] = LG[ly * LG_W + lx] * imax(0, 4 - out) / 5; }
+			}
+		}
 	}
 	int nb = NBASE;
+	bool clouds = fx_cloud_grid(v, tx0, ty0, tw, th, amb);
+	int cw = tw + 1;
+	int cloud_rows = NLEV * nb;
 	for (int ty = ty0; ty < ty0 + th; ++ty) {
 		int sy0 = ty * S - camy + VH / 2;
 		if (sy0 >= VH || sy0 + S <= 0) { continue; }
@@ -173,8 +195,12 @@ void draw_tiles(ClientView& v, int camx, int camy, int amb) {
 			int sx0 = tx * S - camx + VW / 2;
 			if (sx0 >= VW || sx0 + S <= 0) { continue; }
 			int t = cv_tile(v, tx, ty);
-			int vr = in_world(w, tx, ty) ? TVAR[W_OFF[w] + ty * W_W[w] + tx] & 3 : 0;
-			int f = TILE_ANIM[t] != 0 ? (frame + vr) % 4 : 0;
+			int vr = in_world(w, tx, ty) ? TVAR[W_OFF[w] + ty * W_W[w] + tx] & 3 : hash3(tx, ty, 7) & 3;
+			int anim = TILE_ANIM[t];
+			int f = 0;
+			if (anim == ANIM_WATER) { f = frame; }
+			else if (anim == ANIM_FLICKER) { f = (frame + vr) % 4; }
+			else if (anim == ANIM_BREEZE) { f = (FRAME / 10 - ((tx + ty) >> 2)) & 3; }
 			int src = TEX_OFF[(t * 4 + vr) * 4 + f];
 			// the four corner light levels: averages of the tile centers that meet there
 			int lx = tx - LG_X0;
@@ -187,13 +213,43 @@ void draw_tiles(ClientView& v, int camx, int camy, int amb) {
 			int yb = imin(S, VH - sy0);
 			int xa = imax(0, -sx0);
 			int xb = imin(S, VW - sx0);
-			if (c00 == c10 && c00 == c01 && c00 == c11 && c00 % 16 == 0) {
-				int sh = (c00 / 16) * nb;
-				if (c00 >= 240) { sh = (NLEV - 1) * nb; }
+			// a cloud's shadow over the tile: none, whole (the shadowed rows), or its dithered edge
+			int k00 = 0;
+			int k10 = 0;
+			int k01 = 0;
+			int k11 = 0;
+			if (clouds) {
+				int ci = (ty - ty0) * cw + tx - tx0;
+				k00 = CLOUD_COV[ci];
+				k10 = CLOUD_COV[ci + 1];
+				k01 = CLOUD_COV[ci + cw];
+				k11 = CLOUD_COV[ci + cw + 1];
+			}
+			int ksum = k00 + k10 + k01 + k11;
+			int shadow = ksum == 64 ? cloud_rows : 0;
+			bool edge = ksum != 0 && ksum != 64;
+			if (!edge && c00 == c10 && c00 == c01 && c00 == c11 && c00 % 16 == 0) {
+				int sh = (c00 >= 240 ? NLEV - 1 : c00 / 16) * nb + shadow;
 				for (int py = ya; py < yb; ++py) {
 					int dst = (sy0 + py) * VW + sx0;
 					int s2 = src + py * S;
 					for (int px = xa; px < xb; ++px) { PIX[dst + px] = SHADE[sh + TEX[s2 + px]]; }
+				}
+				continue;
+			}
+			if (c00 == c10 && c00 == c01 && c00 == c11 && c00 % 16 == 0) {
+				// even light, a cloud's edge: only the shadow's dither varies
+				int even = (c00 >= 240 ? NLEV - 1 : c00 / 16) * nb;
+				for (int py = ya; py < yb; ++py) {
+					int dst = (sy0 + py) * VW + sx0;
+					int s2 = src + py * S;
+					int krow = ((sy0 + py + 2) & 3) * 4;
+					int kl = k00 * S + (k01 - k00) * py;
+					int kr = k10 * S + (k11 - k10) * py;
+					for (int px = xa; px < xb; ++px) {
+						int sh = (kl * S + (kr - kl) * px) / (S * S) > BAYER[krow + ((sx0 + px + 1) & 3)] ? even + cloud_rows : even;
+						PIX[dst + px] = SHADE[sh + TEX[s2 + px]];
+					}
 				}
 				continue;
 			}
@@ -203,12 +259,51 @@ void draw_tiles(ClientView& v, int camx, int camy, int amb) {
 				int dst = (sy0 + py) * VW + sx0;
 				int s2 = src + py * S;
 				int brow = ((sy0 + py) & 3) * 4;
+				int krow = ((sy0 + py + 2) & 3) * 4;
+				int kl = k00 * S + (k01 - k00) * py;
+				int kr = k10 * S + (k11 - k10) * py;
 				for (int px = xa; px < xb; ++px) {
 					int l16 = left + (right - left) * px / S;
 					int lev = (l16 + BAYER[brow + ((sx0 + px) & 3)]) / 16;
 					if (lev > 15) { lev = 15; }
-					PIX[dst + px] = SHADE[lev * nb + TEX[s2 + px]];
+					int sh = shadow;
+					if (edge && (kl * S + (kr - kl) * px) / (S * S) > BAYER[krow + ((sx0 + px + 1) & 3)]) { sh = cloud_rows; }
+					PIX[dst + px] = SHADE[lev * nb + sh + TEX[s2 + px]];
 				}
+			}
+		}
+	}
+	draw_shore_foam(v, tx0, ty0, tw, th, camx, camy);
+}
+
+// foam along every water edge that meets land, its gaps crawling along the shore
+void draw_shore_foam(ClientView& v, int tx0, int ty0, int tw, int th, int camx, int camy) {
+	int S = TS;
+	int nb = NBASE;
+	int ph = FRAME / 8;
+	for (int ty = ty0; ty < ty0 + th; ++ty) {
+		int sy0 = ty * S - camy + VH / 2;
+		if (sy0 >= VH || sy0 + S <= 0) { continue; }
+		for (int tx = tx0; tx < tx0 + tw; ++tx) {
+			int sx0 = tx * S - camx + VW / 2;
+			if (sx0 >= VW || sx0 + S <= 0) { continue; }
+			if (TILE_FOAMS[cv_tile(v, tx, ty)] == 0) { continue; }
+			bool n = TILE_WET[cv_tile(v, tx, ty - 1)] == 0;
+			bool s = TILE_WET[cv_tile(v, tx, ty + 1)] == 0;
+			bool we = TILE_WET[cv_tile(v, tx - 1, ty)] == 0;
+			bool ea = TILE_WET[cv_tile(v, tx + 1, ty)] == 0;
+			if (!n && !s && !we && !ea) { continue; }
+			int lev = light_at(tx, ty);
+			int fa = SHADE[lev * nb + FOAM_A];
+			int fb = SHADE[lev * nb + FOAM_B];
+			for (int k = 0; k < S; ++k) {
+				int along = (tx + ty) * S + k;
+				bool lit = (along + ph) % 5 != 0;
+				bool lap = (along - ph) % 4 == 0;
+				if (n) { pset(sx0 + k, sy0, lit ? fa : fb); if (lap) { pset(sx0 + k, sy0 + 1, fb); } }
+				if (s) { pset(sx0 + k, sy0 + S - 1, lit ? fa : fb); if (lap) { pset(sx0 + k, sy0 + S - 2, fb); } }
+				if (we) { pset(sx0, sy0 + k, lit ? fa : fb); if (lap) { pset(sx0 + 1, sy0 + k, fb); } }
+				if (ea) { pset(sx0 + S - 1, sy0 + k, lit ? fa : fb); if (lap) { pset(sx0 + S - 2, sy0 + k, fb); } }
 			}
 		}
 	}
@@ -299,7 +394,7 @@ void draw_sprite(int off, int sx, int sy, bool flip, int lev, int mode, int cut)
 			if (x < 0 || x >= VW) { continue; }
 			if (mode == 1) { PIX[y * VW + x] = COL_WHITE; }
 			else if (mode == 2) {
-				if ((x + y + FRAME / 4) % 2 == 0) { PIX[y * VW + x] = SHADE[15 * nb + c]; }
+				if ((x + y + FRAME / 4) % 2 == 0) { PIX[y * VW + x] = SHADE_GHOST != 0 ? SHADE[15 * nb + c] : c; }
 			} else { PIX[y * VW + x] = SHADE[sh + c]; }
 		}
 	}
@@ -346,12 +441,21 @@ void draw_mobiles(ClientView& v, int camx, int camy) {
 		keys[j + 1] = k;
 		order[j + 1] = oi;
 	}
+	int me_i = cv_me(v);
+	float me_x = me_i >= 0 ? mob_vx(v, me_i, vt) : -100.0;
+	float me_y = me_i >= 0 ? mob_vy(v, me_i, vt) : -100.0;
 	for (int oi = 0; oi < n; ++oi) {
 		int i = order[oi];
 		float fx = mob_vx(v, i, vt);
 		float fy = mob_vy(v, i, vt);
 		int sx = math::itrunc(fx * S) - camx + VW / 2;
 		int sy = math::itrunc(fy * S) - camy + VH / 2;
+		int ser = v.m_ser[i];
+		if (KB_F.has(ser) && KB_F[ser] > FRAME) {
+			int push = KB_F[ser] - FRAME >= 3 ? 2 : 1;
+			sx = sx + KB_DX[ser] * push;
+			sy = sy + KB_DY[ser] * push;
+		}
 		if (sx < -S * 2 || sy < -S * 2 || sx >= VW + S || sy >= VH + S) { continue; }
 		int kind = v.m_kind[i];
 		MonDef md = MONS[kind];
@@ -359,6 +463,7 @@ void draw_mobiles(ClientView& v, int camx, int camy) {
 		bool predicted = v.m_ser[i] == v.my_ser && pred_active(v);
 		int dir = predicted ? PRED_DIR : v.m_dir[i];
 		bool flip = dir == 5 || dir == 6 || dir == 7;
+		if ((md.fac == Fac.npc || md.fac == Fac.guard) && math::abs(me_x - fx) + math::abs(me_y - fy) < 5.0 && me_x != fx) { flip = me_x < fx; }
 		bool player = v.m_slot[i] >= 0;
 		bool me = v.m_ser[i] == v.my_ser;
 		int spr = sprite_of(md.spr);
@@ -385,9 +490,10 @@ void draw_mobiles(ClientView& v, int camx, int camy) {
 		bool moving = predicted ? NOW_MS < PRED_T0 + PRED_DUR && (PRED_X != PRED_FX || PRED_Y != PRED_FY) : vt - v.m_mt[i] < v.m_md[i] && (v.m_x[i] != v.m_px[i] || v.m_y[i] != v.m_py[i]);
 		int stride = predicted ? PRED_STEPS : v.m_mt[i] / imax(1, v.m_md[i]);
 		int bob = moving && stride % 2 == 0 ? -1 : 0;
+		if (!moving && (FRAME + ser * 7) % 48 < 16) { bob = -1; }
 		int tile_x = math::itrunc(fx + 0.5);
 		int tile_y = math::itrunc(fy + 0.5);
-		int lev = light_at(tile_x, tile_y);
+		int lev = light_at(tile_x, tile_y) + (cloud_at(tile_x, tile_y) ? NLEV : 0);
 		int mode = 0;
 		if (FLASH.has(v.m_ser[i]) && FLASH[v.m_ser[i]] > FRAME) { mode = 1; }
 		if ((flags & MF_GHOST) != 0) { mode = 2; }
@@ -499,6 +605,26 @@ void loot_burst(float x, float y, int rarity) {
 }
 
 void particles_update() {
+	critters_step();
+	if (HURT_F > 0) { HURT_F = HURT_F - 1; }
+	if (BOLT_F > 0) { BOLT_F = BOLT_F - 1; }
+	if (RELOAD_F > 0) { RELOAD_F = RELOAD_F - 1; }
+	if (ARRIVE_F > 0) { ARRIVE_F = ARRIVE_F - 1; }
+	for (int i = 0; i < FT_X.size(); ++i) {
+		if (FT_T[i] > 0) {
+			FT_T[i] = FT_T[i] - 1;
+			FT_Y[i] = FT_Y[i] + FT_VY[i];
+			FT_VY[i] = FT_VY[i] * 0.84;
+		}
+	}
+	if (SHAKE_F > 0) { SHAKE_F = SHAKE_F - 1; }
+	if (LIGHTNING_F > 0) { LIGHTNING_F = LIGHTNING_F - 1; }
+	if (BANNER_F > 0) { BANNER_F = BANNER_F - 1; }
+	if (UI_TOAST_F > 0) { UI_TOAST_F = UI_TOAST_F - 1; }
+	if (HITSTOP_F > 0) {
+		HITSTOP_F = HITSTOP_F - 1;
+		return;
+	}
 	for (int i = 0; i < P_X.size(); ++i) {
 		if (P_LIFE[i] <= 0) { continue; }
 		P_LIFE[i] = P_LIFE[i] - 1;
@@ -508,16 +634,6 @@ void particles_update() {
 		if ((fl & 2) != 0) { P_VY[i] = P_VY[i] + 0.012; }
 		if ((fl & 4) != 0) { P_VX[i] = P_VX[i] * 0.92; P_VY[i] = P_VY[i] * 0.94; }
 	}
-	for (int i = 0; i < FT_X.size(); ++i) {
-		if (FT_T[i] > 0) {
-			FT_T[i] = FT_T[i] - 1;
-			FT_Y[i] = FT_Y[i] - 0.035;
-		}
-	}
-	if (SHAKE_F > 0) { SHAKE_F = SHAKE_F - 1; }
-	if (LIGHTNING_F > 0) { LIGHTNING_F = LIGHTNING_F - 1; }
-	if (BANNER_F > 0) { BANNER_F = BANNER_F - 1; }
-	if (UI_TOAST_F > 0) { UI_TOAST_F = UI_TOAST_F - 1; }
 }
 
 void draw_particles(int camx, int camy) {
@@ -551,13 +667,21 @@ void float_text(float x, float y, string s, int col, int frames, int scale) {
 		FT_COL.push(0);
 		FT_T.push(0);
 		FT_SCALE.push(1);
+		FT_VY.push(0.0);
+	}
+	// a fresh number stacks above the ones still rising from the same spot
+	float lift = 0.0;
+	for (int i = 0; i < FT_X.size(); ++i) {
+		if (i == slot || FT_T[i] <= 0) { continue; }
+		if (math::abs(FT_X[i] - x) < 1.5 && FT_Y[i] < y - lift + 1.0 && FT_Y[i] > y - lift - 1.25) { lift = lift + 1.25; }
 	}
 	FT_X[slot] = x + (prandf() - 0.5) * 0.4;
-	FT_Y[slot] = y;
+	FT_Y[slot] = y - lift;
 	FT_S[slot] = s;
 	FT_COL[slot] = col;
 	FT_T[slot] = frames;
 	FT_SCALE[slot] = scale;
+	FT_VY[slot] = -0.13;
 }
 
 void draw_float_text(int camx, int camy) {
@@ -565,10 +689,12 @@ void draw_float_text(int camx, int camy) {
 	for (int i = 0; i < FT_X.size(); ++i) {
 		if (FT_T[i] <= 0) { continue; }
 		int sc = FT_SCALE[i];
+		if (sc > 1 && FT_T[i] > 30) { sc = sc + 1; }
+		if (FT_T[i] <= 5 && FT_T[i] % 2 == 0) { continue; }
 		int w = text_px_width(FT_S[i], sc);
 		int sx = math::itrunc(FT_X[i] * S) - camx + VW / 2 + S / 2 - w / 2;
 		int sy = math::itrunc(FT_Y[i] * S) - camy + VH / 2 - 4;
-		draw_text_px(FT_S[i], sx, sy, FT_COL[i], FT_T[i] > 6 ? COL_BLACK : -1, sc);
+		draw_text_px(FT_S[i], sx, sy, FT_COL[i], COL_BLACK, sc);
 	}
 }
 
@@ -670,15 +796,28 @@ void draw_weather(ClientView& v) {
 	if (wx == 1 || wx == 3) {
 		int drops = VW * VH / (wx == 3 ? 90 : 160);
 		int c = rgb(150, 170, 220);
+		int c2 = rgb(96, 112, 160);
 		for (int k = 0; k < drops; ++k) {
 			int x = prand(VW);
 			int y = prand(VH);
 			pset(x, y, c);
 			pset(x - 1, y - 1, c);
-			if (wx == 3) { pset(x - 2, y - 2, c); }
+			pset(x - 2, y - 2, c2);
+			if (wx == 3) { pset(x - 3, y - 3, c2); }
+		}
+		int splash = rgb(200, 215, 240);
+		for (int k = 0; k < drops / 10; ++k) {
+			int x = prand(VW);
+			int y = prand(VH);
+			pset(x - 1, y, splash);
+			pset(x + 1, y, splash);
+			pset(x, y - 1, c);
 		}
 		if (wx == 3 && prand(160) == 0) {
 			LIGHTNING_F = 3;
+			BOLT_F = 4;
+			BOLT_X = VW / 8 + prand(VW * 3 / 4);
+			BOLT_SEED = prand(100000);
 			sfx("thunder");
 		}
 	}
@@ -739,6 +878,7 @@ void process_events(ClientView& v) {
 		int a = v.e_a[e];
 		int b = v.e_b[e];
 		int c = v.e_c[e];
+		fx_event(v, kind, x, y, a, b, c);
 		if (kind == Ev.dmg) {
 			int who = cv_find(v, a);
 			bool crit = (c & 16) != 0;
@@ -757,9 +897,9 @@ void process_events(ClientView& v) {
 		} else if (kind == Ev.heal) {
 			float_text(x * 1.0, y * 1.0, "+" + to_string(b), rgb(90, 255, 110), 26, 1);
 		} else if (kind == Ev.miss) {
-			float_text(x * 1.0, y * 1.0, b == 1 ? "PARRY" : "MISS", rgb(170, 170, 180), 20, 1);
+			float_text(x * 1.0, y * 1.0, b == 1 ? "PARRY" : "MISS", b == 1 ? rgb(170, 200, 255) : rgb(150, 150, 160), 14, 1);
 		} else if (kind == Ev.death) {
-			burst(Fx.smoke, x + 0.5, y + 0.5, 10);
+			burst(Fx.smoke, x + 0.5, y + 0.5, 5);
 			if (MONS[b].boss) {
 				show_banner("VICTORY!", rgb(255, 210, 60), MONS[b].name + " is no more");
 				SHAKE_F = 20;
@@ -960,22 +1100,38 @@ void render_world(ClientView& v) {
 	}
 	int camx = math::itrunc(CAM_X);
 	int camy = math::itrunc(CAM_Y);
+	if (ARRIVE_F > 0) {
+		// a new session: the camera swoops down onto the gator
+		float k = ARRIVE_F / 50.0;
+		camy = camy - math::itrunc(k * k * VH * 1.2);
+	}
 	if (SHAKE_F > 0) {
 		camx = camx + prand(SHAKE_P * 2 + 1) - SHAKE_P;
 		camy = camy + prand(SHAKE_P * 2 + 1) - SHAKE_P;
 	}
 	int amb = ambient_level(v);
 	step_particles(v);
+	fx_world_life(v, camx, camy, amb);
+	fx_alerts(v);
+	fx_barks(v);
 	draw_tiles(v, camx, camy, amb);
 	draw_items(v, camx, camy);
 	draw_mobiles(v, camx, camy);
+	draw_critters(camx, camy);
+	draw_slashes(camx, camy);
 	action_juice(v, camx, camy);
 	draw_projectiles(camx, camy);
 	draw_particles(camx, camy);
 	draw_weather(v);
+	draw_season_sky(v);
+	draw_bolt();
+	draw_alerts(v, camx, camy);
+	draw_barks(v, camx, camy);
 	draw_float_text(camx, camy);
 	boss_bar(v);
 	low_health(v);
+	draw_hurt();
+	draw_reload(v);
 	draw_banner();
 	if (v.ghost != 0 && FRAME % 60 < 30) { draw_text_px("GHOST", 2, 2, rgb(200, 220, 255), COL_BLACK, 1); }
 }

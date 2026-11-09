@@ -2701,13 +2701,20 @@ inline std::optional<script_value> reload_retype_text(const script_value& value,
 // declaring class and every class derived from it, through any receiver of the family;
 // protected is a synonym of private. Host C++ APIs (get_field/set_field/get_fields,
 // serialization) never call this — the host side stays unrestricted by design.
-inline checked_result<void> enforce_member_access(const class_definition* cls, uint64_t member_id,
-                                                  const class_definition* ctx) {
+inline bool member_access_allowed(const class_definition* cls, uint64_t member_id, const class_definition* ctx) {
+    if (!cls->chain_has_nonpublic()) { return true; }
     access_level level = access_level::public_access;
     const class_definition* declarer = cls->find_nonpublic_declarer(member_id, level);
-    if (!declarer || declarer == ctx || (ctx && ctx->derives_from(declarer))) {
+    return !declarer || declarer == ctx || (ctx && ctx->derives_from(declarer));
+}
+
+inline checked_result<void> enforce_member_access(const class_definition* cls, uint64_t member_id,
+                                                  const class_definition* ctx) {
+    if (member_access_allowed(cls, member_id, ctx)) {
         return {};
     }
+    access_level level = access_level::public_access;
+    const class_definition* declarer = cls->find_nonpublic_declarer(member_id, level);
     return checked_result<void>(make_error_code(runtime_error_code::access_violation),
         "Cannot access private member '{0}' of class '{1}'", member_id, declarer->get_type_id());
 }

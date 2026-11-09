@@ -30,8 +30,17 @@ build/bin/jaiscript examples/gatorquest/scripts/gatorquest.jai
 
 `play.bat` (Windows) and `play.sh` start the same command: each finds the runner in `build/bin` or beside itself.
 
-Use a terminal with 24-bit color and UTF-8 (Windows Terminal is ideal), at least 100x30; bigger is better
-(the view switches to 8-pixel tiles from about 190 columns). `Z` cycles the zoom.
+Use a UTF-8 terminal at least 100x30 (Windows Terminal is ideal); bigger is better (the view switches to 8-pixel tiles
+from about 190 columns). `Z` cycles the zoom. The game draws in 24-bit color where the terminal says it takes it
+(`COLORTERM`, Windows Terminal, any Windows console) and in the xterm 256-color palette elsewhere (macOS Terminal.app);
+`-- --truecolor` and `-- --256color` choose.
+
+The title circles the lake by Gatorland's Lilygate while its sky runs through a whole day in two minutes. The swamp
+lives around you: cloud shadows drift over the land by day and fireflies come out at night. Birds scatter when you walk
+up, fish leap, and townsfolk turn to face you and chat as you pass. A monster that spots you gets a "!". Blows land
+with a slash and knock their target back, a critical hit or a kill freezes the moment, and a slain monster bursts into
+the pixels it was drawn with. Storms throw lightning bolts. A new session drops the camera out of the sky onto your
+gator.
 
 ## Controls
 
@@ -163,26 +172,37 @@ written to `.tmp`, read back and verified, the old file becomes `.bak`, then the
 back to `.bak` (then `.tmp`) when a file is missing, cut short, fails its checksum or comes from a newer version;
 unknown records are skipped and missing ones keep their defaults, so older saves keep loading.
 
-## Dev mode: hot reload
+## Hot reload
+
+Every interactive game reloads its scripts live (`-- noreload` turns it off). Edit any `gq_*.jai` script while playing
+and save it: on the next frame it re-runs in place. A cyan sweep runs down the view, and a card names the files and
+what the world kept (the tick, everything in view, where your gator stands). The world, your gator and every monster
+carry on. A rejected edit sweeps red and names the file and the line; the running code stays as it was.
+
+The live tweak file, `saves/live/gq_live.jai`, is the quickest way to watch it happen. It is a script of plain calls the
+game made when it first started:
 
 ```
-jaiscript scripts/gatorquest.jai -- dev
+live_set("season", "summer");      // summer, autumn, winter or spring: the land's colors, falling leaves, snow, petals
+live_set("torch", "5");            // your light's radius in tiles
+live_set("fireflies", "16");       // how many fireflies come out at night
 ```
 
-Edit any `gq_*.jai` script while playing and save it: on the next frame it re-runs in place, and the HUD says what
-was reloaded (or why the edit was rejected, with the file and line). The world, your gator and every monster carry on.
+Change a value and save, and the season turns in the running world. ESC, Next season, rewrites the season line for you
+and the same reload lands it.
 
-Dev mode imports the whole module list once per frame, as one group: `import(DEV_MODULES)`. The engine looks at the
-files in check passes (at most every 0.2 seconds; between passes the import costs nanoseconds), so a frame sees all of
-your saved edits or none of them. Every changed module is parsed and checked, knowing what the others declare, before
-any of them runs: a mistake anywhere is rejected as one error, nothing applies, and the running code stays as it was
-until the file is fixed. When they re-run, functions pick up their new bodies everywhere, classes gain or lose fields with live
-instances migrating, and enums take their new members. A top-level declaration with an initializer takes its new
-value (change a monster's line in `gq_data.jai` and the next spawn has the new stats); one without an initializer
-keeps what it holds. That is the whole convention: state is declared without an initializer. `gq_state.jai` and
-`gq_cstate.jai` declare nothing else, so they reload too; the starting values that are not a type's default live in
-`client_state_init()` and `sim_reset()`. A run-time error while a module re-runs is reported as well, and the
-declarations above the failing line have already taken effect; saving the fixed file re-runs it whole.
+The game imports the whole module list once per frame, as one group: `import(DEV_MODULES)`, with the live file added.
+The engine looks at the files in check passes (at most every 0.2 seconds; between passes the import costs
+nanoseconds), so a frame sees all of your saved edits or none of them. Every changed module is parsed and checked,
+knowing what the others declare, before any of them runs: a mistake anywhere is rejected as one error, nothing applies,
+and the running code stays as it was until the file is fixed. When they re-run, functions pick up their new bodies
+everywhere, classes gain or lose fields with live instances migrating, and enums take their new members. A top-level
+declaration with an initializer takes its new value (change a monster's line in `gq_data.jai` and the next spawn has
+the new stats); one without an initializer keeps what it holds. That is the whole convention: state is declared
+without an initializer. `gq_state.jai` and `gq_cstate.jai` declare nothing else, so they reload too; the starting
+values that are not a type's default live in `client_state_init()` and `sim_reset()`. A run-time error while a module
+re-runs is reported as well, and the declarations above the failing line have already taken effect; saving the fixed
+file re-runs it whole.
 
 ## Headless modes (tests and captures)
 
@@ -196,13 +216,16 @@ powershell -File nettest2.ps1 [-Backend interp]                  # a dedicated h
 jaiscript scripts/gatorquest.jai -- predtest [lag N jitter N loss N]   # movement prediction under a simulated link
 jaiscript scripts/gatorquest.jai -- menutest                     # the title's host and join pages, every refusal, leaving
 jaiscript scripts/gatorquest.jai -- endgame                      # the six tyrants and the Six Scales, start to crown
-jaiscript scripts/gatorquest.jai -- tour [screen 200x56]         # captures of every realm, night, a boss fight, fishing
+jaiscript scripts/gatorquest.jai -- tour [screen 200x56]         # captures of every realm, night, a boss fight, fishing, the lakeside, a hot reload
 jaiscript scripts/gatorquest.jai -- shot ticks 900 every 300     # frame captures (.ans, .txt sketch, .png)
 jaiscript scripts/gatorquest.jai -- shot title                   # every title page as a capture
-jaiscript scripts/gatorquest.jai -- demo frames 600              # the real play loop driven by a bot
+jaiscript scripts/gatorquest.jai -- demo frames 600              # the real play loop driven by a bot, on its own 33 ms-a-frame clock
 jaiscript scripts/gatorquest.jai -- sheet                        # every sprite and tile texture as a PNG
 ```
 
 The STATE_HASH is identical on `--backend=vm` and `--backend=interp` for the same seed and tick count, and the same
 with or without the mid-session round trip (`noroundtrip`): saving and loading is invisible to the simulation.
+`tour` and `shot title` also print a FRAME_HASH over the terminal text of every capture, the same on both backends. The
+tour ends at the lakeside, where it rewrites its own copy of the live tweak file twice (autumn, then winter) and checks
+that each reload lands with the simulation's state untouched.
 Test modes exit with the number of failures.

@@ -74,10 +74,11 @@ print(to_string(ticks().next()) + " " + names().next() + " " +
       to_string(guess().next()) + " " + to_string(plain().next()));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 a 2.5 true</code></pre></div>
 <p>The bare form drops <code>function</code> as well (<code>coroutine g() { … }</code> and
-<code>coroutine g() -&gt; int { … }</code>), and the same prefix works on methods, static ones
-included, and inside a namespace body. Coroutines cannot return references (a parse error). Every spelling is listed in the guide&#x27;s
-<a href="../guide/08-coroutines.html#spellings">Spellings</a>; the language-side tour, covering independent instances per call, receiver pinning (a method coroutine keeps its object alive while suspended) and the edges, is
-the guide&#x27;s <a href="../guide/08-coroutines.html">Coroutines</a> chapter. Hosts moving from Lua coroutines or a C++20 scheduler have a mapping in
+<code>coroutine g() -&gt; int { … }</code>). The same prefix works on methods, static ones
+included, and inside a namespace body. Coroutines cannot return references (a parse error).</p>
+<p>Every spelling is listed in the guide&#x27;s
+<a href="../guide/08-coroutines.html#spellings">Spellings</a>. The language-side tour is
+the guide&#x27;s <a href="../guide/08-coroutines.html">Coroutines</a> chapter, covering independent instances per call, receiver pinning (a method coroutine keeps its object alive while suspended) and the edges. Hosts moving from Lua coroutines or a C++20 scheduler have a mapping in
 <a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a>.</p>
 <p>Coroutine <strong>methods</strong> work too. The handle pins the receiver alive across suspension, <code>this</code> stays bound, and mutations through the receiver are visible to the outside world while the coroutine is parked (<code>examples/crawler</code>&#x27;s boss is built this way):</p>
 <div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Boss {
@@ -88,7 +89,15 @@ auto b = Boss();
 auto c = b.fight();
 print(to_string(c.next()) + " phase=" + to_string(b.phase));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">10 phase=1</code></pre></div>
-<p>All of it (yield/next sequencing, <code>done()</code> transitions, multiple simultaneous handles, range-for driving) behaves identically on both backends; the test suite holds them to it. The checker types a coroutine call as a handle (a member other than <code>next</code> or <code>done</code> is a load error) whose <code>next()</code> returns an unknown type, and does not check yield or return types (see the <a href="06-static-checking.html">Static Checking</a> precision map). A <code>return</code> the declared type rejects is a run-time error at the final <code>next()</code> (<code>Cannot return string from 'k' (declared -&gt; int)</code>), never a load error; a <code>yield</code> takes the declared type the same way at the <code>next()</code> that runs it (<code>coroutine int</code> hands out 2 for <code>yield 2.9</code>; <code>Cannot yield string from 'k' (declared -&gt; int)</code>, catchable around the <code>yield</code>), and a bare <code>yield;</code> hands out nothing.</p>
+<p>All of it (yield/next sequencing, <code>done()</code> transitions, multiple simultaneous handles, range-for driving) behaves identically on both backends. The test suite holds them to it.</p>
+<p><strong>Types.</strong> The checker types a coroutine call; the declared yield and return types are enforced at run time:</p>
+<ul>
+<li>The checker types a coroutine call as a handle whose <code>next()</code> returns an unknown type. A member other than <code>next</code> or <code>done</code> is a load error.</li>
+<li>The checker does not check yield or return types (see the <a href="06-static-checking.html">Static Checking</a> precision map).</li>
+<li>A <code>return</code> the declared type rejects is a run-time error at the final <code>next()</code> (<code>Cannot return string from 'k' (declared -&gt; int)</code>), never a load error.</li>
+<li>A <code>yield</code> takes the declared type the same way, at the <code>next()</code> that runs it. <code>coroutine int</code> hands out 2 for <code>yield 2.9</code>, and a value it rejects raises <code>Cannot yield string from 'k' (declared -&gt; int)</code>, catchable around the <code>yield</code>.</li>
+<li>A bare <code>yield;</code> hands out nothing.</li>
+</ul>
 <h2 id="driving-from-c-pattern-1-through-executes-the-simple-way">Driving from C++, pattern 1: through executes (the simple way)<a class="hlink" href="#driving-from-c-pattern-1-through-executes-the-simple-way" aria-label="link">&#8203;</a></h2>
 <p>A handle stored in an engine global persists <strong>across separate <code>execute()</code> calls</strong>. Each execute continues exactly where the last left off. This is the frame-loop pattern: create behaviors once, tick them per frame with tiny <code>next()</code> scripts. (The strict checker is happy with this: <code>c</code> is declared by the first execute, and later executes on the same engine see it as a declared global.)</p>
 <div class="codeblock cb-cpp" data-sample="coroutine-drive-script"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;execute(R&quot;( coroutine int spawner(int n) {

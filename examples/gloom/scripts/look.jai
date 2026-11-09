@@ -1,12 +1,12 @@
-// The showcase look: how GLOOM is lit and colored when it is played. Lighting,
-// fog, wall textures, sprite shading and particle colors are all tables built
-// at boot and on map load; the per-pixel renderer reads them exactly as it
-// reads the reference tables (reference/README.md section 4.2), so both looks
-// cost the same per pixel, and --smoke keeps the frames the ports reproduce.
-// Colors are math::color values mixed per channel (mix_rgb): plain arithmetic,
-// so the tables come out bit-identical on every platform.
+// The showcase look: how GLOOM is lit and colored when it is played. Floor
+// moods, wall, floor and ceiling textures, the lit color tables, sprite shading
+// and particle colors are all built at boot and on map load; the Renderer's
+// per-pixel work only looks them up. The reference look (reference/README.md
+// section 4.2) keeps its own tables, so --smoke keeps the frames the ports
+// reproduce. Colors are math::color values mixed per channel (mix_rgb): plain
+// arithmetic, so the tables come out bit-identical on every platform.
 
-bool SHOWCASE = false;   // gloom_boot: HOST_LOOK == "showcase"
+bool SHOWCASE;   // gloom_boot: HOST_LOOK == "showcase"; no initializer, so a --dev reload keeps it
 
 function rgb(int r, int g, int b) -> math::color {
 	return math::color(r / 255.0, g / 255.0, b / 255.0);
@@ -90,58 +90,6 @@ array<Fixture> FIXTURES = [
 function shade_light(int shade) -> float {
 	float t = shade / 15.0;
 	return 0.05 + 0.8 * t * math::sqrt(t);
-}
-
-// WALLT: [kind 0..8][side][shade 0..15][tone 0..7] palette indices
-function push_showcase_tones(Mood& mood, math::color base, math::color accent, math::color glow) -> void {
-	math::color white = rgb(255, 255, 255);
-	array<math::color> albedo = [base, accent, base * 0.36, math::clamp(base * 1.25, 0.0, 1.0), base * 0.62, glow,
-		base * 0.86, math::clamp(base * 1.1, 0.0, 1.0)];
-	for (int side = 0; side < 2; ++side) {
-		math::color light = side == 1 ? math::mix_rgb(mood.light, mood.turned, 0.3) * 0.7 : mood.light;
-		for (int shade = 0; shade < 16; ++shade) {
-			float lum = shade_light(shade);
-			math::color haze = mood.fog * (1.0 - lum);
-			for (int tone = 0; tone < TONES; ++tone) {
-				if (tone == TONE_GLOW) {
-					WALLT.push(color_idx(math::mix_rgb(glow, white, 0.15) * (0.6 + 0.4 * lum) + haze * 0.3));
-				} else {
-					WALLT.push(color_idx(albedo[tone] * light * lum + haze));
-				}
-			}
-		}
-	}
-}
-
-function build_showcase_tables(int mi) -> void {
-	auto& mood = MOODS[mi];
-	WALLT = [];
-	math::color unseen = rgb(10, 10, 12);
-	push_showcase_tones(mood, unseen, unseen, unseen);
-	for (auto& wall : mood.walls) {
-		push_showcase_tones(mood, wall, math::mix_rgb(wall, mood.light, 0.18), wall);
-	}
-	for (auto& fixture : FIXTURES) {
-		push_showcase_tones(mood, fixture.base, fixture.accent, fixture.glow);
-	}
-
-	// ceiling and floor fade into the fog at the horizon, one color per pixel row
-	CEILP = [];
-	FLOORP = [];
-	int half = G.vh / 2;
-	math::color near_floor = mood.floor * math::mix_rgb(mood.light, rgb(255, 255, 255), 0.5);
-	for (int y = 0; y < G.vh; ++y) {
-		if (y < half) {
-			float t = 1.0 * y / imax(1, half - 1);
-			float fade = t * t * (3.0 - 2.0 * t);
-			CEILP.push(color_idx(math::mix_rgb(mood.ceiling, mood.fog, fade)));
-			FLOORP.push(0);
-		} else {
-			float t = 1.0 * (y - half) / imax(1, G.vh - 1 - half);
-			CEILP.push(0);
-			FLOORP.push(color_idx(math::mix_rgb(mood.fog, near_floor, t * math::sqrt(t))));
-		}
-	}
 }
 
 // deterministic texel noise: 0..255
@@ -252,31 +200,30 @@ function switch_tone(int tx, int ty) -> int {
 // Sprites keep more light than walls at the same distance so a threat stays
 // readable down a dark corridor; uppercase palette keys (eyes, gobs, flame)
 // and every projectile glow at full brightness.
-function showcase_sprite_lut(string name, int band, int flash) -> array<int> {
+function showcase_sprite_lut(string name, int band, int flash, int variant) -> array<int> {
 	auto& mood = MOODS[G.map_i];
-	var& art = ARTS[name];
-	var& rgbs = art["rgb"];
-	array<string> keys = art["keys"];
+	shared_ptr<Art> art = ARTS[name];
 	bool glowing = name.substr(0, 3) == "pr_";
 	float lum = 1.0 - band * 0.085;
-	math::color light = math::mix_rgb(mood.light, rgb(255, 255, 255), 0.55);
-	math::color haze = mood.fog * ((1.0 - lum) * 0.8);
+	math::color glow = sprite_light(mood, variant);
+	math::color light = math::mix_rgb(mood.light, rgb(255, 255, 255), 0.55) * lum + glow;
+	math::color haze = mood.fog * ((1.0 - lum) * 0.8 * (1.0 - 0.15 * light_level(variant)));
 	array<int> lut = [0];
-	for (int c = 1; c < rgbs.size(); ++c) {
-		int r = rgbs[c][0];
-		int g = rgbs[c][1];
-		int b = rgbs[c][2];
+	for (int c = 1; c < art.rgb.size(); ++c) {
+		int r = art.rgb[c][0];
+		int g = art.rgb[c][1];
+		int b = art.rgb[c][2];
 		if (flash == 1) {
 			r = imin(255, r + 170);
 			g = imin(255, g + 150);
 			b = imin(255, b + 140);
 		}
 		math::color color = rgb(r, g, b);
-		string key = keys[c];
+		string key = art.keys[c];
 		if (glowing || (key >= "A" && key <= "Z")) {
 			lut.push(color_idx(color));
 		} else {
-			lut.push(color_idx(color * light * lum + haze));
+			lut.push(color_idx(color * light + haze));
 		}
 	}
 	return lut;
@@ -292,3 +239,231 @@ array<array<math::color>> SHOWCASE_PARTICLE_RAMPS = [
 	[rgb(255, 255, 236), rgb(255, 240, 170), rgb(255, 200, 100), rgb(220, 130, 50)],    // flash
 	[rgb(190, 255, 200), rgb(130, 245, 220), rgb(100, 200, 255), rgb(110, 120, 240)]    // hexmote
 ];
+
+// ----------------------------------------------------------------- light ----
+// The lit tables: one palette index per (light variant, side, shade, tone), so
+// a surface under a lamp, a muzzle flash or a hex bolt costs one lookup more
+// than an unlit one. Variant 0 is unlit; lights.jai names the rest.
+
+int SURFACE_SHADES = 16;
+float FAR_TEXTURE = 3.2;     // past this distance surfaces draw their far texture
+int FLOOR_TONES = 12;        // the eight wall tones, then blood, dried blood, scorch, ash
+int TONE_BLOOD = 8;
+int TONE_BLOOD_DRY = 9;
+int TONE_SCORCH = 10;
+int TONE_ASH = 11;
+
+// the lit tables' colors, rounded to steps of LIT_STEP a channel: the eye can't
+// tell, and the palette stays small enough to hand every worker each frame
+int LIT_STEP = 6;
+
+function lit_idx(math::color c) -> int {
+	int half = LIT_STEP / 2;
+	int r = (math::itrunc(c.r * 255.0) + half) / LIT_STEP * LIT_STEP;
+	int g = (math::itrunc(c.g * 255.0) + half) / LIT_STEP * LIT_STEP;
+	int b = (math::itrunc(c.b * 255.0) + half) / LIT_STEP * LIT_STEP;
+	return rgb_idx(r, g, b);
+}
+
+function light_color_of(Mood& mood, int variant) -> math::color {
+	int channel = (variant - 1) / LIGHT_LEVELS;
+	if (channel == LIGHT_LAMP) { return math::mix_rgb(mood.light, LIGHT_COLORS[LIGHT_LAMP], 0.5); }
+	return LIGHT_COLORS[channel];
+}
+
+// [variant][side][shade][tone] palette indices for one surface, appended to out
+function push_lit_tones(array<int>& out, Mood& mood, array<math::color> albedo, math::color glow, int sides) -> void {
+	math::color white = rgb(255, 255, 255);
+	math::color black = rgb(0, 0, 0);
+	for (int v = 0; v < LIGHT_VARIANTS; ++v) {
+		float s = v == 0 ? 0.0 : 1.0 * light_level(v) / LIGHT_LEVELS;
+		math::color lc = v == 0 ? black : light_color_of(mood, v);
+		for (int side = 0; side < sides; ++side) {
+			math::color light = (side == 1 ? math::mix_rgb(mood.light, mood.turned, 0.3) * 0.7 : mood.light) * AMBIENT;
+			for (int shade = 0; shade < SURFACE_SHADES; ++shade) {
+				float lum = shade_light(shade);
+				math::color haze = mood.fog * (1.0 - lum);
+				math::color lit = light * lum + lc * (s * LIGHT_GAIN * (0.45 + 0.55 * lum));
+				math::color fog = haze * (1.0 - 0.6 * s);
+				for (int tone = 0; tone < albedo.size(); ++tone) {
+					if (tone == TONE_GLOW) {
+						out.push(lit_idx(math::mix_rgb(glow, white, 0.15) * (0.6 + 0.4 * lum) + haze * 0.3));
+					} else {
+						out.push(lit_idx(albedo[tone] * lit + fog));
+					}
+				}
+			}
+		}
+	}
+}
+
+function wall_albedo(math::color base, math::color accent) -> array<math::color> {
+	return [base, accent, base * 0.36, math::clamp(base * 1.25, 0.0, 1.0), base * 0.62, base, base * 0.86,
+		math::clamp(base * 1.1, 0.0, 1.0)];
+}
+
+int WALL_TABLE_STRIDE = 6400;    // LIGHT_VARIANTS x 2 sides x 16 shades x 8 tones
+
+// the lit wall table of floor mi: [kind 0..8][variant][side][shade][tone]
+function showcase_lit_wall_tones(int mi) -> array<int> {
+	auto& mood = MOODS[mi];
+	array<int> tones = [];
+	math::color unseen = rgb(10, 10, 12);
+	push_lit_tones(tones, mood, wall_albedo(unseen, unseen), unseen, 2);
+	for (auto& wall : mood.walls) {
+		push_lit_tones(tones, mood, wall_albedo(wall, math::mix_rgb(wall, mood.light, 0.18)), wall, 2);
+	}
+	for (auto& fixture : FIXTURES) {
+		push_lit_tones(tones, mood, wall_albedo(fixture.base, fixture.accent), fixture.glow, 2);
+	}
+	return tones;
+}
+
+// what each floor is paved with, and what glows in its cracks
+array<math::color> FLOOR_GLOWS = [rgb(255, 210, 140), rgb(90, 236, 226), rgb(255, 122, 40), rgb(255, 60, 44)];
+
+function showcase_floor_tones(int mi) -> array<int> {
+	auto& mood = MOODS[mi];
+	math::color base = math::clamp(mood.floor * 1.3, 0.0, 1.0);
+	math::color accent = math::mix_rgb(base, mood.walls[0], 0.35);
+	array<math::color> albedo = wall_albedo(base, accent);
+	albedo[TONE_GAP] = base * 0.55;
+	albedo[TONE_GRIT_DARK] = base * 0.9;
+	albedo[TONE_GRIT_LIGHT] = math::clamp(base * 1.06, 0.0, 1.0);
+	albedo.push(rgb(150, 16, 12));
+	albedo.push(rgb(84, 10, 10));
+	albedo.push(rgb(22, 18, 16));
+	albedo.push(rgb(52, 46, 44));
+	array<int> tones = [];
+	push_lit_tones(tones, mood, albedo, FLOOR_GLOWS[mi], 1);
+	return tones;
+}
+
+function showcase_ceiling_tones(int mi) -> array<int> {
+	auto& mood = MOODS[mi];
+	math::color base = mood.ceiling * 0.85;
+	array<math::color> albedo = wall_albedo(base, math::mix_rgb(base, mood.light, 0.12));
+	albedo[TONE_GRIT_DARK] = base * 0.92;
+	albedo[TONE_GRIT_LIGHT] = base;
+	array<int> tones = [];
+	push_lit_tones(tones, mood, albedo,
+		math::mix_rgb(mood.light, rgb(255, 255, 255), 0.45), 1);
+	return tones;
+}
+
+// ------------------------------------------------------ floor and ceiling ----
+// 16x16 texels a tile; four variants a floor, picked per tile from a hash
+
+// each texture comes twice: as drawn, then as seen from afar, where the
+// one-texel lines and the grit would shimmer: only glow, tint and beams stay
+function far_tone(int tone, bool keep_edges) -> int {
+	if (tone == TONE_GLOW || tone == TONE_ACCENT) { return tone; }
+	if (keep_edges && (tone == TONE_GAP || tone == TONE_DARK_EDGE)) { return tone; }
+	return TONE_BASE;
+}
+
+function showcase_floor_texture(int mi) -> array<int> {
+	array<int> tex = [];
+	for (int far = 0; far < 2; ++far) {
+		for (int variant = 0; variant < 4; ++variant) {
+			for (int v = 0; v < 16; ++v) {
+				for (int u = 0; u < 16; ++u) {
+					int tone = floor_tone(mi, variant, u, v);
+					if (far == 1) { tone = mi == 1 ? far_tone(tone, false) : (tone == TONE_GLOW ? TONE_DARK_EDGE : far_tone(tone, false)); }
+					tex.push(tone);
+				}
+			}
+		}
+	}
+	return tex;
+}
+
+function floor_tone(int mi, int variant, int u, int v) -> int {
+	int n = texel_noise(20 + variant, u, v);
+	if (mi == 1) {
+		// coolant grating: plates over a lit channel
+		if (u == 0 || v == 0) { return TONE_LIT_EDGE; }
+		if (u == 15 || v == 15) { return TONE_GAP; }
+		if (v >= 6 && v <= 9 && u >= 2 && u <= 13 && (u & 1) == 0) { return variant == 0 ? TONE_GLOW : TONE_GAP; }
+		if ((u == 3 || u == 12) && (v == 3 || v == 12)) { return TONE_LIT_EDGE; }
+		return n < 30 ? TONE_GRIT_DARK : TONE_BASE;
+	}
+	if (mi == 2) {
+		// foundry basalt: blocks split by cracks that glow
+		int x = (u + (v >> 3) * 5) & 15;
+		int y = v & 7;
+		int crack_at = variant == 0 ? (v * 3) / 4 + 3 + (v >> 2 & 1) : 99;
+		if (u == crack_at || (variant == 0 && u == crack_at + 1 && (v & 3) == 0)) { return TONE_GLOW; }
+		if (x == 15 || y == 7) { return TONE_GAP; }
+		if (x == 0 || y == 0) { return TONE_LIT_EDGE; }
+		if (n < 40) { return TONE_GRIT_DARK; }
+		return variant == 3 ? TONE_ACCENT : TONE_BASE;
+	}
+	if (mi == 3) {
+		// the throne: checkered tiles trimmed in gold
+		if (u == 0 || v == 0 || u == 8 || v == 8) { return TONE_LIT_EDGE; }
+		bool dark = ((u >> 3) + (v >> 3)) % 2 == 0;
+		if (dark) { return n < 50 ? TONE_GRIT_DARK : TONE_DARK_EDGE; }
+		return n < 30 ? TONE_GRIT_LIGHT : TONE_ACCENT;
+	}
+	// flagstones, four to a tile, each its own tint
+	int sx = u >> 3;
+	int sy = v >> 3;
+	int x = u & 7;
+	int y = v & 7;
+	if (x == 7 || y == 7) { return TONE_GAP; }
+	if (x == 0 || y == 0) { return TONE_LIT_EDGE; }
+	if (x == 6 || y == 6) { return TONE_DARK_EDGE; }
+	if (((sx + sy * 2 + variant) % 3) == 0) { return n < 24 ? TONE_GRIT_DARK : TONE_ACCENT; }
+	if (n < 26) { return TONE_GRIT_DARK; }
+	if (n > 238) { return TONE_GRIT_LIGHT; }
+	return TONE_BASE;
+}
+
+// ceiling panels between beams; variant 1 is a lamp
+function showcase_ceiling_texture() -> array<int> {
+	array<int> tex = [];
+	for (int far = 0; far < 2; ++far) {
+		for (int lamp = 0; lamp < 2; ++lamp) {
+			for (int v = 0; v < 16; ++v) {
+				for (int u = 0; u < 16; ++u) {
+					int tone = ceiling_tone(lamp == 1, u, v);
+					tex.push(far == 1 ? far_tone(tone, true) : tone);
+				}
+			}
+		}
+	}
+	return tex;
+}
+
+function ceiling_tone(bool lamp, int u, int v) -> int {
+	if (u < 2 || v < 2) { return u == 1 || v == 1 ? TONE_GAP : TONE_DARK_EDGE; }
+	if (lamp && u >= 5 && u <= 12 && v >= 5 && v <= 12) {
+		if (u == 5 || v == 5 || u == 12 || v == 12) { return TONE_LIT_EDGE; }
+		return TONE_GLOW;
+	}
+	if (u == 2 || v == 2) { return TONE_LIT_EDGE; }
+	return grit(9, u, v);
+}
+
+// every wall kind's texture as tones, 32x32 texels: [kind][ty][tx]
+function showcase_wall_texture() -> array<int> {
+	array<int> tex = [];
+	for (int far = 0; far < 2; ++far) {
+		for (int kind = 0; kind < 9; ++kind) {
+			for (int ty = 0; ty < 32; ++ty) {
+				for (int tx = 0; tx < 32; ++tx) {
+					int tone = showcase_tone(kind, tx, ty);
+					tex.push(far == 1 ? far_tone(tone, true) : tone);
+				}
+			}
+		}
+	}
+	return tex;
+}
+
+// a sprite's light: how a variant tints it
+function sprite_light(Mood& mood, int variant) -> math::color {
+	if (variant == 0) { return rgb(0, 0, 0); }
+	return light_color_of(mood, variant) * (0.9 * light_level(variant) / LIGHT_LEVELS);
+}

@@ -237,8 +237,8 @@ of the actual program in script; Gator Quest and JaiDoom run on the stock runner
 - **GRUBWELL** (`examples/crawler`) — a step-based first-person dungeon crawler, and the hot
   reload showpiece: run it with `--dev`, edit a script, press `R`, and the dungeon changes
   under you.
-- **demoreel** (`examples/demoreel`) — seventeen truecolor demoscene scenes running on *two*
-  live engines at once; TAB swaps the backend mid-scene and the picture does not change.
+- **demoreel** (`examples/demoreel`) — eleven truecolor demoscene scenes, every pixel computed
+  by script on the VM; press `r` after editing a scene file and the change appears mid-scene.
 - **Gator Quest** (`examples/gatorquest`) — a terminal RPG across six realms, with combat, spells,
   crafting, bots and netplay; the world, the art, the sound effects and the music are generated
   by the scripts. It needs nothing but the runner:
@@ -276,7 +276,7 @@ Bugs and questions: [github.com/Devacor/jaiscript/issues](https://github.com/Dev
 
 ## Status
 
-JaiScript 0.5 beta, released 7 November 2026. The language, both backends, the embedding API and
+JaiScript 0.5 beta, released 9 November 2026. The language, both backends, the embedding API and
 the `.jaibite` format are complete and covered by 4,700+ tests run on both backends and a
 differential fuzzer. Beta means the C++ API may still change between minor versions;
 [`docs/site/stability.html`](docs/site/stability.html) lists what is settled and what may change

@@ -6384,6 +6384,17 @@ private:
             default: return false;
         }
     }
+    // An auto copy of an element or field of a declared variable (auto e = es[i], auto b = w.boss): the declared chain types the
+    // copy, as the typed spelling does (an element read's kind stays tentative for every other use)
+    ctype lw_declared_copy_type(const expression* init, const ctype& inferred) {
+        const expression* e = lw_strip(init);
+        const identifier_expr* root = e && e->get_type() != node_type::identifier_expr ? lw_root(e) : nullptr;
+        const var_entry* v = root ? find_named(root) : nullptr;
+        ctype result;
+        if (!v || v->dynamic || v->is_handle || v->lw_handle || v->is_reference || v->type.tentative ||
+            !lw_chain_type(e, v->type, result) || result.kind != inferred.kind || result.cls != inferred.cls) { return inferred; }
+        return result;
+    }
     static const expression* lw_strip(const expression* e) {
         while (e && e->get_type() == node_type::cast_expr && static_cast<const cast_expr*>(e)->implicit_ref) { e = static_cast<const cast_expr*>(e)->operand.get(); }
         return e;
@@ -7604,7 +7615,8 @@ private:
         if (!is_reference_decl && !decl->is_static && lw_on()) {
             const bool spelled = decl->type && !decl->auto_spelled;
             entry.lw_handle = !spelled && entry.type.kind == ctype::object_k && !lw_value_initializer(decl->initializer.get());
-            lw_register(entry, entry.dynamic ? ctype{} : entry.type, decl, decl->name, lw_origin::local, spelled ? entry.display : "auto",
+            const ctype judged = entry.dynamic ? ctype{} : !spelled && has_init && entry.type.tentative ? lw_declared_copy_type(decl->initializer.get(), entry.type) : entry.type;
+            lw_register(entry, judged, decl, decl->name, lw_origin::local, spelled ? entry.display : "auto",
                         !decl->is_const && !decl->function_spelling && !entry.lw_handle);
         }
         declare_local(decl->name, std::move(entry), decl->location, !decl->is_static);

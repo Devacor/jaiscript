@@ -4,11 +4,14 @@
 // hash + STATE_HASH.
 
 #include "gloom_host.hpp"
+#include "../../tools/jaiscript/file_io.hpp"
+#include "../../tools/jaiscript/sound.hpp"
 
 #include <jaiscript/jaiscript.hpp>
 #include <jaiscript/stdlib/stdlib.hpp>
 
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 
@@ -38,6 +41,8 @@ public:
 		eng_->local_alias(opt.local_alias);
 		if (opt.miss_every) { eng_->cells_miss_every(opt.miss_every); }
 		jai::stdlib::register_all(eng_);
+		jai_runner::register_file_io(*eng_);
+		jai_runner::register_sound(*eng_);
 
 		jai::dynamic_binder<gloom::gloom_rng>(*eng_, "Rng")
 			.constructor<jai::script_int>()
@@ -73,6 +78,15 @@ public:
 		eng_->add_global("HOST_LOOK", eng_->make_value(opt.look));
 		eng_->add_global("HOST_TRUECOLOR", eng_->make_value(opt.truecolor != 0));
 		eng_->add_global("HOST_ASCII", eng_->make_value(opt.ascii));
+		eng_->add_global("HOST_DEV", eng_->make_value(opt.dev));
+		// the showcase look writes its synthesized effects here and plays them; "" is silence
+		std::string sound_dir;
+		if (!opt.smoke && opt.bench == 0 && !opt.mute) {
+			std::error_code ec;
+			sound_dir = (std::filesystem::temp_directory_path(ec) / "jai_gloom_sfx").generic_string();
+			if (ec) { sound_dir.clear(); }
+		}
+		eng_->add_global("HOST_SOUND_DIR", eng_->make_value(sound_dir));
 	}
 
 	void load_scripts() override {

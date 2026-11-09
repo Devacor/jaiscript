@@ -76,13 +76,17 @@ see both sides.</p>
 jai::check_report r = eng-&gt;check(source);                     // parse (cached) + check, without running
 const jai::check_report&amp; d = eng-&gt;last_check_diagnostics();   // the last checked execute/bite</code></pre></div>
 <p>Every load is checked. Any error-severity diagnostic makes <code>execute()</code>, <code>jaibite()</code> and
-<code>jaibite_load*()</code> throw <code>jai::static_check_error</code> <strong>before anything runs</strong>. A
-strongly-typed to strongly-typed mismatch (<code>int x = "s"</code>, returning a string from a function declared
-<code>-&gt; int</code>, passing an array to an <code>int</code> parameter, an unrelated class into a typed slot) is a
-load error; only a <code>var</code>-sourced value can still fail at run time. A region marked
-<a href="#warn-mode-and-strict-mode"><code>[[warn_mode]]</code></a> reports its errors as warnings, so it loads and the
-runtime's own conversion errors apply unchanged there.</p>
-<p>A small host that hands a three-line source (a bad assignment on line 2, an undeclared name on line 3) to <code>check()</code>, then runs a variant whose unit is a warn region, then runs the source itself:</p>
+<code>jaibite_load*()</code> throw <code>jai::static_check_error</code> <strong>before anything runs</strong>.</p>
+<ul>
+<li>A strongly-typed to strongly-typed mismatch is a load error: <code>int x = "s"</code>, returning a string from a
+function declared <code>-&gt; int</code>, passing an array to an <code>int</code> parameter, an unrelated class into a
+typed slot.</li>
+<li>Only a <code>var</code>-sourced value can still fail at run time.</li>
+<li>A region marked <a href="#warn-mode-and-strict-mode"><code>[[warn_mode]]</code></a> reports its errors as
+warnings, so it loads and the runtime's own conversion errors apply unchanged there.</li>
+</ul>
+<p>A small host in three steps. The three-line source has a bad assignment on line 2 and an undeclared name on line 3. The host
+hands it to <code>check()</code>, then runs a variant whose unit is a warn region, then runs the source itself:</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">// compiled and run against the library
 std::string src = &quot;int x = 5;\nx = \&quot;hello\&quot;;\nint y = missing + 1;\n&quot;;
 jai::check_report r = eng-&gt;check(src);
@@ -114,11 +118,15 @@ static check failed:
 clean load: 4</code></pre></div>
 <p>(The warn-region demo puts the bad assignment in an <code>if (false)</code> branch. The checker is
 flow-insensitive, so it still reports it, as a warning; the runtime never reaches it.)</p>
-<p>A <code>check_diagnostic</code> carries <code>severity</code>, <code>line</code>, <code>column</code>,
+<ul>
+<li>A <code>check_diagnostic</code> carries <code>severity</code>, <code>line</code>, <code>column</code>,
 <code>message</code>, <code>related_line</code>/<code>related_column</code> (the declaration a bad store
-violates). A <code>check_report</code> holds the vector plus <code>capped</code> (the 100-diagnostic cap
+violates).</li>
+<li>A <code>check_report</code> holds the vector plus <code>capped</code> (the 100-diagnostic cap
 was hit), <code>has_errors()</code>, <code>error_count()</code> and <code>format(source, name)</code>, which
-renders the listing above. Errors gate the load; warning severity never gates. The shadowing warnings described in the <a href="../guide/07-classes.html#name-resolution-in-methods">classes
+renders the listing above.</li>
+</ul>
+<p>Errors gate the load; warning severity never gates. The shadowing warnings described in the <a href="../guide/07-classes.html#name-resolution-in-methods">classes
 chapter</a> are the everyday example.</p>
 
 <h2 id="one-conversion-table">One conversion table<a class="hlink" href="#one-conversion-table" aria-label="link">&#8203;</a></h2>
@@ -129,8 +137,8 @@ parameters, returns, instance and static field stores, and the container element
 <tr><td><code>float</code></td><td>float, int, bool, an object with <code>to_float()</code></td><td></td></tr>
 <tr><td><code>bool</code></td><td>anything</td><td>truthy conversion</td></tr>
 <tr><td><code>string</code></td><td>string, utf8_string, char (its one-character text), an object with <code>to_string()</code></td><td>int/float/bool/null/containers = error; <code>to_string(x)</code>, <code>`${x}`</code> or <code>cast&lt;string&gt;(x)</code> stringify</td></tr>
-<tr><td><code>char</code></td><td>char, a string of exactly one character, an object with <code>to_char()</code></td><td>a string of another length raises <code>Cannot convert 'string' to 'char': a char takes a string of exactly one character</code> (a literal fails the load); <code>char c = 65</code> is an error at load and at run time; <code>cast&lt;char&gt;(65)</code> is the spelling</td></tr>
-<tr><td><code>array</code> / <code>map</code></td><td>array / map</td><td>the checker rejects a literal element, a <code>push</code> or an element store it can see (<code>cannot push into 'array&lt;int&gt;': expected 'int', got 'string'</code>); map keys, <code>var</code>-sourced values and untyped containers meet the runtime element boundary, which runs on every path: an element store says <code>Cannot assign 'string' to element of type 'int'</code>, a push <code>Cannot push 'string' to array&lt;int&gt;</code>, a whole container or literal <code>Cannot store string in array&lt;int&gt;</code>, a map key <code>Cannot use 'int' as a key of type 'string'</code></td></tr>
+<tr><td><code>char</code></td><td>char, a string of exactly one character, an object with <code>to_char()</code></td><td>a string of another length raises <code>Cannot convert 'string' to 'char': a char takes a string of exactly one character</code> (a literal fails the load). <code>char c = 65</code> is an error at load and at run time; <code>cast&lt;char&gt;(65)</code> is the spelling</td></tr>
+<tr><td><code>array</code> / <code>map</code></td><td>array / map</td><td>the checker rejects a literal element, a <code>push</code> or an element store it can see (<code>cannot push into 'array&lt;int&gt;': expected 'int', got 'string'</code>). Map keys, <code>var</code>-sourced values and untyped containers meet the runtime element boundary, which runs on every path. An element store says <code>Cannot assign 'string' to element of type 'int'</code>, a push <code>Cannot push 'string' to array&lt;int&gt;</code>. A whole container or literal <code>Cannot store string in array&lt;int&gt;</code>, a map key <code>Cannot use 'int' as a key of type 'string'</code></td></tr>
 <tr><td>object <code>C</code></td><td>null (a typed null); the same class; derived to base; a <code>shared_ptr&lt;C or derived&gt;</code> handle; a converting constructor <code>C(src)</code> through exactly one one-parameter constructor that takes <code>src</code> directly; on plain assignment, a user <code>operator=</code> of <code>C</code> (or an in-script base) that accepts <code>src</code></td><td>an unrelated class with no viable one-argument constructor or <code>operator=</code> = error; array/map/function into an object = error; a registered ancestor's <code>operator=</code> is lenient</td></tr>
 <tr><td><code>shared_ptr&lt;C&gt;</code> / <code>weak_ptr&lt;C&gt;</code></td><td>null, a handle or an instance of <code>C</code> or a subclass</td><td><code>null</code> stores a typed null on every path; an unrelated class or a primitive is an error</td></tr>
 <tr><td><code>function</code></td><td>a callable or null</td><td>a number, string or container is an error</td></tr>
@@ -139,16 +147,27 @@ parameters, returns, instance and static field stores, and the container element
 <tr><td><code>auto</code> + initializer</td><td>inferred, then enforced as that type</td><td>a <code>null</code> initializer leaves it dynamic. Null carries no type; the runtime locks at the first non-null store</td></tr>
 <tr><td><code>auto</code> without initializer</td><td>dynamic (unchecked)</td><td>the runtime locks at the first store; the checker cannot see branch order, so it opts out</td></tr>
 </tbody></table></div>
-<p>Two things the table does not do. It never chains: <code>TA -&gt; TB -&gt; TC</code> or
-<code>x.to_int() -&gt; C(int)</code> is not implicit. And it never hides a thrown conversion: a converting
-constructor or <code>to_X()</code> that throws surfaces its own error. Each run-time rejection names its slot:
-<code>Cannot initialize 'x' (declared int) with string</code> for declarations, <code>Cannot assign string to 'x'
-(declared int)</code> for <code>=</code>, <code>Cannot assign string to field 'f' of C (declared int)</code> and
-<code>... to static 's' of C ...</code> for fields, <code>Cannot pass string to parameter 'n' of 'fib' (declared
-int)</code>, <code>Cannot return string from 'f' (declared -&gt; int)</code>, <code>Cannot convert S to C (no
-suitable single-argument constructor)</code> for a class-target parameter or return. The type spelled is the
-value's own (<code>string</code>, <code>null</code>, <code>array</code>, a class name), never a
-<code>var</code> tag.</p>
+<p>Two things the table does not do:</p>
+<ul>
+<li>It never chains: <code>TA -&gt; TB -&gt; TC</code> or <code>x.to_int() -&gt; C(int)</code> is not implicit.</li>
+<li>It never hides a thrown conversion: a converting constructor or <code>to_X()</code> that throws surfaces its own
+error.</li>
+</ul>
+<p>Each run-time rejection names its slot:</p>
+<div class="tablewrap"><table><thead><tr><th>slot</th><th>error</th></tr></thead><tbody>
+<tr><td>declarations</td><td><code>Cannot initialize 'x' (declared int) with string</code></td></tr>
+<tr><td><code>=</code></td><td><code>Cannot assign string to 'x'
+(declared int)</code></td></tr>
+<tr><td>fields</td><td><code>Cannot assign string to field 'f' of C (declared int)</code> and
+<code>... to static 's' of C ...</code></td></tr>
+<tr><td>parameters</td><td><code>Cannot pass string to parameter 'n' of 'fib' (declared
+int)</code></td></tr>
+<tr><td>returns</td><td><code>Cannot return string from 'f' (declared -&gt; int)</code></td></tr>
+<tr><td>a class-target parameter or return</td><td><code>Cannot convert S to C (no
+suitable single-argument constructor)</code></td></tr>
+</tbody></table></div>
+<p>The type spelled is the value's own (<code>string</code>, <code>null</code>, <code>array</code>, a class name),
+never a <code>var</code> tag.</p>
 <p>Two rules worth calling out:</p>
 <ul>
 <li><strong>Compound assignment follows C++.</strong> A typed <code>x op= rhs</code> behaves as
@@ -157,7 +176,7 @@ is an error. <code>var</code> targets keep their dynamic result.</li>
 <li><strong>Typed fields are real, statics included.</strong> Field initializers, member stores
 (<code>obj.field = v</code>, a bare <code>field = v</code> inside a method, inherited fields) and static stores
 on every spelling (<code>C::s</code>, a bare <code>s</code> inside the class, the compound forms) all check
-against the declared type, and the runtime enforces the same table on the same spellings.</li>
+against the declared type. The runtime enforces the same table on the same spellings.</li>
 </ul>
 <div class="codeblock cb-jai"><span class="cb-label">jaiscript &middot; statics.jai</span><pre><code class="lang-jai">class Counter {
     static int total = 0;
@@ -175,20 +194,28 @@ print(Counter::total);
 <p>A call is checked when the callee resolves statically. Same-script functions, constructors and methods get
 arity (defaults counted) plus per-argument assignability through the table above. Overloads error only when <em>no</em> overload
 matches. A reference parameter binds only compatible storage (<a href="#references">References</a>).</p>
-<p>Host (C++) functions are checked through <code>engine::host_function_signatures</code>: arity across
-overloads (variadic accepts anything) and only per-argument <em>certainties</em>: a known primitive with
-no builtin conversion to a primitive parameter, like <code>square("s")</code>. Numeric to numeric is fine;
-object and <code>script_value</code> parameters accept anything. Neither side converts a number to a string: a C++
-<code>std::string</code> parameter takes text, as a script <code>string</code> slot does. Callables held in variables
-(lambdas, cross-execute function values) are unchecked. A bound static method (<code>Gate::twice()</code>) is held to
-the arity of its binding; a second <code>static_method</code> of the same name replaces the first, and a binding of unknown
-arity accepts anything.</p>
+<p>Host (C++) functions are checked through <code>engine::host_function_signatures</code>:</p>
+<ul>
+<li>Arity across overloads (variadic accepts anything).</li>
+<li>Only per-argument <em>certainties</em>: a known primitive with no builtin conversion to a primitive parameter,
+like <code>square("s")</code>. Numeric to numeric is fine; object and <code>script_value</code> parameters accept
+anything.</li>
+<li>Neither side converts a number to a string: a C++ <code>std::string</code> parameter takes text, as a script
+<code>string</code> slot does.</li>
+<li>A bound static method (<code>Gate::twice()</code>) is held to the arity of its binding. A second
+<code>static_method</code> of the same name replaces the first, and a binding of unknown arity accepts anything.</li>
+</ul>
+<p>Callables held in variables (lambdas, cross-execute function values) are unchecked.</p>
 <h3 id="returns">Returns<a class="hlink" href="#returns" aria-label="link">&#8203;</a></h3>
-<p>A returned value must be assignable to the declared return type; a value from a <code>void</code> function
-is an error; a bare <code>return;</code> or a path that falls off the end is an error when the result holds no null (a
-primitive, a string, a reference) and a warning for a class, handle or container result. The walk runs at load and adds
-nothing to a call. Coroutines are
-exempt (calling one yields a handle typed as <code>coroutine_handle</code>; yield and return types are not checked).</p>
+<p>A returned value must be assignable to the declared return type.</p>
+<ul>
+<li>A value from a <code>void</code> function is an error.</li>
+<li>A bare <code>return;</code> or a path that falls off the end is an error when the result holds no null (a
+primitive, a string, a reference), and a warning for a class, handle or container result.</li>
+<li>Coroutines are exempt (calling one yields a handle typed as <code>coroutine_handle</code>; yield and return types
+are not checked).</li>
+</ul>
+<p>The walk runs at load and adds nothing to a call.</p>
 <div class="codeblock cb-jai"><span class="cb-label">jaiscript &middot; required_returns.jai</span><pre><code class="lang-jai">class Box { int v = 1; }
 int sign(int a) { if (a &gt; 0) { return 1; } }    // falls off the end
 int none() { return; }                           // bare return from an int function
@@ -224,23 +251,33 @@ print(half("ten"));</code></pre></div>
 caught in half: Cannot return string from 'half' (declared -&gt; int)
 -1</code></pre></div>
 <h3 id="identifiers">Identifiers<a class="hlink" href="#identifiers" aria-label="link">&#8203;</a></h3>
-<p>An undeclared identifier is an error. A name counts as declared if it is in scope, a member of the current
-class (inherited included; inside a method or a <code>[this]</code> lambda, also a member of a class derived from
-it), a program-scope declaration of the unit (top level or a namespace body, two-pass, so a function reads a
-global declared below it), one of the host's per-call instance variables, a top-level name of any unit in the program (<a href="#programs">Programs</a>), an
-<code>extern</code> declaration (<a href="#escape-hatches">escape hatches</a>), or anything on the engine's
-registration surface (globals, functions, classes, template types, namespaces), which is visible
-because checking happens at execute time. A local, parameter or loop variable is declared only in its own scope,
-and a field or method only to its class: <code>print(hp)</code> at the top level is undeclared even when a class
-declares <code>hp</code>.</p>
+<p>An undeclared identifier is an error. A name counts as declared if it is:</p>
+<ul>
+<li>in scope;</li>
+<li>a member of the current class (inherited included; inside a method or a <code>[this]</code> lambda, also a member
+of a class derived from it);</li>
+<li>a program-scope declaration of the unit (top level or a namespace body, two-pass, so a function reads a
+global declared below it);</li>
+<li>one of the host's per-call instance variables;</li>
+<li>a top-level name of any unit in the program (<a href="#programs">Programs</a>);</li>
+<li>an <code>extern</code> declaration (<a href="#escape-hatches">escape hatches</a>);</li>
+<li>anything on the engine's registration surface (globals, functions, classes, template types, namespaces), which is
+visible because checking happens at execute time.</li>
+</ul>
+<p>A local, parameter or loop variable is declared only in its own scope, and a field or method only to its class:
+<code>print(hp)</code> at the top level is undeclared even when a class declares <code>hp</code>.</p>
 <p>Only a unit that uses a <em>dynamic-path</em> <code>import(expr)</code>/<code>include(expr)</code> drops
 undeclared identifiers to warning severity: such a file can define anything. A literal import path never hides a
-name, wherever the import stands (a function body or a block included): its module joins the program instead.</p>
+name, wherever the import stands (a function body or a block included). Its module joins the program instead.</p>
 <h3 id="references">References<a class="hlink" href="#references" aria-label="link">&#8203;</a></h3>
-<p>A reference binds compatible storage and never converts: the exact primitive kind (an <code>int&amp;</code>
-takes an <code>int</code>, not a <code>float</code>), the class or a subclass, the same concrete container or
-handle type. The checker holds parameters, reference declarations, reference range-for variables and reference
-returns to that rule; an argument whose element type it cannot know stays lenient, and the runtime makes the
+<p>A reference binds compatible storage and never converts. Compatible storage is:</p>
+<ul>
+<li>the exact primitive kind (an <code>int&amp;</code> takes an <code>int</code>, not a <code>float</code>);</li>
+<li>the class or a subclass;</li>
+<li>the same concrete container or handle type.</li>
+</ul>
+<p>The checker holds parameters, reference declarations, reference range-for variables and reference
+returns to that rule. An argument whose element type it cannot know stays lenient, and the runtime makes the
 same verdict there:</p>
 <div class="codeblock cb-jai"><span class="cb-label">jaiscript &middot; references.jai</span><pre><code class="lang-jai">void bump(int&amp; r) { r += 1; }
 float speed = 1.5;
@@ -257,9 +294,10 @@ for (float&amp; v : ids) { v = 0; }</code></pre></div>
 <p>A store <em>through</em> a reference runs the referenced variable&#x27;s own table at run time (<code>int&amp; r =
 x; r = "s"</code> raises like <code>x = "s"</code>); the checker leaves those stores to the runtime.</p>
 <h3 id="members">Members<a class="hlink" href="#members" aria-label="link">&#8203;</a></h3>
-<p>On a receiver whose class is fully known (an in-script hierarchy the checker can resolve, or an
-engine-registered class with its properties and statics), an unknown field or method is an error, on
-reads and on writes (the runtime raises the same mistake at the store, <code>Cannot assign to 'x': A has no such member</code>). A member that only a <em>subtype</em> declares is an error on a receiver whose static class is certain,
+<p>On a receiver whose class is fully known, an unknown field or method is an error, on reads and on writes. A
+fully known class is an in-script hierarchy the checker can resolve, or an engine-registered class with its
+properties and statics. The runtime raises the same mistake at the store, <code>Cannot assign to 'x': A has no such member</code>.</p>
+<p>A member that only a <em>subtype</em> declares is an error on a receiver whose static class is certain,
 exactly as in C++:</p>
 <div class="codeblock cb-jai"><span class="cb-label">jaiscript &middot; subtype_member.jai</span><pre><code class="lang-jai">class Unit { int hp = 10; }
 class Archer : Unit { int arrows = 20; }
@@ -286,13 +324,15 @@ print(any.arrows);</code></pre></div>
 <p>The finer rules, each the same on both backends:</p>
 <ul>
 <li><strong>Accessors.</strong> A member that a user <code>_get_x</code>/<code>_set_x</code> declares
-(anywhere in the chain) is known, and takes the accessor's declared type when that declaration is unambiguous:
-one parameterless, non-coroutine <code>int _get_hp()</code> makes <code>char c = obj.hp</code> an error; one
+(anywhere in the chain) is known. It takes the accessor's declared type when that declaration is unambiguous:
+one parameterless, non-coroutine <code>int _get_hp()</code> makes <code>char c = obj.hp</code> an error. One
 by-value <code>void _set_hp(int)</code> makes <code>obj.hp = "s"</code> the error <code>cannot assign 'string'
-to property 'hp' declared 'int'</code>. Two overloads, a <code>var</code>/<code>auto</code> getter, a getter
+to property 'hp' declared 'int'</code>.</li>
+<li><strong>Ambiguous accessors.</strong> Two overloads, a <code>var</code>/<code>auto</code> getter, a getter
 with parameters, a reference or untyped setter parameter, or an accessor that lives only on a registered
-ancestor all leave the member unknown: lenient. Inside the class a bare <code>x</code> keeps the backing
-field's declared type, a global of the same name included: a bare name in a method resolves locals, then members,
+ancestor all leave the member unknown: lenient.</li>
+<li><strong>Bare names inside the class.</strong> Inside the class a bare <code>x</code> keeps the backing
+field's declared type, a global of the same name included. A bare name in a method resolves locals, then members,
 then globals, the order the run time takes, so the member is checked and <code>::x</code> names the global.</li>
 <li><strong>Statics</strong> are typed like instance fields on every spelling (<code>C::s</code>, a bare
 <code>s</code> inside the class, the compound forms).</li>
@@ -300,14 +340,19 @@ then globals, the order the run time takes, so the member is checked and <code>:
 in enum 'Direction'</code>.</li>
 <li><strong>Lenient by design:</strong> builtin container/string/map methods, subscripts, and the handle builtins a <code>shared_ptr</code> answers (<code>use_count</code>, <code>cpp_ref_count</code>,
 <code>unique</code>, <code>same_as</code>, <code>reset</code>). A class method of the same name wins
-first; where the program holds that class (or a subclass) by a <code>shared_ptr</code>, the method warns that the
-builtin is unreachable on its handles, and a class held by value alone keeps its <code>reset()</code> unwarned. Any ancestor the checker cannot resolve opens the whole class: silence.</li>
+first. Where the program holds that class (or a subclass) by a <code>shared_ptr</code>, the method warns that the
+builtin is unreachable on its handles; a class held by value alone keeps its <code>reset()</code> unwarned. Any ancestor the checker cannot resolve opens the whole class: silence.</li>
 </ul>
 <h3 id="casts">Casts<a class="hlink" href="#casts" aria-label="link">&#8203;</a></h3>
-<p><code>cast&lt;T&gt;(e)</code> types as a certain <code>T</code>; <code>cast&lt;T&amp;&gt;(e)</code> as
-<code>T</code> for member lookup only (it is a reference, never a store proof);
-<code>cast&lt;shared_ptr&lt;T&gt;&gt;(e)</code> as the handle. Primitive targets type as the primitive. The
-operand is <em>the</em> explicit typed boundary and is never checked against <code>T</code>. The verdict
+<p>A cast types as its target:</p>
+<ul>
+<li><code>cast&lt;T&gt;(e)</code> types as a certain <code>T</code>.</li>
+<li><code>cast&lt;T&amp;&gt;(e)</code> types as <code>T</code> for member lookup only (it is a reference, never a store
+proof).</li>
+<li><code>cast&lt;shared_ptr&lt;T&gt;&gt;(e)</code> types as the handle.</li>
+<li>Primitive targets type as the primitive.</li>
+</ul>
+<p>The operand is <em>the</em> explicit typed boundary and is never checked against <code>T</code>. The verdict
 belongs to the runtime, whose <code>Cannot cast 'X' to 'T'</code> is catchable. A <code>T</code> that names no
 class is an error (<code>unknown type in cast: 'Nope'</code>).</p>
 <p>One warning lives here, because it catches a real slip. A value-form class cast of a handle or a reference
@@ -326,23 +371,30 @@ which is the copy doing exactly what a copy does. The diagnostic waits in
 <div class="codeblock cb-plain"><span class="cb-label">diagnostic</span><pre><code class="lang-plain">cast_copy.jai:3:10: warning: cast&lt;P&gt;(h) copies the instance - use cast&lt;P&amp;&gt;(h) to alias it or cast&lt;shared_ptr&lt;P&gt;&gt;(h) to share it (declared at 2:15)
     P copy = cast&lt;P&gt;(h);              // warning: this copies
              ^</code></pre></div>
-<p> <code>cast&lt;T&amp;&gt;</code>,
+<p><code>cast&lt;T&amp;&gt;</code>,
 <code>cast&lt;shared_ptr&lt;T&gt;&gt;</code>, primitive targets and <code>var</code> operands stay silent. The
 cast itself is covered in the <a href="../guide/02-type-ladder.html#cast-the-explicit-boundary">type ladder</a>.</p>
 <h3 id="namespaces-and-recovery">Namespaces, and recovery<a class="hlink" href="#namespaces-and-recovery" aria-label="link">&#8203;</a></h3>
 <p><code>math::&lt;fn&gt;(...)</code> is typed by its kernel's result (<code>int</code> for
 <code>itrunc</code>/<code>ifloor</code>/<code>wrap_*</code>, <code>float</code> for the transcendental and
 interpolation families, operand-typed for <code>math::abs</code>/<code>math::min</code>/<code>math::max</code>/<code>math::clamp</code>);
-arity there is the kernel's run-time error. A qualified name must name something its namespace declares: the
-longest prefix of <code>a::b::c</code> that names a namespace must declare the next segment, or the load fails with
-<code>no member 'c' in namespace 'a::b'</code>. Every declaration of the namespace counts, in any unit of the program,
-an earlier run, or the host's registrations (a script's <code>namespace math { ... }</code> extends
-<code>math::</code>); a namespace that is also a class answers with the class's statics, and a unit with a
-dynamic-path include gets a warning. Every type a declaration spells must name a class, enum or registered type
+arity there is the kernel's run-time error.</p>
+<p>A qualified name must name something its namespace declares: the longest prefix of <code>a::b::c</code> that names
+a namespace must declare the next segment, or the load fails with <code>no member 'c' in namespace 'a::b'</code>.</p>
+<ul>
+<li>Every declaration of the namespace counts, in any unit of the program, an earlier run, or the host's
+registrations (a script's <code>namespace math { ... }</code> extends <code>math::</code>).</li>
+<li>A namespace that is also a class answers with the class's statics.</li>
+<li>A unit with a dynamic-path include gets a warning.</li>
+</ul>
+<p>Every type a declaration spells must name a class, enum or registered type
 (<code>unknown type 'Nope'</code>), with the same warning rule.</p>
-<p>An erroring expression assumes its declared or expected type afterwards, so one bad line produces one
-diagnostic rather than a cascade; identical (line, column, message) triples are deduplicated; the listing
-caps at 100 with <code>report.capped</code> set.</p>
+<p><strong>Recovery.</strong> One bad line produces one diagnostic rather than a cascade:</p>
+<ul>
+<li>An erroring expression assumes its declared or expected type afterwards.</li>
+<li>Identical (line, column, message) triples are deduplicated.</li>
+<li>The listing caps at 100 with <code>report.capped</code> set.</li>
+</ul>
 
 <h2 id="programs">Programs: checking across imports<a class="hlink" href="#programs" aria-label="link">&#8203;</a></h2>
 <p>A game is rarely one file. Here <code>rules.jai</code> reads a global that <code>state.jai</code> declares,
@@ -354,41 +406,49 @@ print(damage(3));</code></pre></div>
 <div class="codeblock cb-jai"><span class="cb-label">jaiscript &middot; state.jai</span><pre><code class="lang-jai">class World { int power = 7; }
 World G = World();</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">21</code></pre></div>
-<p>A unit whose <code>import</code>/<code>include</code> statements carry literal paths (at any depth) is the root
-of a <strong>program</strong>. Before anything runs, the engine gathers the program's closure: every unit
-those paths reach, resolved exactly as the runtime resolves them (the importing file&#x27;s folder, then the include paths, then the working directory), recursively, each
-file once (cycles are fine). It then hands the union of every unit's top-level names to the checker:
-functions, variables, classes, enums and their values, namespaces and their members. The root and every
-closure unit are then checked against that union, so a function in one file may use a global or class another
-file declares, whatever the import order.</p>
+<p>Names cross units, so a function in one file may use a global or class another file declares, whatever the
+import order. A unit whose <code>import</code>/<code>include</code> statements carry literal paths (at any depth)
+is the root of a <strong>program</strong>. Before anything runs:</p>
+<ol>
+<li>The engine gathers the program's closure: every unit those paths reach, resolved exactly as the runtime resolves
+them (the importing file&#x27;s folder, then the include paths, then the working directory), recursively, each
+file once (cycles are fine).</li>
+<li>It then hands the union of every unit's top-level names to the checker:
+functions, variables, classes, enums and their values, namespaces and their members.</li>
+<li>The root and every closure unit are then checked against that union.</li>
+</ol>
 <p>Class models cross units too. Every top-level class of every unit is modeled as if it were declared in the
-unit being checked, so a subclass whose parent lives in another file resolves inherited fields and methods
+unit being checked. So a subclass whose parent lives in another file resolves inherited fields and methods
 bare, through <code>this</code>, and on typed receivers (down a chain that may end in a registered C++
-class), and a typed mismatch against a cross-unit member is the same error the same-unit case reports.
-A parent found nowhere (a dynamic-path import, an <code>extern</code> name used as a base) opens its subclass:
+class). A typed mismatch against a cross-unit member is the same error the same-unit case reports.</p>
+<p>A parent found nowhere (a dynamic-path import, an <code>extern</code> name used as a base) opens its subclass:
 bare names in that class's methods type as unknown and are never <code>undeclared</code>.</p>
 <p>Under strict, an error anywhere in the program fails the root's <code>execute()</code> before any unit runs.
-<code>what()</code> lists the root's diagnostics first, then each erroring unit's own listing, formatted against
-that unit's source and named by its resolved path. Drop <code>state.jai</code> from the program above and you
+<code>what()</code> lists the root's diagnostics first, then each erroring unit's own listing. Each listing is formatted
+against that unit's source and named by its resolved path. Drop <code>state.jai</code> from the program above and you
 get:</p>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">static check failed:
 .../rules.jai:1:38: error: use of undeclared identifier 'G'
     int damage(int hits) { return hits * G.power; }
                                          ^</code></pre></div>
-<p>The automatic disk cache gives the same answer: a leaf&#x27;s checked-clean stamp holds only where the names it resolved
-outside itself mean what they meant when it was checked, so the program without <code>state.jai</code> checks
+<p>The automatic disk cache gives the same answer. A leaf&#x27;s checked-clean stamp holds only where the names it resolved
+outside itself mean what they meant when it was checked. So the program without <code>state.jai</code> checks
 <code>rules.jai</code> again even after the full program cached it (see <a href="04-jaibite.html#the-stamp-holds-its-context">jaibite,
 &quot;The stamp holds for the context the file was checked in&quot;</a>).</p>
 <p>In the report <code>eng-&gt;check()</code> and <code>last_check_diagnostics()</code> return, closure diagnostics follow
 the root's with line and column 0 and the path-qualified location leading the message (the snippet belongs to
 another source, so none is printed).</p>
-<p>The union is the engine's program-name memory: it lives for the engine's lifetime and rides every later
-check, so a leaf re-parsed on its own after a hot edit still knows the names of the program it belongs to. The
-memory is a superset by construction: a name it admits is never a false error, only a typo the checker
-cannot catch. A unit the closure cannot resolve, read or parse contributes no names and is skipped; the runtime
-reports it when the unit executes. Names the program never declares (a host global
-bound after load, a value injected at run time) are outside the closure by definition, which is what
-<code>extern</code> is for.</p>
+<p>The union is the engine's program-name memory:</p>
+<ul>
+<li>It lives for the engine's lifetime and rides every later check, so a leaf re-parsed on its own after a hot edit
+still knows the names of the program it belongs to.</li>
+<li>The memory is a superset by construction: a name it admits is never a false error, only a typo the checker
+cannot catch.</li>
+<li>A unit the closure cannot resolve, read or parse contributes no names and is skipped; the runtime
+reports it when the unit executes.</li>
+<li>Names the program never declares (a host global bound after load, a value injected at run time) are outside the
+closure by definition, which is what <code>extern</code> is for.</li>
+</ul>
 
 <h2 id="escape-hatches">Escape hatches<a class="hlink" href="#escape-hatches" aria-label="link">&#8203;</a></h2>
 <p>Two spellings tell the checker about what it cannot see, or should not gate on, without loosening anything
@@ -406,16 +466,18 @@ try { spawn_on_network(1, 2); } catch (e) { print(e); }
 try { print(report()); } catch (e) { print(e); }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">'spawn_on_network' is declared extern but never defined
 'G' is declared extern but never defined (an 'inline' declaration creates it)</code></pre></div>
-<p>An <code>extern</code> name counts as declared, and a program's closure carries it to every unit like any
-top-level name. The typed form gives the name that certain type: member checks, assignment checks and proofs
-flow exactly as for a declared variable (<code>G.mana</code> above would be the load error <code>no member
-'mana' in class 'Game'</code>). At run time an extern declares nothing: the name resolves when it is used
-(a declaration in any unit, the host's <code>add_global</code> or a host function defines it), and a use while
-nothing defines it raises the catchable text the output shows: nobody bound <code>G</code> or
-<code>spawn_on_network</code> in that run. <code>inline T name;</code> (the C++17 inline variable) is the
-spelling that creates the variable when no unit has: one variable shared by every unit that declares it, the
-first to run creating it with its initializer or its type's default. It is also the right spelling for a shared leaf that calls into a module only some programs import: the leaf
-declares the names it reaches for, and in a program that imports the module too the declaration is inert.</p>
+<p><strong>At load.</strong> An <code>extern</code> name counts as declared, and a program's closure carries it to
+every unit like any top-level name. The typed form gives the name that certain type: member checks, assignment
+checks and proofs flow exactly as for a declared variable (<code>G.mana</code> above would be the load error <code>no member
+'mana' in class 'Game'</code>).</p>
+<p><strong>At run time</strong> an extern declares nothing. The name resolves when it is used: a declaration in any
+unit, the host's <code>add_global</code> or a host function defines it. A use while nothing defines it raises the
+catchable text the output shows: nobody bound <code>G</code> or <code>spawn_on_network</code> in that run.</p>
+<p><strong><code>inline T name;</code></strong> (the C++17 inline variable) is the spelling that creates the variable
+when no unit has. It is one variable shared by every unit that declares it, the first to run creating it with its
+initializer or its type's default. It is also the right spelling for a shared leaf that calls into a module only
+some programs import. The leaf declares the names it reaches for, and in a program that imports the module too the
+declaration is inert.</p>
 <p>From the host, defining an extern is the ordinary registration, made before or after the script loads:</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">// compiled and run against the library
 eng-&gt;execute(&quot;extern int G; print(G + 1);&quot;);
@@ -439,7 +501,7 @@ try {
 print(x);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Cannot assign string to 'x' (declared int)
 6</code></pre></div>
-<p>A nested function or lambda body is a new scope that keeps the <em>enclosing</em> mode:
+<p>A nested function or lambda body is a new scope that keeps the <em>enclosing</em> mode.
 <code>[[warn_mode]] self.spawn_on_network([](){ x = 5; });</code> accepts <code>self</code>, the member and the
 call, but <code>x = 5</code> inside the lambda is still checked.</p>
 <p><strong>A whole block.</strong> As the first statement of a block (a function, method or lambda body,
@@ -465,17 +527,24 @@ try { x = "s"; } catch (e) { print(e); }
 print(x);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Cannot assign string to 'x' (declared int)
 5</code></pre></div>
-<p>Inside a warn region every error-severity diagnostic is reported as a warning (still collected, still in
-<code>last_check_diagnostics()</code> and <code>eng-&gt;check()</code>), and an undeclared identifier is
-accepted as unknown: an undeclared callee is assumed callable with an unknown result, so nothing
-downstream is proven from it. <code>[[strict_mode]]</code> inside a warn region re-arms strict there: its
-errors gate the load.</p>
+<p>Inside a warn region:</p>
+<ul>
+<li>Every error-severity diagnostic is reported as a warning (still collected, still in
+<code>last_check_diagnostics()</code> and <code>eng-&gt;check()</code>).</li>
+<li>An undeclared identifier is accepted as unknown: an undeclared callee is assumed callable with an unknown result,
+so nothing downstream is proven from it.</li>
+<li><code>[[strict_mode]]</code> inside a warn region re-arms strict there: its errors gate the load.</li>
+</ul>
 <p>The runtime never changes: both backends treat an attribute as nothing, and a warn region's type mistakes
 raise at run time exactly as they would without the checker. Every output above is the runtime's
-ordinary error. A unit's mode says nothing about the units it imports, and a <code>[[warn_mode]]</code> leaf
-never fails its program. <code>warn_mode</code> and <code>strict_mode</code> are the only attribute names;
-<code>[[bogus]]</code> is a parse error, and <code>[[</code> in expression position still opens a nested array
-literal.</p>
+ordinary error.</p>
+<ul>
+<li>A unit's mode says nothing about the units it imports, and a <code>[[warn_mode]]</code> leaf never fails its
+program.</li>
+<li><code>warn_mode</code> and <code>strict_mode</code> are the only attribute names; <code>[[bogus]]</code> is a parse
+error.</li>
+<li><code>[[</code> in expression position still opens a nested array literal.</li>
+</ul>
 
 <h2 id="precision-map">What still fails at run time (the precision map)<a class="hlink" href="#precision-map" aria-label="link">&#8203;</a></h2>
 <p>Everywhere the static story is uncertain, the checker goes silent by design. This is the whole list; a
@@ -504,39 +573,48 @@ were already broken.</p>
 <h2 id="proofs">Proofs: the same walk, put to work<a class="hlink" href="#proofs" aria-label="link">&#8203;</a></h2>
 <p>The walk that produces diagnostics also stamps <strong>proofs</strong> on the AST: annotations saying
 "the conversion this store, argument or return would run is the identity", and the static class of a binary's
-operands. The VM's compiler reads them to choose its typed lowerings and what it may inline; every lane they
+operands. The VM's compiler reads them to choose its typed lowerings and what it may inline. Every lane they
 select keeps a total runtime guard, and a guard miss runs the ordinary code byte for byte. Certainty is the
 complement of the precision map, so the false-positive contract doubles as the proof-soundness contract.</p>
 <p>What that means for you: nothing. There is no program whose value, printed output, error text or
 <code>type_of</code> differs between <code>engine::type_proofs(true)</code> (the default) and
-<code>type_proofs(false)</code>; toggling it off strips cached stamps at their next execute.
-<code>engine::last_proof_stats()</code> counts the stamps of the most recent pass for tests. Proofs are never
-serialized into a bite (a loaded bite re-derives them), and a hot reload that changes a class's
-shape re-stamps the entries that read it at their next execute (<a href="07-hot-reload.html#interaction-with-the-rest-of-the-engine">Hot
-Reload</a>).</p>
+<code>type_proofs(false)</code>.</p>
+<ul>
+<li>Toggling it off strips cached stamps at their next execute.</li>
+<li><code>engine::last_proof_stats()</code> counts the stamps of the most recent pass for tests.</li>
+<li>Proofs are never serialized into a bite (a loaded bite re-derives them).</li>
+<li>A hot reload that changes a class's shape re-stamps the entries that read it at their next execute (<a href="07-hot-reload.html#interaction-with-the-rest-of-the-engine">Hot
+Reload</a>).</li>
+</ul>
 
 <h2 id="jaibite-stamping">jaibite stamping<a class="hlink" href="#jaibite-stamping" aria-label="link">&#8203;</a></h2>
-<p>A bite is checked at creation: an error makes <code>jaibite()</code> throw there, exactly like
-<code>execute()</code>, and the report rides the bite (<code>bite.checked_clean()</code>,
-<code>bite.check_diagnostics()</code>). <code>save()</code> stamps a checked-clean bit in the header; on load the
-stamp is trusted only when the registration fingerprint matches the saving engine's, otherwise the bite is
-re-checked against the loading engine's surface (an error throws at load). A bite is checked once.
-Registrations after that do not re-trigger; re-create the bite to re-check. Proofs are independent of the
-stamp: they re-derive at creation, load and execute. Details in the
-<a href="04-jaibite.html">jaibite chapter</a>.</p>
+<p>A bite is checked at creation:</p>
+<ul>
+<li>An error makes <code>jaibite()</code> throw there, exactly like <code>execute()</code>.</li>
+<li>The report rides the bite (<code>bite.checked_clean()</code>, <code>bite.check_diagnostics()</code>).</li>
+<li><code>save()</code> stamps a checked-clean bit in the header. On load the stamp is trusted only when the
+registration fingerprint matches the saving engine's. Otherwise the bite is re-checked against the loading engine's
+surface (an error throws at load).</li>
+<li>A bite is checked once. Registrations after that do not re-trigger; re-create the bite to re-check.</li>
+<li>Proofs are independent of the stamp: they re-derive at creation, load and execute.</li>
+</ul>
+<p>Details in the <a href="04-jaibite.html">jaibite chapter</a>.</p>
 
 <h2 id="cost">Cost<a class="hlink" href="#cost" aria-label="link">&#8203;</a></h2>
 <p>One AST walk per unique source per registration epoch, cached beside the parse; the proof pass rides
-it. The walk re-runs only when the
-registration surface moves (<code>add_function</code>/<code>add_global</code>/<code>add_class</code>/<code>register_template_type</code>,
-a non-identical redefinition, or the first definition of a script class no program unit declares) or the proof
-switch flips; a failing verdict is derived again whenever the program gains names, and a hot reload checks the units
-its new text could break.
-A program that runs defines its own classes without moving anything the checker read, so executing the same import root
-again checks nothing until a file, a registration or the program changes. Executes with
-per-call host instance variables check fresh per call, without touching the cached stamps. Walk cost is
-parse-order: the same tree, no allocation-heavy state. A <code>.jaibite</code> cache stamped checked-clean
-skips the diagnostics walk on load. New source text (a hot reload) is a new cache entry and a fresh check.</p>
+it. Walk cost is parse-order: the same tree, no allocation-heavy state.</p>
+<p>The walk re-runs only when:</p>
+<ul>
+<li>the registration surface moves (<code>add_function</code>/<code>add_global</code>/<code>add_class</code>/<code>register_template_type</code>,
+a non-identical redefinition, or the first definition of a script class no program unit declares);</li>
+<li>the proof switch flips.</li>
+</ul>
+<p>A failing verdict is derived again whenever the program gains names, and a hot reload checks the units
+its new text could break. New source text (a hot reload) is a new cache entry and a fresh check.</p>
+<p>A program that runs defines its own classes without moving anything the checker read. So executing the same import
+root again checks nothing until a file, a registration or the program changes. Executes with
+per-call host instance variables check fresh per call, without touching the cached stamps. A <code>.jaibite</code>
+cache stamped checked-clean skips the diagnostics walk on load.</p>
 
 <h2 id="migrating-a-loosely-typed-codebase">Migrating a loosely typed codebase<a class="hlink" href="#migrating-a-loosely-typed-codebase" aria-label="link">&#8203;</a></h2>
 <p>Every load is strict; a codebase mid-migration opts <em>down</em>, at the narrowest scope that still lets it
@@ -550,9 +628,11 @@ checker cannot see. A migration hook reading a removed field is the classic case
 <li><code>extern</code> for the names your host injects at run time; the typed form keeps them checked.</li>
 </ul>
 <p>Re-arm with <code>[[strict_mode]]</code> inside a warn region as files come clean, and drop the attribute when
-the file is clean. <code>eng-&gt;check(src)</code> is the batch entry point. A build step can walk every script and fail on
-<code>has_errors()</code> without executing anything; it throws <code>jai::parse_error</code> only when the
-source does not parse. Prototype scripts that live on <code>var</code> are never flagged, so the ladder stays
+the file is clean.</p>
+<p><code>eng-&gt;check(src)</code> is the batch entry point. A build step can walk every script and fail on
+<code>has_errors()</code> without executing anything. It throws <code>jai::parse_error</code> only when the
+source does not parse.</p>
+<p>Prototype scripts that live on <code>var</code> are never flagged, so the ladder stays
 incremental: declare a type where you want enforcement, and the checker follows the declaration.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/05-safety-rails.html"><span>&larr; previous</span>Safety Rails</a><a class="next" rel="next" href="../embedding/07-hot-reload.html"><span>next &rarr;</span>Hot Reload</a></nav></article>
 </main>
 </div>

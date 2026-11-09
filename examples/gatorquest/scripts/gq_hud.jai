@@ -78,21 +78,22 @@ string mini_row(int cy) {
 }
 
 // ---- panel helpers
-string SGR_FRAME = "38;2;90;140;70";
-string SGR_TITLE = "1;38;2;150;230;110";
-string SGR_TEXT = "38;2;220;220;210";
-string SGR_DIM = "38;2;130;130;125";
-string SGR_GOLD = "38;2;250;210;70";
+string SGR_FRAME = "22;38;2;78;120;62;48;2;20;26;22";
+string SGR_HEAD = "1;38;2;16;22;14;48;2;132;190;92";
+string SGR_TITLE = "1;38;2;160;236;116";
+string SGR_TEXT = "22;38;2;228;228;216";
+string SGR_DIM = "22;38;2;142;146;134";
+string SGR_GOLD = "38;2;252;212;72";
 string SGR_SEL = "1;38;2;20;20;20;48;2;150;220;110";
 
 array<string> LOG_SGR = ["38;2;230;230;230", "38;2;140;140;140", "38;2;240;90;80", "38;2;110;230;110", "38;2;250;220;90",
 	"38;2;110;220;240", "38;2;200;130;250", "38;2;250;160;70", "38;2;110;150;250"];
 
+// a section header: the label on a green tab, then a rule to the edge
 string rule(string label, int width) {
 	pane_begin(width);
-	pane_add(SGR_FRAME, "\xe2\x94\x80\xe2\x94\x80 ");
-	pane_add(SGR_TITLE, label);
-	pane_add(SGR_FRAME, " " + string::repeat("\xe2\x94\x80", imax(0, width - label.size() - 4)));
+	pane_add(SGR_HEAD, " " + label + " ");
+	pane_add(SGR_FRAME, " " + string::repeat("\xe2\x94\x80", imax(0, width - label.size() - 3)));
 	return pane_end();
 }
 
@@ -247,6 +248,7 @@ void build_menu(ClientView& v) {
 		menu_add(MUSIC_ON ? "Music: on" : "Music: off", SGR_TEXT, 3);
 		menu_add(SFX_ON ? "Sound: on" : "Sound: off", SGR_TEXT, 4);
 		menu_add(`Zoom: ${TILE_ZOOM == 0 ? "auto" : to_string(TILE_ZOOM) + "px"}`, SGR_TEXT, 5);
+		if (LIVE_PATH != "" && DEV_ON) { menu_add(`Next season: ${SEASON_NAMES[(SEASON + 1) % 4]} (hot reload)`, "38;2;120;255;240", 11); }
 		menu_add("Help", SGR_TEXT, 6);
 		if (net_hosting()) { menu_add(`Stop hosting (${net_player_count()} joined)`, SGR_TEXT, 9); }
 		else if (!NET_CLIENT) { menu_add(`Host this game (port ${TM_PORT})`, SGR_TEXT, 8); }
@@ -292,21 +294,21 @@ array<string> build_pane(ClientView& v, int w, int rows) {
 	string title = v.name != "" ? v.name + " " + v.title : "connecting...";
 	out.push(pane_line(SGR_TITLE, title, w));
 	pane_begin(w);
-	pane_add(SGR_TEXT, "HP ");
-	int bw = w - 14;
-	PANE_ROW += bar(v.hp, v.hpmax, bw, v.ghost != 0 ? "38;2;120;140;170" : "38;2;230;60;50", "38;2;80;30;30");
+	pane_add("1;38;2;250;92;84", "\xe2\x99\xa5 HP ");
+	int bw = w - 16;
+	PANE_ROW += bar(v.hp, v.hpmax, bw, v.ghost != 0 ? "38;2;120;140;170" : "38;2;232;64;54", "38;2;74;30;30");
 	PANE_W = PANE_W + bw;
 	pane_add(SGR_TEXT, ` ${v.hp:>4}/${v.hpmax:<4}`);
 	out.push(pane_end());
 	pane_begin(w);
-	pane_add(SGR_TEXT, "MP ");
-	PANE_ROW += bar(v.mp, v.mpmax, bw, "38;2;80;130;250", "38;2;30;40;80");
+	pane_add("1;38;2;110;160;255", "\xe2\x99\xa6 MP ");
+	PANE_ROW += bar(v.mp, v.mpmax, bw, "38;2;84;136;252", "38;2;30;40;80");
 	PANE_W = PANE_W + bw;
 	pane_add(SGR_TEXT, ` ${v.mp:>4}/${v.mpmax:<4}`);
 	out.push(pane_end());
 	pane_begin(w);
-	pane_add(SGR_GOLD, `Gold ${v.gold}`);
-	pane_add(SGR_DIM, `  Fame ${v.fame}  S${v.str} D${v.dex} I${v.intel}`);
+	pane_add("1;" + SGR_GOLD, `\xe2\x97\x8f ${v.gold} gold`);
+	pane_add(SGR_DIM, `  fame ${v.fame}  S${v.str} D${v.dex} I${v.intel}`);
 	out.push(pane_end());
 	int me = cv_me(v);
 	string where = WORLDS[v.world].name;
@@ -315,14 +317,20 @@ array<string> build_pane(ClientView& v, int w, int rows) {
 		if (town >= 0) { where = TOWN_NAME[town]; }
 		where = where + ` (${v.m_x[me]},${v.m_y[me]})`;
 	}
-	out.push(pane_line("38;2;170;210;140", where, w));
+	out.push(pane_line("1;38;2;176;222;142", where, w));
 	array<string> wx = ["clear", "rain", "snow", "storm", "fog", "ashfall"];
 	string buffs = "";
 	if (v.buff_night > 0) { buffs = buffs + " eyeshine"; }
 	if (v.buff_fire > 0) { buffs = buffs + " fireproof"; }
 	if (v.buff_regen > 0) { buffs = buffs + " regen"; }
 	if (v.pvp) { buffs = buffs + " PVP"; }
-	out.push(pane_line(SGR_DIM, `Day ${v.day} ${time_label(v)}, ${wx[iclamp(v.weather, 0, 5)]}${buffs}`, w));
+	int hour = (v.tod * 24 / DAY_TICKS + 7) % 24;
+	bool daylight = hour >= 6 && hour < 19;
+	pane_begin(w);
+	pane_add(daylight ? "38;2;252;214;90" : "38;2;170;186;255", daylight ? "\xe2\x98\xbc " : "\xe2\x98\x85 ");
+	pane_add(SGR_TEXT, `Day ${v.day} ${time_label(v)}`);
+	pane_add(SGR_DIM, `, ${wx[iclamp(v.weather, 0, 5)]}${buffs}`);
+	out.push(pane_end());
 	// target
 	int ti = cv_find(v, v.target_ser);
 	if (ti >= 0) {

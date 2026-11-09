@@ -1,7 +1,7 @@
 // Gator Quest - terminal video: a palette-index pixel canvas drawn with the
-// upper-half-block glyph (fg = top pixel, bg = bottom pixel) in 24-bit
-// color, escapes emitted only on change (the JaiDOOM/GLOOM method). Light
-// and tint go through shade tables: SHADE[level * NBASE + color].
+// upper-half-block glyph (fg = top pixel, bg = bottom pixel) in 24-bit or
+// xterm-256 color, escapes emitted only on change (the JaiDOOM/GLOOM method).
+// Light and tint go through shade tables: SHADE[level * NBASE + color].
 
 import "gq_proto.jai";
 
@@ -9,6 +9,84 @@ string ESC = "\x1b";
 string RESET = "\x1b[0m";
 string HALF = "\xe2\x96\x80";
 string HOME = "\x1b[H";
+
+// 24-bit escapes, or the xterm-256 palette (macOS Terminal.app reads a 24-bit escape as a run of unrelated attributes);
+// set by main before the palette is built
+bool HOST_TRUECOLOR;
+
+bool terminal_says_truecolor() {
+	return env_var("COLORTERM") == "truecolor" || env_var("COLORTERM") == "24bit" || env_var("WT_SESSION") != "" ||
+		env_var("OS") == "Windows_NT";
+}
+
+string sgr_color(int layer, int r, int g, int b) {
+	if (HOST_TRUECOLOR) { return `${ESC}[${layer};2;${r};${g};${b}m`; }
+	return `${ESC}[${layer};5;${xterm256(r, g, b)}m`;
+}
+
+// xterm's 240 colors (16-255: the 6x6x6 cube, then the 24-step gray ramp) in OKLab, filled on first use
+array<float> XTERM_LAB;
+
+// the xterm color nearest in OKLab: plain RGB distance turns the swamp's olives gray and its browns red
+int xterm256(int r, int g, int b) {
+	if (XTERM_LAB.empty()) {
+		array<int> levels = [0, 95, 135, 175, 215, 255];
+		for (int c = 0; c < 216; ++c) { oklab_push(XTERM_LAB, levels[c / 36], levels[(c / 6) % 6], levels[c % 6]); }
+		for (int k = 0; k < 24; ++k) { oklab_push(XTERM_LAB, 8 + 10 * k, 8 + 10 * k, 8 + 10 * k); }
+	}
+	array<float> want = [];
+	oklab_push(want, r, g, b);
+	int result = 0;
+	float best = 1.0e30;
+	for (int i = 0; i < 240; ++i) {
+		float dl = want[0] - XTERM_LAB[i * 3];
+		float da = want[1] - XTERM_LAB[i * 3 + 1];
+		float db = want[2] - XTERM_LAB[i * 3 + 2];
+		float d = dl * dl + da * da + db * db;
+		if (d < best) { best = d; result = i; }
+	}
+	return 16 + result;
+}
+
+float srgb_linear(int v) {
+	float c = v / 255.0;
+	if (c <= 0.04045) { return c / 12.92; }
+	return math::pow((c + 0.055) / 1.055, 2.4);
+}
+
+void oklab_push(array<float>& out, int r8, int g8, int b8) {
+	float r = srgb_linear(r8);
+	float g = srgb_linear(g8);
+	float b = srgb_linear(b8);
+	float l = math::cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+	float m = math::cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+	float s = math::cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+	out.push(0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s);
+	out.push(1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s);
+	out.push(0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s);
+}
+
+// a pane's SGR parameters ("1;38;2;r;g;b;48;2;r;g;b") with each 24-bit color as its xterm-256 one when the host lacks 24-bit
+map<string, string> SGR_256;
+
+string sgr_params(string sgr) {
+	if (HOST_TRUECOLOR) { return sgr; }
+	if (SGR_256.has(sgr)) { return SGR_256[sgr]; }
+	array<string> p = sgr.split(";");
+	string result = "";
+	int i = 0;
+	while (i < p.size()) {
+		string part = p[i];
+		if ((part == "38" || part == "48") && i + 4 < p.size() && p[i + 1] == "2") {
+			part = `${part};5;${xterm256(p[i + 2].to_int(0), p[i + 3].to_int(0), p[i + 4].to_int(0))}`;
+			i = i + 4;
+		}
+		result += result == "" ? part : ";" + part;
+		i = i + 1;
+	}
+	SGR_256[sgr] = result;
+	return result;
+}
 
 // the palette: base colors (textures, sprites) are interned first; shaded
 // outputs are interned after them and never shaded again
@@ -28,8 +106,8 @@ int rgb(int r, int g, int b) {
 	if (PAL_KEY.has(key)) { return PAL_KEY[key]; }
 	int i = PAL_FG.size();
 	PAL_KEY[key] = i;
-	PAL_FG.push(`${ESC}[38;2;${r};${g};${b}m`);
-	PAL_BG.push(`${ESC}[48;2;${r};${g};${b}m`);
+	PAL_FG.push(sgr_color(38, r, g, b));
+	PAL_BG.push(sgr_color(48, r, g, b));
 	PAL_R.push(r);
 	PAL_G.push(g);
 	PAL_B.push(b);
@@ -70,7 +148,7 @@ void fill_px(int x0, int y0, int w, int h, int c) {
 	}
 }
 
-// ---- shade tables: 16 light levels x NBASE, tinted toward a night color
+// ---- shade tables: 16 light levels x NBASE, tinted toward a night color, then the same 16 in a cloud's shadow
 int NLEV = 16;
 array<int> SHADE;
 array<int> GRAYSHADE;        // ghost vision: desaturated, cold
@@ -78,13 +156,17 @@ int SHADE_TINT_R;
 int SHADE_TINT_G;
 int SHADE_TINT_B;
 
-void shade_build(int tr, int tg, int tb, bool ghost) {
+// warm_pct scales the warm middle levels (torchlight, dawn, dusk), day_warm warms full light (outdoor daylight)
+void shade_build(int tr, int tg, int tb, bool ghost, int warm_pct, int day_warm) {
 	SHADE_TINT_R = tr;
 	SHADE_TINT_G = tg;
 	SHADE_TINT_B = tb;
 	SHADE = [];
 	int n = NBASE;
 	for (int lev = 0; lev < NLEV; ++lev) {
+		// shadows stay cool, the middle levels glow amber, peaking at level 11
+		int warm = lev == NLEV - 1 ? day_warm : iclamp(100 - iabs(lev - 11) * 22, 0, 100) * warm_pct / 100;
+		if (ghost) { warm = 0; }
 		for (int c = 0; c < n; ++c) {
 			int r = PAL_R[c];
 			int g = PAL_G[c];
@@ -100,13 +182,25 @@ void shade_build(int tr, int tg, int tb, bool ghost) {
 				r = (r * lev + tr * (NLEV - 1 - lev)) / (NLEV - 1);
 				g = (g * lev + tg * (NLEV - 1 - lev)) / (NLEV - 1);
 				b = (b * lev + tb * (NLEV - 1 - lev)) / (NLEV - 1);
-				// quantize a little so the palette stays small
-				r = r & 0xFC;
-				g = g & 0xFC;
-				b = b & 0xFC;
 			}
-			SHADE.push(lev == NLEV - 1 && !ghost ? c : rgb(r, g, b));
+			if (warm > 0) {
+				r = r * (100 + warm * 10 / 100) / 100 + warm / 7;
+				g = g * (100 + warm * 4 / 100) / 100 + warm / 30;
+				b = b * (100 - warm * 17 / 100) / 100;
+			}
+			if (lev < NLEV - 1 || warm > 0) {
+				// quantize a little so the palette stays small
+				r = iclamp(r, 0, 255) & 0xFC;
+				g = iclamp(g, 0, 255) & 0xFC;
+				b = iclamp(b, 0, 255) & 0xFC;
+			}
+			SHADE.push(lev == NLEV - 1 && !ghost && warm == 0 ? c : rgb(r, g, b));
 		}
+	}
+	// levels NLEV.. repeat the light under a passing cloud's shadow: darker and cooler
+	for (int i = 0; i < NLEV * n; ++i) {
+		int s = SHADE[i];
+		SHADE.push(ghost ? s : rgb(PAL_R[s] * 80 / 100, PAL_G[s] * 84 / 100, PAL_B[s] * 91 / 100 + 4));
 	}
 }
 
@@ -118,7 +212,7 @@ array<int> BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
 // ---- a 3x5 pixel font (digits, letters, a few marks) for floating numbers and banners
 array<string> FONT_CHARS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N",
-	"O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "+", "-", "!", "?", ".", " ", ":", "'", "~"];
+	"O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "+", "-", "!", "?", ".", " ", ":", "'", "~", "_", "/", ",", "*"];
 array<string> FONT_BITS = [
 	"111101101101111", "010110010010111", "111001111100111", "111001111001111", "101101111001001",
 	"111100111001111", "111100111101111", "111001010010010", "111101111101111", "111101111001111",
@@ -128,7 +222,8 @@ array<string> FONT_BITS = [
 	"110101110100100", "010101101111011", "110101110101101", "011100010001110", "111010010010010",
 	"101101101101111", "101101101101010", "101101111111101", "101101010101101", "101101010010010",
 	"111001010100111", "000010111010000", "000000111000000", "010010010000010", "111001010000010",
-	"000000000000010", "000000000000000", "000010000010000", "010010000000000", "000011110000000"
+	"000000000000010", "000000000000000", "000010000010000", "010010000000000", "000011110000000",
+	"000000000000111", "001001010100100", "000000000010100", "000101010101000"
 ];
 map<string, int> FONT_INDEX;
 
@@ -197,9 +292,11 @@ string canvas_row(int cy) {
 string PANE_ROW;
 int PANE_W;
 int PANE_MAX;
+string SGR_PANE_BG = "48;2;20;26;22";
 
+// every pane row starts on the panel's own dark ground
 void pane_begin(int width) {
-	PANE_ROW = "";
+	PANE_ROW = ESC + "[" + sgr_params(SGR_PANE_BG) + "m";
 	PANE_W = 0;
 	PANE_MAX = width;
 }
@@ -215,7 +312,7 @@ void pane_add(string sgr, string text) {
 		t = u.substr(0, room);
 		len = room;
 	}
-	PANE_ROW += ESC + "[" + sgr + "m" + t;
+	PANE_ROW += ESC + "[" + sgr_params(sgr) + "m" + t;
 	PANE_W = PANE_W + len;
 }
 
@@ -231,11 +328,11 @@ string pane_line(string sgr, string text, int width) {
 	return pane_end();
 }
 
-// a bar of `width` cells: filled part in one color, rest dim
+// a bar of `width` cells: filled part in one color, the rest a solid dark track
 string bar(int value, int maxv, int width, string fill_sgr, string empty_sgr) {
 	int n = maxv > 0 ? iclamp(value * width / maxv, 0, width) : 0;
 	if (value > 0 && n == 0) { n = 1; }
 	string full = string::repeat("\xe2\x96\x88", n);
-	string empty = string::repeat("\xe2\x96\x91", width - n);
-	return ESC + "[" + fill_sgr + "m" + full + ESC + "[" + empty_sgr + "m" + empty;
+	string empty = string::repeat("\xe2\x96\x88", width - n);
+	return ESC + "[" + sgr_params(fill_sgr) + "m" + full + ESC + "[" + sgr_params(empty_sgr) + "m" + empty;
 }

@@ -12,9 +12,8 @@ Then each game is one command (on Windows the runner is `build\bin\jaiscript.exe
 | example | what it is | run it |
 |---|---|---|
 | [crawler](crawler/README.md) | GRUBWELL, a first-person step dungeon crawler | `build/bin/jaiscript examples/crawler/scripts/crawler.jai` |
-| [demoreel](demoreel/README.md) | a seventeen-scene demoscene reel on two live engines | `build/bin/jaiscript examples/demoreel/demoreel.jai` |
+| [demoreel](demoreel/README.md) | an eleven-scene demoscene reel with live reload | `build/bin/jaiscript examples/demoreel/demoreel.jai` |
 | [gloom](gloom/README.md) | GLOOM, a real-time terminal raycast shooter | `build/bin/jaiscript examples/gloom/gloom.jai` |
-| [gloom_idiomatic](gloom_idiomatic/gloom_idiomatic.jai) | GLOOM rewritten in class-based style, bit-exact with the original | `build/bin/jaiscript examples/gloom_idiomatic/gloom_idiomatic.jai` |
 | [gatorquest](gatorquest/README.md) | Gator Quest, a terminal RPG with netplay | `build/bin/jaiscript examples/gatorquest/scripts/gatorquest.jai` |
 | [jaidoom](jaidoom/README.md) | JaiDoom, a DOOM-format engine in script (the first run fetches Freedoom; a fan project, not affiliated with or endorsed by id Software) | `build/bin/jaiscript examples/jaidoom/scripts/jaidoom.jai` |
 | [embed_quickstart](embed_quickstart/README.md) | a minimal C++ host: bindings, calls, signals, hot reload | see its README (a C++ build) |

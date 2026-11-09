@@ -498,4 +498,10 @@ function build_art() -> void {
 		"..yy..gh........", "...yygh.........", "....yy..........", "...kPpk.........",
 		"..kqpppk........", "..kpPpPk........", ".kpppppPk.......", ".kPpppPPk.......",
 		"..dddddd........", ".dhhhhhhd.......", ".dbbbbbbd.......", "dbbbbbbbbd......"]);
+	// what the class skills throw: a ball of fire or hex, and a thorn seen from behind
+	art("orb", [
+		"...dddd...", "..dbbbbd..", ".dbhhhhbd.", "dbhhoohhbd", "dbhoooohbd",
+		"dbhoooohbd", "dbhhoohhbd", ".dbhhhhbd.", "..dbbbbd..", "...dddd..."]);
+	art("thorn", [
+		"...h...", "..hbh..", ".hbnbh.", "hbnnnbh", ".hbnbh.", "..hbh..", "...h..."]);
 }

@@ -255,6 +255,11 @@ void on_menu_key(ClientView& v, string k) {
 			UI_MODE = "play";
 		}
 		else if (arg == 10) { PLAY_EXIT = "title"; QUIT = true; }
+		else if (arg == 11) {
+			live_next_season();
+			toast("gq_live.jai rewritten: watch it land.");
+			UI_MODE = "play";
+		}
 		return;
 	}
 	if (mode == "help" || mode == "skills" || mode == "journal") {
@@ -298,6 +303,17 @@ void local_host_tick() {
 }
 
 int MAX_FRAMES;             // demo/test: stop after this many frames (0 = play until quit)
+int TIMED_MS;               // a timed run's clock: 33 ms a frame, so the same run reaches the same tick every time
+
+// the loops' clock: the wall clock, or the timed run's own
+int loop_clock_ms() { return MAX_FRAMES > 0 ? TIMED_MS : time::now() * 1000; }
+
+// a frame ends: a timed run's clock moves on, a played one sleeps out the rest of its 33 ms
+void loop_frame_end(int frame_start_ms) {
+	if (MAX_FRAMES > 0) { TIMED_MS = TIMED_MS + 33; }
+	int spent = time::now() * 1000 - frame_start_ms;
+	if (spent < 33) { sleep((33 - spent) / 1000.0); }
+}
 int STAT_FRAMES;
 float STAT_RENDER_MS;
 float STAT_COMPOSE_MS;
@@ -327,6 +343,7 @@ void presentation_reset() {
 	FT_COL = [];
 	FT_T = [];
 	FT_SCALE = [];
+	FT_VY = [];
 	PR_X0 = [];
 	PR_Y0 = [];
 	PR_X1 = [];
@@ -342,6 +359,7 @@ void presentation_reset() {
 	SHAKE_F = 0;
 	UI_MODE = "play";
 	CHAT_BUF = "";
+	fx_reset();
 }
 
 // the title's choice becomes a session: the local gator joins this world (alone or hosting),
@@ -365,6 +383,7 @@ string session_start(string choice, bool demo) {
 	string welcome = join_character(LOCAL_SLOT, CHOSEN_NAME, CHOSEN_HUE);
 	CV = new ClientView();
 	CV.slot = LOCAL_SLOT;
+	fx_arrival(MOB_WORLD[CHARS[LOCAL_SLOT].mob]);
 	if (demo) { bot_add(LOCAL_SLOT); }
 	if (choice == "host") { welcome = welcome + " " + host_welcome(); }
 	return welcome;
@@ -393,7 +412,7 @@ void session_end() {
 void play_loop() {
 	print(ESC + "[2J", skip_newline);
 	layout(screen_cols(), screen_rows());
-	int last = time::now() * 1000;
+	int last = loop_clock_ms();
 	int acc = 0;
 	int size_check = 0;
 	time::stopwatch split;
@@ -401,7 +420,8 @@ void play_loop() {
 	QUIT = false;
 	while (!QUIT) {
 		if (MAX_FRAMES > 0 && STAT_FRAMES >= MAX_FRAMES) { QUIT = true; break; }
-		NOW_MS = time::now() * 1000;
+		int frame_start = time::now() * 1000;
+		NOW_MS = loop_clock_ms();
 		int dt = NOW_MS - last;
 		last = NOW_MS;
 		if (dt > 250) { dt = 250; }
@@ -423,6 +443,7 @@ void play_loop() {
 				toast(msgs[i]);
 				cv_log(CV, msgs[i], msgs[i].contains("FAILED") ? 2 : 5);
 			}
+			fx_reload_notice(CV, msgs);
 		}
 		// the world
 		split.start();
@@ -461,8 +482,7 @@ void play_loop() {
 		print(HOME + frame, skip_newline);
 		STAT_FRAMES = STAT_FRAMES + 1;
 		FRAME = FRAME + 1;
-		int spent = time::now() * 1000 - NOW_MS;
-		if (spent < 33) { sleep((33 - spent) / 1000.0); }
+		loop_frame_end(frame_start);
 	}
 }
 

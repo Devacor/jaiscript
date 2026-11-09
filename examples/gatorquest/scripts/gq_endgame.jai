@@ -116,12 +116,27 @@ void tour_ticks(int n) {
 	}
 }
 
+// on to the next time the clock reads `hour`:00
+void tour_clock(int hour) {
+	TICK = TICK + (DAY_TICKS - time_of_day()) + ((hour - 7 + 24) % 24) * DAY_TICKS / 24;
+}
+
+int TOUR_FRAME_HASH;           // every capture's terminal text, folded: the render gate
+
 void tour_shot(string dir, string name) {
 	NOW_MS = NOW_MS + 60;
+	// a second of frames first: critters gather, clouds and fireflies drift as a player would see them
+	for (int f = 0; f < 14; ++f) {
+		render_frame(CV);
+		particles_update();
+		FRAME = FRAME + 1;
+	}
 	render_frame(CV);
 	png_write_canvas(dir + "/" + name + ".png", 3);
 	write_file(dir + "/" + name + ".txt", sketch_frame(CV));
-	write_file(dir + "/" + name + ".ans", compose_frame(CV));
+	string frame = compose_frame(CV);
+	TOUR_FRAME_HASH = mix32(TOUR_FRAME_HASH, text_checksum(frame));
+	write_file(dir + "/" + name + ".ans", frame);
 	print("  " + name);
 }
 
@@ -130,6 +145,7 @@ int run_tour() {
 	string size = arg_value("screen", "200x56");
 	array<string> wh = size.split("x");
 	make_dirs(dir);
+	TOUR_FRAME_HASH = 0;
 	sim_init(arg_value("seed", "1").to_int(1));
 	BOTS = [];
 	player_create(0, "Chomps", 0);
@@ -153,7 +169,7 @@ int run_tour() {
 	}
 	// night in Gatorland: torchlight and the forge glow
 	travel(me, 0, W_ARRIVE_X[0], W_ARRIVE_Y[0]);
-	TICK = TICK + (DAY_TICKS - time_of_day()) + DAY_TICKS * 15 / 24;
+	tour_clock(22);
 	tour_ticks(10);
 	tour_shot(dir, "10_swampton_night");
 	// a boss fight: the health bar, damage numbers, adds
@@ -188,8 +204,43 @@ int run_tour() {
 	tour_ticks(6);
 	tour_shot(dir, "13_journal");
 	UI_MODE = "play";
-	print(`tour: done (STATE_HASH ${state_hash()})`);
-	return 0;
+	// the lakeside by Gatorland's Lilygate (river, bridge, beach, meadow) at noon, then by torchlight
+	array<int> lake = find_free_spot(0, 40, 41, 6, LAND_MASK);
+	travel(me, 0, lake[0], lake[1]);
+	MOB_POISON[me] = 0;
+	W_WEATHER[0] = 0;
+	W_WEATHER_T[0] = TICK + DAY_TICKS * 2;
+	tour_clock(12);
+	tour_ticks(12);
+	tour_shot(dir, "14_lakeside_noon");
+	tour_clock(22);
+	tour_ticks(12);
+	tour_shot(dir, "15_lakeside_night");
+	// hot reload in the running world: the live tweak file changes season twice and the world carries on
+	tour_clock(12);
+	tour_ticks(12);
+	make_dirs(dir + "/live");
+	write_file(dir + "/live/gq_live.jai", live_text("summer", 5, 16));
+	live_start(dir + "/live");
+	dev_start();
+	import_recheck_interval(0);
+	int kept = 0;
+	array<string> seasons = ["16_hot_reload_autumn", "17_hot_reload_winter"];
+	for (int i = 0; i < seasons.size(); ++i) {
+		int before = state_hash();
+		live_next_season();
+		array<string> msgs = dev_poll();
+		fx_reload_notice(CV, msgs);
+		if (msgs.size() == 1 && msgs[0] == "Reloaded gq_live.jai" && state_hash() == before && SEASON == i + 1) { kept = kept + 1; }
+		tour_shot(dir, seasons[i]);
+		tour_ticks(30);
+	}
+	print(`  hot reload: ${kept} of 2 season changes landed with the world untouched`);
+	live_set("season", "summer");
+	live_apply();
+	LIVE_PATH = "";
+	print(`tour: done (STATE_HASH ${state_hash()} FRAME_HASH ${TOUR_FRAME_HASH})`);
+	return kept == 2 ? 0 : 1;
 }
 
 int run_endgame() {

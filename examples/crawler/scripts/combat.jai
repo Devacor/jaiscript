@@ -58,15 +58,18 @@ function hurt_entity(var& target, int amount, string source) -> void {
 	if (!is_player(target)) {
 		target.hp -= amount;
 		view_note_hit(target.id);
+		fx_number(target, amount);
 		if (target.hp <= 0) {
 			target.hp = 0;
 			target.alive = false;
 			view_note_kill(target.x, target.y);
+			fx_death(target);
 			on_monster_death(target);
 		}
 		return;
 	}
 	if (target.god) { return; }
+	fx_screen(`-${amount}`, INK_BAD);
 	target.hp -= amount;
 	G.last_dmg += amount;
 	G.last_dmg_src = source;
@@ -94,13 +97,14 @@ function heal_entity(var& target, int amount) -> void {
 }
 
 function on_monster_death(var& monster) -> void {
-	log_ink(INK_GOOD, `${mon_subject(monster)} is destroyed!`);
+	log_ink(INK_GOOD, DEATH_LINES.has(monster.kind) ? DEATH_LINES[monster.kind] : `${mon_subject(monster)} is destroyed!`);
 	if (monster.behavior == "boss") {
 		G.boss_slain = true;   // the game loop runs the victory
 		return;
 	}
 	G.player.kills += 1;
 	gain_xp(monster.xp_reward());
+	if (monster.kind == "gloop") { split_gloop(monster.x, monster.y); }
 	int coins = monster.gold_reward(RNG);
 	if (coins > 0) {
 		Item pile = make_gold(G.floor);
@@ -118,6 +122,34 @@ function on_monster_death(var& monster) -> void {
 	}
 }
 
+// Two Glooplings well up on the free tiles around a slain Gloop, in a fixed scan order. They
+// wait in SPAWNS until the turn ends, since a death can land while G.monsters is being walked.
+array<Spot> SPAWNS = [];
+
+function split_gloop(int x, int y) -> void {
+	int made = 0;
+	for (Step d : EIGHT_DIRS) {
+		if (made >= 2) { break; }
+		int nx = x + d.dx;
+		int ny = y + d.dy;
+		if (!is_walkable(nx, ny) || (nx == G.player.x && ny == G.player.y) || monster_index_at(nx, ny) >= 0) { continue; }
+		bool taken = false;
+		for (auto s : SPAWNS) {
+			if (s.x == nx && s.y == ny) { taken = true; }
+		}
+		if (taken) { continue; }
+		SPAWNS.push(Spot{nx, ny});
+		made += 1;
+	}
+}
+
+function flush_spawns() -> void {
+	for (auto s : SPAWNS) {
+		if (monster_index_at(s.x, s.y) < 0 && !(s.x == G.player.x && s.y == G.player.y)) { spawn_monster("gloopling", s.x, s.y); }
+	}
+	SPAWNS = [];
+}
+
 function gain_xp(int amount) -> void {
 	G.player.xp += amount;
 	while (G.player.xp >= G.player.xp_next()) {
@@ -127,6 +159,7 @@ function gain_xp(int amount) -> void {
 		G.player.hp = imin(G.player.hp + 2, G.player.total_max_hp());
 		G.level_pending = true;
 		log_ink(INK_TITLE, `Welcome to level ${G.player.level}! Choose a boon.`);
+		fx_banner("LEVEL UP", `LEVEL ${G.player.level}`, INK_TITLE);
 	}
 }
 
@@ -135,8 +168,10 @@ function attack(var& attacker, var& defender, string verb) -> void {
 	if (RNG.chance(iclamp(entity_eva(defender), 0, 60))) {
 		if (is_player(defender)) {
 			log_ink(INK_INFO, `JAI's blessing! You slip ${mon_object(attacker)}'s ${verb_noun(verb)}.`);
+			fx_screen("DODGE", INK_INFO);
 		} else {
 			log_ink(INK_DIM, `${mon_subject(defender)} twists aside -- your ${verb} misses.`);
+			fx_word(defender.x, defender.y, "MISS", INK_DIM);
 		}
 		return;
 	}
@@ -144,6 +179,8 @@ function attack(var& attacker, var& defender, string verb) -> void {
 	bool crit = RNG.chance(iclamp(entity_crit(attacker), 0, 60));
 	if (crit) { dmg *= 2; }
 	if (is_player(attacker)) {
+		FX_NEXT_CRIT = crit;
+		fx_slash(defender);
 		string crit_note = crit ? paint(INK_TITLE, "Critical! ") : "";
 		log_msg(`${crit_note}You ${verb} ${mon_object(defender)} for ${paint(INK_BRIGHT, `${dmg}`)}${health_note(imax(0, defender.hp - dmg), defender.max_hp)}.`);
 		if (attacker.equip_bonus("burn") > 0 && RNG.chance(attacker.equip_bonus("burn"))) {
@@ -202,6 +239,7 @@ function use_skill() -> bool {
 		return false;
 	}
 	var& target = G.monsters[ti];
+	fx_skill(G.player.skill, target.x, target.y);
 	switch (G.player.skill) {
 		case "bulwark": {
 			int dmg = imax(1, (G.player.total_atk() * 5) / 2 - entity_def(target));
@@ -228,6 +266,7 @@ function use_skill() -> bool {
 		case "wither": {
 			add_effect(target, "wither", 8, 2);
 			heal_entity(G.player, 3);
+			fx_screen("+3", INK_GOOD);
 			log_ink(INK_MAGIC, `${mon_subject(target)} wilts (-2 atk/def, 8 turns); you sip its vigor (+3 HP, ${G.player.hp}/${G.player.total_max_hp()}).`);
 			break;
 		}

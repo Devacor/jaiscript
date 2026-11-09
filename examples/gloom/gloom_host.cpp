@@ -547,6 +547,8 @@ void print_usage(script_adapter& adapter) {
 		"  --truecolor     24-bit color (default on Windows and where COLORTERM says truecolor)\n"
 		"  --256color      xterm-256 color (default elsewhere)\n"
 		"  --ascii         plain ASCII cells, for terminals without block glyphs\n"
+		"  --mute          no sound effects\n"
+		"  --dev           reload the showcase look's scripts (tune.jai and friends) when they change\n"
 		"  --scripts DIR   override the scripts directory\n"
 		"\nkeys: w/s move  a/d strafe  left/right turn  space/ctrl fire  e use\n"
 		"      shift run  1/2/3 weapons  m automap  esc or Ctrl+C quit\n",
@@ -590,6 +592,8 @@ int run_gloom(int argc, char** argv, script_adapter& adapter) {
 		else if (a == "--truecolor") { opt.truecolor = 1; }
 		else if (a == "--256color") { opt.truecolor = 0; }
 		else if (a == "--ascii") { opt.ascii = true; }
+		else if (a == "--mute") { opt.mute = true; }
+		else if (a == "--dev") { opt.dev = true; }
 		else if (a == "--help" || a == "-h") { print_usage(adapter); return 0; }
 		else { std::fprintf(stderr, "unknown flag: %s\n", a.c_str()); print_usage(adapter); return 2; }
 	}

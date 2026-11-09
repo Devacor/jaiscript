@@ -1,62 +1,106 @@
-// Data: weapons, bestiary, pickup tables, and every sprite as pixel art.
-// Art format: rows of chars, '.' = transparent, everything else indexes the
-// art's own tiny rgb palette. parse_arts() flattens each into code arrays at
-// boot; the renderer maps codes -> palette indices via per-(art, shade, flash) LUTs.
+// Data: weapons, bestiary, pickup tables, and every sprite as pixel art. Art
+// is rows of chars, '.' transparent, every other char a key into the art's own
+// tiny rgb palette; parse_art() turns each into an Art at boot, and the
+// renderer maps its codes to palette indices through per-(art, shade, flash)
+// tables.
 
 // ---------------------------------------------------------------- weapons ---
 // kind: 0 hitscan, 1 projectile
-var WEAPONS = [
-	{"name": "PISTOL",    "ammo": 0, "cd": 11, "pellets": 1, "spread": 0.012, "lo": 6,  "hi": 12, "kind": 0},
-	{"name": "SCATTERGUN","ammo": 1, "cd": 28, "pellets": 6, "spread": 0.11,  "lo": 3,  "hi": 7,  "kind": 0},
-	{"name": "HEXCASTER", "ammo": 2, "cd": 22, "pellets": 1, "spread": 0.0,   "lo": 24, "hi": 40, "kind": 1}
+class WeaponDef {
+public:
+	string name = "";
+	int ammo = 0;
+	int cd = 0;
+	int pellets = 1;
+	float spread = 0.0;
+	int lo = 0;
+	int hi = 0;
+	int kind = 0;
+
+	WeaponDef(string name_, int ammo_, int cd_, int pellets_, float spread_, int lo_, int hi_, int kind_) {
+		name = name_;
+		ammo = ammo_;
+		cd = cd_;
+		pellets = pellets_;
+		spread = spread_;
+		lo = lo_;
+		hi = hi_;
+		kind = kind_;
+	}
+}
+
+array<shared_ptr<WeaponDef>> WEAPONS = [
+	new WeaponDef("PISTOL",     0, 11, 1, 0.012, 6,  12, 0),
+	new WeaponDef("SCATTERGUN", 1, 28, 6, 0.11,  3,  7,  0),
+	new WeaponDef("HEXCASTER",  2, 22, 1, 0.0,   24, 40, 1)
 ];
 array<string> AMMO_NAMES = ["BULLET", "SHELL", "CELL"];
 array<int> AMMO_MAX = [200, 50, 120];
 
 // ---------------------------------------------------------------- bestiary --
 // kind indexes: 0 grunt (melee rusher), 1 spitter (ranged), 2 turret, 3 warden (boss)
-var ENEMY_DEFS = [
-	{"name": "GRUNT",   "hp": 30,  "speed": 3.1, "radius": 0.34, "pain": 55, "size": 0.72, "melee_lo": 4, "melee_hi": 10},
-	{"name": "SPITTER", "hp": 45,  "speed": 2.2, "radius": 0.36, "pain": 40, "size": 0.78, "melee_lo": 3, "melee_hi": 7},
-	{"name": "TURRET",  "hp": 60,  "speed": 0.0, "radius": 0.38, "pain": 15, "size": 0.60, "melee_lo": 0, "melee_hi": 0},
-	{"name": "WARDEN",  "hp": 520, "speed": 2.0, "radius": 0.45, "pain": 8,  "size": 1.05, "melee_lo": 10, "melee_hi": 22}
+class EnemyDef {
+public:
+	string name = "";
+	int hp = 0;
+	float speed = 0.0;
+	float radius = 0.3;
+	int pain = 0;
+	float size = 0.7;
+	int melee_lo = 0;
+	int melee_hi = 0;
+
+	EnemyDef(string name_, int hp_, float speed_, float radius_, int pain_, float size_, int melee_lo_, int melee_hi_) {
+		name = name_;
+		hp = hp_;
+		speed = speed_;
+		radius = radius_;
+		pain = pain_;
+		size = size_;
+		melee_lo = melee_lo_;
+		melee_hi = melee_hi_;
+	}
+}
+
+array<shared_ptr<EnemyDef>> ENEMY_DEFS = [
+	new EnemyDef("GRUNT",   30,  3.1, 0.34, 55, 0.72, 4,  10),
+	new EnemyDef("SPITTER", 45,  2.2, 0.36, 40, 0.78, 3,  7),
+	new EnemyDef("TURRET",  60,  0.0, 0.38, 15, 0.60, 0,  0),
+	new EnemyDef("WARDEN",  520, 2.0, 0.45, 8,  1.05, 10, 22)
 ];
 
 // ---------------------------------------------------------------- pickups ---
 // kind: 0 stim 1 medkit 2 armor 3 clip 4 shells 5 cells 6 redkey 7 bluekey
 //       8 scattergun 9 hexcaster 10 soul orb
-var ITEM_DEFS = [
-	{"name": "stimpack",    "art": "it_stim",   "size": 0.22},
-	{"name": "medikit",     "art": "it_medkit", "size": 0.28},
-	{"name": "flak vest",   "art": "it_armor",  "size": 0.30},
-	{"name": "bullet clip", "art": "it_clip",   "size": 0.20},
-	{"name": "shell box",   "art": "it_shell",  "size": 0.22},
-	{"name": "hex cells",   "art": "it_cell",   "size": 0.24},
-	{"name": "RED keycard", "art": "it_rkey",   "size": 0.22},
-	{"name": "BLUE keycard","art": "it_bkey",   "size": 0.22},
-	{"name": "SCATTERGUN",  "art": "it_sgun",   "size": 0.26},
-	{"name": "HEXCASTER",   "art": "it_hgun",   "size": 0.28},
-	{"name": "soul orb",    "art": "it_orb",    "size": 0.30}
-];
-
-// a placed pickup in the world (per-frame billboard/automap/pickup scans)
-class Item {
+class ItemDef {
 public:
-	int kind = 0;
-	float x = 0.0;
-	float y = 0.0;
-	bool taken = false;
+	string name = "";
+	string art = "";
+	float size = 0.2;
 
-	Item(int kind_, float x_, float y_) {
-		kind = kind_;
-		x = x_;
-		y = y_;
+	ItemDef(string name_, string art_, float size_) {
+		name = name_;
+		art = art_;
+		size = size_;
 	}
 }
 
+array<shared_ptr<ItemDef>> ITEM_DEFS = [
+	new ItemDef("stimpack",     "it_stim",   0.22),
+	new ItemDef("medikit",      "it_medkit", 0.28),
+	new ItemDef("flak vest",    "it_armor",  0.30),
+	new ItemDef("bullet clip",  "it_clip",   0.20),
+	new ItemDef("shell box",    "it_shell",  0.22),
+	new ItemDef("hex cells",    "it_cell",   0.24),
+	new ItemDef("RED keycard",  "it_rkey",   0.22),
+	new ItemDef("BLUE keycard", "it_bkey",   0.22),
+	new ItemDef("SCATTERGUN",   "it_sgun",   0.26),
+	new ItemDef("HEXCASTER",    "it_hgun",   0.28),
+	new ItemDef("soul orb",     "it_orb",    0.30)
+];
+
 // ------------------------------------------------------------- sprite art ---
-// Each entry: rows + a tiny palette. Kept chunky on purpose: at half-block
-// resolution a 14-wide sprite fills a third of the screen point-blank.
+// Asset data: a literal table of chars and tiny palettes.
 var ART_SRC = {
 	// GRUNT - a hunched green rusher, all shoulders and appetite
 	"grunt_w0": {"pal": {"h": [86, 158, 62], "d": [52, 104, 40], "E": [255, 60, 40], "m": [240, 226, 190], "c": [220, 210, 170], "l": [46, 70, 36]},
@@ -557,45 +601,51 @@ var ART_SRC = {
 		".rr."]}
 };
 
-// parsed at boot: name -> {w, h, pix (flat codes, 0 transparent), rgb ([[r,g,b]...])}
-var ARTS = {};
+// a parsed sprite: codes row-major (0 transparent), a color and a palette key per code
+class Art {
+public:
+	int w = 0;
+	int h = 0;
+	array<int> pix = [];
+	array<array<int>> rgb = [];
+	array<string> keys = [];
+}
+
+map<string, shared_ptr<Art>> ARTS = {};
 
 function parse_arts() -> void {
 	ARTS = {};
 	for (auto kv : ART_SRC) { ARTS[kv.first] = parse_art(kv.second); }
 }
 
-// one art: {"w", "h", "pix": codes row-major, "rgb": color per code, "keys": palette char per code}
-function parse_art(var src) -> var {
+function parse_art(var src) -> shared_ptr<Art> {
 	var rows = src["rows"];
 	var pal = src["pal"];
-	map<string, int> codes = {}; // char string -> code
-	var rgb = [[0, 0, 0]];
-	array<string> keys = ["."];
-	int next_code = 1;
-	int h = rows.size();
-	int w = rows[0].size();
-	array<int> pix = [];
-	for (int y = 0; y < h; ++y) {
+	map<string, int> codes = {};
+	shared_ptr<Art> art = new Art();
+	art.h = rows.size();
+	art.w = rows[0].size();
+	art.rgb = [[0, 0, 0]];
+	art.keys = ["."];
+	for (int y = 0; y < art.h; ++y) {
 		string row = rows[y];
-		for (int x = 0; x < w; ++x) {
+		for (int x = 0; x < art.w; ++x) {
 			string ch = row.substr(x, 1);
-			if (ch == ".") { pix.push(0); continue; }
+			if (ch == ".") { art.pix.push(0); continue; }
 			if (!codes.has(ch)) {
-				codes[ch] = next_code;
-				next_code = next_code + 1;
-				rgb.push(pal[ch]);
-				keys.push(ch);
+				codes[ch] = art.rgb.size();
+				art.rgb.push(pal[ch]);
+				art.keys.push(ch);
 			}
-			pix.push(codes[ch]);
+			art.pix.push(codes[ch]);
 		}
 	}
-	return {"w": w, "h": h, "pix": pix, "rgb": rgb, "keys": keys};
+	return art;
 }
 
 // ------------------------------------------------------- weapon HUD art -----
-// 5 rows each, ASCII, drawn at the HUD's right edge with a walk-bob shift.
-var WGFX_IDLE = [
+// the reference look's panel: 5 rows each, ASCII, at the panel's right edge with a walk-bob shift
+array<array<string>> WGFX_IDLE = [
 	[
 	"      ____   ",
 	"  ___|__  |  ",
@@ -615,7 +665,7 @@ var WGFX_IDLE = [
 	"  \\__\\|/__/  ",
 	"     |=|     "]
 ];
-var WGFX_FIRE = [
+array<array<string>> WGFX_FIRE = [
 	[
 	" \\!/  ____   ",
 	" -*-_|__  |  ",

@@ -298,10 +298,10 @@ static jai::registrar&lt;Burn, void, jai::bases&lt;Effect&gt;&gt; burnRegistrar(
 static jai::registrar&lt;Shield, void, jai::bases&lt;Effect&gt;&gt; shieldRegistrar("Shield");</code></pre></div>
 <p>Each registrar gives its class the name the archives write as <code>$type</code> and records the edge to
 <code>Effect</code>, which a load checks before it hands a <code>Burn</code> back through an
-<code>Effect</code> pointer. It registers at program start; the same object also makes the class bindable into
+<code>Effect</code> pointer. It registers at program start. The same object also makes the class bindable into
 an engine through <code>jai::bind_registrar</code>, with an optional configure lambda that adds methods and
-properties (<a href="../embedding/08-serialization.html#smart-pointers-polymorphism-graphs">Serialization</a> shows one).
-Give <code>Player</code> a <code>std::vector&lt;std::shared_ptr&lt;Effect&gt;&gt; effects</code> field, archive
+properties (<a href="../embedding/08-serialization.html#smart-pointers-polymorphism-graphs">Serialization</a> shows one).</p>
+<p>Give <code>Player</code> a <code>std::vector&lt;std::shared_ptr&lt;Effect&gt;&gt; effects</code> field, archive
 it like the others, and each element is written as
 <code>{"$id": N, "$type": "Burn", "$val": {"remaining": 3.5, "damagePerTick": 2}}</code> and loads as a
 <code>Burn</code>.</p>
@@ -691,13 +691,14 @@ same key twice. (In a <code>property_owner</code> chain the derived level wins, 
 twice.</li>
 <li><strong>Shared objects read out of order.</strong> A <code>shared_ptr</code> writes its object at the first
 reference the save reaches (<code>{"$id": N, "$val": {...}}</code>; a <code>weak_ptr</code> that comes first writes
-it as <code>{"$ref": N, "$val": {...}}</code>) and <code>{"$id": N}</code> at every later one, and the load resolves
-ids in the order <code>load</code> reads its fields. When the save writes <code>inventory</code> and then
+it as <code>{"$ref": N, "$val": {...}}</code>) and <code>{"$id": N}</code> at every later one. The load resolves
+ids in the order <code>load</code> reads its fields. Read such fields in the order the save writes them.</li>
+<li><strong>What an out-of-order read does.</strong> When the save writes <code>inventory</code> and then
 <code>equipped</code>, both holding one object, a <code>load</code> that reads <code>equipped</code> first throws
 <code>jai::serialization_error</code> (<code>Dangling shared_ptr reference: {"$id": N} names an object this archive
-never defined (...)</code>); a <code>weak_ptr</code> read before the field that carries its object loads empty. Read
-such fields in the order the save writes them. A <code>property_owner</code>'s automatic save and load walk its
-properties in one order (each level by name, base levels first), so this concerns a hand-written pair.</li>
+never defined (...)</code>). A <code>weak_ptr</code> read before the field that carries its object loads empty.
+A <code>property_owner</code>'s automatic save and load walk its properties in one order (each level by name, base
+levels first), so this concerns a hand-written pair.</li>
 <li><strong>One graph per call.</strong> Object identity lasts one archive, as in Cereal: a <code>shared_ptr</code>
 saved by two separate <code>to_json</code> calls loads as two objects.</li>
 <li><strong>Exception types.</strong> A <code>catch (const cereal::Exception&amp;)</code> becomes

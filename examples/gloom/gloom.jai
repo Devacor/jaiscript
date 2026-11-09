@@ -3,6 +3,8 @@
 //     jaiscript.exe gloom.jai                        play (esc quits)
 //     jaiscript.exe gloom.jai -- --smoke --ticks 300 headless parity self-test
 //     jaiscript.exe gloom.jai -- --bench 300         autopilot + live render split
+//     jaiscript.exe gloom.jai -- --dev               play, reloading tune.jai and the look as you edit them
+//     jaiscript.exe gloom.jai -- --reload-test       headless hot-reload self-test (run it in a scratch copy)
 //
 // The runner provides the console (key_down, read_key, term_cols, term_rows,
 // print) and the stdlib's time:: the clock. This file supplies the rest of the
@@ -23,6 +25,8 @@ string HOST_LOOK = "";      // showcase | reference; "" = reference under --smok
 // 24-bit where the terminal says it takes it (COLORTERM, Windows Terminal), else xterm-256; --truecolor / --256color decide
 bool HOST_TRUECOLOR = env_var("COLORTERM") == "truecolor" || env_var("COLORTERM") == "24bit" || env_var("WT_SESSION") != "";
 bool HOST_ASCII = false;    // --ascii for terminals without block glyphs
+bool HOST_DEV = false;      // --dev: the showcase look's scripts reload when they change
+string HOST_SOUND_DIR = ""; // where the showcase look writes its synthesized effects to play them; "" is silence
 
 // ---------------------------------------------------------- host API: Rng ---
 // xorshift64* per gloom_host.hpp, the ONLY randomness (STATE_HASH folds
@@ -110,10 +114,14 @@ int SHIM_W = 0;
 int SHIM_H = 0;
 float SHIM_FPS = 30.0;
 int SHIM_DUMP = -1;
+bool SHIM_MUTE = false;
+bool SHIM_RELOAD_TEST = false;
 
-// reference/README.md section 3.5 checkpoints, keyed seed/god/ticks (pix-independent)
+// reference/README.md section 3.5 checkpoints and the 100- and 600-tick rows, keyed seed/god/ticks
 var SMOKE_REF = {
+	"666/0/100": 2414528911,
 	"666/0/300": 3580805725,
+	"666/0/600": 1503537018,
 	"666/0/2000": 319812559,
 	"666/0/3000": 4080154357,
 	"666/0/16000": 3497451110,
@@ -138,6 +146,9 @@ function shim_usage() -> void {
 	print("  --ascii         plain ASCII cells, for terminals without block glyphs");
 	print("  --workers N     >0 enables the parallel_transform paths (default serial)");
 	print("  --dump-frame N  smoke: dump frame N to gloom_frame_shim.txt");
+	print("  --mute          no sound effects");
+	print("  --dev           reload the showcase look's scripts (tune.jai and friends) when they change");
+	print("  --reload-test   headless hot-reload self-test: edits scripts/tune.jai, so run it in a copy");
 	print("keys: w/s move  a/d strafe  left/right turn  space/ctrl fire  e use");
 	print("      shift run  1/2/3 weapons  m automap  esc quit");
 }
@@ -173,6 +184,9 @@ function shim_parse_args() -> int {
 		else if (a == "--truecolor") { HOST_TRUECOLOR = true; }
 		else if (a == "--256color") { HOST_TRUECOLOR = false; }
 		else if (a == "--ascii") { HOST_ASCII = true; }
+		else if (a == "--mute") { SHIM_MUTE = true; }
+		else if (a == "--dev") { HOST_DEV = true; }
+		else if (a == "--reload-test") { SHIM_RELOAD_TEST = true; }
 		else if (a == "--look") {
 			i = i + 1;
 			HOST_LOOK = ARGS[i];
@@ -198,6 +212,7 @@ function shim_parse_args() -> int {
 	}
 	HOST_SMOKE = SHIM_SMOKE;
 	if (HOST_LOOK == "") { HOST_LOOK = HOST_SMOKE ? "reference" : "showcase"; }
+	if (!SHIM_SMOKE && !SHIM_RELOAD_TEST && SHIM_BENCH == 0 && !SHIM_MUTE) { HOST_SOUND_DIR = app_cache_dir("gloom") + "/sfx"; }
 	return -1;   // keep going
 }
 
@@ -210,14 +225,16 @@ function shim_run_smoke() -> int {
 	print(`gloom.jai --smoke: ${HOST_TICKS} ticks @ 100x40, seed ${HOST_SEED}, pix ${pix_name}, workers ${HOST_WORKERS}`);
 	time::stopwatch run;
 	run.start();
+	int frames_hash = 2166136261;
 	for (int i = 0; i < HOST_TICKS; ++i) {
 		var text = gloom_frame(dt, "", 0.0, 0.0, 0.0);
 		if (i == SHIM_DUMP) { write_file("gloom_frame_shim.txt", text); }
+		frames_hash = text_hash(frames_hash, crypto::sha256(text));
 	}
 	int total = run.elapsed() * 1000;
 	float per_tick = 1.0 * total / HOST_TICKS;
 	int hash = gloom_state_hash();
-	print(`total ${total} ms | ${per_tick:.3f} ms/tick | STATE_HASH: ${hash}`);
+	print(`total ${total} ms | ${per_tick:.3f} ms/tick | frames ${frames_hash} | STATE_HASH: ${hash}`);
 	gloom_summary();
 	string ref_key = `${HOST_SEED}/${HOST_GOD ? 1 : 0}/${HOST_TICKS}`;
 	if (SMOKE_REF.has(ref_key)) {
@@ -308,6 +325,12 @@ function shim_run_live(int bench_frames) -> int {
 function shim_main() -> int {
 	int parsed = shim_parse_args();
 	if (parsed >= 0) { return parsed; }
+	if (SHIM_RELOAD_TEST) {
+		HOST_LOOK = "showcase";
+		gloom_force_autopilot();
+		gloom_boot(100, 40);
+		return dev_reload_test();
+	}
 	if (SHIM_SMOKE) { return shim_run_smoke(); }
 	return shim_run_live(SHIM_BENCH);
 }

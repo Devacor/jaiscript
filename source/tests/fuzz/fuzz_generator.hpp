@@ -16,6 +16,8 @@
 #include "fuzz_math_band.hpp"
 #include "fuzz_regex_band.hpp"
 #include "fuzz_callargs_band.hpp"
+#include "fuzz_return_band.hpp"
+#include "fuzz_store_band.hpp"
 #include "fuzz_block_band.hpp"
 #include "fuzz_local_alias_band.hpp"
 
@@ -417,6 +419,9 @@ namespace jai::fuzz {
 			end_statements(stmt_begin, "zbmain", expr(random_value_type(), max_depth_));
 			element_arg_band band(seed_);
 			if (band.wanted(band_)) { p.segments.push_back(band.emit()); p.labels.push_back("element"); }
+			global_store_band sband(seed_);   // a global stored through a computed index: under the element band's switch
+			const bool store_roll = sband.roll();
+			if (band_ == band_mode::always || (band_ == band_mode::sometimes && store_roll)) { p.segments.push_back(sband.emit()); p.labels.push_back("global-store"); }
 			math_band mband(seed_);
 			const bool math_roll = mband.roll();
 			if (math_ == band_mode::always || (math_ == band_mode::sometimes && math_roll)) {
@@ -432,6 +437,9 @@ namespace jai::fuzz {
 			call_args_band cband(seed_);
 			const bool call_args_roll = cband.roll();
 			if (call_args_ == band_mode::always || (call_args_ == band_mode::sometimes && call_args_roll)) { p.segments.push_back(cband.emit()); p.labels.push_back("call-args"); }
+			early_return_band erband(seed_);   // calls whose callee returns early: under the call-arguments band's switch
+			const bool early_return_roll = erband.roll();
+			if (call_args_ == band_mode::always || (call_args_ == band_mode::sometimes && early_return_roll)) { p.segments.push_back(erband.emit()); p.labels.push_back("early-return"); }
 			local_alias_band lband(seed_);
 			const bool local_alias_roll = lband.roll();
 			if (local_alias_ == band_mode::always || (local_alias_ == band_mode::sometimes && local_alias_roll)) { p.segments.push_back(lband.emit()); p.labels.push_back("local-alias"); }

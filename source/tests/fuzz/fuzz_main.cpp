@@ -13,6 +13,7 @@
 #include "fuzz_harness.hpp"
 #include "fuzz_jaibite.hpp"
 #include "fuzz_order_band.hpp"
+#include "fuzz_parallel_band.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -63,6 +64,7 @@ namespace {
 		band_mode regex_band = band_mode::sometimes;
 		bool order = false;
 		bool order_args = false;
+		bool parallel = false;
 		bool jaibite_mutate = false;
 		bool census = false;
 		bool rename = false;   // the metamorphic renaming oracle on top of the differential
@@ -112,6 +114,9 @@ namespace {
 		"                                           statements run inside a function among closable counted loops (typed locals, typed local\n"
 		"                                           and program-scope arrays at plain [i], branches, math intrinsics, nested loops, grafted and\n"
 		"                                           kept helper calls), and the math band gains a lowered-math loop; --no-block-shapes never\n"
+		"   jaiscript_fuzz --parallel-band          data-parallel bodies run as the serial for and as parallel_for at 1, 3 and 8 workers on\n"
+		"                                           the interpreter, the vm and its reference mode: equal output, or a hazard body refused\n"
+		"                                           naming what it wrote (each seed an admitted and a hazard program; --dump prints both)\n"
 		"   jaiscript_fuzz --order-band             ordering programs (writing calls beside reads of what they write), three oracles: the\n"
 		"                                           backends agree, the program agrees with its metamorphic variant (operands evaluated into\n"
 		"                                           locals left to right), and every run prints what the generator's spec model computes\n"
@@ -174,6 +179,7 @@ namespace {
 			else if (a == "--regex-band") { opt.regex_band = band_mode::always; }
 			else if (a == "--no-regex-band") { opt.regex_band = band_mode::never; }
 			else if (a == "--order-band") { opt.order = true; }
+			else if (a == "--parallel-band") { opt.parallel = true; }
 			else if (a == "--order-args") { opt.order = true; opt.order_args = true; }
 			else if (a == "--miss-every") { const char* v = next("--miss-every"); if (!v) return false; opt.miss_every = static_cast<uint32_t>(std::stoul(v)); }
 			else if (a == "--run") { const char* v = next("--run"); if (!v) return false; opt.run_file = v; }
@@ -446,6 +452,29 @@ namespace {
 		return true;
 	}
 
+	// the parallel band: per seed an admitted body and a hazard body, each held to its oracle on every subject
+	int run_parallel_band(uint64_t begin, uint64_t end, bool verbose) {
+		uint64_t held = 0;
+		uint64_t broke = 0;
+		for (uint64_t seed = begin; seed < end; ++seed) {
+			if (!verbose && seed != begin && (seed - begin) % 100 == 0) { std::cout << "[progress] seed " << seed << " | held " << held << " | broke " << broke << "\n"; std::cout.flush(); }
+			for (bool hazard : {false, true}) {
+				const parallel::generated g = parallel::generate(seed, hazard);
+				const std::string report = parallel::check(g);
+				if (report.empty()) {
+					++held;
+					if (verbose) { std::cout << "[seed " << seed << (hazard ? " hazard" : "") << "] holds\n"; }
+					continue;
+				}
+				++broke;
+				std::cout << "\n=== PARALLEL BAND seed " << seed << (hazard ? " (hazard)" : "") << " ===\n" << report << "--- program ---\n" << g.program;
+				std::cout.flush();
+			}
+		}
+		std::cout << "\n===== parallel band summary =====\nprograms: " << (held + broke) << " | held: " << held << " | broke: " << broke << "\n";
+		return broke ? 1 : 0;
+	}
+
 	int run_census(const options& opt, uint64_t begin, uint64_t end) {
 		std::vector<std::pair<std::string, census::band_stats>> bands;
 		program from_file;
@@ -532,6 +561,11 @@ int main(int argc, char** argv) {
 	if (!parse_args(argc, argv, opt)) return 2;
 	if (opt.miss_every && !jai::engine::miss_injection_available()) { std::cerr << "--miss-every needs a build with JAISCRIPT_MISS_INJECTION defined\n"; return 2; }
 
+	if (opt.dump && opt.parallel) {
+		std::cout << parallel::generate(opt.seed, false).program << "// --- hazard ---\n" << parallel::generate(opt.seed, true).program;
+		return 0;
+	}
+
 	if (opt.dump && opt.order) {
 		const order::generated g = order::generate(opt.seed, opt.order_args);
 		std::cout << g.original.segments[0] << "// --- metamorphic variant ---\n" << g.variant.segments[0] << "// --- model ---\n"
@@ -590,6 +624,7 @@ int main(int argc, char** argv) {
 
 	uint64_t begin = opt.seed_given ? opt.seed : opt.seed_start;
 	uint64_t end = opt.seed_given ? opt.seed + 1 : opt.seed_start + opt.iterations;
+	if (opt.parallel) { return run_parallel_band(begin, end, opt.seed_given); }
 	if (opt.census) return run_census(opt, begin, end);
 
 	if (opt.jaibite_mutate) {

@@ -196,7 +196,7 @@ public:
 			const std::string ma = jai::vm::chunk_manifest(*a.program, detail::engine_access::get_symbolizer(*a.eng)) + jai::vm::chunk_manifest(*a.function, detail::engine_access::get_symbolizer(*a.eng));
 			const std::string mb = jai::vm::chunk_manifest(*b.program, detail::engine_access::get_symbolizer(*b.eng)) + jai::vm::chunk_manifest(*b.function, detail::engine_access::get_symbolizer(*b.eng));
 			check_eq(ma, mb, "the same program and function manifest the same in two engines");
-			check_true(ma.find("cell_loops 1") != std::string::npos, "the function's loop closed");
+			check_true(ma.find("cell_loops 2") != std::string::npos, "the function's loop closed, and the frame program over its body");
 		});
 		test("manifest_changes_with_a_constants_low_bit", [this]() {
 			// 1.0000001 and 1.0000002 never list the same; the manifest carries the constant's 64 bits
@@ -1338,19 +1338,19 @@ public:
 		test("open_loops_are_named_by_class_and_first_instruction", [this]() {
 			// the translation's refusals are recorded per loop: a call is an effect (a break and a string append are not: both close),
 			// a member read of a frame-slot instance is a load site, a tree deeper than
-			// the lift's node cap (21 binary nodes: the lifted part pushes a fused binary and the general BINARY consumes it) is a translation gap
+			// the lift's temp cap (a right-deep tree 20 levels deep, its left sides counted held: the lifted part pushes and the general BINARYs consume it) is a translation gap
 			const std::string listing = listing_of(
 				"var g = function(int x) { return x; }; class P { int v = 1; }"
 				" var f1 = function(int n) { int acc = 0; int i = 0; while (i < n) { acc = acc + g(i); i = i + 1; } return acc; };"
 				" var f2 = function(int n) { int acc = 0; int i = 0; while (i < n) { if (i == 3) { break; } acc = acc + i; i = i + 1; } return acc; };"
 				" var f3 = function(int n) { string s = \"\"; int i = 0; while (i < n) { s += \"x\"; i = i + 1; } return s; };"
 				" var f4 = function(int n, P p) { int acc = 0; int i = 0; while (i < n) { acc = acc + p.v; i = i + 1; } return acc; };"
-				" var f5 = function(int n) { int acc = 0; int i = 0; while (i < n) { int v = i + i + i + i + i + i + i + i + i + i + i + i + i + i + i + i + i + i + i + i + i + i; acc = acc + v; i = i + 1; } return acc; };"
+				" var f5 = function(int n) { int acc = 0; int i = 0; while (i < n) { int v = i + (i + (i + (i + (i + (i + (i + (i + (i + (i + (i + (i + (i + (i + (i + (i + (i + (i + (i + (i + (i)))))))))))))))))))); acc = acc + v; i = i + 1; } return acc; };"
 				" var f6 = function(int n) { int acc = 0; int i = 0; while (i < n) { acc = acc + to_string(i).size(); i = i + 1; } return acc; };");
 			check_true(listing.find("-- open loop") != std::string::npos, "refusals listed: " + listing);
 			check_true(listing.find(": effect at") != std::string::npos, "the method call on a call's result is an effect, its loop too thin for a boundary: " + listing);
 			check_true(listing.find("CALL_TEMP") != std::string::npos && listing.find("C_PROBE") != std::string::npos, "the call the sum consumes lands in a temp and its loop closes through the door: " + listing);
-			check_true(listing.find(": translation at") != std::string::npos && listing.find("(BINARY_FUSED)") != std::string::npos, "the tree past the lift's cap is a translation gap (the pushing fused binary the stack binary consumes; as a boundary it would be most of the body): " + listing);
+			check_true(listing.find(": translation at") != std::string::npos && listing.find("BINARY op=") != std::string::npos, "the tree past the lift's cap is a translation gap (the lifted part pushes, the stack binaries consume it; as a boundary it would be most of the body): " + listing);
 			check_true(listing.find("C_MLOAD") != std::string::npos && listing.find("(MEMBER_TEMP)") == std::string::npos, "the member read of a frame-slot instance is a load site and its loop closes: " + listing);
 		});
 		test("head_spans_the_math_family_and_untyped_compounds_close", [this]() {
@@ -1585,7 +1585,12 @@ var values = function(int n) { int acc = 0; float r = 2.5; for (int i = 0; i < n
 			size_t closed = 0; for (size_t at = listing.find("-- cell loop "); at != std::string::npos; at = listing.find("-- cell loop ", at + 1)) { ++closed; }
 			check_eq(size_t(11), closed, "every loop with a call closes (open loops: " + listing.substr(listing.find("-- open loop ") == std::string::npos ? listing.size() : listing.find("-- open loop "), 800) + ")");
 			size_t calls = 0; for (size_t at = listing.find("\tC_CALL "); at != std::string::npos; at = listing.find("\tC_CALL ", at + 1)) { ++calls; }
-			check_eq(size_t(15), calls, "one C_CALL per call in a closed loop: " + listing);
+			size_t program_calls = 0;   // a frame program's copy holds its own C_CALL per call
+			for (size_t at = listing.find("-- frame program "); at != std::string::npos; at = listing.find("-- frame program ", at + 1)) {
+				const size_t c = listing.find("(calls ", at), eol = listing.find('\n', at);
+				if (c != std::string::npos && c < eol) { program_calls += std::stoul(listing.substr(c + 7)); }
+			}
+			check_eq(size_t(15) + program_calls, calls, "one C_CALL per call in a closed loop: " + listing);
 		});
 		test("globals_written_inside_a_block", [this]() {
 			// draw_seg's REMAIN = REMAIN - 1: an environment scalar written by a fused store, a compound, an increment, a move and a
@@ -1627,7 +1632,9 @@ var from_call = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { REM
 		test("element_store_values_are_values", [this]() {
 			// draw_seg's `clipsn[x] = cn + 1`: an element store whose value is a value binary lands the binary in a compiler temp and
 			// stores the temp; the store's typed lane and the block hold; a lifted tree, a float value, a value that raises (the
-			// kernel's text first), an int array fed a float value (the checked conversion), a map container and a var& container
+			// kernel's text first), an int array fed a float value (the checked conversion), a map container and a var& container; a global
+			// stored through a computed index, in an arm the first call never takes (the general store parks its container in the value's
+			// lookup role: the value reads through a role the index leaves free, or the store refuses when the index takes both)
 			const char* defs = R"JAI(
 array<int> G = [0, 0, 0, 0, 0, 0]; array<float> F = [0.0, 0.0, 0.0, 0.0]; var M = {1: 0, 2: 0}; var V = [0, 0, 0, 0];
 var fill = function(int n, var& a) { int acc = 0; for (int x = 0; x < n; ++x) { int v = a[x]; a[x] = v + x * 2 + 1; acc = acc + a[x]; } return acc; };
@@ -1637,10 +1644,16 @@ var raises = function(int n) { int d = 0; try { for (int i = 0; i < n; ++i) { G[
 var narrow = function(int n) { try { for (int i = 0; i < n; ++i) { G[i] = i * 1.5; } } catch (e) { return e; } return to_string(G); };
 var keyed = function(int n) { for (int i = 1; i <= n; ++i) { M[i] = i * 10 + 1; } return to_string(M); };
 var mixed = function(int n) { for (int i = 0; i < n; ++i) { V[i] = i + 0.5; } return to_string(V); };
+int W = 99; int K = 1;
+var flash = function(int s, int mode) { for (int x = 0; x < 4; ++x) { if (mode == 1) { G[x + s] = W; } else { G[x + s] = 5; } } return to_string(G); };
+var flashadd = function(int s, int mode) { for (int x = 0; x < 4; ++x) { if (mode == 1) { G[x + s] += W; } else { G[x + s] += 1; } } return to_string(G); };
+var flashk = function(int mode) { for (int x = 0; x < 4; ++x) { if (mode == 1) { G[x + K] = W; } else { G[K + x] = 5; } } return to_string(G); };
+var flashkk = function(int mode) { for (int x = 0; x < 4; ++x) { if (mode == 1) { G[K + K] = W; } else { G[x] = 5; } } return to_string(G); };
 )JAI";
 			struct probe { const char* call; const char* expected; };
 			const probe probes[] = {
 				{ "to_string(fill(4, G));", "16" }, { "tree(4);", "" }, { "floats(4);", "" }, { "raises(3);", "" }, { "narrow(3);", "" }, { "keyed(2);", "" }, { "mixed(3);", "" },
+				{ "flash(1, 0) + flash(1, 1);", "" }, { "flashadd(2, 0) + flashadd(2, 1);", "" }, { "flashk(0) + flashk(1);", "" }, { "flashkk(0) + flashkk(1);", "" },
 			};
 			for (const probe& p : probes) {
 				both(std::string(defs) + " " + p.call, p.expected, p.call);
@@ -2091,7 +2104,8 @@ var cont = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { if (i ==
 			size_t closed = 0; for (size_t at = listing.find("-- cell loop "); at != std::string::npos; at = listing.find("-- cell loop ", at + 1)) { ++closed; }
 			check_eq(size_t(3), closed, "the three loops close (open loops: " + listing.substr(listing.find("-- open loop ") == std::string::npos ? listing.size() : listing.find("-- open loop "), 800) + ")");
 			size_t ir_lines = 0; for (size_t at = listing.find("-- ir "); at != std::string::npos; at = listing.find("-- ir ", at + 1)) { ++ir_lines; }
-			check_eq(size_t(3), ir_lines, "one IR line per closed region: " + listing);
+			size_t programs = 0; for (size_t at = listing.find("-- frame program "); at != std::string::npos; at = listing.find("-- frame program ", at + 1)) { ++programs; }
+			check_eq(size_t(3) + programs, ir_lines, "one IR line per closed region: " + listing);
 			check(listing.find("-- ir 0:cmp->exit") != std::string::npos, "the while loop's head compare exits: " + listing);
 			check(listing.find(":jump->") != std::string::npos, "the diamond's else arm is a jump to an operation: " + listing);
 			check(listing.find(":exit->exit") != std::string::npos, "the break is an exit: " + listing);
@@ -4230,8 +4244,8 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			{
 				auto e = jai::foundry::make_default_engine(); e->set_backend(backend_type::vm); stdlib::register_all(*e);
 				e->execute(prelude);
-				struct shape { const char* call; uint64_t entries; };
-				for (const shape& sh : { shape{ "once(1);", 1 }, shape{ "once(0);", 0 }, shape{ "once(6);", 1 }, shape{ "brk(5);", 1 }, shape{ "later(4);", 1 } }) {
+				struct shape { const char* call; uint64_t entries; };   // one entry per call: the frame program's, whose loop is a jump inside it
+				for (const shape& sh : { shape{ "once(1);", 1 }, shape{ "once(0);", 1 }, shape{ "once(6);", 1 }, shape{ "brk(5);", 1 }, shape{ "later(4);", 1 } }) {
 					const cell_counters c0 = detail::engine_access::cells_counters(*e);
 					e->execute(sh.call);
 					const cell_counters c1 = detail::engine_access::cells_counters(*e);
@@ -6046,6 +6060,115 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				check_eq(oracle, got, "a miss at every " + std::to_string(every));
 			}
 		});
+		// a function with for and while loops is a frame program, its loops inner loops of the program: a return inside a counted loop is a
+		// ret, a break leaves the inner loop, nested loops and a while with a compound condition run as cells, an overflow inside a loop
+		// raises through the general form; a loop calls them raw, the program scope enters them generally
+		test("loops_inside_frame_programs", [this]() {
+			const std::string defs = "[[warn_mode]]\n"
+				"function find(int n, int key) -> int { for (int i = 0; i < n; ++i) { int h = (i * 7 + 3) % 17; if (h == key) { return i; } } return -1; }\n"
+				"function brk(int n) -> int { int s = 0; for (int i = 0; i < n; ++i) { s += i * 3; if (s > 500) { break; } } return s; }\n"
+				"function wh(float x) -> float { float t = x; int k = 0; while (t < 100.0 && k < 50) { t = t * 1.3 + 0.5; ++k; } return t + k; }\n"
+				"function grid(int n) -> int { int s = 0; for (int y = 0; y < n; ++y) { for (int x = 0; x < n; ++x) { s += x * y - (x ^ y); } } return s; }\n"
+				"function ov(int n) -> int { int s = 1; for (int i = 0; i < n; ++i) { s = s * 3; } return s; }\n"
+				"function run(int n) -> float { float t = 0.0; for (int i = 0; i < n; ++i) { t += find(20, i % 17) + brk(i * 4) + grid(i % 5) + wh(i * 0.5) + ov(i % 30); } return t; }\n";
+			const std::string src = defs + "to_string(run(60)) + \",\" + to_string(find(20, 99)) + \",\" + to_string(wh(1.0)) + \",\" + to_string(grid(7));";
+			const std::string overflows = defs + "to_string(run(3)) + to_string(ov(45));";
+			both(src, "", "loops inside frame programs");
+			both(src, "", "loops inside frame programs, proofs off", false);
+			check_true(run_on(true, src).find("throw:") == std::string::npos, "runs: " + run_on(true, src));
+			both(overflows, "", "an overflow inside a frame program's loop");
+			check_true(run_on(true, overflows).find("throw:") != std::string::npos, "the overflow raises: " + run_on(true, overflows));
+			const std::string l = listing_run(src);
+			auto section = [&](const char* fn) { const size_t fb = l.find(fn); return fb == std::string::npos ? l : l.substr(fb, l.find("\n== ", fb + 1) - fb); };
+			for (const char* fn : { "== find ", "== brk ", "== wh ", "== grid ", "== ov " }) {
+				check_true(section(fn).find("-- frame program") != std::string::npos && section(fn).find("(raw entry)") != std::string::npos, std::string("a raw-enterable frame program: ") + section(fn));
+			}
+			check_true(section("== run ").find("raw 5") != std::string::npos, "run's loop calls all five raw: " + section("== run "));
+			if (!engine::miss_injection_available()) { return; }
+			for (const std::string* s : { &src, &overflows }) {
+				const std::string oracle = run_on(false, *s);
+				for (uint32_t every = 1; every <= 5; ++every) {
+					auto e = jai::foundry::make_default_engine(); e->set_backend(backend_type::vm); e->cells_miss_every(every); stdlib::register_all(*e); register_host_math_fixture(*e);
+					std::string got;
+					try { got = e->execute(*s).as_string(); } catch (const std::exception& ex) { got = std::string("throw:") + ex.what(); }
+					check_eq(oracle, got, "a miss at every " + std::to_string(every));
+				}
+			}
+		});
+		// a loop-free function too big to graft is a frame program by its own work, as is the function whose loop calls it: the loop enters
+		// it raw (its globals read at the entry, as they stand after the program scope rewrites them; arguments that are lifted trees; its
+		// result compounded into the sum), the program scope enters it generally, a straight region of a function with a var parameter calls
+		// it raw, its call to a function with a var parameter is a door, its ternary return and its compound over a quotient stay cells
+		test("big_leaves_are_raw_frame_programs", [this]() {
+			std::string big = "function big(float x, float y, bool m) -> float {\n";
+			for (int k = 0; k < 100; ++k) { big += "  float a" + std::to_string(k) + " = " + (k ? "a" + std::to_string(k - 1) : std::string("x")) + " * 0.5 + " + (k % 3 ? "x" : "G") + ";\n"; }
+			big += "  float ice = 0.0;\n  if (y > 0.2) { ice = a99 * 0.5; ice += 0.032 / (1.0 + a98 * a98); }\n"
+				"  if (m) { int w = 23 - slow(3, 0); float h = w * 0.5 + w; return h; }\n"
+				"  return ice < 0.045 ? ice : 0.045 + (ice - 0.045) * 0.5 + V;\n}\n";
+			std::string slow = "function slow(int k, var tag) -> int { int s = 0; for (int i = 0; i < k; ++i) { s += i; }";   // too big to graft, a var parameter: a door
+			for (int k = 0; k < 80; ++k) { slow += " s = (s * 3 + k - " + std::to_string(k) + ") % 1000;"; }
+			slow += " return s % 1000; }\n";
+			const std::string src = "[[warn_mode]]\nfloat G = 0.25; float V = 3.0;\n" + slow + big +
+				"function run(int n) -> float { float t = 0.0; for (int i = 0; i < n; ++i) { t += big(i * 0.01, (i & 3) * 0.1 - (i % 5) * 0.05, (i & 7) == 0); } return t; }\n"
+				"function shade(float x, var tag) -> float { float p = x * 1.5 + G; float q = p * p - x; float a = big(p, 0.3, false); float b = big(q + 0.1, 0.3, false) * 2.0;\n"
+				"  float c = a * b + p * q - a; float d = c * 0.5 + b * 0.25 - q; float e = d * d + c; float s = 0.0; for (int k = 0; k < 3; ++k) { s += e * k; } return s + d; }\n"
+				"string out = to_string(run(40)) + \",\" + to_string(big(0.5, 0.3, true)) + \",\" + to_string(big(0.5, 0.3, false)) + \",\" + to_string(shade(0.4, 0));\n"
+				"V = 2.5; G = -1.0;\nout += \",\" + to_string(run(40)) + \",\" + to_string(big(0.5, 0.1, false)) + \",\" + to_string(shade(0.4, 0));\nout;";
+			both(src, "", "big leaves");
+			both(src, "", "big leaves, proofs off", false);
+			check_true(run_on(true, src).find("throw:") == std::string::npos, "runs: " + run_on(true, src));
+			const std::string l = listing_run(src);
+			auto section = [&](const char* fn) { const size_t fb = l.find(fn); return fb == std::string::npos ? l : l.substr(fb, l.find("\n== ", fb + 1) - fb); };
+			check_true(section("== big ").find("(raw entry)") != std::string::npos, "big is a raw-enterable frame program: " + section("== big "));
+			check_true(section("== run ").find("-- frame program") != std::string::npos && section("== run ").find("raw 1") != std::string::npos, "run, a function with a loop, is a frame program whose loop calls big raw: " + section("== run "));
+			check_true(section("== shade ").find("-- cell region") != std::string::npos && section("== shade ").find("raw 2") != std::string::npos, "shade's straight region calls it raw: " + section("== shade "));
+			if (!engine::miss_injection_available()) { return; }
+			const std::string oracle = run_on(false, src);
+			for (uint32_t every = 1; every <= 5; ++every) {
+				auto e = jai::foundry::make_default_engine(); e->set_backend(backend_type::vm); e->cells_miss_every(every); stdlib::register_all(*e); register_host_math_fixture(*e);
+				std::string got;
+				try { got = e->execute(src).as_string(); } catch (const std::exception& ex) { got = std::string("throw:") + ex.what(); }
+				check_eq(oracle, got, "a miss at every " + std::to_string(every));
+			}
+		});
+		// a left-deep chain holds one temp however long it is, so the lift takes it whole and the loop around it closes (a sum of 40 locals,
+		// an int chain that overflows, products on the right); a right-deep tree past the temp limit stays the stack form and agrees
+		test("long_chains_lift_by_their_temp_peak", [this]() {
+			std::string src = "[[warn_mode]]\nfunction run(int n) -> string { float t = 0.0; int s = 0;\n  for (int i = 0; i < n; ++i) { float x = i * 0.25;";
+			for (int k = 0; k < 40; ++k) { src += " float a" + std::to_string(k) + " = x * " + std::to_string(k + 1) + ".5 - " + std::to_string(k % 7) + ".0;"; }
+			src += "\n    t += a0";
+			for (int k = 1; k < 40; ++k) { src += (k % 3 == 0 ? " - a" : " + a") + std::to_string(k) + (k % 5 == 0 ? " * x" : ""); }
+			src += ";\n    s += i";
+			for (int k = 1; k < 30; ++k) { src += " + i * " + std::to_string(k); }
+			src += "; }\n  return to_string(t) + \" \" + to_string(s); }\n"
+				"function deep(float x) -> float { return x";
+			for (int k = 0; k < 20; ++k) { src += " - (x * 0." + std::to_string(k + 1) + " + (x"; }
+			src += std::string(40, ')') + "; }\n"
+				"function overflow(int n) -> int { int s = 0; for (int i = 0; i < n; ++i) { s = i";
+			for (int k = 1; k < 20; ++k) { src += " + i * 400000000000000000"; }
+			src += "; } return s; }\n";
+			const std::string fits = src + "run(30) + \",\" + to_string(deep(1.5)) + \",\" + to_string(overflow(2));";
+			const std::string overflows = src + "to_string(overflow(3));";
+			both(fits, "", "long chains");
+			both(fits, "", "long chains, proofs off", false);
+			check_true(run_on(true, fits).find("throw:") == std::string::npos, "runs: " + run_on(true, fits));
+			both(overflows, "", "a long int chain that overflows");
+			check_true(run_on(true, overflows).find("throw:") != std::string::npos, "the int chain overflows: " + run_on(true, overflows));
+			const std::string l = listing_run(src + "run(30);");
+			const size_t fb = l.find("== run ");
+			const std::string fl = fb == std::string::npos ? l : l.substr(fb, l.find("\n== ", fb + 1) - fb);
+			check_true(fl.find("open loop") == std::string::npos && fl.find("-- cell loop") != std::string::npos, "the loop closes: " + fl);
+			if (!engine::miss_injection_available()) { return; }
+			for (const std::string* s : { &fits, &overflows }) {
+				const std::string oracle = run_on(false, *s);
+				for (uint32_t every = 1; every <= 5; ++every) {
+					auto e = jai::foundry::make_default_engine(); e->set_backend(backend_type::vm); e->cells_miss_every(every); stdlib::register_all(*e); register_host_math_fixture(*e);
+					std::string got;
+					try { got = e->execute(*s).as_string(); } catch (const std::exception& ex) { got = std::string("throw:") + ex.what(); }
+					check_eq(oracle, got, "a miss at every " + std::to_string(every));
+				}
+			}
+		});
 		// an environment name ahead of a hoisted read (`q + A * host_sin(q * 1.3)`) reads into a temp first and the loop closes; a leaf whose
 		// return the checker cannot prove (`return host_sqrt(x) + 1.0`) grafts into a loop when its declared result is a scalar, the block landing it
 		// by that type
@@ -6144,18 +6267,19 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			const size_t c = vm.find(',');
 			check_true(c != std::string::npos && vm.substr(0, vm.find('=')) == vm.substr(vm.find('=') + 1, c - vm.find('=') - 1), "serial and parallel agree: " + vm);
 		});
-		// a straight-line span of typed statements outside every closed loop runs as a region: entered at its first instruction,
-		// left at its end; a refusal or a miss at the first instruction runs the trampoline's copy of it
+		// a straight-line span of typed statements outside every closed loop runs as a region (a var parameter keeps the bodies off frame
+		// programs): entered at its first instruction, left at its end; a refusal or a miss at the first instruction runs the trampoline's
+		// copy of it
 		test("straight_line_regions", [this]() {
 			const std::string src = "[[warn_mode]]\n"
-				"function shade(float x, float y, float z) -> float {\n"
+				"function shade(float x, float y, float z, var tag) -> float {\n"
 				"  float a = x * 1.5 + y * 2.5; float b = a * a - z * 0.25; float c = b / (a + 1.0);\n"
 				"  float d = c * c + a * b - x; float e = d * 0.5 + c * 0.25 + b * 0.125; float f = e - d * 0.75 + a;\n"
 				"  return f * 2.0 + e; }\n"
-				"function mix(int p, int q) -> int {\n"
+				"function mix(int p, int q, var tag) -> int {\n"
 				"  int r = p * 3 + q; int s = r * r - p; int t = s % 7 + r / 3; int u = t * t + s - r; int v = u + p * q - t; int w = v % 11 + u * 2 - s; int z = w * 3 + v - t;\n"
 				"  return z + u * 2; }\n"
-				"function run() -> string { var sh = shade; var mx = mix; float t = 0.0; int it = 0; for (int i = 0; i < 60; ++i) { t = t + sh(i * 0.5, 1.25, i * 0.125); it = it + mx(i, 7); } return to_string(t) + \" \" + to_string(it); }\n"
+				"function run() -> string { var sh = shade; var mx = mix; float t = 0.0; int it = 0; for (int i = 0; i < 60; ++i) { t = t + sh(i * 0.5, 1.25, i * 0.125, 0); it = it + mx(i, 7, 0); } return to_string(t) + \" \" + to_string(it); }\n"
 				"run();";
 			both(src, "", "straight regions");
 			both(src, "", "straight regions, proofs off", false);
@@ -6176,17 +6300,22 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			}
 		});
 		// a return whose expression is a graft: the graft's result lands before the return's own instructions, where the block exits, so the
-		// exit flushes it (a region's last statement, and a return inside a closed loop)
+		// exit flushes it (a region's last statement, and a return inside a closed loop; a var parameter keeps the region bodies off frame programs);
+		// a graft's own early returns jump to the return's last instruction, inside the exit's span, and land on the exit too
 		test("exit_after_a_graft_flushes_its_result", [this]() {
 			const std::string src = "[[warn_mode]]\n"
 				"function mul3(int a, int b) -> int { return a * b + 3; }\n"
-				"function tailcall(int x) -> int { int v = x * 7 + 1; int w = v * v - x; int y = w % 13 + v * 3; int z = y * y - w + v; int q = z + x * 2; int r = q * 3 - z + y; return mul3(r, 5); }\n"
+				"function tailcall(int x, var tag) -> int { int v = x * 7 + 1; int w = v * v - x; int y = w % 13 + v * 3; int z = y * y - w + v; int q = z + x * 2; int r = q * 3 - z + y; return mul3(r, 5); }\n"
 				"function loopret(int n) -> int { int acc = 0; for (int i = 0; i < n; ++i) { acc = acc * 3 + i; if (acc > 1000) { return mul3(acc, 2); } } return acc; }\n"
 				"class R { int s = 5; int raw() { int v = s; v = v ^ (v >> 3); v = v ^ (v << 5); v = v ^ (v >> 7); v = v * 3 + 1; s = v & 65535; return mul3(v & 255, 7); } }\n"
 				"function early(int n) -> float { float t = 0.0; for (int i = 0; i < n; ++i) { t += i * 0.5; if (t > 5.0) { return host_sqrt(t) + 1.0; } } return t; }\n"
-				"function rowr(int i) -> float { float x0 = i * 0.5; float y = x0 * x0 + 1.0; float z = y * 0.5 - x0; float w = z * z + y * 0.25; float x = w - z * 0.125 + y * 0.01; return host_sqrt(x * x + 1.0) + host_sin(x) * host_cos(x * 0.5) + host_floor(x * 0.25); }\n"
-				"function run() -> string { string out = \"\"; for (int i = 0; i < 4; ++i) { out += to_string(tailcall(i)) + \" \" + to_string(loopret(i * 4)) + \" \"; } R r = R(); for (int i = 0; i < 4; ++i) { out += to_string(r.raw()) + \" \"; }\n"
-				"  var ea = early; var rw = rowr; for (int i = 0; i < 8; ++i) { out += to_string(ea(i)) + \" \" + to_string(rw(i)) + \" \"; } return out; }\n"
+				"function rowr(int i, var tag) -> float { float x0 = i * 0.5; float y = x0 * x0 + 1.0; float z = y * 0.5 - x0; float w = z * z + y * 0.25; float x = w - z * 0.125 + y * 0.01; return host_sqrt(x * x + 1.0) + host_sin(x) * host_cos(x * 0.5) + host_floor(x * 0.25); }\n"
+				"function pick4(int id, int a, int b, int c, int d) -> int { int k = id % 4; if (k == 0) { return a * 3 + id; } if (k == 1) { return b * 5 + id; } if (k == 2) { return c * 7 + id; } return d * 11 + id; }\n"
+				"function pickpx(int t, int u, var tag) -> int { int x = u * 3 + 1; int y = x * x - u; int z = y % 7 + x; int w = z * 2 - y; int q = w + x * y; int r = q % 11 + w;\n"
+				"  if (t == 1) { int id = x + y + z + w + q + r; return pick4(id, x, y, z, w); } if (t == 2) { return x - y; } return 7777; }\n"
+				"function pickloop(int n) -> int { int acc = 0; for (int i = 0; i < n; ++i) { acc = acc * 3 + i; if (acc > 20) { return pick4(acc, i, acc, n, 2); } } return acc; }\n"
+				"function run() -> string { string out = \"\"; for (int i = 0; i < 4; ++i) { out += to_string(tailcall(i, 0)) + \" \" + to_string(loopret(i * 4)) + \" \" + to_string(pickpx(1, i, 0)) + \" \" + to_string(pickloop(i + 3)) + \" \"; } R r = R(); for (int i = 0; i < 4; ++i) { out += to_string(r.raw()) + \" \"; }\n"
+				"  var ea = early; var rw = rowr; for (int i = 0; i < 8; ++i) { out += to_string(ea(i)) + \" \" + to_string(rw(i, 0)) + \" \"; } return out; }\n"
 				"string first = run(); host_sqrt = function(float v) { return v * 2.0; }; first + \",\" + run();";
 			both(src, "", "exit after a graft");
 			both(src, "", "exit after a graft, proofs off", false);

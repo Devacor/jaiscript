@@ -74,6 +74,8 @@ GUIDE = [
      "The random type: a generator you own, seeded streams that replay bit for bit on every platform, copies and save files for rollback, draws in parallel loops; and crypto:: for secrets: secure random bytes, SHA-2, HMAC and PHP-compatible bcrypt passwords."),
     ("19-templates.html", "HTML Templates",
      "template(path, names...) renders an HTML file with escaped ${...} splices, seeing the names it is given by reference and the program, checked at load and reloaded on edit; scoped_template renders untrusted templates over a copy of a map."),
+    ("20-terminal-games.html", "A Terminal Game in One File",
+     "A real-time game run by the standalone runner: read_key and key_down polling, frame pacing with a stopwatch and sleep, frames drawn with ANSI escape codes, the terminal's size, sound, and saves."),
 ]
 
 EMBEDDING = [
@@ -155,7 +157,7 @@ SECTION_INDEX_DESC = {
     "bridges/index.html":
         "Language bridges for programmers arriving from JavaScript, C++ or C#, and code migrations for C++ code moving to JaiScript from Cereal, Boost.Signals2, ChaiScript, sol2, Squirrel, pybind11, nlohmann::json, Qt properties or C++20 coroutines.",
     "guide/index.html":
-        "Eighteen chapters covering the whole core language, the opt-in web:: library, and random numbers and crypto - every standalone sample runs on both backends, with the output it prints.",
+        "Twenty chapters covering the whole core language, the opt-in web:: library, random numbers and crypto, HTML templates and a terminal game - every standalone sample runs on both backends, with the output it prints.",
     "embedding/index.html":
         "Nineteen chapters on hosting JaiScript in a C++ engine: binding classes, choosing a backend, safety rails, hot reload, shipping, editor support, host math types, a thread pool for host work, and a web application host.",
     "examples/index.html":

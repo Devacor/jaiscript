@@ -1,9 +1,12 @@
 // JaiDOOM frames for the docs page: the title screen and a fight, drawn through
-// the half-block blit the terminal gets and written as one .ans file each. A fixed seed and
+// the blit the terminal gets and written as one .ans file each. A fixed seed and
 // scripted tics, no clock and no keyboard, so the same WAD gives the same frames.
 //
-//   jaiscript shots.jai -- [<wad>] [<map>] [<cols>x<pixel rows>] [out <dir>]
+//   jaiscript shots.jai -- [<wad>] [<map>] [<cols>x<rows * 2>] [pix half|sext] [out <dir>]
 //                          [fight <mobj>] [tics <n>] [every <n>]
+//
+// The screen is <cols> by <rows> cells, drawn in half blocks (1x2 pixels per cell) unless pix sext
+// draws it in sextants (2x3).
 //
 // The fight stands the player in sight of one monster (by mobj index; the first one with a
 // clear line by default), wakes it and fires for <tics> tics; every <n> adds numbered frames
@@ -18,11 +21,12 @@ import "things.jai";
 import "game.jai";
 import "spec.jai";
 import "hud.jai";
+import "fx.jai";
 
 string OUT_DIR = ".";
 
 function shoot(string name) -> void {
-	write_file(`${OUT_DIR}/${name}.ans`, blit_half());
+	write_file(`${OUT_DIR}/${name}.ans`, vid_blit());
 	print(`  ${OUT_DIR}/${name}.ans`);
 }
 
@@ -71,6 +75,7 @@ function main() -> int {
 	int target = -1;
 	int tics = 30;
 	int every = 0;
+	bool panel = false;
 	for (int i = 0; i < ARGS.size(); ++i) {
 		string a = ARGS[i];
 		string next = i + 1 < ARGS.size() ? ARGS[i + 1] : "";
@@ -78,6 +83,10 @@ function main() -> int {
 		else if (a == "fight") { target = next.to_int(-1); i += 1; }
 		else if (a == "tics") { tics = next.to_int(tics); i += 1; }
 		else if (a == "every") { every = next.to_int(0); i += 1; }
+		else if (a == "pix") { SEXTANTS = next == "sext"; i += 1; }
+		else if (a == "panel") { panel = true; }
+		else if (a == "fit") { SEXT_FIT = next.to_int(1); i += 1; }
+		else if (a == "gamma") { GAMMA = next.to_float(0.0); i += 1; }
 		else if (a.starts_with("E") || a.starts_with("MAP")) { mapname = a; }
 		else if (a.find("x") > 0 && a.substr(0, a.find("x")).to_int(0) > 0) {
 			int x = a.find("x");
@@ -87,9 +96,12 @@ function main() -> int {
 		else { wad = a; }
 	}
 	if (!wad_load(wad_path(wad))) { print(`no WAD ${wad}: run jaidoom.jai once to fetch it`); return 1; }
-	vid_init(cols, prows);
+	HOST_TRUECOLOR = true;   // the page's frames are 24-bit wherever they are captured
+	vid_init_cells(cols, prows / 2);
 	hud_init();
 
+	fire_start(7);
+	for (int f = 0; f < 70; ++f) { fire_tic(); }
 	title_draw();
 	shoot("title");
 
@@ -114,6 +126,14 @@ function main() -> int {
 	}
 	draw_play();
 	shoot("fight");
+	if (panel) {                                     // the J panel over the fight, with made-up but typical numbers
+		BLIT_WORKERS = 1;
+		for (int k = 0; k < PANEL_SPAN; ++k) {
+			stat_note(0.1 + (k % 5) * 0.03, 2.6 + (k % 7) * 0.2, 0.7 + (k % 3) * 0.1, 1.8 + (k % 4) * 0.3, 16.7);
+		}
+		write_file(`${OUT_DIR}/fight_panel.ans`, `${ESC}[1;1H` + vid_blit() + panel_text(2, 2));
+		print(`  ${OUT_DIR}/fight_panel.ans`);
+	}
 	return 0;
 }
 

@@ -220,6 +220,10 @@ function build_view_cache() -> void {
 			}
 		}
 	}
+	if (has_welcome()) {
+		Spot bones = welcome_layout().find;
+		FLOOR_KIND[idx(bones.x, bones.y)] = 2 * 1024;
+	}
 	apply_decals();
 	build_light();
 
@@ -315,6 +319,7 @@ array<float> ROW_DIST = [];
 array<float> ROW_LIGHT = [];
 array<float> BAYER = [];
 int LAYOUT_KEY = -1;
+int FORWARD_Y = 0;          // the forward pane's top row, for the row builders (a parallel body reads no members)
 
 function layout_key() -> int { return (VIEW_LAYOUT * 1000 + VIEW_W) * 1000 + VIEW_H; }
 
@@ -354,6 +359,7 @@ function layout_panes(int mode, int fw, int fh) -> void {
 function build_layout() -> void {
 	layout_panes(VIEW_LAYOUT, VIEW_W, VIEW_H);
 	LAYOUT_KEY = layout_key();
+	FORWARD_Y = PANES[0].y;
 	STRIDE = CANVAS_W;
 	VPIX = [];
 	for (int i = 0; i < CANVAS_W * CANVAS_H * 2; ++i) { VPIX.push(0); }
@@ -387,7 +393,7 @@ function build_layout() -> void {
 	BAYER = [];
 	array<int> order = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 	for (int o : order) { BAYER.push((o + 0.5) / 16.0); }
-	VIEW_WORKERS = CANVAS_W >= 160 ? 1 : 0;
+	VIEW_WORKERS = CANVAS_W >= 160 && !ASCII_ONLY ? 1 : 0;
 	CHROME_FLOOR = -1;
 }
 
@@ -580,6 +586,7 @@ function render_view(float posx, float posy, float dirx, float diry) -> array<st
 	if (VC_FLOOR != G.floor) { build_view_cache(); }
 	if (CHROME_FLOOR != G.floor) { build_chrome(); }
 	if (CHROME_LABELS != labels_key()) { refresh_labels(); }
+	gather_lights();
 	for (int p = 0; p < PANES.size(); ++p) {
 		int rot = PANES[p].rot;
 		if (rot == 0) { if (!OVERLAY_ON) { render_pane(p, posx, posy, dirx, diry); } }
@@ -587,7 +594,7 @@ function render_view(float posx, float posy, float dirx, float diry) -> array<st
 		else if (rot == 2) { render_pane(p, posx, posy, 0.0 - dirx, 0.0 - diry); }
 		else { render_pane(p, posx, posy, diry, 0.0 - dirx); }
 	}
-	if (VIEW_WORKERS != 0) { return parallel_transform(VROWS, view_row_half); }
+	if (VIEW_WORKERS != 0) { return parallel_transform(VROWS, view_row_blocks); }
 	array<string> lines = [];
 	for (int cy = 0; cy < CANVAS_H; ++cy) { lines.push(view_row_half(cy)); }
 	return lines;
@@ -637,6 +644,10 @@ function render_pane(int p, float posx, float posy, float dirx, float diry) -> v
 	var& fkind = FLOOR_KIND;
 	var& light = LIGHT;
 	var& tiles = G.tiles;
+	var& dyn_x = DYN_X;
+	var& dyn_y = DYN_Y;
+	var& dyn_s = DYN_S;
+	int dyn_n = DYN_N;
 
 	for (int x = 0; x < pw; ++x) {
 		float camx = 2.0 * x / (pw - 1.0) - 1.0;
@@ -690,6 +701,15 @@ function render_pane(int p, float posx, float posy, float dirx, float diry) -> v
 			float sconce = light[hly * lw + hlx] * pane_light;
 			if (sconce > lf) { lf = sconce; }
 		}
+		if (dyn_n > 0) {
+			float hx = posx + pdist * rdx;
+			float hy = posy + pdist * rdy;
+			for (int k = 0; k < dyn_n; ++k) {
+				float ldx = hx - dyn_x[k];
+				float ldy = hy - dyn_y[k];
+				lf += dyn_s[k] * pane_light / (1.0 + 1.6 * (ldx * ldx + ldy * ldy));
+			}
+		}
 		lf *= side == 1 ? 0.72 : 1.0;
 		if (lf > 15.0) { lf = 15.0; }
 		int vstep = 2097152 / lineh;
@@ -722,6 +742,11 @@ function render_pane(int p, float posx, float posy, float dirx, float diry) -> v
 				float sconce = light[fly * lw + flx] * pane_light;
 				if (sconce > fl) { fl = sconce; }
 			}
+			for (int k = 0; k < dyn_n; ++k) {
+				float ldx = fx - dyn_x[k];
+				float ldy = fy - dyn_y[k];
+				fl += dyn_s[k] * pane_light / (1.0 + 1.6 * (ldx * ldx + ldy * ldy));
+			}
 			if (fl > 15.0) { fl = 15.0; }
 			if (y >= y1) {
 				int l = fl + bayer[((y & 3) << 2) + bx];
@@ -739,12 +764,20 @@ function render_pane(int p, float posx, float posy, float dirx, float diry) -> v
 	if (p == 0) {
 		draw_hands();
 		if (G.last_dmg > 0) { draw_hurt(); }
+		fx_apply_shake();
+		fx_screen_overlays();
 	}
+	fx_reload_sweep();
 }
 
-// One canvas row: pixel runs as half blocks between the chrome's text runs and the box rows.
-// Also the parallel_transform body, so it reads the globals directly.
+// One canvas row: pixel runs as half blocks (or, in ASCII, one mean colour per cell, which may
+// intern a new colour) between the chrome's text runs and the box rows.
 function view_row_half(int cy) -> string {
+	return ASCII_ONLY ? view_row_cells(cy) : view_row_blocks(cy);
+}
+
+// The half-block row, and the parallel_transform body: it reads the globals and writes nothing.
+function view_row_blocks(int cy) -> string {
 	string row = "";
 	int stride = STRIDE;
 	int ti = cy * 2 * stride;
@@ -761,20 +794,10 @@ function view_row_half(int cy) -> string {
 			continue;
 		}
 		if (OVERLAY_ON && SEG_REF[s] == 0) {
-			row += OVERLAY_ROWS[cy - PANES[0].y];
+			row += OVERLAY_ROWS[cy - FORWARD_Y];
 			continue;
 		}
 		int x1 = SEG_X1[s];
-		if (ASCII_ONLY) {
-			int bg = -1;
-			for (int x = SEG_X0[s]; x < x1; ++x) {
-				int c = pal_mean(VPIX[ti + x], VPIX[bi + x]);
-				if (c != bg) { row += VPAL_BG[c]; bg = c; }
-				row += " ";
-			}
-			row += RESET;
-			continue;
-		}
 		int fg = -1;
 		int bg = -1;
 		for (int x = SEG_X0[s]; x < x1; ++x) {
@@ -789,13 +812,42 @@ function view_row_half(int cy) -> string {
 	return row;
 }
 
+function view_row_cells(int cy) -> string {
+	string row = "";
+	int ti = cy * 2 * STRIDE;
+	int bi = ti + STRIDE;
+	for (int s = SEG_START[cy]; s < SEG_START[cy + 1]; ++s) {
+		int kind = SEG_KIND[s];
+		if (kind == 0) {
+			row += SEG_TEXT[s];
+			continue;
+		}
+		if (kind == 2) {
+			row += BOX_ROWS[SEG_REF[s]];
+			continue;
+		}
+		if (OVERLAY_ON && SEG_REF[s] == 0) {
+			row += OVERLAY_ROWS[cy - FORWARD_Y];
+			continue;
+		}
+		int bg = -1;
+		for (int x = SEG_X0[s]; x < SEG_X1[s]; ++x) {
+			int c = pal_mean(VPIX[ti + x], VPIX[bi + x]);
+			if (c != bg) { row += VPAL_BG[c]; bg = c; }
+			row += " ";
+		}
+		row += RESET;
+	}
+	return row;
+}
+
 // ---------------------------------------------------------------- sprites ---
-class Sprite { float depth; float sx; int art; int rgb; float height; float lift; int cap; int hp; bool flash; float lit; }
+class Sprite { float depth; float sx; int art; int rgb; float height; float lift; int cap; int hp; bool flash; float lit; float melt; int fx; }
 
 array<Sprite> SPRITES = [];
 map<int, int> SPRITE_RAMPS = {};
 
-function monster_sizef(var& m) -> float { return m.behavior == "boss" ? 1.4 : 0.5 + m.tier * 0.08; }
+function monster_sizef(var& m) -> float { return m.behavior == "boss" ? 1.4 : (m.kind == "gloopling" ? 0.34 : 0.5 + m.tier * 0.08); }
 
 function body_ramps(int rgb) -> int {
 	if (SPRITE_RAMPS.has(rgb)) { return SPRITE_RAMPS[rgb]; }
@@ -804,22 +856,42 @@ function body_ramps(int rgb) -> int {
 	return packed;
 }
 
-function sprite_add(int wx, int wy, int art_id, int rgb, float height, float lift, int cap, int hp, bool flash) -> void {
-	float rx = wx + 0.5 - CAM_POSX;
-	float ry = wy + 0.5 - CAM_POSY;
+// a sprite standing at world point (x, y) in the pane's camera; depth 0 when it is out of sight
+function sprite_at(float x, float y, int art_id, int rgb, float height, float lift, int cap, int hp, bool flash) -> Sprite {
+	float rx = x - CAM_POSX;
+	float ry = y - CAM_POSY;
 	float depth = CAM_INVDET * (0.0 - CAM_PY * rx + CAM_PX * ry);
-	if (depth < 0.12 || depth > SPRITE_RANGE) { return; }
+	if (depth < 0.12 || depth > SPRITE_RANGE) { return Sprite{0.0}; }
 	float ttx = CAM_INVDET * (CAM_DY * rx - CAM_DX * ry);
 	float sx = (PW / 2.0) * (1.0 + ttx / depth);
-	if (sx < -PW || sx > PW * 2) { return; }
+	if (sx < -PW || sx > PW * 2) { return Sprite{0.0}; }
 	float lit = lightf(depth) * TORCH_LEVEL * PANE_LIGHT;
-	float sconce = light_at(wx + 0.5, wy + 0.5) * PANE_LIGHT;
-	SPRITES.push(Sprite{depth, sx, art_id, rgb, height, lift, cap, hp, flash, sconce > lit ? sconce : lit});
+	float sconce = light_at(x, y) * PANE_LIGHT;
+	if (sconce > lit) { lit = sconce; }
+	for (int k = 0; k < DYN_N; ++k) {
+		float dx = x - DYN_X[k];
+		float dy = y - DYN_Y[k];
+		lit += DYN_S[k] * PANE_LIGHT / (1.0 + 1.6 * (dx * dx + dy * dy));
+	}
+	return Sprite{depth, sx, art_id, rgb, height, lift, cap, hp, flash, lit};
 }
 
-function monster_art(var& m) -> int {
-	if (m.glyph == "?") { return ART_ID["chest_open"]; }
-	return ART_ID.has(m.glyph) ? ART_ID[m.glyph] : ART_ID["g"];
+function sprite_add(int wx, int wy, int art_id, int rgb, float height, float lift, int cap, int hp, bool flash) -> void {
+	Sprite sp = sprite_at(wx + 0.5, wy + 0.5, art_id, rgb, height, lift, cap, hp, flash);
+	if (sp.depth > 0.0) { SPRITES.push(sp); }
+}
+
+// bats, moths and wisps hover, bobbing a little turn to turn
+function sprite_lift(var& m) -> float {
+	if (m.glyph == "b" || m.glyph == "m" || m.glyph == "w") { return 0.32 + 0.05 * ((G.turn + m.id) % 2); }
+	return 0.0;
+}
+
+function monster_art(var& m) -> int { return glyph_art(m.glyph); }
+
+function glyph_art(string glyph) -> int {
+	if (glyph == "?") { return ART_ID["chest_open"]; }
+	return ART_ID.has(glyph) ? ART_ID[glyph] : ART_ID["g"];
 }
 
 function draw_sprites() -> void {
@@ -846,12 +918,12 @@ function draw_sprites() -> void {
 			sprite_add(m.x, m.y, ART_ID["chest"], 0xC8A03C, 0.36, 0.0, prop_cap, -1, false);   // loot, until it is not
 			continue;
 		}
-		float lift = 0.0;
-		if (m.glyph == "b" || m.glyph == "m" || m.glyph == "w") { lift = 0.32 + 0.05 * ((G.turn + m.id) % 2); }
 		int hp = m.hp < m.max_hp ? (m.hp * 1000) / imax(1, m.max_hp) : -1;
 		bool flash = VIEW_HITS.has(m.id) && VIEW_HITS[m.id] + 1 >= G.turn;
-		sprite_add(m.x, m.y, monster_art(m), m.ink, 1.15 * monster_sizef(m), lift, PH + 12, hp, flash);
+		sprite_add(m.x, m.y, monster_art(m), m.ink, 1.15 * monster_sizef(m), sprite_lift(m), PH + 12, hp, flash);
 	}
+	fx_sprites();
+	draw_loot_beams();
 
 	// painter's order, far to near: an insertion sort of a handful
 	int n = SPRITES.size();
@@ -871,8 +943,41 @@ function draw_sprites() -> void {
 		int wdt = imax(1, hgt * ART_W[sp.art] * SPRITE_ASPECT / ART_H[sp.art]);
 		int bot = PH * 0.5 + WALL_KPX * (0.5 - sp.lift) / sp.depth;
 		int x0 = math::floor(sp.sx - wdt * 0.5);
+		if (sp.melt > 0.0) {
+			draw_art_melt(sp.art, sp.rgb, x0, bot - hgt, wdt, hgt, sp.lit + 0.5, sp.depth, sp.melt, sp.fx);
+			continue;
+		}
 		draw_art(sp.art, sp.rgb, x0, bot - hgt, wdt, hgt, sp.lit + 0.5, sp.depth, sp.flash);
 		if (sp.hp >= 0) { draw_hp_bar(x0, bot - hgt - 2, wdt, sp.hp, sp.depth); }
+	}
+	fx_overlays();
+}
+
+// A slain monster comes apart: white-hot at first, its texels dropping out in a scattered order
+// as it sinks into the floor it stood on.
+function draw_art_melt(int a, int rgb, int x0, int y0, int w, int h, int lvl, float depth, float melt, int seed) -> void {
+	bool hot = melt < 0.3;
+	array<int> tab = hot ? FLASH_TAB : ROLE_RAMP;
+	int packed = hot ? body_ramps(mix_rgb(rgb, 0xFFFFFF, 0.6)) : body_ramps(rgb);
+	tab[1] = packed & 0xFFFFF;
+	tab[2] = (packed >> 20) & 0xFFFFF;
+	tab[3] = (packed >> 40) & 0xFFFFF;
+	lvl = hot ? 15 : iclamp(lvl, 0, 15);
+	int sink = h * melt * 0.45;
+	int floor_y = y0 + h;
+	int cut = melt * 100;
+	int aw = ART_W[a];
+	int ah = ART_H[a];
+	int off = ART_OFF[a];
+	for (int sx = imax(0, x0); sx < imin(PW, x0 + w); ++sx) {
+		if (depth >= ZBUF[sx]) { continue; }
+		int col = ((sx - x0) * aw) / w;
+		for (int sy = imax(0, y0 + sink); sy < imin(PH, floor_y); ++sy) {
+			int row = ((sy - y0 - sink) * ah) / h;
+			int code = ART_TEX[off + col + row * aw];
+			if (code < 0 || lat(col, row, seed) % 100 < cut) { continue; }
+			VPIX[PBASE + sy * STRIDE + sx] = RAMP[tab[code] + lvl];
+		}
 	}
 }
 

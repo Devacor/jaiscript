@@ -215,8 +215,11 @@ namespace jai::vm {
         bool lift_operand_shape(const expression* e);
         bool lift_temp_only(const expression* e);
         bool lift_partners_ok(const binary_expr* b);
-        int lift_fusible_nodes(const expression* e, int budget = 16);
+        static constexpr int k_lift_temp_limit = 16;   // the most temps one lifted tree holds at once: the window a call pays for
+        int lift_temp_peak(const expression* e, int a_limit);
+        bool lift_takes(const binary_expr* b);
         bool binary_lands_fused(binary_expr* b);
+        bool scalar_value_expr(const expression* e);
         bool numeric_value_binary(expression* e);
         bool reference_slot_operand(const expression* e);
         void materialize_operand_temp(const expression_ptr& e, fused_operand& out);
@@ -388,6 +391,7 @@ namespace jai::vm {
         // no-result form (no push, no op_pop). Returns false if the shape doesn't apply.
         bool compile_no_result_expression(const expression_ptr& expr);
         bool try_emit_text_builder_store(identifier_expr* ident, assignment_expr* assign);
+        bool try_emit_text_append(identifier_expr* ident, assignment_expr* assign);
         bool try_emit_text_builder_member(const std::shared_ptr<member_expr>& member, assignment_expr* assign);
         bool try_emit_text_builder_index(binary_expr* sub, assignment_expr* assign, uint32_t string_site);
         const expression* text_builder_chain(assignment_expr* assign, std::vector<const binary_expr*>& chain);

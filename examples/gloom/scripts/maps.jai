@@ -1,4 +1,7 @@
-// The episode: hand-authored maps + parser + boot-time validation.
+// The episode: hand-authored maps, their boot-time validation, and the World:
+// the tile grid and every question asked of it (collision, sight, paths, the
+// raycast snapshot). Entities live on Game; World.load() spawns them through G
+// as it parses.
 //
 // Map chars:  '#'.'%'.'='.'&'   wall kinds 1-4 (theme-colored)
 //             'D' door   'R' red-locked door   'B' blue-locked door
@@ -10,8 +13,7 @@
 //             '5' shells '6' cells 'r' red key 'b' blue key '7' scattergun
 //             '8' hexcaster '9' soul orb
 //
-// Tile ints (G.tiles): 0 floor, 1-4 walls, 5 door, 6 exit, 7 secret,
-//                      8 red door, 9 blue door.
+// Tile ints:  0 floor, 1-4 walls, 5 door, 6 exit, 7 secret, 8 red, 9 blue.
 
 var MAPS = [
 	{
@@ -166,47 +168,19 @@ function item_kind_for(string ch) -> int {
 	return -1;
 }
 
-// parse MAPS[mi] into G: tiles, dimensions, spawns. Entities land in G.enemies
-// (shared_ptr handles via `new`), items/doors as value records.
-function load_map(int mi) -> void {
-	var rows = MAPS[mi]["rows"];
-	G.map_name = MAPS[mi]["name"];
-	G.par = MAPS[mi]["par"];
-	G.mh = rows.size();
-	G.mw = rows[0].size();
-	G.tiles = [];
-	G.enemies = [];
-	G.items = [];
-	G.shots = [];
-	G.kills = 0;
-	G.kill_total = 0;
-	G.secrets = 0;
-	G.secret_total = 0;
-	G.map_ticks = 0;
-	for (int y = 0; y < G.mh; ++y) {
-		string row = rows[y];
-		for (int x = 0; x < G.mw; ++x) {
-			string ch = row.substr(x, 1);
-			int wk = wall_kind_for(ch);
-			if (wk == 7) { G.secret_total = G.secret_total + 1; }
-			if (wk > 0) { G.tiles.push(wk); continue; }
-			G.tiles.push(0);
-			if (ch == "@") {
-				G.px = x + 0.5;
-				G.py = y + 0.5;
-				G.pang = 0.0;
-			} else if (ch == "g") { spawn_enemy(0, x, y); }
-			else if (ch == "z") { spawn_enemy(1, x, y); }
-			else if (ch == "t") { spawn_enemy(2, x, y); }
-			else if (ch == "W") { spawn_enemy(3, x, y); }
-			else {
-				int ik = item_kind_for(ch);
-				if (ik >= 0) { G.items.push(new Item(ik, x + 0.5, y + 0.5)); }
-			}
-		}
+// a pickup on the floor
+class Item {
+public:
+	int kind = 0;
+	float x = 0.0;
+	float y = 0.0;
+	bool taken = false;
+
+	Item(int kind_, float x_, float y_) {
+		kind = kind_;
+		x = x_;
+		y = y_;
 	}
-	rebuild_mapstr();
-	build_render_tables(mi);
 }
 
 // raycast snapshot: render kinds packed 15-per-int64 (4 bits each), rebuilt
@@ -214,69 +188,181 @@ function load_map(int mi) -> void {
 // 7 red, 8 blue; secrets render as wall kind 1 (that is the point of a secret).
 array<int> TILE_TO_KIND = [0, 1, 2, 3, 4, 5, 6, 1, 7, 8];
 
-function rebuild_mapstr() -> void {
-	G.mappack = mappack_from(G.tiles, G.mw * G.mh);
-	G.mapgen = G.mapgen + 1;
-}
+// the four steps between neighboring tiles
+array<math::ivec2> NEIGHBORS = [math::ivec2(1, 0), math::ivec2(-1, 0), math::ivec2(0, 1), math::ivec2(0, -1)];
 
-function mappack_from(var& tiles, int n) -> array<int> {
-	array<int> pack = [];
-	int acc = 0;
-	int slot = 0;
-	for (int i = 0; i < n; ++i) {
-		acc = acc | (TILE_TO_KIND[tiles[i]] << (slot * 4));
-		slot = slot + 1;
-		if (slot == 15) {
-			pack.push(acc);
-			acc = 0;
-			slot = 0;
+// ------------------------------------------------------------ the World -----
+class World {
+public:
+	string map_name = "";
+	int par = 0;
+	int mw = 0;
+	int mh = 0;
+	array<int> tiles = [];
+	array<int> mappack = [];   // 15 tiles per int64, 4-bit render kinds
+	int mapgen = 0;            // bumps with every mappack rebuild
+
+	// parse MAPS[mi]: tiles into self, spawns into G (enemies/items/player pose)
+	void load(int mi) {
+		array<string> rows = MAPS[mi]["rows"];
+		map_name = MAPS[mi]["name"];
+		par = MAPS[mi]["par"];
+		mh = rows.size();
+		mw = rows[0].size();
+		tiles = [];
+		for (int y = 0; y < mh; ++y) {
+			string row = rows[y];
+			for (int x = 0; x < mw; ++x) {
+				string ch = row.substr(x, 1);
+				int wk = wall_kind_for(ch);
+				if (wk == 7) { G.secret_total = G.secret_total + 1; }
+				if (wk > 0) { tiles.push(wk); continue; }
+				tiles.push(0);
+				if (ch == "@") { G.player.place(x + 0.5, y + 0.5); }
+				else if (ch == "g") { G.spawn_enemy(0, x, y); }
+				else if (ch == "z") { G.spawn_enemy(1, x, y); }
+				else if (ch == "t") { G.spawn_enemy(2, x, y); }
+				else if (ch == "W") { G.spawn_enemy(3, x, y); }
+				else {
+					int ik = item_kind_for(ch);
+					if (ik >= 0) { G.items.push(new Item(ik, x + 0.5, y + 0.5)); }
+				}
+			}
 		}
+		rebuild_mappack();
 	}
-	if (slot > 0) { pack.push(acc); }
-	return pack;
+
+	void rebuild_mappack() {
+		mappack = packed_from(tiles, mw * mh);
+		mapgen = mapgen + 1;
+	}
+
+	int tile_at(int x, int y) {
+		if (x < 0 || y < 0 || x >= mw || y >= mh) { return 1; }
+		return tiles[y * mw + x];
+	}
+
+	bool solid_at(int x, int y) { return tile_at(x, y) != 0; }
+
+	// walkable for actors: floor only (doors must be opened first)
+	bool walkable(int x, int y) { return tile_at(x, y) == 0; }
+
+	// circle-vs-grid: all four corners of the actor's square must be on floor
+	bool spot_free(float x, float y, float r) {
+		if (solid_at(math::ifloor(x - r), math::ifloor(y - r))) { return false; }
+		if (solid_at(math::ifloor(x + r), math::ifloor(y - r))) { return false; }
+		if (solid_at(math::ifloor(x - r), math::ifloor(y + r))) { return false; }
+		if (solid_at(math::ifloor(x + r), math::ifloor(y + r))) { return false; }
+		return true;
+	}
+
+	// stepped-ray LOS on the tile grid (deterministic float march)
+	bool los_clear(float ax, float ay, float bx, float by) {
+		float dx = bx - ax;
+		float dy = by - ay;
+		float len = math::sqrt(dx * dx + dy * dy);
+		if (len < 0.001) { return true; }
+		float inv = 1.0 / len;
+		dx = dx * inv;
+		dy = dy * inv;
+		float t = 0.15;
+		while (t < len) {
+			if (solid_at(math::ifloor(ax + dx * t), math::ifloor(ay + dy * t))) { return false; }
+			t += 0.15;
+		}
+		return true;
+	}
+
+	// wall distance along a unit ray: the renderer's DDA (pure.jai), called serially
+	float wall_dist(float ax, float ay, float dx, float dy) {
+		var rec = [ax, ay, dx, dy, mw];
+		for (auto word : mappack) { rec.push(word); }
+		var hit = gloom_ray(rec);
+		float distance = hit[0];
+		return distance;
+	}
+
+	// doors and secrets open by becoming floor
+	void clear_tile(int tx, int ty) {
+		tiles[ty * mw + tx] = 0;
+		rebuild_mappack();
+	}
+
+	// BFS distances FROM the goal, over floor + doors the given keys can open
+	// (+ the goal tile itself so walls like secrets/exit are approachable)
+	array<int> bfs_field(math::ivec2 goal, bool key_r, bool key_b) {
+		array<int> field = [];
+		for (int i = 0; i < mw * mh; ++i) { field.push(-1); }
+		if (goal.x < 0) { return field; }
+		array<math::ivec2> queue = [goal];
+		field[goal.y * mw + goal.x] = 0;
+		int head = 0;
+		while (head < queue.size()) {
+			math::ivec2 cur = queue[head];
+			head = head + 1;
+			int steps = field[cur.y * mw + cur.x];
+			for (auto& step : NEIGHBORS) {
+				math::ivec2 next = cur + step;
+				if (next.x < 0 || next.y < 0 || next.x >= mw || next.y >= mh) { continue; }
+				int cell = next.y * mw + next.x;
+				if (field[cell] >= 0) { continue; }
+				int t = tiles[cell];
+				bool pass = t == 0 || t == 5 || (t == 8 && key_r) || (t == 9 && key_b);
+				if (!pass) { continue; }
+				field[cell] = steps + 1;
+				queue.push(next);
+			}
+		}
+		return field;
+	}
+
+private:
+	array<int> packed_from(array<int>& src, int n) {
+		array<int> pack = [];
+		int acc = 0;
+		int slot = 0;
+		for (int i = 0; i < n; ++i) {
+			acc = acc | (TILE_TO_KIND[src[i]] << (slot * 4));
+			slot = slot + 1;
+			if (slot == 15) {
+				pack.push(acc);
+				acc = 0;
+				slot = 0;
+			}
+		}
+		if (slot > 0) { pack.push(acc); }
+		return pack;
+	}
 }
-
-// flat ray record for serial gloom_ray calls (hitscan, tracer garnish)
-function ray_record(float ax, float ay, float dx, float dy) -> var {
-	var rec = [ax, ay, dx, dy, G.mw];
-	for (auto wv : G.mappack) { rec.push(wv); }
-	return rec;
-}
-
-function tile_at(int x, int y) -> int {
-	if (x < 0 || y < 0 || x >= G.mw || y >= G.mh) { return 1; }
-	return G.tiles[y * G.mw + x];
-}
-
-function tile_solid(int t) -> bool { return t != 0; }
-
-// walkable for actors: floor only (doors must be opened first)
-function walkable(int x, int y) -> bool { return tile_at(x, y) == 0; }
 
 // ----------------------------------------------------------- validation -----
-// Boot-time sanity: consistent widths, sealed border, one '@', doors flanked
-// by floor on one axis, and (with keyed doors treated passable) every floor
-// tile reachable from the start. Throws on structural errors: a broken map is
-// a broken determinism battery.
+// Boot-time checks of the raw map data: even widths, a sealed border, one '@',
+// doors flanked by floor on one axis, every floor tile and the exit switch
+// reachable from the start (keyed doors and secrets count as passable). A
+// broken map throws: it would break the determinism battery.
 function validate_map(int mi) -> void {
-	var rows = MAPS[mi]["rows"];
-	var h = rows.size();
-	var w = rows[0].size();
-	var start_count = 0;
+	array<string> rows = MAPS[mi]["rows"];
+	int h = rows.size();
+	int w = rows[0].size();
+	int start_count = 0;
+	math::ivec2 start;
 	for (int y = 0; y < h; ++y) {
 		if (rows[y].size() != w) {
 			throw `map ${mi} row ${y}: width ${rows[y].size()} != ${w}`;
 		}
 		for (int x = 0; x < w; ++x) {
-			var ch = rows[y].substr(x, 1);
-			var border = x == 0 || y == 0 || x == w - 1 || y == h - 1;
+			string ch = rows[y].substr(x, 1);
+			bool border = x == 0 || y == 0 || x == w - 1 || y == h - 1;
 			if (border && wall_kind_for(ch) == 0) {
 				throw `map ${mi} (${x},${y}): border leak '${ch}'`;
 			}
-			if (ch == "@") { start_count = start_count + 1; }
+			if (ch == "@") {
+				start_count = start_count + 1;
+				start = math::ivec2(x, y);
+			}
 			if (ch == "D" || ch == "R" || ch == "B") {
-				var open_ns = wall_kind_for(rows[y - 1].substr(x, 1)) == 0 && wall_kind_for(rows[y + 1].substr(x, 1)) == 0;
-				var open_ew = wall_kind_for(rows[y].substr(x - 1, 1)) == 0 && wall_kind_for(rows[y].substr(x + 1, 1)) == 0;
+				bool open_ns = wall_kind_for(rows[y - 1].substr(x, 1)) == 0 && wall_kind_for(rows[y + 1].substr(x, 1)) == 0;
+				bool open_ew = wall_kind_for(rows[y].substr(x - 1, 1)) == 0 && wall_kind_for(rows[y].substr(x + 1, 1)) == 0;
 				if (!open_ns && !open_ew) {
 					throw `map ${mi} (${x},${y}): door not flanked by floor`;
 				}
@@ -285,57 +371,36 @@ function validate_map(int mi) -> void {
 	}
 	if (start_count != 1) { throw `map ${mi}: ${start_count} player starts`; }
 
-	// reachability: flood from '@' through floor/doors/secrets; every walkable
-	// char and every 'X' neighbor must be reached
-	var sx = 0;
-	var sy = 0;
-	var reach = [];
-	for (int i = 0; i < w * h; ++i) { reach.push(0); }
-	for (int y2 = 0; y2 < h; ++y2) {
-		for (int x2 = 0; x2 < w; ++x2) {
-			if (rows[y2].substr(x2, 1) == "@") { sx = x2; sy = y2; }
-		}
-	}
-	var queue = [[sx, sy]];
-	reach[sy * w + sx] = 1;
-	var head = 0;
+	array<bool> reached = [];
+	for (int i = 0; i < w * h; ++i) { reached.push(false); }
+	array<math::ivec2> queue = [start];
+	reached[start.y * w + start.x] = true;
+	int head = 0;
 	while (head < queue.size()) {
-		var cur = queue[head];
+		math::ivec2 cur = queue[head];
 		head = head + 1;
-		int cx = cur[0];
-		int cy = cur[1];
-		var dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-		for (auto& d : dirs) {
-			int nx = cx + d[0];
-			int ny = cy + d[1];
-			if (nx < 0 || ny < 0 || nx >= w || ny >= h) { continue; }
-			var already = reach[ny * w + nx];
-			if (already == 1) { continue; }
-			var ch2 = rows[ny].substr(nx, 1);
-			var wk = wall_kind_for(ch2);
-			// doors (any lock) and secrets are traversable for reachability
+		for (auto& step : NEIGHBORS) {
+			math::ivec2 next = cur + step;
+			if (next.x < 0 || next.y < 0 || next.x >= w || next.y >= h) { continue; }
+			if (reached[next.y * w + next.x]) { continue; }
+			int wk = wall_kind_for(rows[next.y].substr(next.x, 1));
 			if (wk != 0 && wk != 5 && wk != 7 && wk != 8 && wk != 9) { continue; }
-			reach[ny * w + nx] = 1;
-			queue.push([nx, ny]);
+			reached[next.y * w + next.x] = true;
+			queue.push(next);
 		}
 	}
-	var exit_reached = false;
-	for (int y3 = 0; y3 < h; ++y3) {
-		for (int x3 = 0; x3 < w; ++x3) {
-			var ch3 = rows[y3].substr(x3, 1);
-			var wk3 = wall_kind_for(ch3);
-			var r = reach[y3 * w + x3];
-			if (wk3 == 0 && r == 0) {
-				throw `map ${mi} (${x3},${y3}): unreachable floor '${ch3}'`;
+	bool exit_reached = false;
+	for (int y = 0; y < h; ++y) {
+		for (int x = 0; x < w; ++x) {
+			string ch = rows[y].substr(x, 1);
+			if (wall_kind_for(ch) == 0 && !reached[y * w + x]) {
+				throw `map ${mi} (${x},${y}): unreachable floor '${ch}'`;
 			}
-			if (ch3 == "X") {
-				var dirs2 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-				for (auto& d2 : dirs2) {
-					int ax = x3 + d2[0];
-					int ay = y3 + d2[1];
-					if (ax < 0 || ay < 0 || ax >= w || ay >= h) { continue; }
-					var ar = reach[ay * w + ax];
-					if (ar == 1) { exit_reached = true; }
+			if (ch != "X") { continue; }
+			for (auto& step : NEIGHBORS) {
+				math::ivec2 next = math::ivec2(x, y) + step;
+				if (next.x >= 0 && next.y >= 0 && next.x < w && next.y < h && reached[next.y * w + next.x]) {
+					exit_reached = true;
 				}
 			}
 		}

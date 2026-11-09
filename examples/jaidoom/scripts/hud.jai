@@ -9,6 +9,7 @@ import "map.jai";
 import "vid.jai";
 import "tex.jai";
 import "things.jai";
+import "fx.jai";
 
 // netplay.jai mirror behind NET_GAME: extern-declared so programs that never import netplay.jai still check
 extern NET_FRAGS_MINE;
@@ -25,7 +26,12 @@ float AM_ZOOM = 1.0;
 
 function hud_init() -> void {
 	gfx_init();                                      // title/menu draw before any map loads PALCM
-	BAR_H = 32 * VW / 320;
+	hud_layout();
+}
+
+// the status bar's share of the screen, again after a resize
+function hud_layout() -> void {
+	BAR_H = pixel_rows(32.0 * VW / 320.0);
 	if (BAR_H < 4) { BAR_H = 4; }
 	if (BAR_H > VH / 3) { BAR_H = VH / 3; }
 	VIEWH = VH - BAR_H;
@@ -51,6 +57,24 @@ function draw_patch(int lump, int x0, int y0, int w, int h) -> void {
 			if (py < 0 || py >= VH) { continue; }
 			int texel = tp[base + sy * ph / h];
 			if (texel >= 0) { pix[py * VW + px] = palcm[texel]; }
+		}
+	}
+}
+
+// the patch's opaque texels in one color: a text shadow
+function draw_patch_solid(int lump, int x0, int y0, int w, int h, int color) -> void {
+	sprite_prepare(lump);
+	int pw = SPR_W[lump];
+	int ph = SPR_H[lump];
+	if (w < 1 || h < 1 || pw < 1 || ph < 1) { return; }
+	var& tp = SPR_PIX[lump];
+	for (int sx = 0; sx < w; ++sx) {
+		int px = x0 + sx;
+		if (px < 0 || px >= VW) { continue; }
+		int base = (sx * pw / w) * ph;
+		for (int sy = 0; sy < h; ++sy) {
+			int py = y0 + sy;
+			if (py >= 0 && py < VH && tp[base + sy * ph / h] >= 0) { PIX[py * VW + px] = color; }
 		}
 	}
 }
@@ -211,10 +235,11 @@ function stcfn_lump(int code) -> int {
 	return lump_num(`STCFN0${code}`);
 }
 
+// whole multiples of a 320-column screen's console font, the same size on screen in either cell shape
 function text_scale() -> int {
-	int sc = VW / 320;
+	int sc = VW / cell_w() / 320;
 	if (sc < 1) { sc = 1; }
-	return sc;
+	return sc * cell_w();
 }
 
 // fractional scales render menus at 320-space proportions on any terminal
@@ -230,8 +255,14 @@ function text_width(string s, float fs) -> int {
 	return math::itrunc(w);
 }
 
+int TEXT_SHADOW = -1;          // a palette color: draw_text lays each glyph over its shadow, a scaled pixel down-right
+
 function draw_text(string s, int x, int y, float fs) -> void {
 	float fx = x;
+	int sdx = math::itrunc(fs + 0.5);
+	int sdy = pixel_rows(fs + 0.5);
+	if (sdx < 1) { sdx = 1; }
+	if (sdy < 1) { sdy = 1; }
 	for (int i = 0; i < s.size(); ++i) {
 		int lu = stcfn_lump(s[i] + 0);
 		if (lu < 0) { fx = fx + 4.0 * fs; continue; }
@@ -239,9 +270,10 @@ function draw_text(string s, int x, int y, float fs) -> void {
 		int cw = SPR_W[lu];
 		int chh = SPR_H[lu];
 		int pw = math::itrunc(cw * fs);
-		int ph = math::itrunc(chh * fs);
+		int ph = math::itrunc(chh * fs * PIXEL_Y);
 		if (pw < 1) { pw = 1; }
 		if (ph < 1) { ph = 1; }
+		if (TEXT_SHADOW >= 0) { draw_patch_solid(lu, math::itrunc(fx) + sdx, y + sdy, pw, ph, TEXT_SHADOW); }
 		draw_patch(lu, math::itrunc(fx), y, pw, ph);
 		fx = fx + (cw + 1) * fs;
 	}
@@ -259,7 +291,10 @@ function menu_scale() -> float {
 }
 
 function msg_draw() -> void {
-	if (MSG_TIMER > 0) { draw_text(GAME_MSG, 2, 2, text_scale()); }
+	if (MSG_TIMER <= 0) { return; }
+	TEXT_SHADOW = rgb_idx(0, 0, 0);
+	draw_text(GAME_MSG, 2, 2, text_scale());
+	TEXT_SHADOW = -1;
 }
 
 // frame-time EMA -> FPS in the top-right corner
@@ -277,7 +312,7 @@ function fps_draw() -> void {
 	int sc = text_scale();
 	var s = `${fps} FPS`;
 	// bottom-right of the view, clear of top-left messages
-	draw_text(s, VW - text_width(s, sc) - 2, VIEWH - 9 * sc, sc);
+	draw_text(s, VW - text_width(s, sc) - 2, VIEWH - pixel_rows(9.0 * sc), sc);
 }
 
 // big red numbers in screen space, right-aligned ending at rx
@@ -288,7 +323,7 @@ function big_num(int val, int rx, int y, float fs) -> void {
 		if (lu < 0) { return; }
 		sprite_prepare(lu);
 		int w = math::itrunc(SPR_W[lu] * fs);
-		int h = math::itrunc(SPR_H[lu] * fs);
+		int h = math::itrunc(SPR_H[lu] * fs * PIXEL_Y);
 		if (w < 1) { w = 1; }
 		if (h < 1) { h = 1; }
 		rx = rx - w;
@@ -303,7 +338,7 @@ function big_pct(int val, int rx, int y, float fs) -> void {
 	if (lu >= 0) {
 		sprite_prepare(lu);
 		int w = math::itrunc(SPR_W[lu] * fs);
-		int h = math::itrunc(SPR_H[lu] * fs);
+		int h = math::itrunc(SPR_H[lu] * fs * PIXEL_Y);
 		if (w < 1) { w = 1; }
 		if (h < 1) { h = 1; }
 		draw_patch(lu, rx, y, w, h);
@@ -313,9 +348,19 @@ function big_pct(int val, int rx, int y, float fs) -> void {
 
 // ----------------------------------------------------------------- screens ---
 
+// TITLEPIC with the fire climbing over it, and PRESS ANY KEY blinking on its shadow
+int TITLE_BLINK = 0;          // frames the title has shown
+
 function title_draw() -> void {
 	if (!draw_patch_name("TITLEPIC", 0, 0, VW, VH)) { pix_clear(0); }
-	draw_text_center("PRESS ANY KEY", VH - 12 * text_scale(), text_scale());
+	fire_draw(FIRE_SHOW);
+	TITLE_BLINK += 1;
+	if ((TITLE_BLINK / 20) % 4 != 3) {
+		float fs = fit_scale("PRESS ANY KEY", text_scale());
+		TEXT_SHADOW = rgb_idx(0, 0, 0);
+		draw_text_center("PRESS ANY KEY", VH - pixel_rows(12.0 * fs), fs);
+		TEXT_SHADOW = -1;
+	}
 }
 
 // the real menu art where the WAD has it (M_JKILL and friends are ~2x the
@@ -350,15 +395,15 @@ function screen_row(string s, int y, float want) -> int {
 	if (s == "") { return y; }
 	float ms = fit_scale(s, want);
 	draw_text_center(s, y, ms);
-	return y + math::itrunc(10.0 * ms) + 4;
+	return y + pixel_rows(10.0 * ms) + 4;
 }
 
 function lobby_draw(string title, string line1, string line2) -> void {
 	pix_clear(0);
 	float ms = menu_scale();
 	int y = VH / 5;
-	y = screen_row(title, y, ms * 2.0) + math::itrunc(6.0 * ms);
-	y = screen_row(line1, y, ms * 1.25) + math::itrunc(6.0 * ms);
+	y = screen_row(title, y, ms * 2.0) + pixel_rows(6.0 * ms);
+	y = screen_row(line1, y, ms * 1.25) + pixel_rows(6.0 * ms);
 	screen_row(line2, y, ms);
 }
 
@@ -366,8 +411,8 @@ function ip_draw(string addr) -> void {
 	pix_clear(0);
 	float ms = menu_scale();
 	int y = VH / 6;
-	y = screen_row("ENTER HOST ADDRESS", y, ms * 2.0) + math::itrunc(8.0 * ms);
-	y = screen_row(addr + "_", y, ms * 2.0) + math::itrunc(10.0 * ms);
+	y = screen_row("ENTER HOST ADDRESS", y, ms * 2.0) + pixel_rows(8.0 * ms);
+	y = screen_row(addr + "_", y, ms * 2.0) + pixel_rows(10.0 * ms);
 	y = screen_row("LETTERS DIGITS . : -", y, ms);
 	y = screen_row("ENTER JOINS", y, ms);
 	screen_row("ESC BACKS OUT", y, ms);
@@ -377,12 +422,12 @@ function demo_name_draw(string name) -> void {
 	pix_clear(0);
 	float ms = menu_scale();
 	int y = VH / 6;
-	y = screen_row("PLAY WHICH DEMO", y, ms * 2.0) + math::itrunc(8.0 * ms);
-	y = screen_row(name + "_", y, ms * 2.0) + math::itrunc(10.0 * ms);
+	y = screen_row("PLAY WHICH DEMO", y, ms * 2.0) + pixel_rows(8.0 * ms);
+	y = screen_row(name + "_", y, ms * 2.0) + pixel_rows(10.0 * ms);
 	y = screen_row("LETTERS DIGITS . - _", y, ms);
 	y = screen_row("ENTER PLAYS", y, ms);
 	y = screen_row("ESC BACKS OUT", y, ms);
-	if (MSG_TIMER > 0) { screen_row(GAME_MSG, y + math::itrunc(6.0 * ms), ms); }   // "no demo x" lands here
+	if (MSG_TIMER > 0) { screen_row(GAME_MSG, y + pixel_rows(6.0 * ms), ms); }   // "no demo x" lands here
 }
 
 // REC / DEMO tape badge, top-right clear of the top-left message row
@@ -410,43 +455,50 @@ function menu_entry_draw(string label, int x, int y, float ms) -> int {
 	if (lu >= 0) {
 		sprite_prepare(lu);
 		int w = math::itrunc(SPR_W[lu] * ms);
-		int h = math::itrunc(SPR_H[lu] * ms);
+		int h = math::itrunc(SPR_H[lu] * ms * PIXEL_Y);
 		if (w < 1) { w = 1; }
 		if (h < 1) { h = 1; }
 		if (x < 0) { x = (VW - w) / 2; }
 		draw_patch(lu, x, y, w, h);
 		return x;
 	}
-	if (x < 0) { x = (VW - text_width(label, ms * 2.0)) / 2; }
-	draw_text(label, x, y, ms * 2.0);
+	float fs = fit_scale(label, ms * 2.0);
+	if (x < 0) { x = (VW - text_width(label, fs)) / 2; }
+	draw_text(label, x, y, fs);
 	return x;
 }
 
 function menu_draw(var& entries, int sel, string title) -> void {
-	pix_clear(0);
+	backdrop_draw();
+	int mlu = title == "" ? lump_num("M_DOOM") : -1;
+	float head = 20.0;                               // the heading's height in 320-wide units
+	if (mlu >= 0) {
+		sprite_prepare(mlu);
+		head = SPR_H[mlu] + 10.0;
+	}
+	// sized by the width, but never taller than the screen below its top tenth: a wide console lost the last entries
 	float ms = menu_scale();
+	float fit = (VH - VH / 10) / ((head + 19.0 * entries.size()) * PIXEL_Y);
+	if (fit < ms) { ms = fit; }
 	int y = VH / 10;
 	if (title == "") {
-		int mlu = lump_num("M_DOOM");
 		if (mlu >= 0) {
-			sprite_prepare(mlu);
-			int w = SPR_W[mlu] * VW / 320;
-			int h = SPR_H[mlu] * VH / 200;
+			int w = math::itrunc(SPR_W[mlu] * ms);
+			int h = pixel_rows(SPR_H[mlu] * ms);
 			if (w > 0 && h > 0) {
 				draw_patch(mlu, (VW - w) / 2, y, w, h);
-				y = y + h + math::itrunc(10.0 * ms);
+				y = y + h + pixel_rows(10.0 * ms);
 			}
 		} else {
 			draw_text_center("JAIDOOM", y, ms * 2.0);
-			y = y + math::itrunc(20.0 * ms);
+			y = y + pixel_rows(20.0 * ms);
 		}
 	} else {
 		menu_entry_draw(title, -1, y, ms);
-		y = y + math::itrunc(20.0 * ms);
+		y = y + pixel_rows(20.0 * ms);
 	}
 	// entries left-align to the widest so the skull cursor has a lane
-	int step = math::itrunc(19.0 * ms);
-	if (step < 10) { step = 10; }
+	int step = pixel_rows(19.0 * ms);
 	for (int i = 0; i < entries.size(); ++i) {
 		var line = entries[i];
 		int x = menu_entry_draw(line, i == 0 ? -1 : MENU_X, y, ms);
@@ -456,10 +508,10 @@ function menu_draw(var& entries, int sel, string title) -> void {
 			if (sk >= 0) {
 				sprite_prepare(sk);
 				int sw = math::itrunc(SPR_W[sk] * ms);
-				int sh = math::itrunc(SPR_H[sk] * ms);
+				int sh = math::itrunc(SPR_H[sk] * ms * PIXEL_Y);
 				if (sw < 1) { sw = 1; }
 				if (sh < 1) { sh = 1; }
-				draw_patch(sk, MENU_X - sw - math::itrunc(8.0 * ms), y - math::itrunc(2.0 * ms), sw, sh);
+				draw_patch(sk, MENU_X - sw - math::itrunc(8.0 * ms), y - pixel_rows(2.0 * ms), sw, sh);
 			} else {
 				draw_text("*", MENU_X - math::itrunc(12.0 * ms), y, ms * 2.0);
 			}
@@ -504,7 +556,7 @@ function wi_draw(string mapname, string nextmap, int kp, int ip, int sp, int tse
 	int par = par_secs(mapname);
 	if (par > 0) { draw_text(mmss("PAR", par), VW * 55 / 100, y1 + dy * 3, sc); }
 	if (nextmap != "") { draw_text_center(`ENTERING ${nextmap}`, y1 + dy * 4, sc); }
-	draw_text_center(WI_FOOT != "" ? WI_FOOT : "PRESS ANY KEY", VH - 10 * sc, sc);
+	draw_text_center(WI_FOOT != "" ? WI_FOOT : "PRESS ANY KEY", VH - pixel_rows(10.0 * sc), sc);
 }
 string WI_FOOT = "";          // netgame footer (WAITING FOR HOST / N/M READY); "" = solo default
 
@@ -528,13 +580,13 @@ function end_draw() -> void {
 			"THANKS FOR PLAYING JAIDOOM"];
 	}
 	draw_text_center(title, y, sc * 2);
-	y = y + 24 * sc;
+	y = y + pixel_rows(24.0 * sc);
 	for (int i = 0; i < lines.size(); ++i) {
 		var line = lines[i];
 		if (line != "") { draw_text_center(line, y, sc); }
-		y = y + 12 * sc;
+		y = y + pixel_rows(12.0 * sc);
 	}
-	draw_text_center("PRESS ANY KEY", VH - 10 * sc, sc);
+	draw_text_center("PRESS ANY KEY", VH - pixel_rows(10.0 * sc), sc);
 }
 
 // ----------------------------------------------------------------- automap ---
@@ -619,8 +671,9 @@ function automap_draw() -> void {
 	if (spanx < 1.0) { spanx = 1.0; }
 	if (spany < 1.0) { spany = 1.0; }
 	float sx = (VW - 8.0) / spanx;
-	float sy = (amh - 8.0) / spany;
+	float sy = (amh - 8.0) / (spany * PIXEL_Y);
 	float sc = (sx < sy ? sx : sy) * AM_ZOOM;
+	float scy = sc * PIXEL_Y;
 	float cx = VW / 2.0;
 	float cy = amh / 2.0;
 	int c1 = rgb_idx(255, 96, 64);                   // one-sided: bright
@@ -630,9 +683,9 @@ function automap_draw() -> void {
 	int nl = LD_V1.size();
 	for (int l = 0; l < nl; ++l) {
 		float x0 = cx + (VX_X[LD_V1[l]] - P_X) * sc;
-		float y0 = cy - (VX_Y[LD_V1[l]] - P_Y) * sc;
+		float y0 = cy - (VX_Y[LD_V1[l]] - P_Y) * scy;
 		float x1 = cx + (VX_X[LD_V2[l]] - P_X) * sc;
-		float y1 = cy - (VX_Y[LD_V2[l]] - P_Y) * sc;
+		float y1 = cy - (VX_Y[LD_V2[l]] - P_Y) * scy;
 		int cline = c2;
 		if (LD_SIDE1[l] < 0) { cline = c1; }
 		am_line(x0, y0, x1, y1, cline, amh);
@@ -644,19 +697,19 @@ function automap_draw() -> void {
 			int st = MO_STATE[mo];
 			if (st == 0 || st == 6) { continue; }
 			float tx = cx + (MO_X[mo] - P_X) * sc;
-			float ty = cy - (MO_Y[mo] - P_Y) * sc;
+			float ty = cy - (MO_Y[mo] - P_Y) * scy;
 			am_line(tx - 2.0, ty, tx + 2.0, ty, ct, amh);
-			am_line(tx, ty - 2.0, tx, ty + 2.0, ct, amh);
+			am_line(tx, ty - 2.0 * PIXEL_Y, tx, ty + 2.0 * PIXEL_Y, ct, amh);
 		}
 	}
 	for (int mk = 0; mk < AM_MARKS.size(); ++mk) {
 		var pt = AM_MARKS[mk];
 		draw_text(to_string(mk + 1), math::itrunc(cx + (pt[0] - P_X) * sc),
-			math::itrunc(cy - (pt[1] - P_Y) * sc), 1.0);
+			math::itrunc(cy - (pt[1] - P_Y) * scy), 1.0);
 	}
 	float hx = cx + math::cos(P_ANG) * 7.0;
-	float hy = cy - math::sin(P_ANG) * 7.0;
-	am_line(cx - math::cos(P_ANG) * 4.0, cy + math::sin(P_ANG) * 4.0, hx, hy, cp, amh);
-	am_line(hx, hy, hx + math::cos(P_ANG + 2.6) * 4.0, hy - math::sin(P_ANG + 2.6) * 4.0, cp, amh);
-	am_line(hx, hy, hx + math::cos(P_ANG - 2.6) * 4.0, hy - math::sin(P_ANG - 2.6) * 4.0, cp, amh);
+	float hy = cy - math::sin(P_ANG) * 7.0 * PIXEL_Y;
+	am_line(cx - math::cos(P_ANG) * 4.0, cy + math::sin(P_ANG) * 4.0 * PIXEL_Y, hx, hy, cp, amh);
+	am_line(hx, hy, hx + math::cos(P_ANG + 2.6) * 4.0, hy - math::sin(P_ANG + 2.6) * 4.0 * PIXEL_Y, cp, amh);
+	am_line(hx, hy, hx + math::cos(P_ANG - 2.6) * 4.0, hy - math::sin(P_ANG - 2.6) * 4.0 * PIXEL_Y, cp, amh);
 }

@@ -177,6 +177,7 @@ namespace jai {
         checked_result<statement_ptr> block_map_error();
         checked_result<statement_ptr> import_statement();
         checked_result<statement_ptr> fallthrough_statement();
+        checked_result<statement_ptr> case_body_statement();
         checked_result<statement_ptr> expression_statement();
         checked_result<statement_ptr> block_statement();
         checked_result<statement_ptr> if_statement();

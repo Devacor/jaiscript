@@ -2,7 +2,20 @@
 
 A playable DOOM engine written in JaiScript: the WAD loader, BSP renderer, playsim, HUD,
 sound and music decoding, savegames, demos and 16-player netplay are all script. It draws
-to the terminal with half-block glyphs and 24-bit colour.
+to the terminal in sextants (Unicode 13's 2x3 blocks, six pixels to a cell). A terminal whose font lacks
+them draws boxes or gaps: the menu's OPTIONS sets HIGH DETAIL off, which keeps that choice and draws half
+blocks (two pixels to a cell) that every font has, and `-- --pix half` and `-- --pix sext` choose for one
+run. In 24-bit colour each side of a sextant cell takes the mean colour of its pixels, so a cell shows its true
+average tone rather than its two extremes. Colour is 24-bit where the terminal says it takes it (`COLORTERM`, Windows
+Terminal, any Windows console), the xterm 256-colour palette elsewhere (macOS Terminal.app); `-- --truecolor` and
+`-- --256color` choose. G steps through DOOM's five gamma levels (level 1 by default: a terminal shows DOOM darker than
+a CRT did), and OPTIONS keeps the choice.
+
+The title burns: the PlayStation port's fire climbs over TITLEPIC, behind PRESS ANY KEY and the menu, and left alone
+the title melts into the shipped demo and back, as DOOM's attract loop does. Motion is smooth by default: the game
+ticks at DOOM's 35 Hz while frames come at up to 60, the camera and every monster and projectile eased between the
+last two tics (U, or OPTIONS -> SMOOTH MOTION, switches back to 35 frames a second). The menu opened mid-game draws
+over the paused game, dimmed.
 
 JaiDoom is a fan project, not affiliated with or endorsed by id Software; DOOM is a trademark of id Software.
 
@@ -30,11 +43,24 @@ move: W/S or up/down     strafe: A/D      turn: left/right arrows
 run: hold shift (Windows) or R to toggle  use: E or space   fire: ctrl or F
 weapons: 1-5   automap: tab or M (zoom -/=, B mark, C clear)   quicksave Z  quickload X
 menu: esc      cheats: iddqd idkfa idfa idclip idclev## idbehold iddt
-frame rate: U toggles uncapped (the game still ticks at 35 Hz; the camera eases between tics)
+gamma: G    smooth motion: U    the JaiScript panel: J (P inside it runs the blit serially, to compare)
 ```
 
-Start uncapped with `jaiscript jaidoom.jai -- uncapped`; the FPS counter in the top-right corner shows what your
-machine and terminal sustain.
+Start uncapped with `jaiscript jaidoom.jai -- uncapped` (smooth motion with no frame cap); the FPS counter in the
+bottom-right corner shows what your machine and terminal sustain. `-- --mute` plays without music or sound.
+
+## The JaiScript panel
+
+J opens a panel in the terminal's own font over the view: the milliseconds the playsim, the view, the blit and the
+terminal write take each frame, each with its last 24 frames as a bar graph, the rows the blit spreads over the
+engine's threads with `parallel_transform` (P switches to a serial loop and back, live), and `tune.jai`'s reloads.
+
+## Tuning while it runs
+
+`scripts/tune.jai` holds presentation numbers: the field of view, how high the title fire climbs and how much of it
+shows. Edit one and save while the game runs: the game reaches the file's import every frame, so the change lands on
+the next frame, the panel counts the reload and a message names the new field of view. A mistake in the file raises
+at the import, the message says the reload failed, and the game keeps the values it had.
 
 ## Levels and your own WADs
 
@@ -54,12 +80,15 @@ jaiscript jaidoom.jai -- freedoom2 MAP01         # another IWAD and map (MAPxx n
 jaiscript jaidoom.jai -- doom2 MAP07             # your own registered WAD from wads/ (a path works as well)
 jaiscript jaidoom.jai -- doom2 mypack.wad        # a map pack merged over it
 jaiscript jaidoom.jai -- record demo.json        # demos: record, then
-jaiscript jaidoom.jai -- playdemo demo.json
+jaiscript jaidoom.jai -- playdemo demo.json      # left at the title, the game plays demo.json between showings (on its own IWAD)
 jaiscript jaidoom.jai -- host [port] [coop]      # netplay: host (deathmatch or co-op)
 jaiscript jaidoom.jai -- join <host> [port]      #          join
 jaiscript jaidoom.jai -- bootstrap               # fetch the data without the screen
-jaiscript p10_timedemo.jai                       # the deterministic benchmark (prints a state hash)
+jaiscript jaidoom.jai -- --mute                  # no music or sound
+jaiscript p10_timedemo.jai                       # the deterministic benchmark (prints a frame hash and a state hash)
+jaiscript p10_timedemo.jai -- 120x78 sext        # the same in sextants (fit 0: the extreme pixels; workers 1: parallel blit)
 jaiscript shots.jai -- fight 105 tics 6          # the docs page's frames as .ans files (title.ans, fight.ans)
+jaiscript shots.jai -- fight 105 tics 6 pix sext # the same frames in sextants (panel adds fight_panel.ans: the J panel)
 ```
 
 ## Licenses

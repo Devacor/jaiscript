@@ -253,6 +253,7 @@ void clock_frame(ClientView& v, int now) {
 }
 
 float render_tick(ClientView& v) {
+	if (HITSTOP_F > 0) { return HITSTOP_VT; }
 	if (CLOCK_SET) { return CLOCK_TICK - INTERP_DELAY; }
 	return view_tick(v);
 }

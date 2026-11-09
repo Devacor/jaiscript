@@ -240,6 +240,25 @@ public:
                 )");
             });
         });
+
+        test("a_declaration_in_an_unbraced_case_names_the_braces_once", [this]() {
+            // a case body holds statements, as in C++: a declaration there is one error naming the braces, the rest of the switch
+            // parses without a cascade, and the braced body declares
+            const char* unbraced[] = {
+                "string a = \"x\";\nswitch (a) {\n    case \"x\":\n        int n = 3;\n        print(n);\n    default: print(\"other\");\n}",
+                "string a = \"x\";\nswitch (a) {\n    case \"y\": print(1);\n    default:\n        array<string> parts = \"a:b\".split(\":\");\n        print(parts);\n}",
+            };
+            for (const char* src : unbraced) {
+                auto engine = make_engine();
+                std::string got = "no error";
+                try { engine->execute(src); } catch (const std::exception& ex) { got = ex.what(); }
+                const std::string text = "error: a declaration in a case body needs the body in braces: case value: { ... }";
+                const size_t at = got.find(text);
+                check_true(at != std::string::npos && got.find("error:", at + 1) == std::string::npos, got);
+            }
+            auto engine = make_engine();
+            check_eq((int64_t)3, engine->execute("string a = \"x\"; int r = 0; switch (a) { case \"x\": { int n = 3; r = n; } default: r = -1; } r;").as_int());
+        });
     }
 };
 

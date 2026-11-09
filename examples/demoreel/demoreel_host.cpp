@@ -3,8 +3,7 @@
 // provides a VT console, a monotonic clock, non-blocking keys, the seeded rng, the
 // frame pump and the harnesses:
 //
-//   TAB  cycles the live session (scene state re-synced on the next one)
-//   r    hot-reloads the scene scripts into every session that supports it
+//   r    hot-reloads the scene scripts when the session supports it
 //   --smoke runs N deterministic frames on every backend and compares frame hashes
 //   --perf runs N frames of every scene mid-flight and reports ms/frame + a hash per scene
 
@@ -742,37 +741,26 @@ int run_capture(script_adapter& adapter, const host_options& opt) {
 	return 0;
 }
 
-// Headless exercise of the two interactive tricks: 'r' (hot reload of every
-// scene file into each session) and TAB (state sync onto the next session).
+// Headless exercise of the live session's tricks: 'r' (hot reload of every scene
+// file) and a jump back onto the scene and time it was showing.
 int run_reload_test(script_adapter& adapter, const host_options& opt) {
 	const int w = 100, h = 40;
 	const double dt = 1.0 / 30.0;
-	std::vector<std::string> names = adapter.backends();
-	std::vector<slot> slots(names.size());
-	for (size_t b = 0; b < names.size(); ++b) {
-		open_slot(slots[b], adapter, names[b], opt);
-		slots[b].session->boot(w, h, opt.seed, slots[b].name, opt.smoke, false);
+	slot sl;
+	open_slot(sl, adapter, opt.backend, opt);
+	sl.session->boot(w, h, opt.seed, sl.name, opt.smoke, false);
+	for (int i = 0; i < 40; ++i) { run_frame(sl, headless_args(i * dt, dt)); }
+	if (!sl.session->reload()) {
+		std::printf("reload-test: %s does not support hot reload\n", sl.name.c_str());
+		return 1;
 	}
-	for (int i = 0; i < 40; ++i) {
-		for (auto& sl : slots) { run_frame(sl, headless_args(i * dt, dt)); }
-	}
-	for (auto& sl : slots) {
-		if (!sl.session->reload()) {
-			std::printf("reload-test: %s does not support hot reload\n", sl.name.c_str());
-			return 1;
-		}
-	}
-	for (int i = 40; i < 80; ++i) {
-		for (auto& sl : slots) { run_frame(sl, headless_args(i * dt, dt)); }
-	}
-	std::puts("reload-test: hot reload OK on every backend");
-	slot& a = slots.front();
-	slot& b = slots.back();
-	int64_t idx = a.session->scene_index();
-	double st = a.session->scene_time();
-	b.session->jump(idx, st);
-	for (int i = 80; i < 110; ++i) { run_frame(b, headless_args(i * dt, dt)); }
-	std::printf("reload-test: backend swap sync OK (scene %lld t=%.2f)\n", static_cast<long long>(idx), st);
+	for (int i = 40; i < 80; ++i) { run_frame(sl, headless_args(i * dt, dt)); }
+	std::puts("reload-test: hot reload OK");
+	int64_t idx = sl.session->scene_index();
+	double st = sl.session->scene_time();
+	sl.session->jump(idx, st);
+	for (int i = 80; i < 110; ++i) { run_frame(sl, headless_args(i * dt, dt)); }
+	std::printf("reload-test: jump back onto the scene OK (scene %lld t=%.2f)\n", static_cast<long long>(idx), st);
 	return 0;
 }
 
@@ -795,23 +783,13 @@ int run_interactive(script_adapter& adapter, const host_options& opt) {
 	if (opt.width > 0) { w = static_cast<int>(opt.width); }
 	if (opt.height > 0) { h = static_cast<int>(opt.height); }
 
-	std::vector<std::string> names = adapter.interactive_backends(opt);
-	size_t active = 0;
-	for (size_t b = 0; b < names.size(); ++b) {
-		if (names[b] == opt.backend) { active = b; }
-	}
-	std::vector<slot> slots(names.size());
-
+	slot sl;
 	double sim_ms_sum = 0.0, draw_ms_sum = 0.0;
 	int64_t bench_done = 0;
 	try {
-		for (size_t b = 0; b < names.size(); ++b) {
-			open_slot(slots[b], adapter, names[b], opt);
-			slots[b].session->boot(w, h, opt.seed, slots[b].name, false, true);
-		}
-		if (opt.scene >= 0) {
-			for (auto& sl : slots) { sl.session->jump(opt.scene, 5.0); }
-		}
+		open_slot(sl, adapter, opt.backend, opt);
+		sl.session->boot(w, h, opt.seed, sl.name, false, true);
+		if (opt.scene >= 0) { sl.session->jump(opt.scene, 5.0); }
 
 		double t_prev = now_seconds();
 		double fps_ema = opt.target_fps;
@@ -831,19 +809,9 @@ int run_interactive(script_adapter& adapter, const host_options& opt) {
 
 			std::string key = console.poll_key();
 			if (key == "q" || key == "esc" || g_quit_requested.load()) { break; }
-			if (key == "tab") {
-				if (slots.size() > 1) {
-					int64_t idx = slots[active].session->scene_index();
-					double st = slots[active].session->scene_time();
-					active = (active + 1) % slots.size();
-					slots[active].session->jump(idx, st);
-				}
-				key = "";
-			} else if (key == "r") {
+			if (key == "r") {
 				try {
-					bool any = false;
-					for (auto& sl : slots) { any = sl.session->reload() || any; }
-					host_notice = any ? " reloaded scene scripts from disk " : " hot reload unsupported here ";
+					host_notice = sl.session->reload() ? sl.session->reload_notice() : " hot reload unsupported here ";
 				} catch (const std::exception& ex) {
 					host_notice = std::string(" reload error: ") + ex.what() + " ";
 				}
@@ -856,13 +824,12 @@ int run_interactive(script_adapter& adapter, const host_options& opt) {
 			a.dt = dt;
 			a.key = key;
 			a.fps = fps_ema;
-			a.ms_sim = slots[active].last_ms;
+			a.ms_sim = sl.last_ms;
 			a.ms_draw = console.last_draw_ms;
-			a.ms_other = slots.size() > 1 ? slots[(active + 1) % slots.size()].last_ms : 0.0;
-			std::string frame = run_frame(slots[active], a);
+			std::string frame = run_frame(sl, a);
 			console.draw(frame);
 			if (opt.bench > 0) {
-				sim_ms_sum += slots[active].last_ms;
+				sim_ms_sum += sl.last_ms;
 				draw_ms_sum += console.last_draw_ms;
 				if (++bench_done >= opt.bench) { break; }
 			}
@@ -879,11 +846,8 @@ int run_interactive(script_adapter& adapter, const host_options& opt) {
 	} catch (const std::exception& ex) {
 		console.shutdown();
 		std::fprintf(stderr, "%s: script error: %s\n", adapter.program_name().c_str(), ex.what());
-		for (auto& sl : slots) {
-			if (!sl.session) { continue; }
-			std::string trace = sl.session->stack_trace();
-			if (!trace.empty()) { std::fprintf(stderr, "[%s]\n%s\n", sl.name.c_str(), trace.c_str()); }
-		}
+		std::string trace = sl.session ? sl.session->stack_trace() : "";
+		if (!trace.empty()) { std::fprintf(stderr, "[%s]\n%s\n", sl.name.c_str(), trace.c_str()); }
 		return 1;
 	}
 	console.shutdown();
@@ -911,14 +875,8 @@ int run_interactive(script_adapter& adapter, const host_options& opt) {
 			f << report;
 		}
 	}
-	std::string line = adapter.program_name() + ":";
-	for (auto& sl : slots) {
-		char buf[160];
-		std::snprintf(buf, sizeof(buf), " %s load %.1fms (%s), last frame %.2fms;", sl.name.c_str(), sl.load_ms,
-			sl.session->load_kind().c_str(), sl.last_ms);
-		line += buf;
-	}
-	std::puts(line.c_str());
+	std::printf("%s: %s load %.1fms (%s), last frame %.2fms\n", adapter.program_name().c_str(), sl.name.c_str(), sl.load_ms,
+		sl.session->load_kind().c_str(), sl.last_ms);
 	return 0;
 }
 
@@ -985,7 +943,7 @@ void print_usage(script_adapter& adapter) {
 		"  --csv P          perf: also write rows to file P\n"
 		"  --workers N      parallel width (-1 engine default, 1 serial; ports always serial)\n"
 		"  --capture I      print scene I as a plain-text frame and exit (--ascii: a density map)\n"
-		"  --reload-test    headless hot-reload + backend-swap self-test\n"
+		"  --reload-test    headless hot-reload + scene-jump self-test\n"
 		"  --scenes DIR     override the scenes directory\n"
 		"  --bench N        run N frames of the real loop, report sim/write split, exit\n"
 		"  --scene I        select one zero-based scene for --perf or --bench\n"
@@ -1000,8 +958,8 @@ void print_usage(script_adapter& adapter) {
 	std::string extra = adapter.usage();
 	if (!extra.empty()) { std::fputs(extra.c_str(), stdout); }
 	std::puts(
-		"\nkeys: TAB backend swap | r hot reload | h HUD | f freeze | n/p/space scene skip |\n"
-		"      1-9,0 jump to scene | q/ESC quit");
+		"\nkeys: r hot reload | h HUD | f freeze | n/p/space scene skip | 1-9,0 jump to scene |\n"
+		"      q/ESC quit");
 }
 
 } // namespace

@@ -12,7 +12,6 @@ namespace jai::detail {
 
     struct engine_access {
         using run_pin = engine::run_pin;
-        using library_registration = engine::library_registration;
         using math_alias_row = engine::math_alias_row;
         using host_direct_row = engine::host_direct_row;
         using debug_execution_scope = engine::debug_execution_scope;
@@ -31,6 +30,7 @@ namespace jai::detail {
         JAI_FORCEINLINE static checked_result<script_value> sleep_builtin(engine& a_engine, const script_value& seconds) { return a_engine.sleep_builtin(seconds); }
         JAI_FORCEINLINE static bool sleep_callee(const engine& a_engine, const void* function) noexcept { return a_engine.sleep_callee(function); }
         JAI_FORCEINLINE static void add_format_literal(engine& a_engine, std::string_view name, script_function literal, engine::host_direct_invoke invoke, const void* target) { return a_engine.add_format_literal(name, std::move(literal), invoke, target); }
+        using format_literal_row = engine::format_literal_row;
         JAI_FORCEINLINE static const engine::format_literal_row* format_literal_for(const engine& a_engine, const void* function) noexcept { return a_engine.format_literal_for(function); }
         JAI_FORCEINLINE static void pin_run(engine& a_engine) noexcept { return a_engine.pin_run(); }
         JAI_FORCEINLINE static void unpin_run(engine& a_engine) noexcept { return a_engine.unpin_run(); }
@@ -47,6 +47,8 @@ namespace jai::detail {
 #endif
         JAI_FORCEINLINE static bool host_function_serial(const engine& a_engine, const std::string& name) { return a_engine.host_function_serial(name); }
         JAI_FORCEINLINE static bool host_function_registered(const engine& a_engine, const std::string& name) { return a_engine.host_function_registered(name); }
+        JAI_FORCEINLINE static std::vector<std::string> host_function_names(const engine& a_engine) { return a_engine.host_function_names(); }
+        JAI_FORCEINLINE static void serial_namespace(engine& a_engine, const std::string& space) { a_engine.serial_namespace(space); }
         JAI_FORCEINLINE static bool host_global_registered(const engine& a_engine, const std::string& name) { return a_engine.host_global_registered(name); }
         JAI_FORCEINLINE static uint64_t host_function_writeback(const engine& a_engine, const std::string& name) { return a_engine.host_function_writeback(name); }
         JAI_FORCEINLINE static uint32_t parallel_region_serial(const engine& a_engine) { return a_engine.parallel_region_serial(); }

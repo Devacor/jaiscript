@@ -655,8 +655,9 @@ too, for a const overload that still touches shared state.</li>
 </ul>
 <p>A body that names a serial free function or static method is refused when the statement
 is reached. A serial method is refused when it is called, since the receiver&#x27;s class is known only then. The
-library&#x27;s own builtins are serial (<code>print</code>, I/O, JSON, reflection, the clock) apart from pure math,
-<code>to_string</code>, the <code>web::</code> text functions and the <code>crypto::</code> functions other than <code>crypto::sha256_file</code>.</p>
+library&#x27;s own builtins follow the same rule: parallel unless they touch shared state (<code>print</code>, file lookups,
+the archives, reflection, the clock, callbacks into script), which the library registers serial. A namespaced entry is marked by
+its qualified name: <code>engine::serial_function("game::save")</code>.</p>
 <p>Leaving a method unmarked declares it safe to call from any worker at once. So a binding whose method changes state
 that other objects or threads share must register it serial: that is the whole contract a parallel body checks.</p>
 <p>The receiver follows the signature:</p>

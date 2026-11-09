@@ -4,11 +4,14 @@ A first-person, step-based dungeon crawler in the spirit of the 1991 shareware c
 corridors, a compass, monsters that get *bigger* as they walk at you), written entirely in
 JaiScript. Ten floors, five kin, four professions, a bestiary of thirteen, affix loot,
 identify-by-use potions and scrolls, timed effects, permadeath, and Vexadrach the Hollow-Flame
-at the bottom, hoarding the color he stole.
+at the bottom, hoarding the color he stole. Hits throw damage numbers, the slain melt into sparks,
+spells fly down the corridor carrying their own light, monsters announce themselves, and fine
+loot sends up a beam in its rarity's colour. Save any script mid-run and the game reloads it
+without losing the run.
 
 The C++ host (`main.cpp`) is a thin console shell: raw keys, the console's size and colour depth,
-an alternate screen it restores on every exit, a seeded `Rng`, file IO for saves, and the
-command-line flags as globals. Everything else is script: the raycaster, dungeon generation,
+an alternate screen it restores on every exit, a seeded `Rng`, file IO for saves, a fingerprint
+of each script file for the reload watcher, and the command-line flags as globals. Everything else is script: the raycaster, dungeon generation,
 combat, AI, items, saves and every screen. `scripts/crawler.jai` is the same host contract
 written in JaiScript, so the game also runs on the standalone runner with no C++ of its own.
 
@@ -30,7 +33,6 @@ build/bin/jai_crawler                     # a new run, seed 1337
 build/bin/jai_crawler --seed 7
 build/bin/jai_crawler --load              # continue the saved run
 build/bin/jai_crawler --god               # tourist mode: visit Vexadrach and live
-build/bin/jai_crawler --dev               # R (or r on the pause page) hot-reloads the scripts
 build/bin/jai_crawler --colors 256        # the xterm 256-colour palette
 build/bin/jai_crawler --ascii             # no Unicode block glyphs (the Linux text console)
 ```
@@ -38,16 +40,19 @@ build/bin/jai_crawler --ascii             # no Unicode block glyphs (the Linux t
 The runner takes the same flags after `--`, leading dashes optional:
 
 ```bash
-jaiscript crawler.jai -- seed 7 god dev load
+jaiscript crawler.jai -- seed 7 god load
 jaiscript crawler.jai -- colors 256 ascii
 jaiscript crawler.jai -- smoke turns 1500 seed 6             # headless autopilot; prints STATE_HASH
 jaiscript crawler.jai -- input "n11;wwwww" quiet             # scripted keys (';' enter, '^' esc)
 jaiscript crawler.jai -- view 36 layout single               # a 36-row forward view, alone
 jaiscript crawler.jai -- smoke turns 250 seed 6 dump f6      # every frame, and a FRAME_HASH
+jaiscript crawler.jai -- smoke turns 200 seed 6 anim dump f6 # the animations' frames too
+jaiscript crawler.jai -- smoke turns 1500 seed 6 reload-every 100   # the pilot hot-reloads mid-run
 ```
 
-`view N`, `layout single|multi` and `screen CxR` (size everything as if the console were C x R)
-are runner-only. `dump PATH` renders the full frame after every smoke turn without touching the
+`view N` and `layout single|multi` are runner-only; `screen CxR` (size everything as if the
+console were C x R), `reload-every N` and `anim` (a headless run builds every animation frame)
+are on both hosts (`--screen`, `--reload-every`, `--anim`). `dump PATH` renders the full frame after every smoke turn without touching the
 game, writes them to `PATH.ans`, prints `FRAME_HASH` (the SHA-256 of that file) and the frame-build
 time, leaves the last canvas as `PATH.bmp` with a text sketch beside it (`PATH.txt`), and the
 death or victory pages the run ends on as `PATH_end.ans`; `shots N` adds a BMP and sketch every N
@@ -73,7 +78,8 @@ turn, two in-between frames; a Debug build is far slower.
 
 ## Play
 
-The title screen looks down the Well; `N` starts a run (pick a kin, a profession and a name),
+The title screen looks down the Well, embers rising out of the glow and eyes blinking in the
+brickwork; `N` starts a run (pick a kin, a profession and a name),
 `C` continues a saved one, `?` explains the keys.
 
 | key | action |
@@ -91,7 +97,8 @@ The title screen looks down the Well; `N` starts a run (pick a kin, a profession
 | `m` | the overhead map; there `wasd`, `hjkl` and the arrows step by compass, and your facing follows |
 | `v` | the forward view alone, or with LEFT, RIGHT and BEHIND around it |
 | `c` / `?` | character sheet / keys |
-| `esc` | pause: `s` save and quit, `q` quit, `r` reload with `--dev` |
+| `esc` | pause: `s` save and quit, `q` quit, `r` reload the scripts |
+| `R` | reload the scripts (saving one does the same) |
 | `S` / `Q` | save and quit / quit (asks once more) |
 
 On the runner, shift+letter gives the uppercase keys, TAB descends and SPACE waits. The runner
@@ -115,8 +122,52 @@ lines under it.
 
 The map, the pack, the keys, the character sheet, the level-up boon and the pause page take the
 forward view's place, framed and labelled like it, while the rest of the cockpit stays live.
-Death washes the run's last view in blood under its epitaph; victory fills the screen with
-rainbow fire.
+Death washes the run's last view in blood under its epitaph, your killer looming beside it in
+full colour; victory fills the screen with rainbow fire.
+
+Floor 1 opens on a set piece: JAI's statue a few steps ahead, the bones of the last one down at
+your feet with their blade (the Lastlight Fang, a rare find glowing blue), and a Grublin by the
+statue that has already seen you. Each floor arrives under a banner with its name, and the stairs
+down sum up what the floor gave and took.
+
+## Effects
+
+Every turn's events leave marks in the view, drawn from what the rules did and never from the
+`Rng`. A hit puts its damage over the monster (larger and gold on a critical), a miss says MISS,
+and what happens to you rises low in the view (`-4`, `+10`, `+12 GOLD`, `DODGE`). Your melee
+blows slash across the target. The slain turn white-hot, drop apart texel by texel as they sink
+into the floor, and burst into sparks of their colour. Class skills fly: an ember bolt or a hex
+as a glowing orb, thorns as darts, each bursting where it lands, and Bulwark Slam jolts the
+view. Vexadrach's hollow fire washes the view gray. Below a third of your health the rim of the
+view beats.
+
+Light moves with them. A bolt in flight, a cinderwisp and rare-or-better gear on the floor each
+add their own light to the torch and the sconces, on walls, floor, ceiling and sprites alike.
+Finer gear sends up a beam of its rarity's colour with a spark climbing it, and picking up a
+rare, epic or legendary piece banners its name; every find says how it compares with what you
+wear.
+
+The first time a monster sees you it says so, a line in its colour (`Grublin: "Oi! Dinner's
+walkin'!"`) and a `!` over its head; each breed has its own lines, and its own line in death.
+
+Some have tricks. A Grublin Slinger winds up one turn (a red `!!` over it) and throws harder the
+next; step out of its line of sight in between and the rock cracks off the stone. A slain Gloop
+bursts into two Glooplings on the tiles around it. A Grinnest still pretending to be a chest sends
+up the brightest beam on the floor, gold, and lights the room like treasure.
+
+Interactive play animates each turn's effects through four in-between frames before the turn's
+final frame; `anim` keeps those frames in a headless dump.
+
+## Live reload
+
+`R` re-runs every script but `main.jai` and `state.jai` mid-run, and so does saving any of them:
+while the game waits for a key it fingerprints the scripts four times a second, and a file that
+changed and then held still for one more look reloads the group. A reload logs what it kept
+(floor, turn, monsters, items, HP), banners itself and sweeps a bright scanline down every pane;
+the title bar counts the reloads. A broken edit is refused: the whole group is checked before any
+of it runs, so the run goes on under the old rules, and the log names the file, line and error
+until the next save fixes it. The runner re-imports only the files that changed; the native host
+re-runs them all.
 
 ## How the view is drawn
 
@@ -160,20 +211,27 @@ and drinks when scared. The run folds its state (turn, floor, facing, position, 
 count, every live monster and the `Rng`) into `STATE_HASH` after each turn:
 
 ```bash
-jai_crawler --smoke --seed 6 --turns 1500     # STATE_HASH: 1743191104
+jai_crawler --smoke --seed 6 --turns 1500                                            # STATE_HASH: 2459230215
+jai_crawler --smoke --seed 6 --turns 1500 --reload-every 100 --anim --screen 135x37  # the same hash
 ```
 
-Seed 6's pilot fights down to floor 7 and dies there to a Marrowmaw on turn 1139; `--god --smoke
---turns 3000 --seed 5` kills Vexadrach on turn 1142. The runner's `Rng` is a bit-exact script twin of the
-host's, so the shim prints the same hashes on `--backend=vm` and `--backend=interp`, and the
-`dump` frames hash alike on both. The screens read the game but never the `Rng`, so drawing them
-leaves the hash unchanged.
+Seed 6's pilot fights down to floor 8 and dies there to a Marrowmaw on turn 839; `--god --smoke
+--turns 3000 --seed 5` kills Vexadrach on turn 1008. With `--reload-every 100` the pilot reloads
+every script each hundred turns (its first try asks for a missing file and is refused) and plays
+the same game to the same hash. The runner's `Rng` is a bit-exact script twin of the host's, so
+the shim prints the same hashes on `--backend=vm` and `--backend=interp`, and the `dump` frames
+hash alike on both. The screens and effects read the game but never the `Rng`, so drawing them
+leaves the hash unchanged. `tools/ci/gates.sh crawler` checks both runs on the host (the second
+drawing every animation and the death page), the god-mode run down to the victory page, then three
+animated frame dumps on each backend: the cockpit at 135x37 with reloads, the forward view alone
+at 80x24 in the 256-colour cube with ASCII glyphs, and the cockpit at 200x60, whose rows build in
+parallel.
 
 ## Files
 
 ```
 main.cpp             the native host: console, keys, colour depth, Rng, file IO, flags
-scripts/main.jai     imports, the dev reload, the entry point
+scripts/main.jai     imports, the live reload and its watcher, the entry point
 scripts/state.jai    the persistent globals (G, RNG, the pilot), left out of the reload
 scripts/util.jai     integer math, the grid, directions, weighted picks, the hashes
 scripts/term.jai     colour depth, glyph sets and the named inks
@@ -187,6 +245,7 @@ scripts/art.jai      the floors' themes, procedural textures and the sprite pixe
 scripts/view.jai     the palette, the panes and frames, the caster, sprites and hands
 scripts/ui.jai       the boxes, the panel, the screen fit, the animations, the pages
 scripts/screens.jai  the title, the hero pickers, death and victory
+scripts/fx.jai       the turn's effects: numbers, slashes, deaths, bolts and their light, barks, banners
 scripts/game.jai     the Game class (and the boss coroutine), movement, the turn loop, saves, the pilot
 scripts/crawler.jai  the standalone-runner shim (the host contract in script)
 ```
@@ -198,12 +257,18 @@ scripts/crawler.jai  the standalone-runner shim (the host contract in script)
   `BESTIARY["grublin"].min_floor` reads like the struct it is.
 - **Saves through the archive.** `to_json(SaveFile{version, seed, rng, G})` writes the whole
   `Game` with its player, monsters, items and effects, and `from_json` rebuilds every class.
-- **Coroutine methods.** Vexadrach's fight is `coroutine void boss_brain(int boss_id)` on `Game`:
-  the phase (enraged, mid-telegraph) lives in its locals between turns, and the handle sits in a
-  `Game` field.
+- **Coroutines.** Vexadrach's fight is `coroutine void boss_brain(int boss_id)` on `Game`: the
+  phase (enraged, mid-telegraph) lives in its locals between turns, and the handle sits in a
+  `Game` field. Each Grublin Slinger runs `coroutine void slinger_brain(int id)`, its wind-up a
+  `yield` between two turns; the handles live in `MONSTER_BRAINS` by monster id, and a hot reload
+  keeps them running.
 - **References.** Everything that changes an entity takes it as `var&` (`attack(m, G.player,
   "claws")`), so the one real monster in `G.monsters` is the one that changes; `restore_stat(int&
   stat, ...)` and `spend_focus(int& pool, ...)` change a field in place.
-- **Hot reload.** `--dev` re-imports every file but `state.jai` mid-run; the group is checked
-  before any of it runs, and globals declared without an initializer (the terminal's settings, the
-  console's size) keep their values across it.
+- **Values.** Assigning an object copies it, so `FLOOR_START = G.player` on the way down is a
+  snapshot that holds still while you change, and the stairs compare the two.
+- **Hot reload.** `R` or a saved file re-imports every file but `main.jai` and `state.jai` mid-run;
+  the group is checked before any of it runs (a broken edit raises, and `try`/`catch` keeps the
+  run going), functions and classes replace in place, and globals declared without an
+  initializer (the terminal's settings, the console's size, which monsters have spoken) keep
+  their values across it.

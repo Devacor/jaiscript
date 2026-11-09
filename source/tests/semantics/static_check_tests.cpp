@@ -3564,6 +3564,10 @@ public:
                 {"auto l = [](int n) { n += 1; };", "writes to parameter 'n'"},
                 {"void f() { E first = es[0]; first.hp = 1; }", "'first.hp' writes to 'first', a copy that is never read afterwards, so the write is lost; declare 'E& first' to change the original"},
                 {"void f() { auto k = es[0].hp; k++; }", "declare 'auto& k' to change the original"},
+                {"void f() { auto first = es[0]; first.hp = 1; }", "'first.hp' writes to 'first', a copy that is never read afterwards, so the write is lost; declare 'auto& first' to change the original"},
+                {"map<string, E> named = {\"a\": E()};\nvoid f() { auto a = named[\"a\"]; a.hp -= 1; }", "declare 'auto& a' to change the original"},
+                {"class W { E boss; array<E> crew = [E()]; }\nW w;\nvoid f() { auto b = w.boss; b.hp = 1; }", "declare 'auto& b' to change the original"},
+                {"class W { E boss; array<E> crew = [E()]; }\nW w;\nvoid f() { auto c = w.crew[0]; c.name = \"x\"; }", "'c.name' writes to 'c'"},
                 {"int f(int n) { int r = 0; if (n > 0) { r = n; } else { r = 1; return r; } return 0; }", "'r' writes to 'r'"},
                 {"void f() { int r = 0; try { r = 5; } catch (err) { print(r); } }", "'r' writes to 'r'"},
             };

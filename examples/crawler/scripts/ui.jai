@@ -213,6 +213,11 @@ function title_bar(int width) -> string {
 	right.put(INK_BRIGHT, `${G.floor}`);
 	right.put(INK_DIM, "/10   turn ");
 	right.put(INK_BRIGHT, `${G.turn} `);
+	string live = RELOAD_COUNT > 0 ? `live: reloaded ${RELOAD_COUNT}x` : "live: R or save a script to reload";
+	if (l.cells + 3 + live.size() + 2 + right.cells <= width) {
+		l.gap(3);
+		l.put(RELOAD_COUNT > 0 ? INK_MAGIC : INK_FAINT, live);
+	}
 	l.gap(width - l.cells - right.cells);
 	return l.text + right.text + RESET;
 }
@@ -364,7 +369,13 @@ function render_game() -> void {
 	OVERLAY_ON = false;
 }
 
-function animating() -> bool { return !G.smoke && !HOST_SCRIPTED && !G.show_map; }
+// Interactive play animates; so does a headless run that asks for it (HOST_ANIM), which builds
+// every in-between frame (a dump keeps them) and skips the pauses.
+function animating() -> bool { return !G.show_map && (HOST_ANIM || (!G.smoke && !HOST_SCRIPTED)); }
+
+function anim_pause(float seconds) -> void {
+	if (!HOST_ANIM) { sleep(seconds); }
+}
 
 // a 90-degree snap turn swept through 30 and 60 degrees, so it reads as motion
 function animate_turn(int old_facing, int rot) -> void {
@@ -376,7 +387,7 @@ function animate_turn(int old_facing, int rot) -> void {
 		float ca = math::cos(rot * a);
 		float sa = math::sin(rot * a);
 		present(frame_lines(render_view(camera_x(), camera_y(), dx0 * ca - dy0 * sa, dx0 * sa + dy0 * ca)));
-		sleep(0.022);
+		anim_pause(0.022);
 	}
 }
 
@@ -390,7 +401,7 @@ function animate_step(int from_x, int from_y) -> void {
 		float x = from_x + 0.5 + (G.player.x - from_x) * t;
 		float y = from_y + 0.5 + (G.player.y - from_y) * t;
 		present(frame_lines(render_view(x, y, FACE_DX[G.facing], FACE_DY[G.facing])));
-		sleep(0.018);
+		anim_pause(0.018);
 	}
 	HAND_BOB = 0;
 }
@@ -771,8 +782,10 @@ function box_lines(int id, int w, int h) -> array<Line> {
 	return loot_box(w, h);
 }
 
-// text boxes keep a blank cell inside each side; the map runs edge to edge
+// text boxes keep a blank cell inside each side; the map runs edge to edge. The screen fit (at
+// start, or after a reload) lays out boxes it never gives rows, so this builds the layout first.
 function fill_boxes() -> void {
+	if (LAYOUT_KEY != layout_key()) { build_layout(); }
 	string bg = sgr_bg(INK_PANEL) + TEXT_FG;
 	for (auto box : BOXES) {
 		bool text = box.id != BOX_MAP;
@@ -877,7 +890,7 @@ function help_screen() -> void {
 		key_row("c", "character", 9), key_row("esc", "pause: save, quit", 9)];
 	array<Line> lines = key_columns(moving, acting, w);
 	lines.push(Line());
-	if (HOST_DEV) { lines.push(key_row("R", "hot-reload the scripts", 9)); }
+	lines.push(key_row("R", "reload the scripts live; saving one does too", 9));
 	Line lore;
 	lore.gap(2);
 	lore.put(INK_DIM, "Ten floors down, Vexadrach hoards the stolen color.");
@@ -1009,7 +1022,7 @@ function level_up_screen() -> string {
 function pause_screen() -> string {
 	array<Line> lines = [key_row("esc", "back to the Well", 6), key_row("?  h", "the keys", 6),
 		key_row("s", "save and quit", 6), key_row("q", "quit without saving", 6)];
-	if (HOST_DEV) { lines.push(key_row("r", "reload the scripts", 6)); }
+	lines.push(key_row("r", "reload the scripts", 6));
 	show_page("PAUSED", lines);
 	string key = read_key();
 	if (key == "s" || key == "S") { return "S"; }

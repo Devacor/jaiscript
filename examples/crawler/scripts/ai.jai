@@ -1,5 +1,6 @@
-// Monster minds. Each behavior is one switch case over state the monster carries in its fields;
-// the boss alone runs a coroutine, Game.boss_brain, whose handle lives in G.boss_co.
+// Monster minds. Each behavior is one switch case over state the monster carries in its fields,
+// except two that think across turns as coroutines: the boss (Game.boss_brain, its handle in
+// G.boss_co) and every Grublin Slinger (slinger_brain, its handle in MONSTER_BRAINS).
 
 function sees_player(var& m) -> bool {
 	if (cheb(m.x, m.y, G.player.x, G.player.y) > 9) { return false; }
@@ -53,6 +54,10 @@ function monster_act(var& m) -> void {
 			break;
 		}
 		case "ranged": {
+			if (m.kind == "slinger") {
+				run_brain(m.id);
+				break;
+			}
 			int dist = cheb(m.x, m.y, G.player.x, G.player.y);
 			bool in_sight = sees_player(m);
 			if (in_sight) { m.aggro = true; }
@@ -115,6 +120,54 @@ function monster_act(var& m) -> void {
 			G.boss_co.next();
 			break;
 		}
+	}
+}
+
+// A monster with a coroutine mind keeps it here by id, made on its first turn. It is not saved
+// state: a loaded run, a new floor or a new game starts every mind over. Declared without an
+// initializer, so a hot reload keeps the live minds (each runs its old body until remade).
+map<int, var> MONSTER_BRAINS;
+
+function run_brain(int id) -> void {
+	if (!MONSTER_BRAINS.has(id) || MONSTER_BRAINS[id].done()) { MONSTER_BRAINS[id] = slinger_brain(id); }
+	MONSTER_BRAINS[id].next();
+}
+
+// The Slinger telegraphs: it winds up one turn and lets fly the next, harder than a plain throw.
+// Step out of its line in between and the rock cracks off the stone instead. Its place in
+// G.monsters moves between turns, so it looks itself up by id after every yield.
+coroutine void slinger_brain(int id) {
+	while (true) {
+		int i = monster_index_by_id(id);
+		if (i < 0) { return; }
+		if (sees_player(G.monsters[i])) { G.monsters[i].aggro = true; }
+		if (adjacent_to_player(G.monsters[i])) {
+			if (RNG.chance(50)) { attack(G.monsters[i], G.player, "swats"); }
+			else { step_away(G.monsters[i], G.player.x, G.player.y); }
+			yield;
+			continue;
+		}
+		int dist = cheb(G.monsters[i].x, G.monsters[i].y, G.player.x, G.player.y);
+		if (sees_player(G.monsters[i]) && dist <= G.monsters[i].range) {
+			if (is_visible(G.monsters[i].x, G.monsters[i].y)) {
+				log_ink(INK_GOLD, `${mon_subject(G.monsters[i])} winds up a throw! (break its line of sight)`);
+				fx_windup(G.monsters[i]);
+			}
+			yield;
+			i = monster_index_by_id(id);
+			if (i < 0) { return; }
+			if (sees_player(G.monsters[i]) && cheb(G.monsters[i].x, G.monsters[i].y, G.player.x, G.player.y) <= G.monsters[i].range + 1) {
+				G.monsters[i].atk += 2;
+				attack(G.monsters[i], G.player, "pelts");
+				G.monsters[i].atk -= 2;
+			} else {
+				log_ink(INK_DIM, "A rock cracks off the stone where you were standing.");
+			}
+			yield;
+			continue;
+		}
+		if (G.monsters[i].aggro) { step_toward(G.monsters[i], G.player.x, G.player.y); }
+		yield;
 	}
 }
 

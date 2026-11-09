@@ -42,13 +42,28 @@ esac
 # The reference hashes each example prints for its deterministic headless run.
 GLOOM_FRAME=7fecc09815bb64e0
 GLOOM_STATE=3580805725
-GLOOM_SHOWCASE_FRAME=6559224cca20d1f0
-DEMOREEL_STREAM=76322bdbe2343c29
-CRAWLER_STATE=1743191104
+GLOOM_SHOWCASE_FRAME=1b6efa4fcae4e573
+GLOOM_SHOWCASE_SEXT=858885a335d69102
+GLOOM_SHOWCASE_HALF=e1e62cb65c9774fe
+GLOOM_SHOWCASE_ASCII=d8e16c271412bf5d
+GLOOM_SOUND="24 effects, 136535 bytes, bank 4270573572, 25 cues 1838541177"
+GLOOM_SHIM_FRAMES=20918499
+DEMOREEL_STREAM=c0086107f2b4bac1
+CRAWLER_STATE=2459230215
+CRAWLER_GOD_STATE=4133945146
+CRAWLER_FRAMES=a36b9a559cf181a17c6d5d20ea7eadf7e0f6ae4c4c4682b70576dc1dd84916d1
+CRAWLER_SMALL_FRAMES=6603814f43ca70b55e24cd901d97d94f709cc9f3b7c5d444f77cf9e2bb83ec2a
+CRAWLER_WIDE_FRAMES=aa849fd242eeaeaf5a808184e13be3cfaaac7863bba5c6c1e92f3e0a6e936e9a
 GATORQUEST_STATE=3218840367
+GATORQUEST_TOUR_STATE=2752036546
+GATORQUEST_TOUR_FRAMES=3186012716
+GATORQUEST_TITLE_FRAMES=4000157523
 GLOOM_LONG_FRAME=dfd969ed5a336dca
 GLOOM_LONG_STATE=1503537018
 TIMEDEMO_STATE=1746772898
+TIMEDEMO_FRAME=667628107
+TIMEDEMO_SEXT_FRAME=319676015
+TIMEDEMO_SEXT_STATE=1790055606
 
 # Deep-recursion tests outgrow Linux's 8 MB main-thread stack in Debug builds; the
 # Windows binaries link a 128 MB stack, so match it where the shell allows.
@@ -132,30 +147,55 @@ gate_fuzz_order() {
 
 vm_only() { hash_on vm || { echo "$1: its one backend is the VM, which HASH_BACKENDS leaves out; skipped"; return 1; }; }
 
-# gloom_hashes <ticks> <workers> <frame hash> <STATE_HASH> [look] [example]: the reference look draws the frames the
-# ports reproduce, the showcase look the game as played; both run the same simulation, so STATE_HASH is one number.
-# gloom_idiomatic is the same game in another style and must draw the same frames.
+# gloom_hashes <ticks> <workers> <frame hash> <STATE_HASH> [look [flags...]]: the reference look draws the frames the ports
+# reproduce, the showcase look the game as played; both run the same simulation, so STATE_HASH is one number. The showcase
+# look also builds its sound bank and counts the cues it would play, reported as GLOOM_SOUND.
 gloom_hashes() {
 	vm_only gloom || return 0
 	cd "$ROOT/examples/gloom"
-	local look="${5:-reference}" example="${6:-gloom}"
-	run_logged "$BIN/jai_gloom" --smoke --ticks "$1" --seed 666 --workers "$2" --look "$look" --scripts "$ROOT/examples/$example/scripts"
-	want "$example vm ($1 ticks, $2 workers, $look look): expected frame hash $3 and STATE_HASH $4" "^vm +\\|.*\\| $3 +\\| $4\$"
+	local ticks="$1" workers="$2" frame="$3" state="$4" look="${5:-reference}"
+	shift $(($# < 5 ? $# : 5))
+	run_logged "$BIN/jai_gloom" --smoke --ticks "$ticks" --seed 666 --workers "$workers" --look "$look" --scripts "$ROOT/examples/gloom/scripts" "$@"
+	want "gloom vm ($ticks ticks, $workers workers, $look look $*): expected frame hash $frame and STATE_HASH $state" "^vm +\\|.*\\| $frame +\\| $state\$"
+	if [ "$look" = showcase ]; then want "gloom showcase: expected sound: $GLOOM_SOUND" "^sound: $GLOOM_SOUND\$"; fi
+}
+
+# the drag-drop shim on the runner, as played: its frames, its sound bank, and the --dev hot-reload self-test in a scratch copy
+gloom_shim() {
+	vm_only gloom || return 0
+	cd "$ROOT/examples/gloom"
+	run_logged "$BIN/jaiscript" gloom.jai -- --smoke --ticks 300 --look showcase --truecolor
+	want "gloom shim: expected frames $GLOOM_SHIM_FRAMES and STATE_HASH $GLOOM_STATE" "frames $GLOOM_SHIM_FRAMES \\| STATE_HASH: $GLOOM_STATE\$"
+	want "gloom shim: expected sound: $GLOOM_SOUND" "^sound: $GLOOM_SOUND\$"
+	if hash_on interp; then
+		run_logged "$BIN/jaiscript" --backend=interp gloom.jai -- --smoke --ticks 300 --look showcase --truecolor
+		want "gloom shim interp: expected frames $GLOOM_SHIM_FRAMES and STATE_HASH $GLOOM_STATE" "frames $GLOOM_SHIM_FRAMES \\| STATE_HASH: $GLOOM_STATE\$"
+	fi
+	local scratch
+	scratch="$(mktemp -d)"
+	cp -r "$ROOT/examples/gloom/gloom.jai" "$ROOT/examples/gloom/scripts" "$scratch/"
+	(cd "$scratch" && run_logged "$BIN/jaiscript" gloom.jai -- --reload-test)
+	rm -rf "$scratch"
+	want "gloom shim: expected the hot-reload self-test to pass" "^RELOAD TEST: PASS"
 }
 
 gate_gloom() {
 	gloom_hashes 300 0 "$GLOOM_FRAME" "$GLOOM_STATE"
 	gloom_hashes 300 0 "$GLOOM_SHOWCASE_FRAME" "$GLOOM_STATE" showcase
-	gloom_hashes 300 0 "$GLOOM_FRAME" "$GLOOM_STATE" reference gloom_idiomatic
-	gloom_hashes 300 0 "$GLOOM_SHOWCASE_FRAME" "$GLOOM_STATE" showcase gloom_idiomatic
+	gloom_hashes 300 0 "$GLOOM_SHOWCASE_SEXT" "$GLOOM_STATE" showcase --pix sext
+	gloom_hashes 300 0 "$GLOOM_SHOWCASE_HALF" "$GLOOM_STATE" showcase --pix half
+	gloom_hashes 300 0 "$GLOOM_SHOWCASE_ASCII" "$GLOOM_STATE" showcase --ascii
+	gloom_shim
 }
 gate_gloom_workers() {
 	gloom_hashes 300 8 "$GLOOM_FRAME" "$GLOOM_STATE"
 	gloom_hashes 300 8 "$GLOOM_SHOWCASE_FRAME" "$GLOOM_STATE" showcase
+	gloom_hashes 300 8 "$GLOOM_SHOWCASE_SEXT" "$GLOOM_STATE" showcase --pix sext
 }
 gate_gloom_long() { gloom_hashes 600 0 "$GLOOM_LONG_FRAME" "$GLOOM_LONG_STATE"; }
 
-# JaiDOOM's timedemo and the game's own headless selftest (which loads jaidoom.jai, the entry point), where the checkout carries the example (it is optional)
+# JaiDOOM's timedemo in half blocks and (its first 700 tics) in sextants, the game's own headless selftest (which loads
+# jaidoom.jai, the entry point) and its presentation flowtest, where the checkout carries the example (it is optional)
 gate_timedemo() {
 	local dir="$ROOT/examples/jaidoom/scripts"
 	[ -f "$dir/p10_timedemo.jai" ] || { echo "timedemo: examples/jaidoom is not in this checkout, skipped"; return 0; }
@@ -165,9 +205,17 @@ gate_timedemo() {
 		rm -rf ./.cache
 		run_logged "$BIN/jaiscript" --no-pause --backend="$backend" p10_timedemo.jai -- 120x78
 		want "timedemo $backend: expected STATE_HASH $TIMEDEMO_STATE" "STATE_HASH: $TIMEDEMO_STATE\\b"
+		want "timedemo $backend: expected FRAME_HASH $TIMEDEMO_FRAME" "FRAME_HASH: $TIMEDEMO_FRAME\\b"
+		rm -rf ./.cache
+		run_logged "$BIN/jaiscript" --no-pause --backend="$backend" p10_timedemo.jai -- 120x78 sext tics 700
+		want "timedemo sext $backend: expected STATE_HASH $TIMEDEMO_SEXT_STATE" "STATE_HASH: $TIMEDEMO_SEXT_STATE\\b"
+		want "timedemo sext $backend: expected FRAME_HASH $TIMEDEMO_SEXT_FRAME" "FRAME_HASH: $TIMEDEMO_SEXT_FRAME\\b"
 		rm -rf ./.cache
 		run_logged "$BIN/jaiscript" --no-pause --backend="$backend" jaidoom.jai -- selftest
 		want "jaidoom selftest $backend: expected ALL GREEN" "SELFTEST: ALL GREEN"
+		rm -rf ./.cache
+		run_logged "$BIN/jaiscript" --no-pause --backend="$backend" jaidoom.jai -- flowtest
+		want "jaidoom flowtest $backend: expected ALL GREEN" "FLOWTEST: ALL GREEN"
 	done
 	rm -rf ./.cache
 }
@@ -191,14 +239,72 @@ PYEOF
 }
 
 gate_demoreel() {
+	if vm_only demoreel; then
+		run "$BIN/jai_demoreel" --smoke --expect "$DEMOREEL_STREAM"
+	fi
+	# the runner's presenter at a width the reel draws rows in parallel, through FINALE's text cards: each backend's parallel
+	# rows must reproduce the VM's serial frames, in both pixel modes
+	cd "$ROOT/examples/demoreel"
+	local pix serial
+	for pix in sext half; do
+		run_logged "$BIN/jaiscript" --backend=vm demoreel.jai -- frames 90 w 120 h 40 scene 10 pix "$pix" workers 0
+		want "demoreel $pix serial: the text cards were not drawn" "rows serial \| pixels $pix \| text in [1-9][0-9]* frames"
+		serial="$(grep -Eo 'stream hash [0-9]+' "$LOG")"
+		for backend in vm interp; do
+			hash_on "$backend" || continue
+			run_logged "$BIN/jaiscript" --backend="$backend" demoreel.jai -- frames 90 w 120 h 40 scene 10 pix "$pix" workers 1
+			want "demoreel $pix $backend: parallel rows did not reproduce the serial frames ($serial)" "$serial \|"
+			want "demoreel $pix $backend: the rows did not run in parallel through the text cards" "rows parallel \| pixels $pix \| text in [1-9][0-9]* frames"
+		done
+	done
+	# FINALE's FOUR slide reloads scenes/live/spin_tweaked.jai while it runs, with parallel rows on
+	for backend in vm interp; do
+		hash_on "$backend" || continue
+		run_logged "$BIN/jaiscript" --backend="$backend" demoreel.jai -- frames 40 w 120 h 40 scene 10 at 32.4 pix sext workers 1
+		want "demoreel $backend: FINALE did not reload its live module" "live reloads 1\$"
+	done
+	# the soundtrack's cues and the video frames
 	vm_only demoreel || return 0
-	run "$BIN/jai_demoreel" --smoke --expect "$DEMOREEL_STREAM"
+	local out="${TMPDIR:-/tmp}/demoreel_gate_$$"
+	run_logged "$BIN/jaiscript" demoreel.jai -- midi "$out/cues"
+	want "demoreel midi: expected one cue a scene" "^12 cues -> "
+	run_logged "$BIN/jaiscript" demoreel.jai -- video "$out/video" every 10 frames 60
+	want "demoreel video: expected six frames" "^video: 6 frames"
+	rm -rf "$out"
 }
 
 gate_crawler() {
-	vm_only crawler || return 0
-	run_logged "$BIN/jai_crawler" --smoke --seed 6 --turns 1500
-	want "crawler vm: expected STATE_HASH $CRAWLER_STATE" "STATE_HASH: $CRAWLER_STATE\$"
+	if vm_only crawler; then
+		run_logged "$BIN/jai_crawler" --smoke --seed 6 --turns 1500
+		want "crawler vm: expected STATE_HASH $CRAWLER_STATE" "STATE_HASH: $CRAWLER_STATE\$"
+		# hot reload keeps the run: the pilot re-runs every script each 100 turns (its first try, of a missing file, is
+		# refused) and must play the same game, every animation frame built through the reloads and the death page drawn,
+		# laid out for a 135x37 console as a player would see them
+		run_logged "$BIN/jai_crawler" --smoke --seed 6 --turns 1500 --reload-every 100 --anim --screen 135x37
+		want "crawler vm --reload-every: the reloads did not run" "hot reloads: [1-9][0-9]* kept the run, 1 refused"
+		want "crawler vm --reload-every: a reload changed the run (expected STATE_HASH $CRAWLER_STATE)" "STATE_HASH: $CRAWLER_STATE\$"
+		# tourist mode down to Vexadrach: floor 10, the boss's coroutine and the victory page, drawn
+		run_logged "$BIN/jai_crawler" --god --smoke --seed 5 --turns 3000 --anim --screen 135x37
+		want "crawler vm --god: expected Vexadrach slain and STATE_HASH $CRAWLER_GOD_STATE" "victory: true"
+		want "crawler vm --god: expected STATE_HASH $CRAWLER_GOD_STATE" "STATE_HASH: $CRAWLER_GOD_STATE\$"
+	fi
+	# the runner shim draws every frame, the animations' in-between frames too: the cockpit at 135x37 through the floor 1
+	# welcome, fights, spells, a level, the stairs and the reload sweep; the forward view alone at 80x24 in the 256-colour
+	# cube with ASCII glyphs; and the cockpit at 200x60, whose rows build in parallel. Each backend draws the same streams.
+	local work
+	work="$(mktemp -d)"
+	cd "$ROOT/examples/crawler"
+	for backend in vm interp; do
+		hash_on "$backend" || continue
+		run_logged "$BIN/jaiscript" --backend="$backend" scripts/crawler.jai -- screen 135x37 colors 24 smoke seed 6 turns 200 anim reload-every 60 dump "$work/cockpit"
+		want "crawler $backend cockpit frames: expected FRAME_HASH $CRAWLER_FRAMES" "FRAME_HASH: $CRAWLER_FRAMES "
+		run_logged "$BIN/jaiscript" --backend="$backend" scripts/crawler.jai -- screen 80x24 colors 256 ascii smoke seed 6 turns 80 anim dump "$work/small"
+		want "crawler $backend small frames: expected FRAME_HASH $CRAWLER_SMALL_FRAMES" "FRAME_HASH: $CRAWLER_SMALL_FRAMES "
+		run_logged "$BIN/jaiscript" --backend="$backend" scripts/crawler.jai -- screen 200x60 colors 24 smoke seed 6 turns 60 anim dump "$work/wide"
+		want "crawler $backend wide frames: the rows did not build in parallel" "rows parallel\$"
+		want "crawler $backend wide frames: expected FRAME_HASH $CRAWLER_WIDE_FRAMES" "FRAME_HASH: $CRAWLER_WIDE_FRAMES "
+	done
+	rm -rf "$work"
 }
 
 lsp_test() {
@@ -216,13 +322,23 @@ gate_lsp() {
 
 gate_lsp_latency() { lsp_test --only latency; }
 
+# The tour and the title pages hash the terminal text of every capture they write: the renderer's gate. The tour's last
+# stops hot-reload its own copy of the live tweak file, so the reload card and the seasons are covered too.
 gate_gatorquest() {
+	local shots
 	cd "$ROOT/examples/gatorquest"
+	shots="$(mktemp -d)"
 	for backend in vm interp; do
 		hash_on "$backend" || continue
 		run_logged "$BIN/jaiscript" --backend="$backend" scripts/gatorquest.jai -- smoke ticks 2000 bots 2
 		want "Gator Quest $backend: expected STATE_HASH $GATORQUEST_STATE" "STATE_HASH: $GATORQUEST_STATE\$"
+		run_logged "$BIN/jaiscript" --backend="$backend" scripts/gatorquest.jai -- tour screen 150x44 out "$shots/tour_$backend"
+		want "Gator Quest tour $backend: expected STATE_HASH $GATORQUEST_TOUR_STATE FRAME_HASH $GATORQUEST_TOUR_FRAMES" \
+			"tour: done \(STATE_HASH $GATORQUEST_TOUR_STATE FRAME_HASH $GATORQUEST_TOUR_FRAMES\)\$"
+		run_logged "$BIN/jaiscript" --backend="$backend" scripts/gatorquest.jai -- shot title out "$shots/title_$backend"
+		want "Gator Quest title $backend: expected FRAME_HASH $GATORQUEST_TITLE_FRAMES" "\(FRAME_HASH $GATORQUEST_TITLE_FRAMES\)\$"
 	done
+	rm -rf "$shots"
 }
 
 android_ndk() {
