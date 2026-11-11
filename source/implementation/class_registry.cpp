@@ -1090,7 +1090,7 @@ checked_result<void> declare_script_class(class_decl* decl, const class_declarat
                     new_static_types[field_id] = var_decl->type;
                 }
                 if (!preserve_existing && var_decl->type && var_decl->type->base_type != script_value_type::jai_any_type) {
-                    if (default_val.is_null()) {
+                    if (default_val.is_null() && var_decl->type->base_type != script_value_type::jai_object_type) {   // a class value or enum static holds no null
                         default_val.set_type_info(var_decl->type);
                     } else {
                         auto converted = field_store_convert(default_val, var_decl->type, eng, field_id, class_def.get(), true);

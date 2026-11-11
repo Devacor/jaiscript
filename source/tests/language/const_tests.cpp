@@ -215,11 +215,13 @@ public:
             const auto c = run(R"JS(
                 int twice(const int& x) { return x * 2; }
                 float half(const float& x) { return x / 2; }
-                float f = 2.5; int i = 3; var v = 7.9;
-                print(twice(2.5), " ", twice(f), " ", half(i), " ", f, " ", twice(v));
+                float f = 2.5; int i = 3; var v = 7; var fv = 7.9;
+                print(twice(true), " ", half(3), " ", half(i), " ", f, " ", twice(v));
+                try { twice(fv); } catch (e) { print(" ", e); }
             )JS");
             check_eq(std::string(""), c.error);
-            check_eq(std::string("4 4 1.5 2.5 14\n"), c.output);
+            check_eq(std::string("2 1.5 1.5 2.5 14\n Cannot pass float to parameter 'x' of 'twice' (declared int&)\n"), c.output);
+            CHECK_ERROR("int twice(const int& x) { return x * 2; } float f = 2.5; twice(f);", "argument 1 of 'twice': cannot bind 'float' to 'x' declared 'const int&'");
             CHECK_ERROR("int twice(const int& x) { return x * 2; } twice(\"s\");", "argument 1 of 'twice': cannot bind 'string' to 'x' declared 'const int&'");
             CHECK_ERROR("void bump(int& x) { x += 1; } float f = 1.5; bump(f);", "argument 1 of 'bump': cannot bind 'float' to 'x' declared 'int&'");
         });
@@ -244,6 +246,29 @@ public:
             CHECK_ERROR("const array<int> xs = [1]; for (int& x : xs) { }", "cannot bind 'x' (declared int&) to an element of const 'xs'");
             check_eq(std::string("3\n"), run("const array<int> xs = [1, 2]; int t = 0; for (auto x : xs) { x += 1; t += 0; } for (const auto& x : xs) { t += x; } print(t);").output);
             CHECK_ERROR("const map<string, int> m = {\"a\": 1}; for (auto& [k, v] : m) { v = 2; }", "cannot assign to const 'v'");
+            // const alone is const auto, as in a declaration
+            check_eq(std::string("3 a1\n"), run("array<int> xs = [1, 2]; int t = 0; for (const x : xs) { t += x; } map<string, int> m = {\"a\": 1}; for (const [k, v] : m) { print(t, \" \", k, v); }").output);
+            CHECK_ERROR("array<int> xs = [1]; for (const x : xs) { x = 2; }", "cannot assign to const 'x'");
+            CHECK_ERROR("map<string, int> m = {\"a\": 1}; for (const [k, v] : m) { v = 2; }", "cannot assign to const 'v'");
+            CHECK_ERROR("map<string, int> m = {\"a\": 1}; for (const auto& [k, v] : m) { v = 2; }", "cannot assign to const 'v'");
+            CHECK_ERROR("array<int> xs = [1]; for (const : xs) { }", "a range-for's const variable needs a name: for (const x : xs)");
+            // over value elements of a known class a write through the const variable fails the load, whatever spells it
+            const std::string monster = "class M { int hp = 10; void hit(int n) { hp -= n; } int left() { return hp; } }\n";
+            for (const char* spelled : {"const m", "const auto m", "const auto& m", "const M m", "const M& m"}) {
+                const std::string loop = monster + "array<M> pack = [M(), M()]; for (" + spelled + " : pack) ";
+                CHECK_ERROR(loop + "{ m.hit(1); }", "static check failed");
+                CHECK_ERROR(loop + "{ m.hit(1); }", "cannot call 'hit' on 'm': 'm' is const and 'hit' writes its receiver");
+                CHECK_ERROR(loop + "{ m.hp = 1; }", "cannot assign to 'm.hp': 'm' is const");
+                check_eq(std::string("1010"), run(loop + "{ print(m.left(), skip_newline); }").output);
+            }
+            CHECK_ERROR(monster + "map<string, M> named = {\"a\": M()}; for (const [k, v] : named) { v.hit(1); }", "error: cannot call 'hit' on 'v': 'v' is const and 'hit' writes its receiver");
+            CHECK_ERROR(monster + "map<string, M> named = {\"a\": M()}; for (const auto& [k, v] : named) { v.hp = 1; }", "error: cannot assign to 'v.hp': 'v' is const");
+            // elements the load cannot type are the run's to refuse; a const handle keeps its object writable
+            const auto late = run(monster + "var pack = [M()]; for (const m : pack) { m.hit(1); }");
+            check_true(contains(late.error, "Cannot call 'hit' on 'm': 'm' is const and 'hit' writes its receiver") && !contains(late.error, "static check failed"), late.error);
+            check_eq(std::string("98"), run(monster + "array<shared_ptr<M>> pack = [new M()]; for (const m : pack) { m.hit(1); print(m.hp, skip_newline); }"
+                                                      " map<string, shared_ptr<M>> named = {\"a\": pack[0]}; for (const [k, v] : named) { v.hp -= 1; print(v.left(), skip_newline); }").output);
+            CHECK_ERROR(monster + "array<shared_ptr<M>> pack = [new M()]; for (const m : pack) { m = null; }", "cannot assign to const 'm'");
         });
 
         test("captures_keep_constness_like_cpp", [this]() {
@@ -260,6 +285,11 @@ public:
         test("destructuring_and_for_init", [this]() {
             CHECK_ERROR("function f() { const auto [a, b] = [1, 2]; a = 3; }", "cannot assign to const 'a'");
             CHECK_ERROR("function f() { for (const int i = 0; i < 3; i++) { } }", "cannot assign to const 'i'");
+            CHECK_ERROR("function f() { const [a, b] = [1, 2]; b = 3; }", "cannot assign to const 'b'");
+            CHECK_ERROR("function f() { for (const i = 0; i < 3; i++) { } }", "cannot assign to const 'i'");
+            check_eq(std::string("3 0\n"), run("const [a, b] = [1, 2]; int n = 0; for (const start = 0; n < 2; n++) { } print(a + b, \" \", n - 2);").output);
+            CHECK_ERROR("class M { int hp = 1; void hit() { hp -= 1; } } array<M> pack = [M(), M()]; const [a, b] = pack; a.hit();",
+                        "error: cannot call 'hit' on 'a': 'a' is const and 'hit' writes its receiver");
         });
 
         // ------------------------------------------------------------------ class constants

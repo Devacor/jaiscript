@@ -690,12 +690,15 @@ struct script_value::cell_cycle_registry {
     static void teardown(void* p) { delete static_cast<cell_cycle_registry*>(p); }
 };
 
+bool script_value::is_shared_cell(const script_value& v) noexcept {
+    if (v.raw_storage_index() != TYPEID_REFERENCE) return false;
+    const auto& holder = *v.storage_.get_if<TYPEID_REFERENCE>();
+    return holder && holder->plain_cell() && holder.use_count() > 1;
+}
+
 void script_value::gather_shared_cells(const script_value* values, size_t count, std::vector<script_value>& out) {
     for (size_t i = 0; i < count; ++i) {
-        const script_value& v = values[i];
-        if (v.raw_storage_index() != TYPEID_REFERENCE) continue;
-        const auto& holder = *v.storage_.get_if<TYPEID_REFERENCE>();
-        if (holder && holder->plain_cell() && holder.use_count() > 1) out.push_back(v);
+        if (is_shared_cell(values[i])) out.push_back(values[i]);
     }
 }
 
@@ -978,7 +981,7 @@ script_value script_value::make_array(type_info_ptr element_type, engine* eng) {
             case script_value_type::jai_bool_type: node_kind = script_array::kind_t::b8; break;
             case script_value_type::jai_char_type: node_kind = script_array::kind_t::c8; break;
             case script_value_type::jai_string_type: node_kind = script_array::kind_t::str; break;
-            case script_value_type::jai_object_type: node_kind = script_array::kind_t::obj; break;
+            case script_value_type::jai_object_type: node_kind = element_type->is_enum ? script_array::kind_t::hetero : script_array::kind_t::obj; break;
             default: node_kind = script_array::vec_kind_of(element_type->base_type); break;
         }
     }
@@ -1146,6 +1149,14 @@ script_value script_value::make_invalid(engine* eng) {
         val.set_stamp(detail::engine_access::get_type_info_invalid(*eng));  // Set proper type info
     }
     return val;
+}
+
+script_value script_value::make_weak_instance(const script_value& instance, engine* eng) {
+    const script_value& object = instance.deref();
+    script_value v(std::monostate{}, eng);
+    v.set_stamp(detail::engine_access::get_type_info_weak_ptr(*eng, object.get_type_info()));
+    v.storage_ = jai::weaker_ptr<object_holder>(object.get_object_holder());
+    return v;
 }
 
 checked_result<script_value> script_value::make_weak_ptr(const script_value& value, engine* eng) {
@@ -2048,6 +2059,9 @@ script_value script_value::parallel_detached_level(engine* eng, std::vector<type
 }
 
 // === Parallel captured-read borrow (see value.hpp) ===
+
+static_assert(alignof(script_array) >= 8 && alignof(script_map) >= 8 && alignof(detail::object_borrow_record) >= 8,
+              "a borrow's kind bits sit in the low three bits of the borrowed pointer");
 
 script_value script_value::make_parallel_borrow(const script_value& source, engine* eng, bool sliced) {
     const script_value& v = source.deref();

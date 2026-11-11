@@ -17,6 +17,8 @@ headers, and everything else in this repository — the test suite, the runner, 
   library and the suite with the NDK it finds (`ANDROID_NDK_ROOT`, or the newest under the SDK).
   An NDK under a path with spaces needs `-DCMAKE_CXX_FLAGS=--driver-mode=g++`: CMake hands
   clang++ its short 8.3 name, which no longer selects the C++ driver, and libc++ goes unlinked.
+- **WebAssembly.** Emscripten (7.0) builds the library and the browser host, a 32-bit libc++ target
+  that the `wasm` gate runs under Node; see [WebAssembly](#webassembly).
 - **CMake 3.20+**, or 3.25+ for the presets in `CMakePresets.json` and for `tools/install/build_runner.cmake`.
 - **Ninja**, optional. CMake's default generator (Visual Studio on Windows, Makefiles elsewhere) builds
   everything; Ninja gives fast incremental single-configuration trees, and the `windows-clang` preset uses it.
@@ -125,6 +127,37 @@ cmake --build build --target jai_demoreel       # the demoscene reel
 
 Note that the runner's CMake target is `jaiscript_runner` (the library already owns the name
 `jaiscript`), while the executable it produces is `jaiscript`.
+
+## WebAssembly
+
+Configured with Emscripten's toolchain file, the tree builds the library and `tools/jaiscript_web`, the
+engine the site's Play page and landing page run, with the runner's console builtins (`key_down`,
+`read_key`, `term_cols`, `term_rows`, `env_var`), file IO and the standard library:
+
+```bash
+cmake -S . -B build-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake \
+      -DJAISCRIPT_BUILD_TESTS=OFF -DJAISCRIPT_BUILD_EXAMPLES=OFF -DJAISCRIPT_INTERPRETER=OFF
+cmake --build build-wasm --target jaiscript_web_worker jaiscript_web
+node tools/jaiscript_web/run_node.mjs build-wasm/bin/jaiscript_web_worker.js examples/gloom/gloom.jai --smoke
+```
+
+`jaiscript_web_worker` runs a script to its end inside a Web Worker: `sleep()` blocks in
+`Atomics.wait`, and keys and the terminal size arrive through memory the page shares with it, which a
+browser allows only on a cross-origin isolated page. `jaiscript_web` is the fallback for a page that
+is not: it runs in steps under Asyncify, in a worker too, and hands control back to the worker's event
+loop at every `sleep()`, at about half the speed. Configured with `-DJAISCRIPT_WASM_THREADS=ON`, the tree builds the worker
+alone on WebAssembly threads (a pool of eight, started with the engine), where `parallel_for` and
+`parallel_transform` run in parallel as they do natively; the Asyncify build runs them serially.
+`run_node.mjs` drives either build under Node with the script's folder as its file system. Every unit
+of the tree compiles with `-fwasm-exceptions`, so the library catches the exceptions it throws.
+
+`python docs/site_tools/build_play.py --emsdk <dir>` builds the threaded worker and the Asyncify build
+into `docs/site/play/engine/`, and the worker without threads into `docs/site/play/engine/plain/`,
+which the landing page's scene and the docs' runnable samples load on any page; it also bundles the
+example games into `docs/site/play/games/`; `python docs/site_tools/serve_site.py` serves
+the site with the headers the Play pages need. `tools/ci/gates.sh wasm` builds the worker engine and
+plays GLOOM's, the crawler's and the demoreel's shims to the native gates' hashes.
 
 ## Where the binaries end up
 

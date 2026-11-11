@@ -1,1 +1,44 @@
-AddType "text/plain; charset=utf-8" .sh .ps1 .cmd
+ErrorDocument 404 /404.html
+
+# Plain http answers with a permanent redirect to https; certificate validation under /.well-known/ stays on http
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+RewriteCond %{REQUEST_URI} !^/\.well-known/
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+</IfModule>
+
+AddDefaultCharset utf-8
+AddCharset utf-8 .html .css .js .json .svg .xml .txt
+AddType "text/plain; charset=utf-8" .sh .ps1 .cmd .jai
+AddType application/wasm .wasm
+AddType image/svg+xml .svg
+AddType image/x-icon .ico
+
+# Text compresses to a quarter or less, the engine's WebAssembly and the game bundles (JSON) to about a third
+<IfModule mod_filter.c>
+<IfModule mod_brotli.c>
+AddOutputFilterByType BROTLI_COMPRESS text/html text/css text/javascript application/javascript application/json
+AddOutputFilterByType BROTLI_COMPRESS image/svg+xml application/wasm text/plain text/xml application/xml
+</IfModule>
+<IfModule mod_deflate.c>
+AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json
+AddOutputFilterByType DEFLATE image/svg+xml application/wasm text/plain text/xml application/xml
+</IfModule>
+</IfModule>
+
+# No file name carries a version, so nothing is cached for long: a page is asked for again after five minutes, a script,
+# a stylesheet or an engine file after an hour (the engine's script and its WebAssembly share one lifetime), an image
+# after a day
+<IfModule mod_headers.c>
+<FilesMatch "\.(html|xml|txt)$">
+Header set Cache-Control "max-age=300, must-revalidate"
+</FilesMatch>
+<FilesMatch "\.(css|js|json|wasm|jai)$">
+Header set Cache-Control "max-age=3600, must-revalidate"
+</FilesMatch>
+<FilesMatch "\.(svg|png|ico|jpg|jpeg|gif|webp)$">
+Header set Cache-Control "max-age=86400"
+</FilesMatch>
+</IfModule>

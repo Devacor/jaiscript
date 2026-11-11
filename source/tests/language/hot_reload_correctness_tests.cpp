@@ -482,7 +482,9 @@ public:
             eng->execute("class AT { int g(int x) { return x * 2; } } auto at = AT();");
             check_eq((int64_t)4, eng->execute("at.g(2);").as_int());
             check_eq((int64_t)4, eng->execute("at.g(2);").as_int());     // hot on int
-            check_eq((int64_t)4, eng->execute("at.g(2.4);").as_int());   // float converts, same site
+            check_eq((int64_t)2, eng->execute("at.g(true);").as_int());  // bool converts, same site
+            check_eq(std::string("Cannot pass float to parameter 'x' of 'g' (declared int)"),
+                     eng->execute("var fl = 2.4; var refused = \"\"; try { at.g(fl); } catch (e) { refused = e; } refused;").to_string());
         });
 
         // ---- parse-time type proofs across reloads ----
@@ -552,11 +554,13 @@ public:
             const std::string use = "r.set(7.5); r.f = 9.25; r.show()";
             arm(t, v1, use);
             step(t, "class R { int f = 0;\n"
-                    "  int set(float v) { f = v; this.f = v; return f; }\n"
+                    "  int set(float v) { f = cast<int>(v); this.f = cast<int>(v); return f; }\n"
                     "  string show() { return to_string(f) + \":\" + to_string(this.f) + \":\" + type_of(f); } }", "reload float -> int");
             check_eq(std::string("VALUE 9:9:int"), step(t, "r.show()", "live value truncated"));
-            check_eq(std::string("VALUE 7:7:int"), step(t, "r.set(7.5); r.show()", "float stores truncate through the ladder"));
-            check_eq(std::string("VALUE 9:9:int"), step(t, use, "the armed use source truncates"));
+            check_eq(std::string("VALUE 7:7:int"), step(t, "r.set(7.5); r.show()", "cast stores land through the ladder"));
+            const std::string armed = step(t, use, "the armed use pushes a float into the int field");
+            check_eq(std::string("ERROR Cannot assign float to field 'f' of R (declared int)"), armed);
+            check_eq(std::string("VALUE 7:7:int"), step(t, "r.show()", "the refused store left the field"));
         });
 
         test("proof_field_retype_string_to_int_resets_default", [this, step, arm, make_twins]() {
@@ -767,20 +771,25 @@ public:
             run(R"(
                 class P { int x = 1; }
                 class Q { float x = 0.5; int pad = 0; }
-                void bump(var& r) { r = r + 1.75; }
+                void bump(var& r) { r = r + 1; }
+                void nudge(var& r) { r = r + 1.75; }
                 function go(var& o) -> string { for (int i = 0; i < 3; i++) { bump(o.x); } return to_string(o.x); }
+                function go_float(var& o) -> string { for (int i = 0; i < 3; i++) { nudge(o.x); } return to_string(o.x); }
                 P p = P(); Q q = Q();
             )");
-            check_eq(std::string("4"), run("go(p)"), "int field: each store converts to int");
-            check_eq(std::string("5.75"), run("go(q)"), "another class at the same site: its float field");
+            check_eq(std::string("4"), run("go(p)"), "int field: each store lands as an int");
+            check_eq(std::string("3.5"), run("go(q)"), "another class at the same site: its float field");
             check_eq(std::string("7"), run("go(p)"), "back to the first class");
+            check_eq(std::string("ERROR: Cannot assign float to field 'x' of P (declared int)"), run("go_float(p)"), "int field: a float store is refused");
+            check_eq(std::string("8.75"), run("go_float(q)"), "the float field at that site takes it");
             run("class P { float x = 1; }");
-            check_eq(std::string("12.25"), run("go(p)"), "a reload that declares the field float governs the next binds");
+            check_eq(std::string("12.25"), run("go_float(p)"), "a reload that declares the field float governs the next binds");
+            check_eq(std::string("15.25"), run("go(p)"), "and an int store widens into it");
             run("class P { float x = 1; float _get_x() { return x; } }");
             const std::string err = run("go(p)");
             check_true(err.find("Cannot pass non-lvalue to reference parameter") != std::string::npos, "a user accessor makes the member a non-lvalue (got: " + err + ")");
             run("class P { float x = 1; }");
-            check_eq(std::string("17.5"), run("go(p)"), "dropping the accessor binds the field again");
+            check_eq(std::string("18.25"), run("go(p)"), "dropping the accessor binds the field again");
             run(R"(
                 class Base { int a = 0; }
                 class D1 : Base { int d1 = 1; }

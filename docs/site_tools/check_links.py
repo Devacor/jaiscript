@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Check every href/src on the site.
 
-Relative links must point at a file that exists; a #fragment must name an id in the
-target page; external URLs are listed, never fetched.
+Relative links must point at a file that exists (a link that starts with / is read from the
+site root, as the not-found page's are); a #fragment must name an id in the target page;
+external URLs are listed, never fetched.
 
     python site_tools/check_links.py
 
@@ -62,7 +63,8 @@ def main():
                 continue
             target = page
             if parts.path:
-                target = (page.parent / unquote(parts.path)).resolve()
+                path = unquote(parts.path)
+                target = (SITE / path.lstrip("/") if path.startswith("/") else page.parent / path).resolve()
                 if not target.exists():
                     failures.append("%s:%d: <%s %s=%r> target does not exist" % (rel, line, tag, key, v))
                     continue

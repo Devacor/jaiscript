@@ -215,6 +215,11 @@
         {
           "name": "keyword.control.jaiscript",
           "match": "\\b(if|else|do|while|for|parallel_for|break|continue|return|try|catch|throw|switch|case|default|fallthrough|yield)\\b"
+        },
+        {
+          "comment": "x instanceof T: an operator after an operand (a member named instanceof follows a dot)",
+          "name": "keyword.operator.expression.instanceof.jaiscript",
+          "match": "(?<![.:>])\\binstanceof\\b(?=\\s+[A-Za-z_])"
         }
       ]
     },

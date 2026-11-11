@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Grep the site for retired error texts (the current ones: reference/index.html "Run-time errors").
+"""Grep the site for retired error texts (the current ones: reference/errors.html "Run-time errors").
 
     python site_tools/check_old_texts.py
 
@@ -14,6 +14,9 @@ import sys
 SITE = pathlib.Path(__file__).resolve().parent.parent / "site"
 
 OLD_TEXTS = [
+    r"is marked serial_function\(\)",
+    r"is marked serial_static_method\(\)",
+    r"is marked serial_method\(\)",
     r"Member '[^']*' accessed on null",
     r"String has no method",
     r"Array has no method",
@@ -46,7 +49,7 @@ OLD_TEXTS = [
     r"shadows base class method",
     r"overrides virtual method from base class",
     # `Cannot push 'string' to array<int>` and `Cannot assign 'string' to element of type 'int'`
-    # are still the live texts (reference/index.html quotes the push one), so they
+    # are still the live texts (reference/errors.html quotes the push one), so they
     # are deliberately not here.
     r"Cannot copy: the value nests too deep",
     r"Maximum JSON nesting depth",
@@ -62,6 +65,7 @@ OLD_TEXTS = [
     r"\[map\]",
     r"\[object\]",
     r"\[function\]",
+    r"catch takes one name and no type",
 ]
 
 

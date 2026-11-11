@@ -1,5 +1,7 @@
 #include <jaiscript/properties/property_manager.hpp>
 #include <jaiscript/properties/property_schema.hpp>
+#include <algorithm>
+#include <cstdint>
 
 namespace jai {
 
@@ -109,24 +111,81 @@ namespace jai {
 
 	property_manager::property_manager() = default;
 
-	property_manager::~property_manager() = default;
+	property_manager::~property_manager() {
+		delete[] m_properties;
+	}
+
+	property_manager::property_manager(const property_manager& a_source, const void* a_sourceOwner, size_t a_ownerSize) noexcept {
+		if (a_source.m_count == 0) {
+			return;
+		}
+		m_properties = new property_base*[a_source.m_count];
+		m_capacity = a_source.m_count;
+		m_relocated = 1;
+		const std::ptrdiff_t shift = reinterpret_cast<const char*>(this) - reinterpret_cast<const char*>(&a_source);
+		const auto ownerBegin = reinterpret_cast<std::uintptr_t>(a_sourceOwner);
+		for (property_base* sourceProperty : a_source.all()) {
+			if (reinterpret_cast<std::uintptr_t>(sourceProperty) - ownerBegin < a_ownerSize) {
+				m_properties[m_count++] = reinterpret_cast<property_base*>(reinterpret_cast<char*>(sourceProperty) + shift);
+			}
+		}
+	}
+
+	size_t property_manager::lower_bound(std::string_view a_name) const {
+		size_t first = 0;
+		size_t count = m_count;
+		while (count > 0) {
+			const size_t half = count / 2;
+			if (m_properties[first + half]->name() < a_name) {
+				first += half + 1;
+				count -= half + 1;
+			} else {
+				count = half;
+			}
+		}
+		return first;
+	}
 
 	void property_manager::add(property_base* prop) {
-		m_properties[prop->name()] = prop;
+		if (m_relocated) {
+			// a hand-written copy constructor's members register again, before their neighbours exist to be compared
+			for (property_base* registered : all()) {
+				if (registered == prop) {
+					return;
+				}
+			}
+		}
+		const size_t index = lower_bound(prop->name());
+		if (index < m_count && m_properties[index]->name() == prop->name()) {
+			m_properties[index] = prop;
+			return;
+		}
+		if (m_count == m_capacity) {
+			const std::uint32_t grown = m_capacity == 0 ? 4 : m_capacity * 2;
+			property_base** larger = new property_base*[grown];
+			std::copy(m_properties, m_properties + index, larger);
+			std::copy(m_properties + index, m_properties + m_count, larger + index + 1);
+			delete[] m_properties;
+			m_properties = larger;
+			m_capacity = grown;
+		} else {
+			std::copy_backward(m_properties + index, m_properties + m_count, m_properties + m_count + 1);
+		}
+		m_properties[index] = prop;
+		++m_count;
 	}
 
 	void property_manager::clone_to_target(property_manager& target) const {
-		for (auto& [k, v] : m_properties) {
-			auto it = target.m_properties.find(k);
-			if (it != target.m_properties.end()) {
-				v->clone_to_target(*it->second);
+		for (property_base* prop : all()) {
+			if (property_base* counterpart = target.get(prop->name())) {
+				prop->clone_to_target(*counterpart);
 			}
 		}
 	}
 
 	property_base* property_manager::get(const std::string& key) const {
-		auto it = m_properties.find(key);
-		return it != m_properties.end() ? it->second : nullptr;
+		const size_t index = lower_bound(key);
+		return index < m_count && m_properties[index]->name() == key ? m_properties[index] : nullptr;
 	}
 
 }

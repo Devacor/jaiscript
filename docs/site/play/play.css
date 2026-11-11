@@ -1,0 +1,32 @@
+/* The Play page: a terminal stage, the controls around it and the sandbox tab's editor */
+.play-picker { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0 .75rem; }
+.play-pick[aria-pressed="true"] { border-color: var(--accent, #ffce6e); color: var(--accent, #ffce6e); }
+.play-stage { position: relative; isolation: isolate; background: #05060a; border-radius: 8px; padding: 8px; overflow: hidden; }
+.play-term { outline: none; display: flex; justify-content: center; }
+.play-term:focus-visible { box-shadow: 0 0 0 2px var(--accent, #ffce6e); }
+/* above xterm.js's own layers (its helpers and decorations reach z-index 10) */
+.play-cover { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center;
+	gap: .75rem; background: rgba(5, 6, 10, .78); }
+.play-cover[hidden] { display: none; }
+.play-game .xterm-viewport { overflow-y: hidden; }
+.play-canvas { display: block; image-rendering: pixelated; }
+.play-note { margin: 0; color: #c9c6d8; }
+.play-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .6rem; flex-wrap: wrap; }
+.play-keys { font-size: .9rem; opacity: .85; }
+.play-tools { display: flex; align-items: center; gap: .75rem; }
+.play-audio { display: inline-flex; align-items: center; gap: .4rem; }
+.play-mute { display: inline-flex; align-items: center; padding: .35rem .5rem; }
+.play-mute[aria-pressed="true"] { opacity: .7; }
+.play-volume { width: 6.5rem; accent-color: var(--accent, #ffce6e); }
+.play-status { font-size: .8rem; opacity: .65; margin-top: .25rem; }
+.sandbox-editor { width: 100%; min-height: 18rem; box-sizing: border-box; resize: vertical; padding: .75rem; border-radius: 8px;
+	font-family: "JetBrains Mono", Menlo, Consolas, monospace; font-size: .9rem; line-height: 1.45; tab-size: 4;
+	background: var(--code-bg, #0f1119); color: var(--text, #e6e3f0); border: 1px solid var(--border, #2a2d3a); }
+.sandbox-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .6rem 0; }
+.sandbox-tools select { padding: .35rem .5rem; border-radius: 6px; background: var(--code-bg, #0f1119); color: inherit;
+	border: 1px solid var(--border, #2a2d3a); }
+.sandbox-output .play-term { justify-content: flex-start; }
+.sandbox-intro { margin: 0 0 .25rem; }
+/* no sidebar here: the page takes the sidebar's width back and centres in the layout */
+.layout > .content:has(> .play-page) { max-width: 75rem; margin-inline: auto; }
+.play-page { max-width: none; }

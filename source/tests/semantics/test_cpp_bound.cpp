@@ -716,7 +716,7 @@ public:
                 // Pin the restored fast-path surface itself (not just parity).
                 check_true(msgOf("bi / bz").find("Division by zero") != std::string::npos, tag + "bound / keeps the integer fast-path text");
                 check_true(msgOf("bi % bz").find("Modulo by zero") != std::string::npos, tag + "bound % keeps the modulo fast-path text and code");
-                check_true(msgOf("bf / bz").find("Division by zero") != std::string::npos, tag + "bound float / keeps the float fast-path text");
+                check_eq(std::string("<no throw>"), msgOf("bf / bz"), tag + "a bound float over a bound int zero is IEEE");
                 // Nonzero bound divisors still compute through the normal path.
                 check_eq((int64_t)5, eng->execute("bi / 2").as_int(), tag + "bound numerator / computes");
                 check_eq((int64_t)1, eng->execute("bi % 3").as_int(), tag + "bound numerator % computes");
@@ -760,8 +760,8 @@ public:
             count_ref.assign_through(script_value(script_int(9), eng.get()));
             check_eq((int64_t)9, counts.get_array_storage()->get(0, eng.get()).as_int(), "an int element takes an int");
             bool threw = false;
-            try { count_ref.assign_through(script_value(script_float(1e300), eng.get())); } catch (const jai::runtime_error&) { threw = true; }
-            check_true(threw, "an out-of-range float into an int element raises, as the script store does");
+            try { count_ref.assign_through(script_value(script_float(2.5), eng.get())); } catch (const jai::runtime_error&) { threw = true; }
+            check_true(threw, "a float into an int element raises, as the script store does");
             check_eq((int64_t)9, counts.get_array_storage()->get(0, eng.get()).as_int(), "a refused store leaves the element");
         });
 

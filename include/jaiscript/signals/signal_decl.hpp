@@ -36,6 +36,7 @@ struct signal_synchronized {
 
 template<typename T, typename Sync = signal_unsynchronized> class signal_emitter;
 template<typename T, typename Sync = signal_unsynchronized> class signal;
+template<typename T, typename Sync = signal_unsynchronized> class signal_property;
 
 // The engine's lifetime token: expired once the engine is destroyed (defined in engine.cpp)
 std::weak_ptr<const void> engine_lifetime_token(engine* a_engine);
@@ -707,6 +708,39 @@ private:
 
 	template<typename U, typename S> friend class signal;
 
+protected:
+	// For member_signal_emitter. The receivers stay connected and belong to this emitter, whose own are let go;
+	// a_source emits to nobody. The host moves an object no other thread is using.
+	void take_connections(signal_emitter& a_source) noexcept {
+		for (const auto& entry : observers_) {
+			if (auto target = live_target(entry)) {
+				release(*target);
+			}
+		}
+		observers_ = std::move(a_source.observers_);
+		a_source.observers_.clear();
+		for (const auto& entry : observers_) {
+			if (auto target = live_target(entry)) {
+				target->owner_ = state_.get();
+			}
+		}
+		owned_connections_ = std::move(a_source.owned_connections_);
+		a_source.owned_connections_.clear();
+		loaded_observers_ = std::move(a_source.loaded_observers_);
+		a_source.loaded_observers_.clear();
+		has_oneshots_pending_ = a_source.has_oneshots_pending_;
+		has_dead_observers_ = a_source.has_dead_observers_;
+		blocked_callback_ = std::move(a_source.blocked_callback_);
+		copy_settings(a_source);
+	}
+
+	void copy_settings(const signal_emitter& a_source) {
+		ordered_parameter_names_ = a_source.ordered_parameter_names_;
+		script_engine_ = a_source.script_engine_;
+		script_engine_alive_ = a_source.script_engine_alive_;
+	}
+
+private:
 	// ADL serialization hooks (named save/load so the archive's ADL dispatch finds them).
 	template<typename Archive, typename U, typename S>
 	friend void save(Archive& ar, const signal_emitter<U, S>& sig);
@@ -716,6 +750,24 @@ private:
 
 static_assert(!std::is_move_constructible_v<signal_emitter<void()>> && !std::is_move_assignable_v<signal_emitter<void()>>);
 static_assert(!std::is_move_constructible_v<signal_emitter<void(), signal_synchronized>> && !std::is_move_assignable_v<signal_emitter<void(), signal_synchronized>>);
+
+// An emitter that is a member of a copyable, movable object (JAI_SIGNAL_PROPERTY and observable_property hold one). A copy
+// keeps the script engine and parameter names and starts with no receivers; a move takes the receivers; move assignment
+// lets go of its own first; copy assignment changes nothing.
+template<typename T, typename Sync = signal_unsynchronized>
+class member_signal_emitter : public signal_emitter<T, Sync> {
+public:
+	member_signal_emitter() = default;
+	member_signal_emitter(const member_signal_emitter& a_other) { this->copy_settings(a_other); }
+	member_signal_emitter(member_signal_emitter&& a_other) noexcept { this->take_connections(a_other); }
+	member_signal_emitter& operator=(const member_signal_emitter&) noexcept { return *this; }
+	member_signal_emitter& operator=(member_signal_emitter&& a_other) noexcept {
+		if (this != &a_other) {
+			this->take_connections(a_other);
+		}
+		return *this;
+	}
+};
 
 
 template<typename T, typename Sync>
@@ -727,114 +779,119 @@ public:
 	using weak_receiver_type = std::weak_ptr<receiver<T>>;
 	using emitter_type = signal_emitter<T, Sync>;
 
-	explicit signal(emitter_type& emitter) : emitter_(emitter) {}
+	explicit signal(emitter_type& emitter) : emitter_(&emitter) {}
 
-	signal(const signal& other) : emitter_(other.emitter_) {}
+	signal(const signal& other) = default;
+	// A facade stays on its emitter
+	signal& operator=(const signal&) noexcept { return *this; }
 
 	[[nodiscard]]
 	shared_receiver_type connect(std::function<T> callback) {
-		return emitter_.connect(std::move(callback));
+		return emitter_->connect(std::move(callback));
 	}
 
 	[[nodiscard]]
 	shared_receiver_type connect(const std::string& script_callback) {
-		return emitter_.connect(script_callback);
+		return emitter_->connect(script_callback);
 	}
 
 	[[nodiscard]]
 	shared_receiver_type connect_oneshot(std::function<T> callback) {
-		return emitter_.connect_oneshot(std::move(callback));
+		return emitter_->connect_oneshot(std::move(callback));
 	}
 
 	[[nodiscard]]
 	shared_receiver_type connect_oneshot(const std::string& script_callback) {
-		return emitter_.connect_oneshot(script_callback);
+		return emitter_->connect_oneshot(script_callback);
 	}
 
 	bool connect(shared_receiver_type recv) {
-		return emitter_.connect(recv);
+		return emitter_->connect(recv);
 	}
 
 	shared_receiver_type connect(const std::string& id, std::function<T> callback) {
-		return emitter_.connect(id, std::move(callback));
+		return emitter_->connect(id, std::move(callback));
 	}
 
 	shared_receiver_type connect(const std::string& id, const script_value& fn_callback) {
-		return emitter_.connect(id, fn_callback);
+		return emitter_->connect(id, fn_callback);
 	}
 
 	shared_receiver_type connect(const std::string& id, const std::string& script_callback) {
-		return emitter_.connect(id, script_callback);
+		return emitter_->connect(id, script_callback);
 	}
 
 	[[nodiscard]]
 	shared_receiver_type connect_immediate(std::function<T> callback) {
-		return emitter_.connect_immediate(std::move(callback));
+		return emitter_->connect_immediate(std::move(callback));
 	}
 
 	[[nodiscard]]
 	shared_receiver_type connect_immediate(const std::string& script_callback) {
-		return emitter_.connect_immediate(script_callback);
+		return emitter_->connect_immediate(script_callback);
 	}
 
 	bool connect_immediate(shared_receiver_type recv) {
-		return emitter_.connect_immediate(recv);
+		return emitter_->connect_immediate(recv);
 	}
 
 	shared_receiver_type connect_immediate(const std::string& id, std::function<T> callback) {
-		return emitter_.connect_immediate(id, std::move(callback));
+		return emitter_->connect_immediate(id, std::move(callback));
 	}
 
 	shared_receiver_type connect_immediate(const std::string& id, const script_value& fn_callback) {
-		return emitter_.connect_immediate(id, fn_callback);
+		return emitter_->connect_immediate(id, fn_callback);
 	}
 
 	shared_receiver_type connect_immediate(const std::string& id, const std::string& script_callback) {
-		return emitter_.connect_immediate(id, script_callback);
+		return emitter_->connect_immediate(id, script_callback);
 	}
 
 	shared_receiver_type connection(const std::string& id) {
-		return emitter_.connection(id);
+		return emitter_->connection(id);
 	}
 
 	bool connected(const std::string& id) const {
-		return emitter_.connected(id);
+		return emitter_->connected(id);
 	}
 
 	size_t observer_count() const {
-		return emitter_.observer_count();
+		return emitter_->observer_count();
 	}
 
 	void disconnect(shared_receiver_type recv) {
-		emitter_.disconnect(recv);
+		emitter_->disconnect(recv);
 	}
 
 	void disconnect(const std::string& id) {
-		emitter_.disconnect(id);
+		emitter_->disconnect(id);
 	}
 
 	void script_engine(engine* eng) {
-		emitter_.script_engine(eng);
+		emitter_->script_engine(eng);
 	}
 
 	engine* script_engine() const {
-		return emitter_.script_engine();
+		return emitter_->script_engine();
 	}
 
 	void parameter_names(const std::vector<std::string>& names) {
-		emitter_.parameter_names(names);
+		emitter_->parameter_names(names);
 	}
 
 	std::vector<std::string> parameter_names() const {
-		return emitter_.parameter_names();
+		return emitter_->parameter_names();
 	}
 
 	bool has_parameter_names() const {
-		return emitter_.has_parameter_names();
+		return emitter_->has_parameter_names();
 	}
 
 private:
-	emitter_type& emitter_;
+	// a copied or moved owner's signal_property points its facade at its own emitter
+	template<typename U, typename S> friend class signal_property;
+
+	emitter_type* emitter_;
 };
 
 } // namespace jai

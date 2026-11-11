@@ -42,8 +42,8 @@ p.health += 10;                   // Arithmetic operators
 if (p.health > 0) { /*...*/ }    // Comparison operators
 
 // Reflection
-for (auto& [name, prop] : p.property_mgr.all()) {
-    std::cout << name << std::endl;
+for (jai::property_base* prop : p.property_mgr.all()) {   // in name order
+    std::cout << prop->name() << std::endl;
 }
 
 // Serialization
@@ -331,6 +331,26 @@ JAI_PROPERTY((std::shared_ptr<Node>), node, nullptr,
 // Clone to another object
 source_obj.property_mgr.clone_to_target(dest_obj.property_mgr);
 ```
+
+## Copy and move
+
+A `property_owner` copies and moves as its members do, at every level of a
+`property_owner<Derived, Base>` ladder, so it is held by value, in a `std::vector`, or
+returned from `jai::from_json<T>`:
+
+```cpp
+std::vector<Player> players;
+players.push_back(std::move(p));                       // values move, nothing is deep-copied
+Player back = jai::from_json<Player>(*eng, jai::to_json(*eng, players.front()));
+```
+
+- The new object's `property_mgr` registers its own properties; the source keeps its
+  registrations and stays destructible and assignable.
+- A copy or assignment carries plain values. `clone_to_target` is the copy that runs a custom clone.
+- A move takes the receivers the owner tracks and those of its `JAI_SIGNAL_PROPERTY` and
+  observable members; a copy starts with none.
+- A class that declares properties is a `property_owner` level: properties declared by a
+  subclass that is not one are not registered in its copies.
 
 ## Architecture
 

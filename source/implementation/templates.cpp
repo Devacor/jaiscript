@@ -1075,7 +1075,6 @@ scoped_file resolve_scoped_file(engine& eng, const std::string& path, const std:
 }
 
 void register_library(engine& eng) {
-	for (std::string_view name : {k_joiner, k_splice, k_raw, k_dynamic, k_scoped, k_scoped_file}) { eng.serial_function(std::string(name)); }
 	dynamic_binder<html_text>(eng, "web::html")
 		.constructor<>()
 		.method("to_string", &html_text::to_string)
@@ -1113,7 +1112,7 @@ void register_library(engine& eng) {
 		out.reserve(total);
 		for (const auto& part : a_args) { out += part.deref().unchecked_as_string(); }
 		return lib->make_html(std::move(out));
-	});
+	}, serial);
 
 	eng.add_variadic_function(std::string(k_splice), [lib](const std::vector<script_value>& a_args) -> R {
 		if (a_args.size() != 3 || !a_args[1].deref().is_string() || !a_args[2].deref().is_string()) { return lib->refused("a template splice takes a value, a format spec and its spelling"); }
@@ -1127,7 +1126,7 @@ void register_library(engine& eng) {
 		if (const size_t limit = engine_access::execution_limits(*lib->eng).template_output_limit; limit != 0 && out.size() > limit) { return trusted_output_limit(*lib, limit); }
 		if (!builtin_memory_charge(lib->eng, out.size())) [[unlikely]] { return builtin_memory_cap(lib->eng); }
 		return script_value(std::move(out), lib->eng);
-	});
+	}, serial);
 
 	eng.add_variadic_function(std::string(k_raw), [lib](const std::vector<script_value>& a_args) -> R {
 		if (a_args.size() != 1) { return R(make_error_code(runtime_error_code::argument_count_mismatch), "raw() takes 1 argument"); }
@@ -1135,7 +1134,7 @@ void register_library(engine& eng) {
 		auto text = lib->eng->text_of(a_args[0]);
 		if (!text) { return text.error_value(); }
 		return lib->make_html(std::move(text.value()));
-	});
+	}, serial);
 
 	eng.add_variadic_function(std::string(k_scoped), [lib](const std::vector<script_value>& a_args) -> R {
 		if (a_args.size() != 3 || !a_args[0].deref().is_string() || !a_args[1].deref().is_string()) { return lib->refused("scoped_template_text(text, map) takes a text and a map"); }
@@ -1144,7 +1143,7 @@ void register_library(engine& eng) {
 		auto program = compile_scoped(*lib, a_args[0].deref().as_string(), a_args[1].deref().as_string(), error);
 		if (!program) { return lib->refused(error); }
 		return render_scoped(*lib, program, a_args[2]);
-	});
+	}, serial);
 
 	eng.add_variadic_function(std::string(k_scoped_file), [lib](const std::vector<script_value>& a_args) -> R {
 		if (a_args.size() != 3 || !a_args[0].deref().is_string() || !a_args[1].deref().is_string()) { return lib->refused("scoped_template(path, map) takes a path and a map"); }
@@ -1184,7 +1183,7 @@ void register_library(engine& eng) {
 		auto program = compile_scoped(*lib, file.content, resolved_path, error);
 		if (!program) { return lib->refused(error); }
 		return render_scoped(*lib, program, a_args[2]);
-	});
+	}, serial);
 
 	// template(path, a, b, ...) with a path known at run time: the unit `(auto& a, auto& b) => template("<file>", a, b);` renders
 	// the file with its literal path, so it expands, checks and reloads as a literal path does; the function it made renders
@@ -1231,7 +1230,7 @@ void register_library(engine& eng) {
 		entry.function = std::move(made.value());
 		entry.failed = false;
 		return *entry.function;
-	});
+	}, serial);
 }
 
 } // namespace jai::detail::template_library

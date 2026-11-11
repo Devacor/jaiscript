@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="The Type Ladder: typed, auto, var — JaiScript Guide">
 <meta property="og:description" content="Three rungs of typing: int enforced, auto inferred then locked, var dynamic - plus the conversion rules typed targets apply.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/guide/02-type-ladder.html">
+<meta property="og:url" content="https://jaiscript.com/guide/02-type-ladder.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,307 +33,168 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li class="current"><a href="../guide/02-type-ladder.html" aria-current="page">The Type Ladder: typed, auto, var</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">The Type Ladder: typed, auto, var</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li class="current"><a href="../guide/02-type-ladder.html" aria-current="page">The Type Ladder: typed, auto, var</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>02</nav>
 <article class="chapter"><h1 id="the-type-ladder">The Type Ladder<a class="hlink" href="#the-type-ladder" aria-label="link">&#8203;</a></h1>
-<p>Pick your strictness per variable: prototype loosely with <code>var</code>, lock things down with explicit types as the code matures, in the same file, with no rewrite. JaiScript has three rungs of typing strictness for variables, class fields and parameters (an untyped parameter is a <code>var</code>):</p>
-<div class="tablewrap"><table><thead><tr><th>Declaration</th><th>Meaning</th></tr></thead><tbody><tr><td><code>int x = 5;</code> (any explicit type)</td><td><strong>Enforced.</strong> The variable holds this type forever; assignments convert if <a href="#conversion-table-typed-locked-auto-targets">the conversion table</a> allows it and error if not.</td></tr><tr><td><code>auto x = 5;</code></td><td><strong>Inferred, then enforced.</strong> The initializer&#x27;s static type is inferred once, then locked. From that point <code>auto</code> behaves exactly like the explicit type. <code>auto</code> is <em>not</em> dynamic, unless the initializer&#x27;s static type is <code>var</code> (<a href="#auto-takes-the-static-type">below</a>).</td></tr><tr><td><code>var x = 5;</code></td><td><strong>Dynamic.</strong> Any type may be assigned at any time.</td></tr></tbody></table></div>
-<p>&quot;Error&quot; comes in two flavors, and which one you get depends on what the checker could see. A mismatch it can see (a literal, a typed local, a typed return) is a <strong>load error</strong>: the script never starts. A mismatch it cannot see (a value that came through a <code>var</code>) is a <strong>catchable run-time error</strong>. Nothing here is opt-in; the checker is on, in strict mode, from the first line.</p>
-<h2 id="declarations-without-an-initializer">Declarations without an initializer<a class="hlink" href="#declarations-without-an-initializer" aria-label="link">&#8203;</a></h2>
-<div class="callout cpp"><p>Value-initialization, as in C++: <code>int x;</code> is 0 and <code>T x;</code> runs <code>T()</code>. Unlike C++, nothing is ever left uninitialized.</p></div>
-<p>A typed declaration always holds a value of its type. Leave the initializer off and it takes the type&#x27;s default, the way a C++ object is value-initialized:</p>
-<div class="tablewrap"><table><thead><tr><th>Declared type</th><th>Without an initializer</th></tr></thead><tbody>
-<tr><td><code>int</code> / <code>float</code> / <code>bool</code></td><td><code>0</code> / <code>0.0</code> / <code>false</code></td></tr>
-<tr><td><code>string</code></td><td><code>""</code></td></tr>
-<tr><td><code>array&lt;T&gt;</code> / <code>map&lt;K, V&gt;</code></td><td>empty, of the declared type</td></tr>
-<tr><td>a class <code>T</code></td><td>default-constructed, as <code>T()</code></td></tr>
-<tr><td><code>var</code>, <code>shared_ptr&lt;T&gt;</code>, <code>weak_ptr&lt;T&gt;</code>, <code>function</code></td><td><code>null</code></td></tr>
-</tbody></table></div>
-<p>Parentheses and braces construct with arguments: <code>T x(args);</code> and <code>T x{args};</code> call a constructor, <code>T x();</code> and <code>T x{};</code> default-construct, and a primitive takes one value or its zero (<code>int lives{3};</code>). A class that declares no constructor takes its field values in declaration order instead (<code>Point p{1, 2};</code>, aggregate initialization, in <a href="07-classes.html">Classes</a>).</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Vec2 { float x = 1.5; float y = 2.5; Vec2() {} Vec2(float a, float b) { x = a; y = b; } }
-int hits; float speed; bool alive; string name; array&lt;int&gt; scores; var anything; Vec2 home;
-print("hits={} speed={} alive={} name=[{}] scores={} anything={} home=({}, {})", hits, speed, alive, name, scores.size(), type_of(anything), home.x, home.y);
-Vec2 a(3.0, 4.0);     // direct-initialization
-Vec2 b();             // default construction
-int lives{3};         // a primitive takes one value in braces
-print("a=({}, {}) b.x={} lives={}", a.x, a.y, b.x, lives);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">hits=0 speed=0.0 alive=false name=[] scores=0 anything=null home=(1.5, 2.5)
-a=(3.0, 4.0) b.x=1.5 lives=3</code></pre></div>
-<p>A class cannot hold itself by value (<code>class Node { Node next; }</code> would build a Node inside every Node, and the parser says so). Spell a link <code>Node next = null;</code>, or share nodes with <code>shared_ptr&lt;Node&gt;</code>.</p>
-<h2 id="when-a-mismatch-is-caught">When a mismatch is caught<a class="hlink" href="#when-a-mismatch-is-caught" aria-label="Link to this section">&#8203;</a></h2>
-<p>A typed variable holds its type for good. Assign something incompatible and you get an error. The interesting question is <em>when</em>.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int x = 5;
-x = 12;          // fine, still an int
-x = "oops";      // the checker sees a string landing in an int</code></pre></div>
+<p>Every variable, field and parameter picks one of three rungs of strictness, and the rungs mix freely in one file:</p>
+<div class="tablewrap"><table><thead><tr><th>Declaration</th><th>Meaning</th></tr></thead><tbody><tr><td><code>int x = 5;</code> (any spelled type)</td><td><strong>Enforced.</strong> The slot holds that type for good. A store converts when <a href="#conversion-table-typed-locked-auto-targets">the conversion table</a> allows it and is an error when not.</td></tr><tr><td><code>auto x = 5;</code></td><td><strong>Inferred, then enforced.</strong> The slot takes the initializer&#x27;s static type and from then on behaves as if that type were spelled.</td></tr><tr><td><code>var x = 5;</code></td><td><strong>Dynamic.</strong> Any value at any time. An untyped parameter is a <code>var</code>.</td></tr></tbody></table></div>
+<p>Three of the names have a C++ spelling and a JavaScript spelling that mean the same thing:</p>
+<div class="tablewrap"><table><thead><tr><th></th><th>C++ spelling</th><th>JavaScript spelling</th></tr></thead><tbody><tr><td>dynamic variable</td><td></td><td><code>var x</code>, <code>let x</code></td></tr><tr><td>64-bit float</td><td><code>double</code></td><td><code>float</code> (the name <code>type_of</code> reports)</td></tr><tr><td>the empty handle</td><td><code>nullptr</code></td><td><code>null</code></td></tr></tbody></table></div>
+<p><code>let</code> stands wherever <code>var</code> may (<code>let x = 5;</code>, <code>for (let i = 0; ...)</code>, <code>let&amp; r = x;</code>). Every declaration, under any keyword, is scoped to its block, and a C-style <code>for</code> variable that a lambda captures by reference is a fresh variable on each iteration (<a href="06-functions.html#lambdas-and-captures">Functions &amp; Lambdas</a>).</p>
+<h2 id="when-a-mismatch-is-caught">When a mismatch is caught<a class="hlink" href="#when-a-mismatch-is-caught" aria-label="link">&#8203;</a></h2>
+<p>The checker reads the whole program before its first statement runs. A mismatch between two types it can see is a <strong>load error</strong>, and nothing executes:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int x = 5;
+print("before");
+x = "oops";</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
 &lt;script&gt;:3:3: error: cannot assign &#x27;string&#x27; to &#x27;x&#x27; declared &#x27;int&#x27; (declared at 1:5)
-    x = &quot;oops&quot;;      // the checker sees a string landing in an int
+    x = &quot;oops&quot;;
       ^</code></pre></div>
-<p>Nothing ran. The checker walks the whole program first, sees a string literal heading for an <code>int</code> variable, and fails the load. That is <strong>strict</strong> mode, and it is the default. In an embedded engine the same failure arrives as a thrown <code>jai::static_check_error</code> out of <code>execute()</code>.</p>
-<p>Now hide the type from the checker. A <code>var</code> is dynamic, so there is nothing to object to at load time and the mistake survives to run time, where it is an ordinary catchable error:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int x = 5;
-var v = "oops";          // var hides the type from the checker
-try {
-    x = v;               // so this one waits for run time - and is catchable
-} catch (e) {
-    print("caught: ", e);
-}
+<p>A <code>var</code> has no static type, so a mismatch that arrives through one is found when the store runs. It is an ordinary error that <code>catch</code> sees, and the slot keeps its old value:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int x = 5;
+var v = "oops";
+try { x = v; } catch (e) { print("caught: ", e); }
 print("x is still ", x);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">caught: Cannot assign string to &#x27;x&#x27; (declared int)
 x is still 5</code></pre></div>
-<p>The rejected assignment left <code>x</code> untouched: a failed store never half-writes.</p>
-<p>That split is the rule, and it holds for every typed <em>slot</em> in the language, any place a value can land: a variable, a parameter, a return, a field, a container element:</p>
-<ul>
-<li><strong>A mismatch the checker can see</strong> (a literal, a typed local, a typed field, a typed return, an argument to a function the program declares) is a <strong>load error</strong>. Nothing executes, so there is nothing to <code>catch</code>.</li>
-<li><strong>A mismatch it cannot see</strong> (anything sourced from a <code>var</code>, an unresolved host value or a call through a callable variable) is a <strong>run-time error</strong>, raised at the offending statement and catchable there.</li>
-</ul>
-<p>None of this is opt-in. To loosen it, put <code>[[warn_mode]]</code> at the top of a file, a block, or one statement: the same diagnostics get reported as warnings, and that region loads and runs. <code>extern</code> declares a name the checker cannot see. The full contract is in <a href="13-strict-checking.html">Types That Fail Early</a>.</p>
-<h2 id="auto-locks-on-first-use">auto locks on first use<a class="hlink" href="#auto-locks-on-first-use" aria-label="link">&#8203;</a></h2>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto x = 5;      // auto infers int, then enforces it
-x = 2.9;         // float assigned to locked-int: converts (truncates toward zero)
-print("x = {} ({})", x, type_of(x));
-auto y = 1.5;    // locked to float
-y = 2;           // int widens to float
-print("y = {} ({})", y, type_of(y));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">x = 2 (int)
-y = 2.0 (float)</code></pre></div>
-<p>Once locked, an incompatible type is an error on the same terms as an explicitly typed variable. A literal fails the load:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto x = 5;      // auto infers int, then enforces it
-x = "hello";     // locked to int: string is not convertible</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
-&lt;script&gt;:2:3: error: cannot assign &#x27;string&#x27; to &#x27;x&#x27; declared &#x27;int&#x27; (declared at 1:6)
-    x = &quot;hello&quot;;     // locked to int: string is not convertible
-      ^</code></pre></div>
-<p>&hellip;while a <code>var</code>-sourced value slips past the checker and raises where it lands:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto x = 5;
-var s = "hello";
-try { x = s; } catch (e) { print("caught: ", e); }
-print("x is still ", x, " (", type_of(x), ")");</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">caught: Cannot assign string to &#x27;x&#x27; (declared int)
-x is still 5 (int)</code></pre></div>
-<p>An <strong>uninitialized</strong> <code>auto x;</code> locks on its <em>first assignment</em> instead. The checker cannot see which branch assigns first, so it stays out of the way there: a mistake on an uninitialized <code>auto</code> is a run-time error, never a load error.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto x;                // no initializer: nothing to infer from yet
-x = 5;                 // locks to int here, at run time
-try { x = "s"; } catch (e) { print("caught: ", e); }
-print(x, " (", type_of(x), ")");</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">caught: Cannot assign string to &#x27;x&#x27; (declared int)
-5 (int)</code></pre></div>
-<p>Once locked, <code>null</code> does not un-lock it either: an <code>int</code>-locked <code>auto</code> rejects <code>null</code> exactly as an <code>int</code> would (the table below has no null row for primitives; class-typed slots do take a typed null).</p>
-<h3 id="auto-takes-the-static-type">auto takes the static type<a class="hlink" href="#auto-takes-the-static-type" aria-label="link">&#8203;</a></h3>
-<p>The type <code>auto</code> locks to is the initializer&#x27;s <strong>static</strong> type, the one the checker sees at load, never the type the value happens to hold when the line runs.</p>
-<ul>
-<li>An initializer whose static type is <code>var</code> or unknown (a <code>var</code> local, an element of an <code>array&lt;var&gt;</code>, a call that returns <code>var</code>, a ternary whose branches differ) has nothing to lock to, so that <code>auto</code> is a <code>var</code>.</li>
-<li>A ternary with an <code>int</code> branch and a <code>float</code> branch has C++&#x27;s common type, <code>float</code>: <code>auto r = hit ? 1 : 0.5;</code> is a <code>float</code> whichever branch runs.</li>
-<li>The rule is the same for an <code>auto</code> class field and for an <code>auto</code> range-for variable (over a <code>var</code> array its elements have no static type, so the variable is a <code>var</code>).</li>
-</ul>
-<p>The same line means the same thing on every run:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var row = [1, 2.5, "three"];
-auto a = row[0];     // an array&lt;var&gt; element: static type var, so a is a var
-a = "now a string";
-array&lt;int&gt; ints = [1, 2];
-auto b = ints[0];    // static type int: locked to int
-b = 2.9;
-print("a = {} ({}), b = {} ({})", a, type_of(a), b, type_of(b));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">a = now a string (string), b = 2 (int)</code></pre></div>
-<h3 id="auto-copies-a-value">auto copies a value and shares a handle<a class="hlink" href="#auto-copies-a-value" aria-label="link">&#8203;</a></h3>
-<p><code>auto y = x;</code> copies what C++ <code>auto</code> copies.</p>
-<ul>
-<li>When <code>x</code> is a value (a class instance, a bound C++ object held by value, an array, a map), <code>y</code> is a new value made by the copy constructor.</li>
-<li>When <code>x</code> is a handle (<code>new T()</code>, a <code>shared_ptr&lt;T&gt;</code>, or a host function&#x27;s <code>std::shared_ptr&lt;T&gt;</code> result), <code>y</code> is a copy of the handle and shares the object.</li>
-<li>A call that returns a reference, such as a host method returning <code>T&amp;</code>, is copied too, because <code>auto</code> drops the reference as in C++. <code>auto&amp; y = owner.child();</code> names the object itself.</li>
-</ul>
-<p>A <code>var</code> and a declaration spelled with a class type copy the same way, and <code>T y = handle;</code> copies the object the handle points at.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class P { int x = 1; }
-P p = P();
-auto copy = p;          // a value: a new P
-copy.x = 5;
-auto h = new P();
-auto alias = h;         // a handle: the same P
-alias.x = 7;
-P detached = h;         // a value slot: a copy of the P h points at
-detached.x = 9;
-print("p.x = {}, h.x = {}, detached.x = {}", p.x, h.x, detached.x);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">p.x = 1, h.x = 7, detached.x = 9</code></pre></div>
-<h2 id="var-is-genuinely-dynamic">var is genuinely dynamic<a class="hlink" href="#var-is-genuinely-dynamic" aria-label="link">&#8203;</a></h2>
-<p><code>let</code> is another spelling of <code>var</code>, everywhere a <code>var</code> declaration may stand (<code>let x = 5;</code>, <code>for (let i = 0; ...)</code>, <code>let&amp; r = x;</code>). Like every JaiScript declaration it is scoped to its block, as JavaScript's <code>let</code> is.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var y = 5;
-print("y is {} ({})", y, type_of(y));
-y = "now a string";
-print("y is {} ({})", y, type_of(y));
-var mixed = [1, "two", 3.14, true];
-print("mixed[1] = {}", mixed[1]);
-mixed = {"even": "a map now"};
-type_of(mixed);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">y is 5 (int)
-y is now a string (string)
-mixed[1] = two
-== result: map</code></pre></div>
-<p>Container homogeneity follows the ladder: <code>auto nums = [1, 2, 3]</code> locks a homogeneous array; <code>var</code> containers may be heterogeneous and may be reassigned to a different container kind entirely.</p>
-<h2 id="conversion-table-typed-locked-auto-targets">The one conversion table<a class="hlink" href="#conversion-table-typed-locked-auto-targets" aria-label="Link to this section">&#8203;</a></h2>
-<p>There is exactly one table, and every typed slot in the language runs it: declarations, <code>=</code>, by-value parameters, returns, instance fields and static fields. The element boundary of a typed container runs its strict end: an element takes its own type, int and float both ways, bool and int both ways and char and string both ways. It applies no truthiness and no <code>to_X()</code> (<a href="09-containers-strings.html">Containers &amp; Strings</a>). Learn it once.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Tag { int count = 0; }
-
-float half(float x) { return x / 2; }        // parameter AND return run the table
-
-float f = 3;                                 // declaration: int widens
-Tag t = Tag();
-t.count = 2.9;                               // field store: float truncates into int
-print("declaration: ", f);
-print("parameter:   ", half(3));
-print("field:       ", t.count, " (", type_of(t.count), ")");</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">declaration: 3.0
-parameter:   1.5
-field:       2 (int)</code></pre></div>
-<p>What each target accepts, and what it does with it:</p>
-<div class="tablewrap"><table><thead><tr><th>Target</th><th>Accepts</th><th>Result</th></tr></thead><tbody>
-<tr><td><code>int</code></td><td>int, float, bool, an object with <code>to_int()</code></td><td>float <strong>truncates toward zero</strong> (<code>3.99</code> &rarr; <code>3</code>, <code>-3.99</code> &rarr; <code>-3</code>); <code>true</code> &rarr; <code>1</code></td></tr>
-<tr><td><code>float</code></td><td>float, int, bool, an object with <code>to_float()</code></td><td>int widens (<code>3</code> &rarr; <code>3.0</code>)</td></tr>
-<tr><td><code>bool</code></td><td>anything</td><td>truthiness (<code>5</code> &rarr; <code>true</code>, <code>0</code> &rarr; <code>false</code>)</td></tr>
-<tr><td><code>string</code></td><td>string, utf8_string (its bytes), char (its one-character text), an object with <code>to_string()</code></td><td>text only: an int, float, bool, null or container is an <strong>error</strong>, as a string never reads as an int. Stringify it: <code>to_string(5)</code> or <code>`${5}`</code></td></tr>
-<tr><td><code>char</code></td><td>char, a string of exactly one character, an object with <code>to_char()</code></td><td><code>char c = "a";</code> holds <code>'a'</code>; a string of any other length raises <code>Cannot convert 'string' to 'char': a char takes a string of exactly one character</code> (a literal fails the load). There is no int row at all, so <code>char c = 65</code> is an error. <a href="#cast-the-explicit-boundary"><code>cast&lt;char&gt;(65)</code></a> is the spelling</td></tr>
-<tr><td><code>int</code> / <code>float</code></td><td>&hellip;but never a string</td><td><strong>error</strong>; there is no implicit parse. Use <code>"42".to_int()</code></td></tr>
-<tr><td><code>array</code> / <code>map</code></td><td>array / map</td><td>element and key types are enforced at the element boundary when a value lands; a literal the checker can see fails the load (<code>array&lt;int&gt; a = ["x"];</code>: <code>array element 0: expected 'int', got 'string'</code>). See <a href="09-containers-strings.html">Containers &amp; Strings</a></td></tr>
-<tr><td>class <code>C</code></td><td><code>null</code></td><td>stores a <em>typed null</em></td></tr>
-<tr><td>class <code>C</code></td><td>the same class, or a subclass</td><td>a copy that keeps its own class: a <code>Derived</code> in a <code>Base</code> slot is still a <code>Derived</code>, and its overrides run. Parent &rarr; child, siblings, and same-shape unrelated classes are <strong>rejected</strong></td></tr>
-<tr><td>class <code>C</code></td><td><code>shared_ptr&lt;C&gt;</code>, or a handle to a subclass</td><td>copies the pointee into the value slot (it keeps its class too)</td></tr>
-<tr><td>class <code>C</code></td><td>a value that exactly one one-argument constructor <code>C(src)</code> takes directly</td><td>converts through that constructor</td></tr>
-<tr><td>class <code>C</code></td><td>a class a user <code>operator=</code> of <code>C</code> accepts (plain assignment only)</td><td>runs your operator</td></tr>
-<tr><td><code>shared_ptr&lt;C&gt;</code></td><td>an instance or handle of <code>C</code> or a subclass, or <code>null</code></td><td>an instance becomes a new shared object; <code>null</code> stores a typed null; any other class is rejected</td></tr>
-<tr><td><code>weak_ptr&lt;C&gt;</code></td><td>a handle of <code>C</code> or a subclass, or <code>null</code></td><td>observes the handle&#x27;s object; <code>null</code> stores a typed null; an instance and any other class are rejected</td></tr>
-<tr><td><code>T&amp;</code></td><td>an lvalue that holds a <code>T</code> (for a class: <code>T</code> or a subclass)</td><td>binds without a copy; anything else is an error (<a href="03-value-semantics.html">Value Semantics</a>)</td></tr>
-<tr><td><code>function</code></td><td>a function, lambda or bound method, or null</td><td>stores it; anything else is an error (<code>Cannot assign int to 'cb' (declared function)</code>), as a <code>std::function</code> takes only a callable. An instance with <code>operator()</code> is callable but is not a function value, so it raises too (<code>Cannot initialize 'f' (declared function) with Adder</code>): wrap it in a lambda (<a href="07-classes.html#callable-objects">Classes</a>)</td></tr><tr><td><code>var</code></td><td>anything, forever</td><td>the opt-out, and everything computed from a <code>var</code> is invisible to the checker too</td></tr>
+<p>The same split holds at every typed slot: a variable, a parameter, a return, a field, a container element. <a href="13-strict-checking.html">Types That Fail Early</a> lists what the checker sees, what waits for run time, and the opt-outs (<code>[[warn_mode]]</code>, <code>extern</code>).</p>
+<h2 id="declarations-without-an-initializer">Declarations without an initializer<a class="hlink" href="#declarations-without-an-initializer" aria-label="link">&#8203;</a></h2>
+<p>A typed declaration always holds a value of its type. Without an initializer it is value-initialized, as in C++, and nothing is ever left uninitialized:</p>
+<div class="tablewrap"><table><thead><tr><th>Declared type</th><th>Starts as</th></tr></thead><tbody>
+<tr><td><code>int</code> / <code>float</code> / <code>bool</code> / <code>string</code></td><td><code>0</code> / <code>0.0</code> / <code>false</code> / <code>""</code></td></tr>
+<tr><td><code>array&lt;T&gt;</code> / <code>map&lt;K, V&gt;</code></td><td>empty, of the declared type</td></tr>
+<tr><td>a class <code>T</code></td><td>default-constructed, as <code>T()</code></td></tr>
+<tr><td>an enum <code>E</code></td><td>its first declared value</td></tr>
+<tr><td><code>var</code>, <code>shared_ptr&lt;T&gt;</code>, <code>weak_ptr&lt;T&gt;</code>, <code>function</code></td><td><code>null</code></td></tr>
 </tbody></table></div>
-<p><strong>Conversions never chain.</strong> One step is the whole budget. A class with <code>to_int()</code> reaches an <code>int</code> slot, but it will not go through <code>to_int()</code> and <em>then</em> through some other class&#x27;s <code>C(int)</code> constructor to reach a <code>C</code> slot. And if a converting constructor or a <code>to_X()</code> throws on the way, you see its error, not the table&#x27;s.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">float f = 3;         // int -&gt; float widens
-print("f = {} ({})", f, type_of(f));
-int i = 3.99;        // float -&gt; int truncates toward zero
-print("i = {} ({})", i, type_of(i));
-int j = -3.99;
-print("j = {}", j);
-bool b = 5;          // numeric -&gt; bool is truthiness
-print("b = {}", b);
-string s = to_string(5);   // a string slot takes text: stringify explicitly
-print("s = {} ({})", s, type_of(s));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">f = 3.0 (float)
-i = 3 (int)
-j = -3
-b = true
-s = 5 (string)</code></pre></div>
-<p>Objects reach primitive slots the same way, through the conversions they declare:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Money {
+<p><code>T x(args);</code> and <code>T x{args};</code> call a constructor, <code>T x();</code> and <code>T x{};</code> default-construct, and a primitive takes one value or its zero. A class that declares no constructor takes its fields in declaration order (<code>Point p{1, 2};</code>, in <a href="07-classes.html">Classes</a>).</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Vec2 { float x = 1.5; float y = 2.5; Vec2() {} Vec2(float a, float b) { x = a; y = b; } }
+int hits; float speed; string name; array&lt;int&gt; scores; var anything; Vec2 home;
+Vec2 a(3.0, 4.0);
+int lives{3};
+print("{} {} [{}] {} {} {} {} {}", hits, speed, name, scores.size(), type_of(anything), home.x, a.y, lives);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">0 0.0 [] 0 null 1.5 4.0 3</code></pre></div>
+<p>A class value is never null. <code>Hero h = null;</code> is a load error that names <code>shared_ptr&lt;Hero&gt;</code> and <code>var</code>, the slots that can be empty, and a class cannot hold itself by value: <code>class Node { Node next; }</code> fails the load, and the link is a <code>shared_ptr&lt;Node&gt;</code>.</p>
+<h2 id="auto-locks-on-first-use">auto takes the static type<a class="hlink" href="#auto-locks-on-first-use" aria-label="link">&#8203;</a></h2>
+<p><code>auto</code> locks to the type the checker sees for the initializer, never to whatever the value happens to hold when the line runs:</p>
+<ul>
+<li>An initializer of a known type locks to it: <code>auto n = 5;</code> is an <code>int</code>, <code>auto d = Dir::north;</code> is the enum, <code>auto r = hit ? 1 : 0.5;</code> is a <code>float</code> (C++&#x27;s common type).</li>
+<li id="auto-takes-the-static-type">An initializer whose static type is <code>var</code> or unknown (a <code>var</code> local, an <code>array&lt;var&gt;</code> element, a call returning <code>var</code>) makes that <code>auto</code> a <code>var</code>. The same holds for an <code>auto</code> field and an <code>auto</code> range-for variable.</li>
+<li><code>auto x;</code> with no initializer locks at its first assignment, when the program runs, so a mistake on it is a run-time error. Once locked, an <code>int</code> refuses <code>null</code> as any <code>int</code> does.</li>
+</ul>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto y = 1.5;        // float
+y = 2;               // an int widens
+var row = [1, 2.5, "three"];
+auto a = row[0];     // an array&lt;var&gt; element: a is a var
+a = "now a string";
+auto late;
+late = 5;            // locks to int here
+try { late = "s"; } catch (e) { print("caught: ", e); }
+print("{} ({}), {} ({}), {} ({})", y, type_of(y), a, type_of(a), late, type_of(late));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">caught: Cannot assign string to &#x27;late&#x27; (declared int)
+2.0 (float), now a string (string), 5 (int)</code></pre></div>
+<p id="auto-copies-a-value"><code>auto y = x;</code> copies what C++ <code>auto</code> copies: a value (a class instance, an array, a map) becomes a new value, a handle (<code>new T()</code>, a <code>shared_ptr&lt;T&gt;</code>) becomes a second handle to the same object, and a reference result is copied because <code>auto</code> drops the reference (<code>auto&amp;</code> keeps it). <code>T y = handle;</code> copies the object the handle points at. <a href="03-value-semantics.html">Value Semantics</a> shows each case.</p>
+<h2 id="var-is-genuinely-dynamic">var is dynamic<a class="hlink" href="#var-is-genuinely-dynamic" aria-label="link">&#8203;</a></h2>
+<p>A <code>var</code> takes any value at any time, and a <code>var</code> container may mix element types. A typed container, an <code>auto</code> locked to one included, holds one element type:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var y = 5;
+y = "now a string";
+let mixed = [1, "two", 3.14, true];
+mixed = {"even": "a map now"};
+print("{} {}", type_of(y), type_of(mixed));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">string map</code></pre></div>
+<h2 id="conversion-table-typed-locked-auto-targets">The one conversion table<a class="hlink" href="#conversion-table-typed-locked-auto-targets" aria-label="link">&#8203;</a></h2>
+<p>Every typed slot runs the same table: a declaration, <code>=</code>, a by-value parameter, a return, a field, a static. A refused store is a load error where the checker sees both types and a catchable run-time error where one arrives through a <code>var</code>.</p>
+<div class="tablewrap"><table><thead><tr><th>Slot</th><th>Converts implicitly</th><th>Refused, and the spelling that converts</th></tr></thead><tbody>
+<tr><td><code>int</code></td><td>bool (<code>true</code> is <code>1</code>), an enum value, an object with <code>to_int()</code></td><td>a float: <code>cast&lt;int&gt;(x)</code> truncates toward zero, <code>math::ifloor(x)</code> rounds down. A char: <code>cast&lt;int&gt;(c)</code>. A string: <code>s.to_int()</code></td></tr>
+<tr><td><code>bool</code></td><td>int, float, null, an object, by truthiness (<code>0</code> is <code>false</code>)</td><td>a string, an array or a map: <code>!s.empty()</code> or a comparison</td></tr>
+<tr><td><code>string</code></td><td>utf8_string (its bytes), char, an object with <code>to_string()</code></td><td>an int, float, bool, null or container: <code>to_string(x)</code> or <code>`${x}`</code></td></tr>
+<tr><td>class <code>C</code></td><td><code>C</code> or a subclass, as a copy that keeps its own class and overrides; a <code>shared_ptr</code> to one (copies the pointee); a value that exactly one one-argument constructor <code>C(src)</code> takes; on <code>=</code>, a value an <code>operator=</code> of <code>C</code> takes</td><td><code>null</code>; a parent, sibling or unrelated class</td></tr>
+<tr><td><code>shared_ptr&lt;C&gt;</code></td><td>a handle or an instance of <code>C</code> or a subclass (an instance becomes a new shared object), <code>null</code></td><td>a <code>shared_ptr&lt;Base&gt;</code>: <code>cast&lt;shared_ptr&lt;C&gt;&gt;(b)</code></td></tr>
+</tbody></table></div>
+<p>Every slot (<code>float</code>, enums, <code>char</code>, containers, <code>weak_ptr</code>, <code>T&amp;</code>, <code>function</code>, <code>auto</code>): <a href="../reference/rules.html#type-conversions">the conversion table</a>.</p>
+<ul>
+<li><strong>One step.</strong> Conversions never chain: a class with <code>to_int()</code> enters an <code>int</code> slot, and does not go on through another class&#x27;s <code>C(int)</code> constructor into a <code>C</code> slot. A converting constructor or <code>to_X()</code> that throws shows its own error.</li>
+<li><strong>Conditions keep truthiness.</strong> <code>if (s)</code>, <code>while (xs)</code>, <code>!x</code> and <code>&amp;&amp;</code> test any value: an empty string or container is false there. Only a declared <code>bool</code> slot refuses text and containers.</li>
+<li><strong>Typed container elements are stricter.</strong> An element takes its own type, an int into a float element, bool and int both ways, and char and string both ways, with no truthiness and no <code>to_X()</code> (<a href="09-containers-strings.html">Containers &amp; Strings</a>).</li>
+<li><strong>Text never parses itself.</strong> <code>"42".to_int()</code> is <code>42</code> and <code>"abc".to_int()</code> is <code>null</code>, so give the miss a value: <code>s.to_int() ?? 0</code>, or <code>s.to_int(0)</code>, which is an <code>int</code> for the checker.</li>
+</ul>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Money {
     int cents = 0;
     Money(int c) { cents = c; }
     string to_string() { return format("${}", cents); }
     int to_int() { return cents; }
 }
-string s = Money(1234);      // string &lt;- an object with to_string()
-print("string &lt;- Money:  ", s);
-int n = Money(1234);         // int &lt;- an object with to_int()
-print("int    &lt;- Money:  ", n);
-
-class Pt { int x = 0; }
-Pt p = null;                 // object &lt;- null: a typed null
-print("Pt     &lt;- null:   ", p == null);
-shared_ptr&lt;Pt&gt; h = new Pt();   // new makes a handle (Chapter 3)
-Pt q = h;                    // object &lt;- shared_ptr&lt;Pt&gt;: copies the pointee
-print("Pt     &lt;- handle: ", q.x);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">string &lt;- Money:  $1234
-int    &lt;- Money:  1234
-Pt     &lt;- null:   true
-Pt     &lt;- handle: 0</code></pre></div>
-<h2 id="cast-the-explicit-boundary">cast&lt;T&gt;(e): the explicit boundary<a class="hlink" href="#cast-the-explicit-boundary" aria-label="Link to this section">&#8203;</a></h2>
-<p>Some conversions the table refuses on purpose, not because they are wrong, but because you should have to say so. <code>cast</code> is where you say so. It is a keyword, not a function.</p>
-<p><code>cast&lt;T&gt;(e)</code> yields exactly what <code>T tmp = e;</code> would hold. For primitives that is the table above, run on demand, with two additions: the char rules below, and <code>cast&lt;string&gt;(e)</code>, which stringifies anything as <code>to_string(e)</code> does:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print("cast&lt;int&gt;(2.7)    = ", cast&lt;int&gt;(2.7));     // the assignment table, spelled out
-print("cast&lt;string&gt;(5)   = ", cast&lt;string&gt;(5));
-print("cast&lt;int&gt;('a')    = ", cast&lt;int&gt;('a'));     // char converts ONLY through cast
-print("cast&lt;char&gt;(97)    = ", cast&lt;char&gt;(97));     // range-checked 0..255
-print("cast&lt;char&gt;(\"a\")   = ", cast&lt;char&gt;("a"));
-try {
-    var bad = cast&lt;char&gt;(256);
-} catch (e) {
-    print("caught: ", e);
-}</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">cast&lt;int&gt;(2.7)    = 2
-cast&lt;string&gt;(5)   = 5
-cast&lt;int&gt;(&#x27;a&#x27;)    = 97
-cast&lt;char&gt;(97)    = a
-cast&lt;char&gt;(&quot;a&quot;)   = a
-caught: Cannot cast &#x27;int&#x27; to &#x27;char&#x27;</code></pre></div>
-<p>For a class there are three forms, and they differ exactly the way the C++ spellings differ (copy, alias, share):</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Base { int a = 1; }
+float f = 3;                  // int widens
+bool b = 5;                   // a number is true unless it is zero
+int i = cast&lt;int&gt;(-3.99);     // a float enters an int only by name
+string s = Money(1234);       // through to_string()
+int n = Money(1234);          // through to_int()
+Money m = 250;                // through the constructor Money(int)
+print("{} {} {} {} {} {}", f, b, i, s, n, m.cents);
+print("{} {} {}", "abc".to_int() == null, "abc".to_int() ?? 0, "42".to_int(0));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3.0 true -3 $1234 1234 250
+true 0 42</code></pre></div>
+<h2 id="cast-the-explicit-boundary">cast&lt;T&gt;(e): the explicit boundary<a class="hlink" href="#cast-the-explicit-boundary" aria-label="link">&#8203;</a></h2>
+<p><code>cast</code> is a keyword. <code>cast&lt;T&gt;(e)</code> yields what <code>T tmp = e;</code> would hold, plus the conversions the table makes you name:</p>
+<div class="tablewrap"><table><thead><tr><th>Form</th><th>Result</th></tr></thead><tbody>
+<tr><td><code>cast&lt;int&gt;(x)</code></td><td>a float truncated toward zero; a char&#x27;s code, 0..255 (<code>cast&lt;float&gt;(c)</code> too)</td></tr>
+<tr><td><code>cast&lt;char&gt;(e)</code></td><td>an int in 0..255 or a one-character string; <code>Cannot cast 'int' to 'char'</code> out of range</td></tr>
+<tr><td><code>cast&lt;E&gt;(n)</code></td><td>the enum value that equals <code>n</code>; <code>Cannot cast 3 to 'E': not one of its values</code> otherwise</td></tr>
+<tr><td><code>cast&lt;string&gt;(e)</code></td><td>any value as text, as <code>to_string(e)</code></td></tr>
+<tr><td><code>cast&lt;T&gt;(obj)</code></td><td>a <strong>copy</strong> of an object that is a <code>T</code> or a subclass; the copy keeps its own class</td></tr>
+<tr><td><code>cast&lt;T&amp;&gt;(obj)</code></td><td>a <strong>reference</strong> to the same object: how a base-typed slot reaches a member only the subclass declares</td></tr>
+<tr><td><code>cast&lt;shared_ptr&lt;T&gt;&gt;(obj)</code></td><td>a <strong>handle</strong> sharing the same object</td></tr>
+</tbody></table></div>
+<p>Every form and its error texts: <a href="../reference/rules.html#cast">cast</a>.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Base { int a = 1; }
 class Derived : Base { int t = 9; }
+print("{} {} {} {}", cast&lt;int&gt;(2.7), cast&lt;int&gt;('a'), cast&lt;char&gt;(97), cast&lt;string&gt;(5) + "!");
+try { var bad = cast&lt;char&gt;(256); } catch (e) { print("caught: ", e); }
 
-shared_ptr&lt;Derived&gt; h = new Derived();
-print("copy:   ", cast&lt;Derived&gt;(h).t);       // a VALUE copy tagged Derived
-cast&lt;Derived&amp;&gt;(h).t = 5;                     // a reference to the SAME object
-print("alias:  ", h.t);
-shared_ptr&lt;Base&gt; b = cast&lt;shared_ptr&lt;Base&gt;&gt;(h);
-b.a = 42;                                    // shares - same object, base spelling
-print("shared: ", h.a);
-try {
-    var oops = cast&lt;Base&gt;(5);
-} catch (e) {
-    print("caught: ", e);
-}</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">copy:   9
-alias:  5
-shared: 42
+Base slot = Derived();                       // a Base slot holding a whole Derived
+cast&lt;Derived&amp;&gt;(slot).t = 5;                  // the same object, seen as a Derived
+shared_ptr&lt;Derived&gt; h = cast&lt;shared_ptr&lt;Derived&gt;&gt;(slot);
+h.t += 1;
+Derived copy = cast&lt;Derived&gt;(slot);          // a separate object
+copy.t = 0;
+print("{} {}", cast&lt;Derived&amp;&gt;(slot).t, copy.t);
+try { var oops = cast&lt;Base&gt;(5); } catch (e) { print("caught: ", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 97 a 5!
+caught: Cannot cast &#x27;int&#x27; to &#x27;char&#x27;
+6 0
 caught: Cannot cast &#x27;int&#x27; to &#x27;Base&#x27;</code></pre></div>
 <ul>
-<li><code>cast&lt;T&gt;(e)</code>: a <strong>value</strong>. A class that is <code>T</code> or derives from <code>T</code> becomes a copy, and the copy keeps its own class (a <code>cast&lt;Base&gt;</code> of a <code>Derived</code> is a <code>Derived</code> copy).</li>
-<li><code>cast&lt;T&amp;&gt;(e)</code>: a <strong>reference</strong> to the same object. Member reads and stores go through it, which makes it the strict-mode fix for reaching a subtype&#x27;s member on a base-typed receiver (see <a href="03-value-semantics.html#escape-hatch-6-cast-t-and-cast-shared-ptr-t">Value Semantics</a>).</li>
-<li><code>cast&lt;shared_ptr&lt;T&gt;&gt;(e)</code>: a <strong>handle</strong> sharing the same object.</li>
+<li>The checker requires only that <code>T</code> names a type (<code>unknown type in cast: 'Nope'</code>). Whether the operand fits is decided when the cast runs: a mismatch raises the catchable <code>Cannot cast 'X' to 'T'</code>, where <code>X</code> is the object&#x27;s own class. An upcast always passes.</li>
+<li><code>null</code> passes the handle form and fails the value and reference forms (<code>Cannot cast 'null' to 'T&amp;'</code>).</li>
+<li>The value form on a handle copies the object. The checker warns (<code>cast&lt;Derived&gt;(h) copies the instance - use cast&lt;Derived&amp;&gt;(h) to alias it or cast&lt;shared_ptr&lt;Derived&gt;&gt;(h) to share it</code>); a warning never stops a load, and the runner prints it under <code>--warnings</code>.</li>
 </ul>
-<p>A class mismatch raises the catchable <code>Cannot cast 'X' to 'T'</code>, where <code>X</code> is the object&#x27;s <em>dynamic</em> class. Upcasts always pass. <code>null</code> passes the value and handle forms and fails the reference form. A <code>T</code> that names no type at all is a load error (<code>unknown type in cast</code>).</p>
-<div class="callout warn"><p>The value form applied to a handle <em>copies</em>, which is rarely what you meant, so the checker says so, at warning severity. Warnings never gate the load; the runner prints them when you pass <code>--warnings</code>, and a host reads them from <code>last_check_diagnostics()</code>. Line 5 of the sample above draws this one:</p>
-<div class="codeblock cb-output"><span class="cb-label">output &middot; --warnings</span><pre><code class="lang-output">jaiscript: static check warnings:
-try.jai:5:19: warning: cast&lt;Derived&gt;(h) copies the instance - use cast&lt;Derived&amp;&gt;(h) to alias it or cast&lt;shared_ptr&lt;Derived&gt;&gt;(h) to share it (declared at 4:21)
-    print(&quot;copy:   &quot;, cast&lt;Derived&gt;(h).t);       // a VALUE copy tagged Derived
-                      ^</code></pre></div>
-</div>
-<h2 id="compound-assignment-typed-targets-convert-c-style-var-keeps-the-dynamic-result">Compound assignment: typed targets convert C++-style, var keeps the dynamic result<a class="hlink" href="#compound-assignment-typed-targets-convert-c-style-var-keeps-the-dynamic-result" aria-label="link">&#8203;</a></h2>
-<p>The rule is two-sided:</p>
-<ul><li>On a <strong>typed (or locked-auto) target</strong>, <code>a op= b</code> computes like C++ and converts the result back to the target&#x27;s type. <code>int i = 7; i /= 2</code> → <code>3</code>; <code>i += 0.5</code> → <code>7</code> (7.5 truncated back).</li><li>On a <strong>var target</strong>, the stored value is whatever the operation produces. The variable may change type.</li></ul>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int i = 7;
-i /= 2;              // C++-style on typed target: stays int
-print("int 7 /= 2 -&gt; {} ({})", i, type_of(i));
-i = -7;
-i /= 2;              // truncation is toward zero
-print("int -7 /= 2 -&gt; {}", i);
+<h2 id="compound-assignment-typed-targets-convert-c-style-var-keeps-the-dynamic-result">Compound assignment<a class="hlink" href="#compound-assignment-typed-targets-convert-c-style-var-keeps-the-dynamic-result" aria-label="link">&#8203;</a></h2>
+<p><code>a op= b</code> is <code>a = a op b</code> stored under the target&#x27;s rung. A typed target (a variable, a field, a typed element, a reference to one) keeps its type, so <code>i += 0.5</code> on an <code>int</code> is a float into an int: a load error. A <code>var</code> target takes whatever the operation produced:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int i = -7;
+i /= 2;              // integer division truncates toward zero
 float f = 7.0;
 f /= 2;
-print("float 7.0 /= 2 -&gt; {}", f);
-auto a = 7;          // auto locked to int behaves like int
-a /= 2;
-print("auto(int) 7 /= 2 -&gt; {} ({})", a, type_of(a));
-var v = 7;           // var keeps dynamic behavior: result may change type
-v /= 2;
-print("var 7 /= 2 -&gt; {} ({})", v, type_of(v));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">int 7 /= 2 -&gt; 3 (int)
-int -7 /= 2 -&gt; -3
-float 7.0 /= 2 -&gt; 3.5
-auto(int) 7 /= 2 -&gt; 3 (int)
-var 7 /= 2 -&gt; 3 (int)</code></pre></div>
-<p>(<code>var v = 7; v /= 2</code> gives <code>3</code> because <code>7 / 2</code> is integer division; the type difference shows with a float operand:)</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int i = 7;
-i += 0.5;
 var v = 7;
-v += 0.5;
-print("int: {} ({})  var: {} ({})", i, type_of(i), v, type_of(v));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">int: 7 (int)  var: 7.5 (float)</code></pre></div>
-<p>The compound-assignment conversion also applies to typed <strong>class fields</strong>, typed array <strong>elements</strong>, and by-<strong>ref</strong> targets.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/01-hello.html"><span>&larr; previous</span>Hello &amp; Basics</a><a class="next" rel="next" href="../guide/03-value-semantics.html"><span>next &rarr;</span>Value Semantics &amp; References</a></nav></article>
+v /= 2;              // int / int: still an int
+print("{} {} {} ({})", i, f, v, type_of(v));
+v += 0.5;            // a float result changes what the var holds
+print("{} ({})", v, type_of(v));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">-3 3.5 3 (int)
+3.5 (float)</code></pre></div><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/01-hello.html"><span>&larr; previous</span>Hello &amp; Basics</a><a class="next" rel="next" href="../guide/03-value-semantics.html"><span>next &rarr;</span>Value Semantics &amp; References</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

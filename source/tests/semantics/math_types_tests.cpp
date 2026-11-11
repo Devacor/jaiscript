@@ -71,14 +71,14 @@ public:
 
         test("constructor_errors", [expect, raised]() {
             expect(raised("math::vec3(1, 2, 3, 4);"), "math::vec3 expects 0 to 3 arguments", "arity");
-            expect(raised("math::vec2(\"a\", 1);"), "math::vec2 expects numeric components", "a string component");
-            expect(raised("math::vec3(5);"), "math::vec3 expects one vector of 3 components", "one scalar is not a vector");
+            expect(raised("var a = \"a\"; math::vec2(a, 1);"), "math::vec2 expects numeric components", "a string component");
+            expect(raised("var five = 5; math::vec3(five);"), "math::vec3 expects one vector of 3 components", "one scalar is not a vector");
             expect(raised("math::vec3(math::vec2(1, 2));"), "math::vec3 expects one vector of 3 components", "another dimension");
             expect(raised("math::ivec2(3000000000, 0);"), "Integer overflow: the value does not fit an int32 component", "int32 range");
             expect(raised("math::ivec2(1e100, 0);"), "Cannot convert float to integer: non-finite or out of range", "a float out of range");
             expect(raised("math::vec4(1, 2, 3, 4, 5);"), "math::vec4 expects 0 to 4 arguments", "vec4 arity");
             expect(raised("math::vec4(math::vec2(1, 2), 3);"), "math::vec4 expects a narrower vector followed by scalars that complete 4 components", "the scalars must complete the count");
-            expect(raised("math::color(5);"), "math::color expects one color", "a lone color argument is a color");
+            expect(raised("var five = 5; math::color(five);"), "math::color expects one color", "a lone color argument is a color");
         });
 
         test("components_and_aliases", [expect, raised]() {
@@ -182,9 +182,9 @@ public:
             expect(raised("var q = math::ivec2(2147483647, 0) + 1;"), "Integer overflow in '+'", "vector arithmetic overflows");
             expect(raised("var q = -math::ivec2(-2147483647 - 1, 0);"), "Integer overflow in unary '-'", "negating INT32_MIN");
             expect(raised("var q = math::ivec2(1, 2) * 3000000000;"), "Integer overflow: the value does not fit an int32 component", "a scalar outside int32");
-            expect(raised("math::vec2 v; v.x = 1e300; math::ivec2 p = v;"), "Cannot convert float to integer: non-finite or out of range", "an infinite component does not convert");
-            expect(raised("math::ivec2 p = math::vec2(3e9, 0);"), "Integer overflow: the value does not fit an int32 component", "a finite component beyond int32");
-            expect("math::ivec3 p = math::vec3(-2.9, 2.9, -0.0); to_string(p)", "(-2, 2, 0)", "float to int32 truncates toward zero");
+            expect(raised("math::vec2 v; v.x = 1e300; math::ivec2 p = cast<math::ivec2>(v);"), "Cannot convert float to integer: non-finite or out of range", "an infinite component does not convert");
+            expect(raised("math::ivec2 p = cast<math::ivec2>(math::vec2(3e9, 0));"), "Integer overflow: the value does not fit an int32 component", "a finite component beyond int32");
+            expect("math::ivec3 p = cast<math::ivec3>(math::vec3(-2.9, 2.9, -0.0)); to_string(p)", "(-2, 2, 0)", "float to int32 truncates toward zero");
             expect("math::vec2 v; v.x = 1e300; v.x -= v.x; to_string(v == v) + to_string(v != v) + to_string(!v)", "falsetruefalse", "NaN is unequal and nonzero");
         });
 
@@ -207,7 +207,7 @@ public:
             expect(raised("var q = math::vec3(1, 2, 3) + math::ivec3(1, 2, 3);"), "Invalid operands for + operator", "mixed kinds");
             expect(raised("var q = math::vec2(1, 2) + math::vec3(1, 2, 3);"), "Invalid operands for + operator", "mixed dimensions");
             expect(raised("var q = math::vec2(1, 2) % 2;"), "Invalid operands for % operator", "vec modulo");
-            expect(raised("var q = math::vec2(1, 1) / 0;"), "Division by zero", "float division by zero");
+            expect("to_string(math::vec2(1, -1) / 0)", "(inf, -inf)", "float division by zero is IEEE");
             expect(raised("var q = math::ivec2(1, 1) / math::ivec2(1, 0);"), "Division by zero", "int division by zero");
             expect(raised("var q = math::ivec2(1, 1) % math::ivec2(1, 0);"), "Modulo by zero", "int modulo by zero");
             expect("to_string(math::vec2(1, 1) < math::vec2(2, 2))", "true", "lexicographic ordering");
@@ -238,10 +238,12 @@ public:
             expect("to_string(math::min(math::vec2(1, 5), math::vec2(3, 2))) + to_string(math::max(math::ivec2(1, 5), 3))", "(1.0, 2.0)(3, 5)", "min, max, scalar broadcast");
             expect("to_string(math::clamp(math::vec3(-1, 0.5, 2), 0.0, 1.0)) + to_string(math::clamp(math::ivec2(-5, 9), math::ivec2(0, 0), math::ivec2(4, 4)))",
                    "(0.0, 0.5, 1.0)(0, 4)", "clamp");
+            expect("to_string(math::clamp(5, 10, 0)) + to_string(math::clamp(20, 10, 0)) + to_string(math::clamp(math::vec2(5, 20), 10.0, 0.0)) + to_string(math::clamp(math::ivec2(5, 20), 10, 0))",
+                   "100(10.0, 0.0)(10, 0)", "lo above hi: lo when the value is below lo, else hi");
             expect("var c = math::clamp(math::ivec2(-5, 9), 0.0, 4.0); to_string(c) + type_of(c)", "(0.0, 4.0)math::vec2", "a float bound gives a vec");
             expect("to_string(math::mix(0.0, 10.0, math::vec2(0.1, 0.9)))", "(1.0, 9.0)", "scalar ends, vector t");
             expect(raised("var q = math::mix(math::vec2(0, 0), math::vec3(1, 1, 1), 0.5);"), "math::mix expects vectors of the same dimensions", "dimensions must agree");
-            expect(raised("var q = math::sqrt(math::vec2(4, 9));"), "math::sqrt expects a numeric argument", "math::sqrt stays scalar");
+            expect(raised("var v = math::vec2(4, 9); var q = math::sqrt(v);"), "math::sqrt expects a numeric argument", "math::sqrt stays scalar");
             expect(raised("var q = math::abs(math::ivec2(-2147483647 - 1, 0));"), "Integer overflow: the value does not fit an int32 component", "abs of INT32_MIN");
             expect("function f(math::vec3 a, math::vec3 b) -> math::vec3 { math::vec3 m = math::mix(a, b, 0.5); return math::floor(m); } to_string(f(math::vec3(0, 1, 2), math::vec3(3, 4, 6)))",
                    "(1.0, 2.0, 4.0)", "typed slots take the library's vectors");
@@ -322,6 +324,21 @@ public:
             expect("var r = math::rotate(math::vec3(1, 0, 0), math::vec3(0, 0, 2), 1.5707963267948966); var s = math::vec3(0, 1, 0).rotated(math::vec3(1, 0, 0), 3.141592653589793); "
                    "to_string(math::abs(r.x) < 1e-7 && math::abs(r.y - 1) < 1e-7 && math::abs(r.z) < 1e-7 && math::abs(s.y + 1) < 1e-7 && math::abs(s.z) < 1e-6)", "true", "rotate a vec3 about an axis (Rodrigues; the axis is normalized)");
             expect("to_string(math::rotate(math::vec3(1, 2, 3), math::vec3(), 1.0)) + type_of(math::rotate(math::ivec2(1, 0), 0.5))", "(1.0, 2.0, 3.0)math::vec2", "a zero axis leaves the vector; an ivec rotates into a vec");
+            expect("to_string(math::angle(math::vec2(0, 1))) + to_string(math::vec2(-1, 0).angle()) + to_string(math::angle(math::ivec2(0, -1))) + to_string(math::angle(math::vec2())) + "
+                   "to_string(math::vec2(-0.0, -0.0).angle()) + to_string(math::angle(math::vec2(-1, -0.0)))", "1.57079632679489663.141592653589793-1.57079632679489660.00.03.141592653589793",
+                   "angle is atan2(y, x) in (-pi, pi]; the zero vector gives 0");
+            expect("var u = math::from_angle(0); var w = math::from_angle(0.0, 3); var q = math::from_angle(1.5707963267948966, 2); "
+                   "to_string(u) + type_of(u) + to_string(w) + to_string(math::abs(q.x) < 1e-7 && q.y == 2.0) + to_string(math::abs(math::from_angle(0.75).angle() - 0.75) < 1e-7)",
+                   "(1.0, 0.0)math::vec2(3.0, 0.0)truetrue", "from_angle is (cos, sin) scaled by the length");
+            expect("var r = math::rotate_around(math::vec2(2, 1), math::vec2(1, 1), 1.5707963267948966); var s = math::ivec2(3, 0).rotated_around(math::ivec2(1, 0), 3.141592653589793); var p = math::vec2(0.1, 0.7); "
+                   "to_string(math::abs(r.x - 1) < 1e-7 && math::abs(r.y - 2) < 1e-7 && math::abs(s.x + 1) < 1e-6 && math::abs(s.y) < 1e-6) + type_of(s) + to_string(p.rotated_around(p, 1.25) == p)",
+                   "truemath::vec2true", "rotate_around turns a point about a pivot; ivecs give a vec2");
+            expect(raised("var q = math::angle(math::vec3());"), "math::angle expects a vec2", "angle is two-dimensional");
+            expect(raised("var a = \"x\"; var q = math::from_angle(a);"), "math::from_angle expects (angle) or (angle, length)", "from_angle takes numbers");
+            expect(raised("var q = math::rotate_around(math::vec3(), math::vec3(), 1.0);"), "math::rotate_around expects (vec2, pivot, angle)", "rotate_around is two-dimensional");
+            expect(raised("var v = math::vec2(1, 0); var q = v.rotated_around(2.0, 1.0);"), "math::rotate_around expects (vec2, pivot, angle)", "the pivot is a vec2");
+            expect("array<float> turns = [0.0, 0.5, 1.0, 1.5]; array<float> out = [0.0, 0.0, 0.0, 0.0]; parallel_for (auto& t, auto& o : turns, out) { o = math::angle(math::rotate_around(math::from_angle(t, 2.0), math::vec2(1, 1), 0.25)); } "
+                   "float serial = math::angle(math::rotate_around(math::from_angle(1.5, 2.0), math::vec2(1, 1), 0.25)); to_string(out[3] == serial && out[0] != out[1])", "true", "a parallel body takes the rotation set");
             expect("math::vec3 v = math::vec3(3, 4, 0); auto f = [v]() { return v.length(); }; to_string(f())", "5.0", "a method kept for later is a lambda");
             expect("function speed(math::vec3 v) -> float { return v.length(); } math::vec3 n = math::vec3(0, 3, 4).normalized(); float d = n.dot(math::vec3(0, 1, 0)); to_string(speed(math::vec3(0, 3, 4))) + to_string(d)",
                    "5.00.6000000238418579", "typed slots take the results");
@@ -330,7 +347,7 @@ public:
             expect(raised("var q = math::cross(math::vec4(), math::vec4());"), "math::cross expects two vec2 or two vec3 vectors", "no 4D cross");
             expect(raised("var q = math::perpendicular(math::vec3());"), "math::perpendicular expects a vec2", "perpendicular is 2D");
             expect(raised("var q = math::rotate(math::vec3(1, 0, 0), 1.0);"), "math::rotate expects (vec2, angle) or (vec3, axis, angle)", "a vec3 rotates about an axis");
-            expect(raised("var q = math::length(5);"), "math::length expects a vector", "a scalar has no length here");
+            expect(raised("var five = 5; var q = math::length(five);"), "math::length expects a vector", "a scalar has no length here");
             expect(raised("var q = math::distance(1, 2, 3);"), "math::distance expects 2 vectors or 4 arguments (x1, y1, x2, y2)", "distance arity");
             expect(raised("var v = math::vec3(); var q = v.dot();"), "'dot' expects 1 argument", "method arity");
             expect(raised("var v = math::vec3(); var q = v.rotated(1.0);"), "'rotated' expects 2 arguments (axis, angle)", "a vec3 rotates about an axis, as a method too");
@@ -383,6 +400,11 @@ public:
                   "math::vec3 r = math::reflect(v, n); math::vec3 j = math::project(v, axis); math::vec3 z = math::project(v, math::vec3()); math::vec2 q = math::rotate(p, t); math::vec2 q2 = p.rotated(2); "
                   "math::vec3 w = math::rotate(v, axis, t); math::vec3 w2 = v.rotated(math::vec3(), t); math::vec3 w3 = math::rotate(iv, axis, 1.25); float a = math::angle_between(v, axis) + math::angle_between(v, math::vec3()) + math::angle_between(iv, v); "
                   "return to_string(r) + to_string(j) + to_string(z) + to_string(q) + to_string(q2) + to_string(w) + to_string(w2) + to_string(w3) + to_string(a) + to_string(math::reflect(iv, n)); } f()", "reflect, project, rotate and angle_between");
+            agree("function f(var d) -> string { math::vec2 p = math::vec2(3, -1); math::vec2 c = math::vec2(0.5, 2); math::ivec2 ip = math::ivec2(-4, 0); float t = 0.7; int k = 2; "
+                  "float a = math::angle(p) + p.angle() + math::angle(ip) + math::angle(math::vec2()) + math::angle(p - c) + ip.angle() + math::angle(d); math::vec2 u = math::from_angle(t); math::vec2 w = math::from_angle(a, k); "
+                  "math::vec2 w2 = math::from_angle(d.x, d.y); math::vec2 r = math::rotate_around(p, c, t); math::vec2 r2 = p.rotated_around(c, k); math::vec2 r3 = math::rotate_around(ip, c, a); math::vec2 r4 = ip.rotated_around(ip, t); "
+                  "var r5 = math::rotate_around(d, p, t); var r6 = d.rotated_around(c, d.angle()); "
+                  "return to_string(a) + to_string(u) + to_string(w) + to_string(w2) + to_string(r) + to_string(r2) + to_string(r3) + to_string(r4) + to_string(r5) + to_string(r6); } f(math::vec2(-2, -0.0))", "angle, from_angle and rotate_around");
             agree("function f() -> string { math::ivec3 big = math::ivec3(2000000000, 2000000000, 2000000000); math::vec3 n = big.normalized(); return to_string(big.length()) + to_string(n) + to_string(math::distance(big, -big)); } f()", "ivec components widen where the kernel reads doubles");
             agree("function f() -> string { math::color c = math::color(0.25, 0.5, 0.75, 0.5); c.g = 0.125; c.a *= 2; math::color m = math::mix(c, math::color(1, 0, 0), 0.5); math::color k = math::clamp(c * 3, 0.0, 1.0); "
                   "math::color r = math::mix_rgb(c, m, 0.5); var sc = c; var sm = m; var sk = k; var sr = r; return to_string(sc) + to_string(sm) + to_string(sk) + to_string(sr) + to_string(c == m); } f()", "colors lowered, OKLab boxed");
@@ -412,7 +434,7 @@ public:
             expect("function f() -> string { math::ivec2 a = math::ivec2(4, 5); string m = \"\"; try { a = a / math::ivec2(2, 0); } catch (e) { m = e; } return m + to_string(a); } f()",
                    "Division by zero(4, 5)", "an ivec division by zero");
             expect("function f() -> string { math::vec2 v = math::vec2(4, 5); string m = \"\"; try { v = v / math::vec2(2, 0); } catch (e) { m = e; } return m + to_string(v); } f()",
-                   "Division by zero(4.0, 5.0)", "a vec division by zero");
+                   "(2.0, inf)", "a vec division by zero is IEEE");
             expect("function f() -> string { math::vec3 v = math::vec3(1, 2, 3); string m = \"\"; try { v.y = \"a\"; } catch (e) { m = e; } return m + to_string(v); } f()",
                    "Cannot store a non-numeric value in a math::vec3 component(1.0, 2.0, 3.0)", "a component store's text");
             expect("[[warn_mode]] function f() -> string { math::vec3 v = math::vec3(1, 2, 3); string m = \"\"; try { var w = v.w; } catch (e) { m = e; } try { v.w = 1; } catch (e) { m += \"|\" + e; } return m; } f()",
@@ -438,11 +460,16 @@ public:
             check_eq(std::string("p=(1.0, 2.5, 3.0) n=4 c=(7, -1) "), shown, "lowered locals fold for the debugger");
             check(listings.find("T_ADD_FF") != std::string::npos && listings.find("C_MATH") != std::string::npos, "the lowered local runs as float slots in a cell block: " + listings.substr(0, 2000));
             listings.clear();
-            e->execute("function g() -> float { math::vec3 v = math::vec3(1, 2, 3); math::vec3 w = math::rotate(v, math::vec3(0, 0, 1), 0.5); float a = math::angle_between(v, w); return w.x + a; } g();");
+            e->execute("function g() -> float { math::vec3 v = math::vec3(1, 2, 3); math::vec3 w = math::rotate(v, math::vec3(0, 0, 1), 0.5); float a = math::angle_between(v, w); "
+                       "math::vec2 d = math::from_angle(a, 2.0); math::vec2 o = math::rotate_around(d, math::vec2(1, 1), a); return w.x + a + o.angle(); } g();");
             const std::string rotate_call = "MATH " + std::to_string(static_cast<int>(jai::detail::math_fn::rotate_)) + " ";
             const std::string angle_call = "MATH " + std::to_string(static_cast<int>(jai::detail::math_fn::angle_between_)) + " ";
-            check(listings.find("T_MUL_FF") != std::string::npos && listings.find(rotate_call) == std::string::npos && listings.find(angle_call) == std::string::npos,
-                  "rotate and angle_between run as component arithmetic, no boxed call");
+            bool boxed_rotation_set = false;
+            for (const char* name : {"angle", "from_angle", "rotate_around"}) {
+                boxed_rotation_set = boxed_rotation_set || listings.find("MATH " + std::to_string(static_cast<int>(jai::detail::math_intrinsic_from_name(name))) + " ") != std::string::npos;
+            }
+            check(listings.find("T_MUL_FF") != std::string::npos && listings.find(rotate_call) == std::string::npos && listings.find(angle_call) == std::string::npos && !boxed_rotation_set,
+                  "rotate, angle_between, angle, from_angle and rotate_around run as component arithmetic, no boxed call: " + listings.substr(0, 3000));
             (void)raised;
         });
 
@@ -530,12 +557,12 @@ public:
 
         test("typed_slots", [expect, raised]() {
             expect("math::vec3 v = math::ivec3(1, 2, 3); to_string(v)", "(1.0, 2.0, 3.0)", "ivec into a vec slot");
-            expect("math::ivec2 p = math::vec2(1.5, -2.5); to_string(p)", "(1, -2)", "vec into an ivec slot");
+            expect("math::ivec2 p = cast<math::ivec2>(math::vec2(1.5, -2.5)); to_string(p)", "(1, -2)", "a vec cast into an ivec slot");
             expect("function f(math::vec3 p) { return p.x; } to_string(f(math::ivec3(7, 2, 3)))", "7.0", "a parameter converts");
-            expect("math::ivec2 g() { return math::vec2(2.9, 1.1); } to_string(g())", "(2, 1)", "a return converts");
-            expect("class H { math::ivec2 cell; } var h = H(); h.cell = math::vec2(3.5, 4.5); to_string(h.cell)", "(3, 4)", "a field converts");
+            expect("math::vec2 g() { return math::ivec2(2, 1); } to_string(g())", "(2.0, 1.0)", "a return widens");
+            expect("class H { math::vec2 cell; } var h = H(); h.cell = math::ivec2(3, 4); to_string(h.cell)", "(3.0, 4.0)", "a field widens");
             expect("string s = to_string(math::vec2(1, 2)); s", "(1.0, 2.0)", "a string slot takes the text to_string gives");
-            expect("auto a = math::ivec2(1, 2); a = math::vec2(3.7, 4.2); to_string(a)", "(3, 4)", "auto infers the kind");
+            expect("auto a = math::vec2(1, 2); a = math::ivec2(3, 4); to_string(a)", "(3.0, 4.0)", "auto infers the kind");
             expect("var a = math::ivec2(1, 2); a = 5; to_string(a)", "5", "var stays dynamic");
             expect("var five = 5; string m = \"\"; try { math::vec3 v = five; } catch (e) { m = e; } to_string(m.contains(\"declared math::vec3\"))", "true", "an int rejects, naming the declared type");
             expect("var w = math::vec2(1, 2); string m = \"\"; try { math::vec3 v = w; } catch (e) { m = e; } to_string(m.contains(\"declared math::vec3\"))", "true", "another dimension rejects");
@@ -543,7 +570,7 @@ public:
 
         test("containers_and_keys", [expect]() {
             expect("array<math::vec3> a = [math::vec3(1, 2, 3)]; a[0].x = 5; a.push(math::vec3()); to_string(a.size()) + to_string(a[0])", "2(5.0, 2.0, 3.0)", "a typed array");
-            expect("array<math::ivec2> b = [math::vec2(1.5, 2.5)]; to_string(b[0])", "(1, 2)", "the element boundary converts");
+            expect("array<math::vec2> b = [math::ivec2(1, 2)]; to_string(b[0])", "(1.0, 2.0)", "the element boundary widens");
             expect("map<math::ivec2, int> grid; grid[math::ivec2(1, 2)] = 5; grid[math::ivec2(1, 2)] += 1; to_string(grid[math::ivec2(1, 2)]) + to_string(grid.size())", "61", "a typed map keyed by ivec2");
             expect("var m = {}; m[math::ivec2(1, 2)] = \"a\"; m[math::ivec2(1, 2)]", "a", "a dynamic map key");
             expect("var m = {}; m[math::vec2(0.0, 1)] = 1; m[math::vec2(-0.0, 1)] = 2; m[math::vec2(math::NAN_VALUE, 1)] = 3; m[math::vec2(-math::NAN_VALUE, 1)] = 4; to_string(m.size())", "2", "keys order float components as float keys do: -0.0 is 0.0, every NaN one");
@@ -569,8 +596,8 @@ public:
             expect("array<math::vec3> a = [math::vec3(1, 2, 3)]; math::vec3 v = a[0]; v.x = 9; var w = a[0]; w.y = 9; to_string(a[0]) + to_string(v) + to_string(w)",
                    "(1.0, 2.0, 3.0)(9.0, 2.0, 3.0)(1.0, 9.0, 3.0)", "an element read is a copy");
             expect("array<math::vec3> a = [math::vec3(1, 2, 3)]; array<math::vec3> b = a; b[0].x = 5; to_string(a[0]) + to_string(b[0])", "(1.0, 2.0, 3.0)(5.0, 2.0, 3.0)", "an array copy is a value");
-            expect("array<math::vec2> a = [math::vec2(1.5, -2.5)]; array<math::ivec2> b = a; array<var> c = a; c.push(1); b.join(\" \") + c.join(\" \") + type_of(c[0])",
-                   "(1, -2)(1.5, -2.5) 1math::vec2", "conversions by value");
+            expect("array<math::ivec2> a = [math::ivec2(1, -2)]; array<math::vec2> b = a; array<var> c = a; c.push(1); b.join(\" \") + c.join(\" \") + type_of(c[0])",
+                   "(1.0, -2.0)(1, -2) 1math::ivec2", "conversions by value");
             expect("array<var> d = [math::ivec2(1, 2), math::vec2(3.5, 4)]; array<math::vec2> e = d; e.join(\" \")", "(1.0, 2.0) (3.5, 4.0)", "a dynamic array into a vector buffer");
             expect("array<math::vec3> a = [math::vec3(1, 2, 3)]; array<math::vec3> b = [math::vec3(1, 2, 3)]; to_string(a == b) + to_string(a.contains(math::vec3(1, 2, 3))) + to_string(a.index_of(math::vec3(1, 2, 3)))",
                    "truetrue0", "equality and search");
@@ -650,7 +677,7 @@ public:
                 }
                 return all;
             };
-            check_eq(std::string(""), errors("math::vec3 v = math::vec3(1, 2, 3); float f = v.x + v.depth; math::ivec3 c = v; v.y = 2;"), "clean program");
+            check_eq(std::string(""), errors("math::vec3 v = math::vec3(1, 2, 3); float f = v.x + v.depth; math::ivec3 c = cast<math::ivec3>(v); v.y = 2;"), "clean program");
             check_eq(std::string("math::vec3 has no member 'w'|"), errors("math::vec3 v; var q = v.w;"), "an unknown component");
             check_eq(std::string("math::vec2 has no member 'z'|"), errors("math::vec2 v; v.z = 1;"), "a missing component store");
             check(errors("math::vec3 v = 5;").find("math::vec3") != std::string::npos, "an int into a vec3 slot is a load error naming the type");
@@ -665,10 +692,14 @@ public:
             check_eq(std::string("math::color has no member 'x'|"), errors("math::color c; var q = c.x;"), "a vector name on a color");
             check_eq(std::string(""), errors("var v = math::vec2(1, 2); var w = math::floor(v); math::vec2 x = w;"), "a var argument leaves the result dynamic");
             check_eq(std::string(""), errors("math::vec3 a; math::vec3 b; float d = a.dot(b); math::vec3 n = a.normalized(); math::vec3 c = math::cross(a, b); int e = math::ivec2(1, 2).length_squared(); "
-                                             "math::vec2 r = math::ivec2(1, 0).rotated(0.5); float l = math::length(a) + a.distance_to(b) + math::angle_between(a, b); int k = math::dot(math::ivec3(), math::ivec3());"),
+                                             "math::vec2 r = math::ivec2(1, 0).rotated(0.5); float l = math::length(a) + a.distance_to(b) + math::angle_between(a, b); int k = math::dot(math::ivec3(), math::ivec3()); "
+                                             "math::vec2 h = math::from_angle(l, 2); float t = h.angle() + math::angle(math::ivec2(1, 2)); math::vec2 o = h.rotated_around(r, t); math::vec2 p = math::rotate_around(math::ivec2(1, 0), h, t);"),
                      "the geometry library types its results");
             check_eq(std::string("math::vec3 has no member 'foo'|"), errors("math::vec3 v; var q = v.foo();"), "an unknown method");
             check_eq(std::string("'dot' expects 1 argument|"), errors("math::vec3 v; var q = v.dot();"), "a method's arity");
+            check_eq(std::string("'rotated_around' expects 2 arguments (pivot, angle)|'angle' expects 0 arguments|math::vec3 has no member 'angle'|"),
+                     errors("math::vec2 v; var q = v.rotated_around(v); var a = v.angle(1); math::vec3 w; var b = w.angle();"), "the rotation methods' arity; angle is a vec2's");
+            check(errors("math::vec2 v; math::vec2 a = math::angle(v);").find("math::vec2") != std::string::npos && errors("float f = math::from_angle(1.0);").find("float") != std::string::npos, "angle is a float, from_angle a vec2");
             check_eq(std::string(""), errors("math::vec3 p; math::vec3 a = math::min(p); float c = math::length(p, p);"),
                      "a library call's count is the kernel's runtime error (docs/site/embedding/06-static-checking.html \"Namespaces, and recovery\"), its result untyped");
         });

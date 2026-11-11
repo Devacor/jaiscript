@@ -2,6 +2,64 @@
 
 namespace jai {
 
+error_kind error_kind_of(const std::error_code& ec) noexcept {
+    if (ec.category() != runtime_error_category()) { return error_kind::other; }
+    switch (static_cast<runtime_error_code>(ec.value())) {
+        case runtime_error_code::member_access_on_null: return error_kind::null_receiver;
+        case runtime_error_code::member_not_found:
+        case runtime_error_code::static_member_not_found: return error_kind::no_member;
+        case runtime_error_code::undefined_variable:
+        case runtime_error_code::class_not_found: return error_kind::name;
+        case runtime_error_code::not_a_function: return error_kind::not_callable;
+        case runtime_error_code::argument_count_mismatch:
+        case runtime_error_code::no_constructor_found:
+        case runtime_error_code::ambiguous_call: return error_kind::arguments;
+        case runtime_error_code::type_mismatch:
+        case runtime_error_code::not_an_object:
+        case runtime_error_code::not_a_class:
+        case runtime_error_code::not_an_array:
+        case runtime_error_code::not_a_map:
+        case runtime_error_code::invalid_index_type:
+        case runtime_error_code::array_element_type_mismatch:
+        case runtime_error_code::map_value_type_mismatch:
+        case runtime_error_code::map_key_type_mismatch: return error_kind::type;
+        case runtime_error_code::invalid_numeric_operand:
+        case runtime_error_code::division_by_zero:
+        case runtime_error_code::modulo_by_zero: return error_kind::arithmetic;
+        case runtime_error_code::index_out_of_bounds: return error_kind::bounds;
+        case runtime_error_code::map_key_not_found: return error_kind::key_not_found;
+        case runtime_error_code::array_empty: return error_kind::container;
+        case runtime_error_code::invalid_reference:
+        case runtime_error_code::invalid_weak_ptr_conversion:
+        case runtime_error_code::invalid_shared_ptr_conversion:
+        case runtime_error_code::capture_undefined_variable:
+        case runtime_error_code::capture_reference_failed: return error_kind::reference;
+        case runtime_error_code::max_recursion_depth:
+        case runtime_error_code::memory_cap_exceeded: return error_kind::limit;
+        case runtime_error_code::cpp_exception: return error_kind::host;
+        default: return error_kind::other;
+    }
+}
+
+const char* error_kind_name(error_kind kind) noexcept {
+    switch (kind) {
+        case error_kind::null_receiver: return "null_receiver";
+        case error_kind::no_member: return "no_member";
+        case error_kind::name: return "name";
+        case error_kind::not_callable: return "not_callable";
+        case error_kind::arguments: return "arguments";
+        case error_kind::type: return "type";
+        case error_kind::arithmetic: return "arithmetic";
+        case error_kind::bounds: return "bounds";
+        case error_kind::key_not_found: return "key_not_found";
+        case error_kind::container: return "container";
+        case error_kind::reference: return "reference";
+        case error_kind::limit: return "limit";
+        case error_kind::host: return "host";
+        default: return "other";
+    }
+}
+
 std::string runtime_error_category_impl::message(int ev) const {
     switch (static_cast<runtime_error_code>(ev)) {
         case runtime_error_code::success:

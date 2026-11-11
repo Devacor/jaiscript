@@ -123,6 +123,94 @@ std::unique_ptr<T> make_unique_default_for_load() {
 
 } // namespace serialization
 
+// Whether a class declares or inherits a member of a serialization name at any access level, and whether that member is
+// a plain public one. The archives ask where a type has no route they can call, and of a property_owner about to take its
+// properties' route, to tell a forgotten `friend jai::access;` from a type that declares no such member.
+namespace serialization_traits {
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma warning(push)
+#pragma warning(disable: 4250 4623 4624 4625 4626 5026 5027)
+#endif
+
+#define JAI_DETAIL_MEMBER_NAME_PROBE(member) \
+	struct member##_name_fallback { void member(); }; \
+	template<typename T> struct member##_name_probe : T, member##_name_fallback {}; \
+	/* naming the member through the probe is ambiguous exactly when T has one */ \
+	template<typename T, typename = void> struct member##_name_found : std::true_type {}; \
+	template<typename T> struct member##_name_found<T, std::void_t<decltype(&member##_name_probe<T>::member)>> : std::false_type {}; \
+	template<typename T, bool = std::is_class_v<T> && !std::is_final_v<T>> struct declares_##member : std::false_type {}; \
+	template<typename T> struct declares_##member<T, true> : member##_name_found<T> {}; \
+	/* one public member that is neither a template nor overloaded: its address needs no friend */ \
+	template<typename T, typename = void> struct has_plain_public_##member : std::false_type {}; \
+	template<typename T> struct has_plain_public_##member<T, std::void_t<decltype(&T::member)>> : std::true_type {}
+
+JAI_DETAIL_MEMBER_NAME_PROBE(serialize);
+JAI_DETAIL_MEMBER_NAME_PROBE(save);
+JAI_DETAIL_MEMBER_NAME_PROBE(load);
+JAI_DETAIL_MEMBER_NAME_PROBE(load_and_construct);
+
+#undef JAI_DETAIL_MEMBER_NAME_PROBE
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma warning(pop)
+#endif
+
+// What a type with no callable route says about one serialization name
+enum class member_name_verdict { absent, unreachable, not_an_archive_function };
+
+template<typename Declares, typename PlainPublic>
+inline constexpr member_name_verdict member_name_verdict_of =
+	!Declares::value ? member_name_verdict::absent :
+	PlainPublic::value ? member_name_verdict::not_an_archive_function : member_name_verdict::unreachable;
+
+template<typename T> inline constexpr member_name_verdict serialize_member_verdict_v = member_name_verdict_of<declares_serialize<T>, has_plain_public_serialize<T>>;
+template<typename T> inline constexpr member_name_verdict save_member_verdict_v = member_name_verdict_of<declares_save<T>, has_plain_public_save<T>>;
+template<typename T> inline constexpr member_name_verdict load_member_verdict_v = member_name_verdict_of<declares_load<T>, has_plain_public_load<T>>;
+template<typename T> inline constexpr bool declares_load_and_construct_v = declares_load_and_construct<T>::value;
+
+// Stands for any archive and any construct<U>, to ask whether jai::access can call the load_and_construct a class
+// declares or inherits, whichever class that one constructs
+struct any_load_and_construct_argument { template<typename U> operator U&() const; };
+template<typename T, typename = void>
+struct reaches_load_and_construct : std::false_type {};
+template<typename T>
+struct reaches_load_and_construct<T, std::void_t<decltype(::jai::access::load_and_construct<T>(
+	std::declval<any_load_and_construct_argument&>(), std::declval<any_load_and_construct_argument&>()))>> : std::true_type {};
+
+// A class whose own load_and_construct, or the nearest base's, is closed to jai::access
+template<typename T>
+inline constexpr bool load_and_construct_unreachable_v = declares_load_and_construct_v<T> && !reaches_load_and_construct<T>::value;
+
+} // namespace serialization_traits
+
+namespace serialization {
+
+#define JAI_DETAIL_UNREACHABLE_LOAD_AND_CONSTRUCT \
+	"the type declares load_and_construct() but jai::access cannot reach it: add 'friend jai::access;' to the class (or make the function public)"
+
+// The compile error for a type T an archive must construct on a load and cannot
+template<typename T>
+constexpr void no_route_to_construct() {
+	static_assert(!serialization_traits::load_and_construct_unreachable_v<T>, JAI_DETAIL_UNREACHABLE_LOAD_AND_CONSTRUCT);
+	static_assert(!serialization_traits::declares_load_and_construct_v<T> || serialization_traits::load_and_construct_unreachable_v<T>,
+		"the type's load_and_construct() does not construct it: the archive calls load_and_construct(Archive&, jai::serialization::construct<T>&) "
+		"with T the type it loads, and an inherited one constructs its own class");
+	static_assert(serialization_traits::declares_load_and_construct_v<T>,
+		"the archive cannot construct this type on a load: give it a default constructor (a non-public one with 'friend jai::access;') "
+		"or a static load_and_construct(Archive&, jai::serialization::construct<T>&)");
+}
+
+// A polymorphic type may load through its subclasses alone, so only a load_and_construct jai::access cannot reach is an error
+template<typename T>
+constexpr void no_route_to_construct_polymorphic() {
+	static_assert(!serialization_traits::load_and_construct_unreachable_v<T>, JAI_DETAIL_UNREACHABLE_LOAD_AND_CONSTRUCT);
+}
+
+#undef JAI_DETAIL_UNREACHABLE_LOAD_AND_CONSTRUCT
+
+} // namespace serialization
+
 namespace serialization_traits {
 
 template<typename T> struct is_std_vector : std::false_type {};
@@ -348,6 +436,77 @@ using serialization_traits::is_property_owner_v;
 using serialization_traits::is_jai_property_v;
 using serialization_traits::property_element_t;
 
+} // namespace jai
+
+namespace jai {
+
+class script_value;
+
+namespace serialization {
+
+// ADL-findable free-function detection. Must live at namespace scope: inside the
+// archive classes, unqualified save/load/serialize would bind to the archives' own
+// member functions at template-definition time on conforming compilers.
+namespace adl_detect {
+	template<typename Archive, typename T, typename = void>
+	struct has_adl_save : std::false_type {};
+	template<typename Archive, typename T>
+	struct has_adl_save<Archive, T, std::void_t<decltype(save(std::declval<Archive&>(), std::declval<const T&>()))>> : std::true_type {};
+
+	template<typename Archive, typename T, typename = void>
+	struct has_adl_load : std::false_type {};
+	template<typename Archive, typename T>
+	struct has_adl_load<Archive, T, std::void_t<decltype(load(std::declval<Archive&>(), std::declval<T&>()))>> : std::true_type {};
+
+	template<typename Archive, typename T, typename = void>
+	struct has_adl_serialize : std::false_type {};
+	template<typename Archive, typename T>
+	struct has_adl_serialize<Archive, T, std::void_t<decltype(serialize(std::declval<Archive&>(), std::declval<T&>()))>> : std::true_type {};
+
+	// inside an archive class the member serialize(name, value) hides the free function from ADL
+	template<typename Archive, typename T>
+	void call_adl_serialize(Archive& archive, T& value) { serialize(archive, value); }
+
+	// the shapes an archive writes itself, ahead of any free function
+	template<typename T>
+	inline constexpr bool is_archive_shape_v =
+		std::is_arithmetic_v<T> || std::is_enum_v<T> || std::is_same_v<T, std::string> ||
+		serialization_traits::is_std_shared_ptr_v<T> || serialization_traits::is_std_weak_ptr_v<T> || serialization_traits::is_std_unique_ptr_v<T> ||
+		serialization_traits::is_std_pair_v<T> || serialization_traits::is_std_optional_v<T> || serialization_traits::is_std_variant_v<T> ||
+		serialization_traits::is_std_tuple_v<T> || serialization_traits::is_std_array_v<T> || serialization_traits::is_map_like_v<T> ||
+		serialization_traits::is_set_like_v<T> || serialization_traits::is_sequence_container_v<T> || serialization_traits::is_jai_property_v<T>;
+}
+
+
+// Stands for every archive where a trait asks whether a class has a route of its own
+struct route_probe_archive {
+	static constexpr bool is_jai_archive = true;
+	static constexpr bool is_text_format = false;
+	template<typename... Args> void operator()(Args&&...) {}
+	template<typename... Args> void serialize(Args&&...) {}
+};
+
+template<typename T>
+inline constexpr bool has_member_route_v =
+	requires(route_probe_archive& a, const T& t) { ::jai::access::member_save(a, t); } ||
+	requires(route_probe_archive& a, const T& t) { ::jai::access::member_save(a, t, std::uint32_t(0)); } ||
+	requires(route_probe_archive& a, T& t) { ::jai::access::member_load(a, t); } ||
+	requires(route_probe_archive& a, T& t) { ::jai::access::member_load(a, t, std::uint32_t(0)); } ||
+	requires(route_probe_archive& a, T& t) { ::jai::access::member_serialize(a, t); } ||
+	requires(route_probe_archive& a, T& t) { ::jai::access::member_serialize(a, t, std::uint32_t(0)); };
+
+// A class the archives write and read as the properties its engine binding declares (dynamic_binder::property): it has no
+// route of its own, and no serialization member jai::access cannot reach (a forgotten friend stays a compile error)
+template<typename T>
+inline constexpr bool binding_record_v = std::is_class_v<T> && !adl_detect::is_archive_shape_v<T> && !std::is_same_v<T, script_value> &&
+	!serialization_traits::is_property_owner_v<T> && !has_member_route_v<T> &&
+	!adl_detect::has_adl_serialize<route_probe_archive, T>::value && !adl_detect::has_adl_save<route_probe_archive, T>::value &&
+	!adl_detect::has_adl_load<route_probe_archive, T>::value &&
+	serialization_traits::serialize_member_verdict_v<T> != serialization_traits::member_name_verdict::unreachable &&
+	serialization_traits::save_member_verdict_v<T> != serialization_traits::member_name_verdict::unreachable &&
+	serialization_traits::load_member_verdict_v<T> != serialization_traits::member_name_verdict::unreachable;
+
+} // namespace serialization
 } // namespace jai
 
 #endif // JAISCRIPT_SERIALIZATION_TRAITS_HPP

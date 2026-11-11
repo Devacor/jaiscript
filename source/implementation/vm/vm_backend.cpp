@@ -34,6 +34,7 @@
 #include <jaiscript/detail/string_element.hpp>
 #include <jaiscript/detail/import_paths.hpp>
 #include <jaiscript/detail/capture_ladder.hpp>
+#include <jaiscript/detail/loop_binding.hpp>
 #include <jaiscript/detail/ast_serializer.hpp>
 #include <jaiscript/detail/body_walker.hpp>
 #include <jaiscript/detail/expr_children.hpp>
@@ -2554,7 +2555,7 @@ checked_result<script_value> vm_backend::enforce_type_compatibility_named(script
 			case script_value_type::jai_char_type: want = script_value::TYPEID_CHAR; break;
 			default: break;
 		}
-		if (want != script_value::TYPEID_INVALID && seen.raw_storage_index() == want) {
+		if (want != script_value::TYPEID_INVALID && seen.raw_storage_index() == want && !detail::enum_store(seen, *target_type)) {
 			return std::move(value);
 		}
 	}
@@ -2724,7 +2725,7 @@ checked_result<script_value> vm_backend::try_convert_for_parameter(const script_
 			break;
 	}
 
-	if (target_base_type == script_value_type::jai_object_type && !target_type->type_name.empty() &&
+	if (target_base_type == script_value_type::jai_object_type && !target_type->type_name.empty() && !target_type->is_enum &&
 	    (out.v == verdict::reject || out.v == verdict::reject_class)) {
 		return detail::no_converting_constructor_error(symbolizer_, derefed_arg, *target_type, engine_);
 	}
@@ -2977,6 +2978,7 @@ JAI_FORCEINLINE bool vm_backend::store_scalar_lane(script_value& slot, script_va
 	const type_info* vt = value.type_info_raw();
 	const script_value_type vb = vt ? vt->base_type : script_value_type::jai_any_type;
 	const type_info* tag = vt;
+	if ((st && st->is_enum) || (vt && vt->is_enum)) return false;   // the table's enum rows: a stamp comes or goes
 	bool lane = !st;
 	if (lane && detail::slot_value_assign_candidate(slot)) return false;   // an untagged or var slot holding an object: its object decides
 	if (!lane && st->base_type == script_value_type::jai_any_type && !st->dynamic_slot &&
@@ -3087,7 +3089,7 @@ JAI_NOINLINE op_status vm_backend::store_popped_value_full(frame& f, const vm_in
 					return {};
 				}
 			}
-			if (!identity && slot_type && (slot_type->base_type != value.type() ||
+			if (!identity && slot_type && (slot_type->base_type != value.type() || detail::enum_store(value, *slot_type) ||
 			                  slot_type->base_type == script_value_type::jai_object_type ||
 			                  slot_type->base_type == script_value_type::jai_array_type ||
 			                  slot_type->base_type == script_value_type::jai_map_type ||
@@ -3616,10 +3618,7 @@ JAI_NOINLINE op_status vm_backend::exec_compound_store_full(frame& f, const vm_i
 					break;
 				}
 				case compound_slash: {
-					if (rIdx == script_value::TYPEID_INT && derefRight.unchecked_as_int() == 0) {
-						return raise_(make_error_code(runtime_error_code::division_by_zero));
-					}
-					if (rIdx == script_value::TYPEID_FLOAT && derefRight.unchecked_as_float() == 0.0) {
+					if (detail::math::integer_zero_divisor(target, derefRight)) {
 						return raise_(make_error_code(runtime_error_code::division_by_zero));
 					}
 					if (target.is_int()) {
@@ -3748,10 +3747,7 @@ JAI_NOINLINE op_status vm_backend::exec_compound_store_full(frame& f, const vm_i
 				break;
 			}
 			case compound_slash: {
-				if (rightIdx == script_value::TYPEID_INT && derefRight.unchecked_as_int() == 0) {
-					return raise_(make_error_code(runtime_error_code::division_by_zero));
-				}
-				if (rightIdx == script_value::TYPEID_FLOAT && derefRight.unchecked_as_float() == 0.0) {
+				if (detail::math::integer_zero_divisor(target, derefRight)) {
 					return raise_(make_error_code(runtime_error_code::division_by_zero));
 				}
 				if (bothInt) {
@@ -3771,7 +3767,7 @@ JAI_NOINLINE op_status vm_backend::exec_compound_store_full(frame& f, const vm_i
 				break;
 			}
 			case compound_percent: {
-				if (rightIdx == script_value::TYPEID_INT && derefRight.unchecked_as_int() == 0) {
+				if (detail::math::integer_zero_divisor(target, derefRight)) {
 					return raise_(make_error_code(runtime_error_code::modulo_by_zero), "Modulo by zero");
 				}
 				VM_TRY_ASSIGN(script_value promoted, evaluate_arithmetic(target, token_type::percent, derefRight, 4));
@@ -4122,8 +4118,8 @@ JAI_FORCEINLINE bool vm_backend::stack_numeric_rows(script_value& l, const scrip
 		case token_type::plus: l = script_value(a + b, engine_); break;
 		case token_type::minus: l = script_value(a - b, engine_); break;
 		case token_type::star: l = script_value(a * b, engine_); break;
-		case token_type::slash: done = b != 0.0; if (done) { l = script_value(a / b, engine_); } break;
-		case token_type::percent: done = b != 0.0; if (done) { l = script_value(std::fmod(a, b), engine_); } break;
+		case token_type::slash: l = script_value(a / b, engine_); break;
+		case token_type::percent: l = script_value(std::fmod(a, b), engine_); break;
 		case token_type::less: l = script_value(a < b, engine_); break;
 		case token_type::less_equal: l = script_value(a <= b, engine_); break;
 		case token_type::greater: l = script_value(a > b, engine_); break;
@@ -4763,8 +4759,8 @@ bool vm_backend::typed_binary_head(frame& f, const fused_binary_proto& p, Sink& 
 	case token_type::plus: emit_float(a + b); return true;
 	case token_type::minus: emit_float(a - b); return true;
 	case token_type::star: emit_float(a * b); return true;
-	case token_type::slash: if (b == 0.0) return false; emit_float(a / b); return true;
-	case token_type::percent: if (b == 0.0) return false; emit_float(std::fmod(a, b)); return true;
+	case token_type::slash: emit_float(a / b); return true;
+	case token_type::percent: emit_float(std::fmod(a, b)); return true;
 	case token_type::less: sink(script_value(a < b, engine_)); return true;
 	case token_type::less_equal: sink(script_value(a <= b, engine_)); return true;
 	case token_type::greater: sink(script_value(a > b, engine_)); return true;
@@ -4855,12 +4851,8 @@ op_status vm_backend::binary_fused_compute(frame& f, uint32_t proto_index, Sink&
 			case token_type::plus: emit_float(a + b); return {};
 			case token_type::minus: emit_float(a - b); return {};
 			case token_type::star: emit_float(a * b); return {};
-			case token_type::slash:
-				if (b == 0.0) return raise_(make_error_code(runtime_error_code::division_by_zero), "Division by zero");
-				emit_float(a / b); return {};
-			case token_type::percent:
-				if (b == 0.0) return raise_(make_error_code(runtime_error_code::modulo_by_zero), "Modulo by zero");
-				emit_float(std::fmod(a, b)); return {};
+			case token_type::slash: emit_float(a / b); return {};
+			case token_type::percent: emit_float(std::fmod(a, b)); return {};
 			case token_type::less: sink(script_value(a < b, engine_)); return {};
 			case token_type::less_equal: sink(script_value(a <= b, engine_)); return {};
 			case token_type::greater: sink(script_value(a > b, engine_)); return {};
@@ -5042,6 +5034,7 @@ bool vm_backend::store_slot_raw(frame& f, const vm_instruction& ins, size_t kind
 	if (!slot || slot->raw_storage_index() != kind) return false;
 	const bool is_int = kind == script_value::TYPEID_INT;
 	const type_info* st = slot->type_info_raw();
+	if (st && st->is_enum) return false;   // an enum slot's row decides
 	type_info* tag = is_int ? ti_int_ : ti_float_;
 	if (st && st->base_type != (is_int ? script_value_type::jai_int_type : script_value_type::jai_float_type)) {
 		if (st->base_type != script_value_type::jai_any_type || st->dynamic_slot) return false;
@@ -5459,13 +5452,13 @@ op_status vm_backend::exec_compound_fused(frame& f, const vm_instruction& ins) {
 					case token_type::plus: r = a + b; break;
 					case token_type::minus: r = a - b; break;
 					case token_type::star: r = a * b; break;
-					case token_type::slash: ok = b != 0.0; if (ok) { r = a / b; } break;
+					case token_type::slash: r = a / b; break;
 					default: ok = false; break;
 					}
 				}
 			}
 			const uint32_t kind = cp.kind_flags & compound_kind_mask;
-			if (ok && (kind == compound_plus || kind == compound_minus || kind == compound_star || (kind == compound_slash && r != 0.0))) {
+			if (ok && (kind == compound_plus || kind == compound_minus || kind == compound_star || kind == compound_slash)) {
 				script_float& t = varPtr->unchecked_as_float_ref();
 				t = kind == compound_plus ? t + r : kind == compound_minus ? t - r : kind == compound_star ? t * r : t / r;
 				if (!(cp.kind_flags & compound_flag_no_result)) {
@@ -5726,11 +5719,11 @@ op_status vm_backend::exec_index_impl(frame& f, const vm_instruction& ins) {
 			if (auto map_tag = left.get_type_info()) {
 				if (type_info_ptr key_type = map_tag->key_type();
 				    key_type && key_type->base_type != script_value_type::jai_any_type &&
-				    key.deref().type() != key_type->base_type) {
-					if (!detail::map_key_kind_admits(key.deref().type(), key_type->base_type)) {
+				    key.deref().type() != detail::map_key_kind(*key_type)) {
+					if (!detail::map_key_kind_admits(key.deref().type(), detail::map_key_kind(*key_type))) {
 						return raise_from(detail::element_type_error(symbolizer_, runtime_error_code::map_key_type_mismatch, "Cannot use '{0}' as a key of type '{1}'", key.deref(), key_type));
 					}
-					VM_TRY_ASSIGN(key, detail::map_key_in_kind(key.deref(), key_type->base_type, engine_));
+					VM_TRY_ASSIGN(key, detail::map_key_in_kind(key.deref(), detail::map_key_kind(*key_type), engine_));
 				}
 			}
 			const size_t prior_map_size = map.size();
@@ -5959,13 +5952,9 @@ op_status vm_backend::exec_index_compound(frame& f, const uint32_t compound) {
 		if (rightValue.raw_storage_index() == script_value::TYPEID_CPP_BOUND) [[unlikely]] {
 			rightValue = rightValue.bound_decoded_temp();
 		}
-		const size_t ri = rightValue.raw_storage_index();
-		if (op == token_type::slash && ((ri == script_value::TYPEID_INT && rightValue.unchecked_as_int() == 0) ||
-		                                (ri == script_value::TYPEID_FLOAT && rightValue.unchecked_as_float() == 0.0))) {
-			return raise_(make_error_code(runtime_error_code::division_by_zero), "Division by zero");
-		}
-		if (op == token_type::percent && ri == script_value::TYPEID_INT && rightValue.unchecked_as_int() == 0) {
-			return raise_(make_error_code(runtime_error_code::modulo_by_zero), "Modulo by zero");
+		if ((op == token_type::slash || op == token_type::percent) && detail::math::integer_zero_divisor(currentValue, rightValue)) {
+			return op == token_type::slash ? raise_(make_error_code(runtime_error_code::division_by_zero), "Division by zero")
+			                               : raise_(make_error_code(runtime_error_code::modulo_by_zero), "Modulo by zero");
 		}
 		const bool text_slot = currentValue.is_reference() && currentValue.get_reference_holder() && currentValue.get_reference_holder()->string_element();
 		VM_TRY_ASSIGN(resultValue, compound_value(op, currentValue, rightValue, incdec, text_slot));
@@ -6058,8 +6047,7 @@ op_status vm_backend::exec_index_store(frame& f, const vm_instruction& ins) {
 			    index >= 0 && index < static_cast<script_int>(storage->size())) {
 				const script_value& rhs_peek = stack_[stack_.size() - 3].deref();
 				const size_t ri = rhs_peek.raw_storage_index();
-				if (ri == script_value::TYPEID_INT || (ri == script_value::TYPEID_FLOAT &&
-				    (storage->kind() == script_array::kind_t::f64 || detail::float_fits_script_int(rhs_peek.unchecked_as_float())))) {
+				if (ri == script_value::TYPEID_INT || (ri == script_value::TYPEID_FLOAT && storage->kind() == script_array::kind_t::f64)) {
 					stack_.pop_back();   // index (decoded above)
 					script_value container_local = std::move(stack_.back());
 					stack_.pop_back();
@@ -6871,7 +6859,7 @@ bool vm_backend::cells_resync(frame& f, const chunk::cell_loop& loop) {
 		if (st != canonical && !(st && st->base_type == script_value_type::jai_any_type)) return false;
 		cs.cells[k].bits = cell_bits(*s, want);
 		cs.cells[k].kind = want;
-		cs.cells[k].set_stamp(cl.kind != 0 ? nullptr : st);
+		cs.cells[k].set_stamp(cl.kind != 0 && !(st && st->base_type == script_value_type::jai_any_type) ? nullptr : st);   // a var slot keeps its any stamp through the flush
 	}
 	if (const uint32_t k = define; k != k_invalid_u32) {
 		// the local the statement declared: its declared kind, or the block stays closed
@@ -7816,7 +7804,7 @@ bool vm_backend::cells_enter(frame& f, const chunk::cell_loop& loop, bool head) 
 		cs.cells[k].kind = want;
 		// the landing rule reads the stamp only where the kind is decided at run time (an adopted kind: a var or an unproven slot); a pinned cell's slot
 		// carries the canonical stamp, checked above, and its landing is the declared kind
-		cs.cells[k].set_stamp(cl.kind != 0 ? nullptr : st);   // restored by the flush when recorded
+		cs.cells[k].set_stamp(cl.kind != 0 && !(st && st->base_type == script_value_type::jai_any_type) ? nullptr : st);   // a var slot keeps its any stamp through the flush   // restored by the flush when recorded
 		JAI_CELLS_COUNT(3);
 	}
 	bool resolved = !env_known;
@@ -8565,7 +8553,9 @@ JAI_FORCEINLINE vm_backend::frame& vm_backend::raw_push(frame& f, const chunk::c
 	rec.f.window_live = 0;
 	rec.f.raw = true;
 	const size_t n = callee_loop.cells.size();
-	std::memset(static_cast<void*>(ncs.cells.data()), 0, (n <= 8 ? 8 : n) * sizeof(cell_word));
+	// a constant size, so the common small frame clears with inline stores
+	if (n <= 8) { std::memset(static_cast<void*>(ncs.cells.data()), 0, 8 * sizeof(cell_word)); }
+	else { std::memset(static_cast<void*>(ncs.cells.data()), 0, n * sizeof(cell_word)); }
 	const size_t argc = cc.args.size();
 	for (size_t i = 0; i < argc; ++i) {
 		const chunk::cell_loop::call_arg& a = cc.args[i];
@@ -8956,8 +8946,8 @@ JAI_FORCEINLINE op_status vm_backend::exec_c_arith(frame& f, size_t& ip, const v
 		case opcode::op_t_add_ff: r = a + b; break;
 		case opcode::op_t_sub_ff: r = a - b; break;
 		case opcode::op_t_mul_ff: r = a * b; break;
-		case opcode::op_t_div_ff: ok = b != 0.0; if (ok) { r = a / b; } break;
-		case opcode::op_t_mod_ff: ok = b != 0.0; if (ok) { r = std::fmod(a, b); } break;
+		case opcode::op_t_div_ff: r = a / b; break;
+		case opcode::op_t_mod_ff: r = std::fmod(a, b); break;
 		default: ok = false; break;
 		}
 		if (!ok) { cells_miss_ip(f, ip, loop, loop.origin[ip - loop.copy_head], 1); return {}; }
@@ -9146,17 +9136,13 @@ bool vm_backend::cell_land(frame& f, const chunk::cell_loop& loop, uint32_t dk, 
 		const uint8_t declared = !ds || ds->base_type == script_value_type::jai_any_type ? 0 : contract;
 		if (declared != 0 && declared != kind) {
 			if (declared == static_cast<uint8_t>(script_value::TYPEID_FLOAT) && kind == static_cast<uint8_t>(script_value::TYPEID_INT)) { bits = cell_bits_of_float(static_cast<script_float>(static_cast<script_int>(bits))); kind = declared; }
-			else if (declared == static_cast<uint8_t>(script_value::TYPEID_INT) && kind == static_cast<uint8_t>(script_value::TYPEID_FLOAT)) {
-				// an int declaration takes a float by the declaration's kernel: truncation in range, the general form's text out of range
-				const script_float d = cell_float_of_bits(bits);
-				if (!detail::float_fits_script_int(d)) return false;
-				bits = static_cast<int64_t>(static_cast<script_int>(d)); kind = declared;
-			}
 			else return false;
 		}
 	} else if (have != kind && !loop.cells[dk].temp) {
 		// a local the body declares has no slot stamp: its declaration's type is the cell's contract on every iteration
-		const type_info* st = cs.cells[dk].stamp() ? cs.cells[dk].stamp() : loop.cells[dk].first_decl ? loop.cells[dk].decl_stamp : nullptr;
+		const type_info* declared_var = loop.cells[dk].first_decl ? loop.cells[dk].decl_stamp : nullptr;
+		const type_info* st = declared_var && declared_var->base_type == script_value_type::jai_any_type ? declared_var   // a var the body declares stays a var whatever landed in it
+		                    : cs.cells[dk].stamp() ? cs.cells[dk].stamp() : declared_var;
 		if (st && st->base_type == script_value_type::jai_any_type) {
 			// a var: the language lands any kind; the flush keeps the any stamp; a kind the cell's contract does not hold misses
 			if (contract != 0 && kind != contract) return false;
@@ -9164,13 +9150,8 @@ bool vm_backend::cell_land(frame& f, const chunk::cell_loop& loop, uint32_t dk, 
 			return false;   // an environment value's stamp is its own tag, not its declaration (a var field holds a canonical int): the general store converts
 		} else if (have == static_cast<uint8_t>(script_value::TYPEID_FLOAT) && kind == static_cast<uint8_t>(script_value::TYPEID_INT)) {
 			bits = cell_bits_of_float(static_cast<script_float>(static_cast<script_int>(bits))); kind = have;   // a float slot widens an int (decl or store)
-		} else if (have == static_cast<uint8_t>(script_value::TYPEID_INT) && kind == static_cast<uint8_t>(script_value::TYPEID_FLOAT) && st && st->base_type == script_value_type::jai_int_type) {
-			// a declared int slot takes a float by the assignment table's kernel: truncation in range, the general form's text out of range
-			const script_float d = cell_float_of_bits(bits);
-			if (!detail::float_fits_script_int(d)) return false;
-			bits = static_cast<int64_t>(static_cast<script_int>(d)); kind = have;
 		} else {
-			return false;   // an int slot fed a float without a declared int stamp: the general form's conversion
+			return false;   // an int slot fed a float: the general form's refusal, or an untyped slot's new kind
 		}
 	} else if (loop.cells[dk].temp && contract != 0 && kind != contract) {
 		// a compiler value under a declared type (a graft's parameter, local or result): the declaration's conversion, as a local's; the
@@ -9178,11 +9159,6 @@ bool vm_backend::cell_land(frame& f, const chunk::cell_loop& loop, uint32_t dk, 
 		// converts nothing: its contract is a typed read's, and the value misses onto the general form
 		if (loop.cells[dk].open_def) return false;
 		if (contract == static_cast<uint8_t>(script_value::TYPEID_FLOAT) && kind == static_cast<uint8_t>(script_value::TYPEID_INT)) { bits = cell_bits_of_float(static_cast<script_float>(static_cast<script_int>(bits))); kind = contract; }
-		else if (contract == static_cast<uint8_t>(script_value::TYPEID_INT) && kind == static_cast<uint8_t>(script_value::TYPEID_FLOAT)) {
-			const script_float d = cell_float_of_bits(bits);
-			if (!detail::float_fits_script_int(d)) return false;
-			bits = static_cast<int64_t>(static_cast<script_int>(d)); kind = contract;
-		}
 		else return false;
 	}
 	if (have == 0 && contract != 0 && kind != contract && !loop.cells[dk].temp) return false;   // the first write of a body-declared local under its contract
@@ -9537,7 +9513,7 @@ op_status vm_backend::exec_c_arith_any(frame& f, size_t& ip, const vm_instructio
 		case token_type::plus: r = a + b; break;
 		case token_type::minus: r = a - b; break;
 		case token_type::star: r = a * b; break;
-		case token_type::slash: ok = b != 0.0; if (ok) { r = a / b; } break;
+		case token_type::slash: r = a / b; break;
 		default: ok = false; break;
 		}
 		kind = kflt; out = cell_bits_of_float(r);
@@ -9942,8 +9918,8 @@ JAI_FORCEINLINE op_status vm_backend::exec_c_index_store(frame& f, const vm_inst
 			case token_type::plus: r = a + b; break;
 			case token_type::minus: r = a - b; break;
 			case token_type::star: r = a * b; break;
-			case token_type::slash: ok = b != 0.0; if (ok) { r = a / b; } break;
-			case token_type::percent: ok = b != 0.0; if (ok) { r = std::fmod(a, b); } break;
+			case token_type::slash: r = a / b; break;
+			case token_type::percent: r = std::fmod(a, b); break;
 			default: ok = false; break;
 			}
 			if (!ok) return miss();
@@ -9953,8 +9929,8 @@ JAI_FORCEINLINE op_status vm_backend::exec_c_index_store(frame& f, const vm_inst
 	}
 	switch (node->kind()) {
 	case script_array::kind_t::i64:
-		if (vkind == static_cast<uint8_t>(script_value::TYPEID_FLOAT)) { const script_float d = cell_float_of_bits(vbits); if (!detail::float_fits_script_int(d)) return miss(); node->ints()[at] = static_cast<script_int>(d); }
-		else { node->ints()[at] = static_cast<script_int>(vbits); }
+		if (vkind == static_cast<uint8_t>(script_value::TYPEID_FLOAT)) return miss();
+		node->ints()[at] = static_cast<script_int>(vbits);
 		break;
 	case script_array::kind_t::f64:
 		node->floats()[at] = vkind == static_cast<uint8_t>(script_value::TYPEID_INT) ? static_cast<script_float>(static_cast<script_int>(vbits)) : cell_float_of_bits(vbits);
@@ -10043,7 +10019,7 @@ bool vm_backend::typed_land_int(frame& f, uint32_t a, script_int v) {
 		// the slot already holds this engine's canonical int: the payload is the whole store (the
 		// path below writes the same payload and re-stamps the same type; it never touches the engine)
 		if (s->raw_storage_index() == script_value::TYPEID_INT && slot_type == ti_int_) { JAI_TYPED_INPLACE(0); s->unchecked_set_int_payload(v); return true; }
-		if (slot_type && slot_type->base_type != script_value_type::jai_int_type) { JAI_TYPED_LAND(4); return false; }
+		if (slot_type && (slot_type->base_type != script_value_type::jai_int_type || slot_type->is_enum)) { JAI_TYPED_LAND(4); return false; }
 		script_value nv(v, engine_);
 		if (s->raw_storage_index() == script_value::TYPEID_INT) { JAI_TYPED_LAND(5); s->unchecked_set_int_payload(v); s->set_type_info(nv.get_type_info()); return true; }
 		JAI_TYPED_LAND(6);
@@ -10161,8 +10137,8 @@ JAI_FORCEINLINE bool vm_backend::typed_arith_fast(frame& f, const vm_instruction
 			case opcode::op_t_add_ff: r = a + b; break;
 			case opcode::op_t_sub_ff: r = a - b; break;
 			case opcode::op_t_mul_ff: r = a * b; break;
-			case opcode::op_t_div_ff: ok = b != 0.0; if (ok) { r = a / b; } break;
-			case opcode::op_t_mod_ff: ok = b != 0.0; if (ok) { r = std::fmod(a, b); } break;
+			case opcode::op_t_div_ff: r = a / b; break;
+			case opcode::op_t_mod_ff: r = std::fmod(a, b); break;
 			default: ok = false; break;
 			}
 			if (ok && typed_land_float(f, ins.a, r)) return true;
@@ -10267,8 +10243,8 @@ JAI_FORCEINLINE bool vm_backend::dyn_arith_fast(frame& f, const vm_instruction& 
 	case opcode::op_d_add: r = a + b; break;
 	case opcode::op_d_sub: r = a - b; break;
 	case opcode::op_d_mul: r = a * b; break;
-	case opcode::op_d_div: if (b == 0.0) return false; r = a / b; break;
-	default: if (b == 0.0) return false; r = std::fmod(a, b); break;
+	case opcode::op_d_div: r = a / b; break;
+	default: r = std::fmod(a, b); break;
 	}
 	return dyn_land(f, ins.a, script_value::TYPEID_FLOAT, 0, r);
 }
@@ -10516,9 +10492,8 @@ bool vm_backend::typed_index_store(frame& f, const fused_index_proto& p, bool no
 	const size_t at = static_cast<size_t>(index);
 	switch (node->kind()) {
 	case script_array::kind_t::i64:
-		// set()'s exact cast; a float outside the int range runs the kernel's checked text
-		if (vi == script_value::TYPEID_FLOAT && !detail::float_fits_script_int(v.unchecked_as_float())) return false;
-		node->ints()[at] = vi == script_value::TYPEID_FLOAT ? static_cast<script_int>(v.unchecked_as_float()) : v.unchecked_as_int();
+		if (vi == script_value::TYPEID_FLOAT) return false;   // the kernel refuses a float
+		node->ints()[at] = v.unchecked_as_int();
 		break;
 	case script_array::kind_t::f64:
 		node->floats()[at] = vi == script_value::TYPEID_INT ? static_cast<script_float>(v.unchecked_as_int()) : v.unchecked_as_float();
@@ -10688,11 +10663,11 @@ op_status vm_backend::map_scalar_store(script_value& container, const script_val
 	handled = true;
 	if (map_tag) {
 		if (const type_info_ptr& key_type = map_tag->type_params.empty() ? no_type : map_tag->type_params[0];
-		    key_type && key_type->base_type != script_value_type::jai_any_type && key_in.type() != key_type->base_type) [[unlikely]] {
-			if (!detail::map_key_kind_admits(key_in.type(), key_type->base_type)) {
+		    key_type && key_type->base_type != script_value_type::jai_any_type && key_in.type() != detail::map_key_kind(*key_type)) [[unlikely]] {
+			if (!detail::map_key_kind_admits(key_in.type(), detail::map_key_kind(*key_type))) {
 				return raise_from(detail::element_type_error(symbolizer_, runtime_error_code::map_key_type_mismatch, "Cannot use '{0}' as a key of type '{1}'", key_in, key_type));
 			}
-			VM_TRY_ASSIGN(script_value converted_key, detail::map_key_in_kind(key_in, key_type->base_type, engine_));
+			VM_TRY_ASSIGN(script_value converted_key, detail::map_key_in_kind(key_in, detail::map_key_kind(*key_type), engine_));
 			return map_scalar_store(container, converted_key, value, handled, stored);
 		}
 	}
@@ -10838,11 +10813,9 @@ op_status vm_backend::index_store_fused_rows(frame& f, const vm_instruction& ins
 		    index >= 0 && index < static_cast<script_int>(node->size())) {
 			const script_value& rhs_peek = value_operand ? value_ptr->deref() : stack_.back().deref();
 			const size_t ri = rhs_peek.raw_storage_index();
-			if (ri == script_value::TYPEID_INT || (ri == script_value::TYPEID_FLOAT &&
-			    (node->kind() == script_array::kind_t::f64 || detail::float_fits_script_int(rhs_peek.unchecked_as_float())))) {
+			if (ri == script_value::TYPEID_INT || (ri == script_value::TYPEID_FLOAT && node->kind() == script_array::kind_t::f64)) {
 				if (node->kind() == script_array::kind_t::i64) {
-					node->ints()[static_cast<size_t>(index)] = ri == script_value::TYPEID_FLOAT
-						? static_cast<script_int>(rhs_peek.unchecked_as_float()) : rhs_peek.unchecked_as_int();
+					node->ints()[static_cast<size_t>(index)] = rhs_peek.unchecked_as_int();
 				} else {
 					node->floats()[static_cast<size_t>(index)] = ri == script_value::TYPEID_INT
 						? static_cast<script_float>(rhs_peek.unchecked_as_int()) : rhs_peek.unchecked_as_float();
@@ -10860,11 +10833,11 @@ op_status vm_backend::index_store_fused_rows(frame& f, const vm_instruction& ins
 		if (node && !node->is_typed() && index >= 0 && index < static_cast<script_int>(node->size())) {
 			auto container_type_info = container.get_type_info();
 			type_info_ptr element_type = container_type_info ? container_type_info->element_type() : nullptr;
-			// Plain-scalar in-place lane: no element type -> no conversion -> NO user code
+			// Plain-scalar in-place lane: no element type, or var -> no conversion -> NO user code
 			// can run, so the handle pin and the value pre-copy below are dead hedges.
 			// Same-storage-kind scalar rhs writes the element payload in place and carries
 			// tag+engine exactly like clone_for_assignment's copy did (identical post-state).
-			if (!element_type) {
+			if (!element_type || element_type->base_type == script_value_type::jai_any_type) {
 				const script_value& rhs_peek = value_operand ? value_ptr->deref() : stack_.back().deref();
 				const size_t ri = rhs_peek.raw_storage_index();
 				if (ri == script_value::TYPEID_INT || ri == script_value::TYPEID_FLOAT) {
@@ -11038,12 +11011,9 @@ JAI_NOINLINE op_status vm_backend::map_numeric_compound(frame& f, const vm_instr
 	if (element_type && element_type->base_type == script_value_type::jai_object_type) { return {}; }
 	handled = true;
 	const token_type op = compound_kind_token(ins.a);
-	if (op == token_type::slash &&
-	    ((rk == script_value::TYPEID_INT && rhs.unchecked_as_int() == 0) || (rk == script_value::TYPEID_FLOAT && rhs.unchecked_as_float() == 0.0))) {
-		return raise_(make_error_code(runtime_error_code::division_by_zero), "Division by zero");
-	}
-	if (op == token_type::percent && rk == script_value::TYPEID_INT && rhs.unchecked_as_int() == 0) {
-		return raise_(make_error_code(runtime_error_code::modulo_by_zero), "Modulo by zero");
+	if ((op == token_type::slash || op == token_type::percent) && detail::math::integer_zero_divisor(target, rhs)) {
+		return op == token_type::slash ? raise_(make_error_code(runtime_error_code::division_by_zero), "Division by zero")
+		                               : raise_(make_error_code(runtime_error_code::modulo_by_zero), "Modulo by zero");
 	}
 	script_value resultValue = make_null();
 	VM_TRY_ASSIGN(resultValue, evaluate_arithmetic(target, op, rhs, detail::compound_index(op)));
@@ -11108,26 +11078,21 @@ op_status vm_backend::exec_index_compound_fused(frame& f, const vm_instruction& 
 			    index >= 0 && index < static_cast<script_int>(storage->size())) {
 				const token_type op = compound_kind_token(ins.a);
 				// Zero pre-checks keep INDEX_COMPOUND's exact error codes/texts
-				if (op == token_type::slash &&
-				    ((rhs_idx == script_value::TYPEID_INT && rhs.unchecked_as_int() == 0) ||
-				     (rhs_idx == script_value::TYPEID_FLOAT && rhs.unchecked_as_float() == 0.0))) {
-					return raise_(make_error_code(runtime_error_code::division_by_zero), "Division by zero");
-				}
-				if (op == token_type::percent && rhs_idx == script_value::TYPEID_INT && rhs.unchecked_as_int() == 0) {
-					return raise_(make_error_code(runtime_error_code::modulo_by_zero), "Modulo by zero");
-				}
 				const script_value current = storage->get(static_cast<size_t>(index), engine_);
+				if ((op == token_type::slash || op == token_type::percent) && detail::math::integer_zero_divisor(current, rhs)) {
+					return op == token_type::slash ? raise_(make_error_code(runtime_error_code::division_by_zero), "Division by zero")
+					                               : raise_(make_error_code(runtime_error_code::modulo_by_zero), "Modulo by zero");
+				}
 				script_value resultValue = make_null();
 				VM_TRY_ASSIGN(resultValue, (ins.a & compound_flag_incdec) ? detail::incdec_step(current, op == token_type::plus, engine_) : evaluate_arithmetic(current, op, rhs, detail::compound_index(op)));
-				if (storage->kind() == script_array::kind_t::i64 && resultValue.raw_storage_index() == script_value::TYPEID_FLOAT &&
-				    !detail::float_fits_script_int(resultValue.unchecked_as_float())) {
-					return raise_(make_error_code(runtime_error_code::invalid_numeric_operand), detail::float_to_integer_error);
+				// an int buffer refuses a float result: the enforcing path's text
+				if (storage->kind() != script_array::kind_t::i64 || resultValue.raw_storage_index() == script_value::TYPEID_INT) {
+					storage->set(static_cast<size_t>(index), resultValue);
+					stack_.pop_back();   // rhs
+					stack_.pop_back();   // index
+					stack_.back() = assignment_result_used(f) ? storage->get(static_cast<size_t>(index), engine_) : std::move(resultValue);   // container slot becomes the result: the stored element
+					return {};
 				}
-				storage->set(static_cast<size_t>(index), resultValue);
-				stack_.pop_back();   // rhs
-				stack_.pop_back();   // index
-				stack_.back() = assignment_result_used(f) ? storage->get(static_cast<size_t>(index), engine_) : std::move(resultValue);   // container slot becomes the result: the stored element
-				return {};
 			}
 			if (storage && !storage->is_typed() && index >= 0 && index < static_cast<script_int>(storage->size())) {
 				script_value* target_ptr = &storage->values()[static_cast<size_t>(index)];
@@ -11135,13 +11100,9 @@ op_status vm_backend::exec_index_compound_fused(frame& f, const vm_instruction& 
 				if (elem_idx == script_value::TYPEID_INT || elem_idx == script_value::TYPEID_FLOAT) {
 					const token_type op = compound_kind_token(ins.a);
 					// Zero pre-checks keep INDEX_COMPOUND's exact error codes/texts
-					if (op == token_type::slash &&
-					    ((rhs_idx == script_value::TYPEID_INT && rhs.unchecked_as_int() == 0) ||
-					     (rhs_idx == script_value::TYPEID_FLOAT && rhs.unchecked_as_float() == 0.0))) {
-						return raise_(make_error_code(runtime_error_code::division_by_zero), "Division by zero");
-					}
-					if (op == token_type::percent && rhs_idx == script_value::TYPEID_INT && rhs.unchecked_as_int() == 0) {
-						return raise_(make_error_code(runtime_error_code::modulo_by_zero), "Modulo by zero");
+					if ((op == token_type::slash || op == token_type::percent) && detail::math::integer_zero_divisor(*target_ptr, rhs)) {
+						return op == token_type::slash ? raise_(make_error_code(runtime_error_code::division_by_zero), "Division by zero")
+						                               : raise_(make_error_code(runtime_error_code::modulo_by_zero), "Modulo by zero");
 					}
 					script_value resultValue = make_null();
 					VM_TRY_ASSIGN(resultValue, (ins.a & compound_flag_incdec) ? detail::incdec_step(*target_ptr, op == token_type::plus, engine_) : evaluate_arithmetic(*target_ptr, op, rhs, detail::compound_index(op)));
@@ -12765,7 +12726,7 @@ JAI_NOINLINE op_status vm_backend::call_threw(size_t truncate_to) {
 	} catch (const std::exception& e) {
 		if (truncate_to != SIZE_MAX) { stack_.truncate(truncate_to); }
 		active_exception_value_ = script_value(std::string(detail::native_exception_text(e)), engine_);
-		current_exception_ = script_exception(detail::native_exception_text(e));
+		current_exception_ = script_exception(detail::native_exception_text(e)); detail::engine_access::set_exception_kind(*current_exception_, error_kind::host);
 		is_unwinding_ = true;
 		stack_.push_back(make_null());
 		return {};
@@ -13932,7 +13893,7 @@ op_status vm_backend::exec_closure(frame& f, const vm_instruction& ins) {
 	const bool capture_by_ref_default = proto.default_capture == static_cast<uint8_t>(lambda_expr::capture_default::by_reference);
 
 	const bool uses_instance = proto.uses_instance;
-	const bool captures_this = proto.captures_this || (has_default_capture && uses_instance);
+	bool captures_this = proto.captures_this || (has_default_capture && uses_instance);
 	if (uses_instance && !captures_this) {
 		return raise_(make_error_code(runtime_error_code::capture_undefined_variable), "Lambda capture list does not capture 'this'; use [this], [=] or [&]");
 	}
@@ -14068,8 +14029,7 @@ op_status vm_backend::exec_closure(frame& f, const vm_instruction& ins) {
 				// outer frame's slot, the member scope, then the env chain - a same-named
 				// global never wins over a local or a field. [&] cell-shares the source
 				// (escape-legal; share_env_ref also demotes counted-for cached pointers),
-				// [=] snapshots it; a hybrid's C++ property follows the field rule through
-				// its accessors. KEEP BYTE-PARALLEL
+				// [=] snapshots it; a member of the instance is reached through the captured instance. KEEP BYTE-PARALLEL
 				// with the interpreter's visit_lambda_expr default-capture loop.
 				script_value* slot_val = nullptr;
 				detail::member_scope_ctx scope;
@@ -14088,22 +14048,19 @@ op_status vm_backend::exec_closure(frame& f, const vm_instruction& ins) {
 					return raise_from(*src.access_error);
 				}
 				if (src.global) { continue; }   // a global resolves when the lambda runs (KEEP BYTE-PARALLEL with the interpreter)
+				if (detail::default_capture_takes_instance(src, scope)) {
+					if (!captures_this) {
+						captureEnv->define(this_id_, script_value(scope.this_storage->deref()));
+						captures_this = true;
+					}
+					continue;
+				}
 				if (src.cell) {
-					if (capture_by_ref_default) {
+					if (detail::default_capture_shares(src, capture_by_ref_default)) {
 						captureEnv->define(var_id, share_env_ref(*src.cell));
 					} else {
 						captureEnv->define(var_id, detail::clone_for_capture(src.cell->deref()));
 					}
-				} else if (src.what == detail::capture_source::kind::cpp_property) {
-					auto read = capture_by_ref_default
-						? detail::bind_cpp_property_ref(*f.locals->scope_this, var_id, engine_, symbolizer_)
-						: detail::read_bare_cpp_property(*f.locals->scope_this, src.property.instance,
-						                                 src.property.method_value, src.property.getter_id, var_id);
-					if (!read) {
-						return raise_from(read);
-					}
-					captureEnv->define(var_id, capture_by_ref_default ? std::move(read.value())
-					                                                  : detail::clone_for_capture(read.value()));
 				}
 			}
 		}
@@ -14130,6 +14087,12 @@ op_status vm_backend::exec_closure(frame& f, const vm_instruction& ins) {
 						}
 					}
 				}
+			}
+			if (!slot_val && capture.weak_instance && (environment_->contains(this_id_) || environment_->get_value_ptr(this_id_))) {
+				auto instance = environment_->get(this_id_);   // KEEP BYTE-PARALLEL with the interpreter
+				if (!instance) { return raise_from(instance); }
+				captureEnv->define(capture.symbol_id, script_value::make_weak_instance(instance.value(), engine_));
+				continue;
 			}
 			if (!slot_val && capture.symbol_id == this_id_) {
 				// 'this' - the method env provides it via get() even though contains()
@@ -14276,6 +14239,7 @@ JAI_NOINLINE void vm_backend::raise_script_exception(const std::string& message,
 
 JAI_NOINLINE void vm_backend::raise_no_member(std::string_view kind, std::string_view member, const source_location& location) {
 	raise_script_exception(no_member_text(kind, member), location);
+	detail::engine_access::set_exception_kind(*current_exception_, error_kind::no_member);
 }
 
 checked_result<script_value> vm_backend::eval_expression(const expression_ptr& expr, const std::shared_ptr<environment>& env) {
@@ -14625,7 +14589,7 @@ op_status vm_backend::member_access_value(frame& f, const script_value& raw_obje
 
 	if (objectValue.is_string() || objectValue.is_utf8_string()) {
 		if (!as_callee) {   // a caught error's own members and a thrown object's fields before the string methods (KEEP BYTE-PARALLEL with interpreter::member_read_on)
-			if (auto error_member = engine_->caught_error_member(objectValue, expr->member_id)) {
+			if (auto error_member = engine_->caught_error_member(objectValue, expr->member_id, expr->on_caught)) {
 				out = std::move(*error_member);
 				return {};
 			}
@@ -14642,7 +14606,7 @@ op_status vm_backend::member_access_value(frame& f, const script_value& raw_obje
 			out = script_value::make_function(boundMethod, engine_);
 			return {};
 		}
-		if (auto error_member = engine_->caught_error_member(objectValue, expr->member_id)) {   // e.file, e.line, ... on a caught error
+		if (auto error_member = engine_->caught_error_member(objectValue, expr->member_id, expr->on_caught)) {   // e.file, e.line, ... on a caught error
 			out = std::move(*error_member);
 			return {};
 		}
@@ -14663,6 +14627,10 @@ op_status vm_backend::member_access_value(frame& f, const script_value& raw_obje
 			out = script_value::make_function(boundMethod, engine_);
 			return {};
 		}
+		if (auto error_member = engine_->caught_error_member(objectValue, expr->member_id, expr->on_caught)) {   // a caught array's place
+			out = std::move(*error_member);
+			return {};
+		}
 		raise_no_member("array", expr->member, expr->location);
 		out = make_null();
 		return {};
@@ -14678,6 +14646,10 @@ op_status vm_backend::member_access_value(frame& f, const script_value& raw_obje
 				return method(ctx, capturedValue, detail::deref_builtin_args(args, scratch));
 			};
 			out = script_value::make_function(boundMethod, engine_);
+			return {};
+		}
+		if (auto error_member = engine_->caught_error_member(objectValue, expr->member_id, expr->on_caught)) {   // a caught map's place
+			out = std::move(*error_member);
 			return {};
 		}
 		auto& map_storage = const_cast<script_value&>(objectValue).get_map_storage();
@@ -14739,6 +14711,12 @@ op_status vm_backend::member_access_value(frame& f, const script_value& raw_obje
 	}
 
 	if (!objectValue.is_object()) {
+		if (expr->on_caught) [[unlikely]] {   // a thrown scalar read through its catch variable (KEEP BYTE-PARALLEL with interpreter::member_read_on)
+			if (auto error_member = engine_->caught_error_member(objectValue, expr->member_id, true)) {
+				out = std::move(*error_member);
+				return {};
+			}
+		}
 		if (objectValue.is_null()) {
 			return raise_(make_error_code(runtime_error_code::member_access_on_null), null_member_message(expr->object.get(), as_callee), expr->member_id, null_member_receiver_symbol(expr->object.get()));
 		}
@@ -14823,6 +14801,10 @@ op_status vm_backend::member_access_value(frame& f, const script_value& raw_obje
 
 	if (as_callee) {   // KEEP BYTE-PARALLEL with interpreter::member_read_on
 		if (auto refused = detail::refuse_cdtor_call(target.instance.get(), expr->member_id)) { return raise_from(*refused); }
+	}
+	if (auto error_member = engine_->caught_error_member(objectValue, expr->member_id, expr->on_caught)) {   // a caught instance's place (KEEP BYTE-PARALLEL with interpreter::member_read_on)
+		out = std::move(*error_member);
+		return {};
 	}
 	raise_no_member(target.class_name(), expr->member, expr->location);
 	out = make_null();
@@ -14994,7 +14976,7 @@ bool vm_backend::bare_host_read(frame& f, size_t cache_slot, script_value& out) 
 	if (!entry.hit.lane || !f.locals->scope_this) { return false; }
 	class_instance* inst = detail::host_this_instance(*f.locals->scope_this);
 	if (!inst || inst->get_class_definition() != entry.cd || entry.cd->method_epoch() != entry.epoch) { return false; }
-	void* address = detail::host_member_address(inst, entry.hit);
+	void* address = detail::host_member_hit_address(inst, entry.hit);
 	if (!address || !detail::host_member_serves(*entry.hit.lane, address)) { return false; }
 	out = entry.hit.lane->read(address, engine_);
 	return true;
@@ -15010,7 +14992,7 @@ JAI_NOINLINE bool vm_backend::bare_host_fill_read(frame& f, size_t cache_slot, u
 	entry.cd = cd;
 	entry.epoch = cd->method_epoch();
 	if (!detail::host_member_fill(cd, inst, sym, *f.locals->scope_this, engine_, entry.hit)) { return false; }
-	void* address = detail::host_member_address(inst, entry.hit);
+	void* address = detail::host_member_hit_address(inst, entry.hit);
 	if (!address || !detail::host_member_serves(*entry.hit.lane, address)) { return false; }
 	out = entry.hit.lane->read(address, engine_);
 	return true;
@@ -15171,7 +15153,7 @@ JAI_FORCEINLINE const script_value* vm_backend::site_field(const chunk& code, co
 	if (entry.cd == cd && entry.epoch == cd->method_epoch()) {
 		if (entry.slot != UINT32_MAX) { return inst->field_slot_value(entry.slot); }
 		if (entry.host.lane) {
-			if (void* address = detail::host_member_address(inst, entry.host); address && detail::host_member_serves(*entry.host.lane, address)) {
+			if (void* address = detail::host_member_hit_address(inst, entry.host); address && detail::host_member_serves(*entry.host.lane, address)) {
 				host_value = entry.host.lane->read(address, engine_);
 				return &host_value;
 			}
@@ -16132,7 +16114,7 @@ std::optional<op_status> vm_backend::member_field_write_fast(frame& f, size_t in
 						return op_status{};
 					}
 					if (entry.host.lane && entry.host.lane->write) {
-						if (void* address = detail::host_member_address(inst, entry.host); address && entry.host.lane->write(address, value)) {
+						if (void* address = detail::host_member_hit_address(inst, entry.host); address && entry.host.lane->write(address, value)) {
 							return op_status{};
 						}
 					}
@@ -16199,7 +16181,7 @@ op_status vm_backend::store_namespace_cell(const detail::namespace_store_target&
 			return {};
 		}
 	}
-	if (slot_type && (slot_type->base_type != incoming.type() ||
+	if (slot_type && (slot_type->base_type != incoming.type() || detail::enum_store(incoming, *slot_type) ||
 	                  slot_type->base_type == script_value_type::jai_object_type ||
 	                  slot_type->base_type == script_value_type::jai_array_type ||
 	                  slot_type->base_type == script_value_type::jai_map_type ||
@@ -16288,7 +16270,7 @@ JAI_NOINLINE std::optional<op_status> vm_backend::host_member_text_append(frame&
 	const class_definition* cd = inst->get_class_definition();
 	// a lane with `serves` reads a script_value member (dynamic_binder's make_host_member_lane)
 	if (!cd || entry.cd != cd || entry.epoch != cd->method_epoch() || entry.slot != UINT32_MAX || !entry.host.lane || !entry.host.lane->serves) return std::nullopt;
-	auto* member_value = static_cast<script_value*>(detail::host_member_address(inst, entry.host));
+	auto* member_value = static_cast<script_value*>(detail::host_member_hit_address(inst, entry.host));
 	if (!member_value || member_value->raw_storage_index() != script_value::TYPEID_REFERENCE) return std::nullopt;
 	bool retag = false;
 	script_value* target = text_store_referent(*member_value, retag);
@@ -17844,6 +17826,11 @@ op_status vm_backend::exec_new(frame& f, const vm_instruction& ins) {
 		return raise_(make_error_code(runtime_error_code::type_mismatch));
 	}
 
+	if (expr->type->is_enum && args.empty()) {
+		stack_.push_back(detail::enum_default_value(expr->type, engine_));
+		return {};
+	}
+
 	if (expr->type->base_type == script_value_type::jai_array_type) {
 		auto element_type = expr->type->element_type();
 		if (!element_type && engine_) {
@@ -18156,20 +18143,7 @@ op_status vm_backend::exec_extern_decl(frame& f, const vm_instruction& ins) {
 
 op_status vm_backend::exec_enum_decl(frame& f, const vm_instruction& ins) {
 	auto* decl = static_cast<enum_decl*>(f.code->nodes[ins.a].get());
-	auto enum_map = script_value::make_map(
-		ti_string_,
-		ti_int_,
-		engine_);
-	auto& map_ref = const_cast<script_map&>(enum_map.as_map());
-
-	for (size_t i = 0; i < decl->values.size(); ++i) {
-		auto key = script_value(std::string(decl->values[i].first), engine_);
-		map_ref[std::move(key)] = script_value(static_cast<script_int>(decl->numbers[i]), engine_);
-	}
-	map_ref.mark_enum_values();
-
-	environment_->define(decl->name_id, std::move(enum_map));
-	engine_->note_enum_name(decl->name_id);
+	environment_->define(decl->name_id, detail::enum_value_table(*decl, engine_));
 	const bool program_scope = environment_->is_program_scope();
 	if (program_scope) {
 		engine_->mark_const_cell(environment_->get_env_var_ptr(decl->name_id), true);   // interp parity: visit_enum_decl
@@ -18739,7 +18713,7 @@ struct vm_backend::construction_lender final : detail::construction_host {
 	std::optional<error_propagator> pass_depth_gate() override { return self.pass_depth_gate(); }
 	std::shared_ptr<environment> current_environment() override { return self.environment_; }
 	std::shared_ptr<environment> global_environment() override { return self.engine_ ? self.engine_->get_global_environment() : self.environment_; }
-	const class_definition* caller_access_context() override { return caller ? self.frame_access_context(*caller) : self.current_access_context(); }
+	const class_definition* caller_access_context() override { return caller ? self.caller_access_context(caller, caller_env.get()) : self.current_access_context(); }
 	std::shared_ptr<environment> parallel_sandbox() override {
 		return self.parallel_worker_ && self.parallel_method_pins_ ? self.parallel_method_pins_->definition_env : nullptr;
 	}
@@ -19192,6 +19166,19 @@ op_status vm_backend::exec_try_pop(frame&, const vm_instruction&) {
 	return {};
 }
 
+// KEEP BYTE-PARALLEL with interpreter::fresh_loop_binding
+op_status vm_backend::exec_fresh_cell(frame& f, const vm_instruction& ins) {
+	const auto* decl = static_cast<const variable_decl*>(f.code->nodes[ins.a].get());
+	const bool in_slot = decl->slot_index != SIZE_MAX && has_slots(f);
+	const script_value* held = in_slot ? frame_slot(f, decl->slot_index) : environment_->get_env_var_ptr(decl->name_id);
+	if (!held) { return {}; }
+	std::optional<script_value> next = detail::next_iteration_cell(*held, engine_);
+	if (!next) { return {}; }
+	if (in_slot) { return define_decl_value(f, decl->name_id, decl->slot_index, std::move(*next), true, decl); }
+	if (script_value* at = environment_->get_env_var_ptr(decl->name_id)) { *at = std::move(*next); }
+	return {};
+}
+
 op_status vm_backend::exec_catch_end(frame& f, const vm_instruction&) {
 	assert(!try_records_.empty());
 	try_record rec = std::move(try_records_.back());
@@ -19298,6 +19285,15 @@ bool vm_backend::unwind_to_handler(frame& f, const error_propagator* failure) {
 			pop_back_detached(try_records_);
 			continue;
 		}
+		// typed clauses none of which takes it: the try has no handler for this error (KEEP BYTE-PARALLEL with the interpreter's visit_try_stmt)
+		if (rec.clause_types) [[unlikely]] {
+			const bool by_throw = !failure && current_exception_ && current_exception_->thrown && active_exception_value_;
+			if (!engine_->catch_admits(*rec.clause_types, by_throw ? &*active_exception_value_ : nullptr)) {
+				current_catch_var_id_ = rec.saved_catch_var_id;
+				pop_back_detached(try_records_);
+				continue;
+			}
+		}
 		// Releasing stack operands or staged arguments can run destructors that reenter and grow try_records_.
 		// Keep an owned handler description across those calls; update the live record by index, never a stale reference.
 		const size_t handler_index = try_records_.size() - 1;
@@ -19308,6 +19304,7 @@ bool vm_backend::unwind_to_handler(frame& f, const error_propagator* failure) {
 			std::string message = format_error(*failure, *symbolizer_);
 			active_exception_value_ = script_value(message, engine_);
 			current_exception_ = script_exception(message);
+			detail::engine_access::set_exception_kind(*current_exception_, error_kind_of(failure->ec));
 		}
 		if (!trace_captured_) { capture_stack_trace(); }   // the stack at the error, for the caught value
 		is_unwinding_ = false;
@@ -19350,7 +19347,8 @@ bool vm_backend::unwind_to_handler(frame& f, const error_propagator* failure) {
 			const bool by_throw = current_exception_ && current_exception_->thrown;
 			script_value caught = engine_->make_caught_error(active_exception_value_ ? *active_exception_value_ : make_null(), by_throw,
 			                                                 by_throw ? &current_exception_->location() : nullptr, std::move(captured_trace_),
-			                                                 by_throw ? current_exception_->what() : nullptr);
+			                                                 by_throw ? current_exception_->what() : nullptr,
+			                                                 current_exception_ ? detail::engine_access::exception_kind(*current_exception_) : error_kind::other);
 			captured_trace_.clear();
 			try_records_[handler_index].caught_scope = std::make_shared<caught_error_scope>(engine_, caught);
 			if (handler.catch_slot != k_invalid_u32 && has_slots(f)) {
@@ -20182,6 +20180,10 @@ op_status vm_backend::exec_cast(frame& f, const vm_instruction& ins) {
 		stack_.push_back(std::move(operand));
 		return {};
 	}
+	if (expr->instance_test) {   // KEEP BYTE-PARALLEL with the interpreter's visit_cast_expr
+		stack_.push_back(script_value(detail::instance_test(operand, *expr->target, engine_), engine_));
+		return {};
+	}
 	if (expr->by_reference) {
 		auto out = detail::cast_reference(detail::cast_pin_temporary(std::move(operand), engine_), *expr, engine_, symbolizer_);
 		if (!out) {
@@ -20228,6 +20230,14 @@ op_status vm_backend::exec_cast(frame& f, const vm_instruction& ins) {
 		script_value converted = std::move(out.value());
 		converted.set_type_info(expr->target);
 		stack_.push_back(std::move(converted));
+		return {};
+	}
+	if (detail::cast_truncation_applies(operand, *expr->target)) {
+		auto out = detail::cast_truncated(operand, *expr->target, engine_);
+		if (!out) {
+			return raise_from(out);
+		}
+		stack_.push_back(std::move(out.value()));
 		return {};
 	}
 	if (detail::cast_text_rule_applies(operand, *expr->target)) {   // KEEP BYTE-PARALLEL with the interpreter's visit_cast_expr
@@ -20309,6 +20319,10 @@ op_status vm_backend::exec_extended(frame& f, const vm_instruction& ins) {
 		case opcode::op_try_push: return exec_try_push(f, ins);
 		case opcode::op_try_pop: return exec_try_pop(f, ins);
 		case opcode::op_catch_end: return exec_catch_end(f, ins);
+		case opcode::op_fresh_cell: return exec_fresh_cell(f, ins);
+		case opcode::op_try_types:
+			try_records_.back().clause_types = &static_cast<const try_stmt*>(f.code->nodes[ins.a].get())->clause_types;
+			return {};
 		case opcode::op_return_convert: return exec_return_convert(f, ins);
 		case opcode::op_case_eq: return exec_case_eq(f, ins);
 		case opcode::op_iter_init: return exec_iter_init(f, ins);
@@ -20375,7 +20389,9 @@ checked_result<void> vm_backend::run(frame& entry) {
 			if (!handle_throw_unwind(fp, records_base)) { return {}; }
 		} catch (const std::exception& e) {
 			if (switch_to_) { fp = switch_to_; switch_to_ = nullptr; }
-			convert_cpp_exception_in_frame(script_exception(detail::native_exception_text(e)));
+			script_exception native(detail::native_exception_text(e));
+			detail::engine_access::set_exception_kind(native, error_kind::host);
+			convert_cpp_exception_in_frame(native);
 			if (!handle_throw_unwind(fp, records_base)) { return {}; }
 		} catch (...) {
 			if (switch_to_) { fp = switch_to_; switch_to_ = nullptr; }
@@ -20778,6 +20794,8 @@ op_status vm_backend::run_dispatch_loop(frame*& fp, const size_t records_base) {
 			case opcode::op_try_push:
 			case opcode::op_try_pop:
 			case opcode::op_catch_end:
+			case opcode::op_fresh_cell:
+			case opcode::op_try_types:
 			case opcode::op_case_eq:
 			case opcode::op_iter_init:
 			case opcode::op_iter_next:
@@ -22730,7 +22748,7 @@ op_status vm_backend::bind_site_reference(size_t i, const call_site& site, frame
 					                                         caller_frame->locals->scope_static,
 					                                         symbol_id, /*want_methods*/ false);
 					if (member) {
-						VM_TRY(detail::bare_member_access(member, symbol_id, frame_access_context(*caller_frame)));
+						VM_TRY(detail::bare_member_access(member, symbol_id, caller_access_context(caller_frame, caller_env.get())));
 					}
 					argPtr = member.value_ptr;
 					// A C++ property binds the member itself / its accessors
@@ -22793,7 +22811,7 @@ op_status vm_backend::bind_place_reference(const expression* place, frame* calle
                                            script_value& out, bool& bound) {
 	// C::s and ns::x are lvalues: the reference binds their storage (KEEP BYTE-PARALLEL with the interpreter)
 	if (caller_env && place->get_type() == node_type::member_expr && static_cast<const member_expr*>(place)->is_static) {
-		const class_definition* access = caller_frame ? frame_access_context(*caller_frame) : caller_env->find_access_context();
+		const class_definition* access = caller_access_context(caller_frame, caller_env.get());
 		if (auto cell = detail::static_member_lvalue(*engine_, static_cast<const member_expr*>(place), *caller_env, *symbolizer_, access)) {
 			if (!*cell) { return raise_from(*cell); }
 			return reference_to_storage(*cell->value(), out, bound);
@@ -22864,7 +22882,7 @@ checked_result<script_value> vm_backend::component_reference(frame* caller_frame
 		ensure_frame_member_scope(*caller_frame, caller_env.get());   // the identifier ladder reads the frame's member scope
 	}
 	return detail::math::component_reference(e, caller_view(caller_frame), caller_env.get(),
-		caller_frame ? frame_access_context(*caller_frame) : (caller_env ? caller_env->find_access_context() : nullptr),
+		caller_access_context(caller_frame, caller_env.get()),
 		engine_, symbolizer_, [this](script_value& storage) { return share_env_ref(storage); });
 }
 

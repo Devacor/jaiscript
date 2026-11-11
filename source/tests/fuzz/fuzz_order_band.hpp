@@ -6,10 +6,13 @@
 // (the harness), the program agrees with its metamorphic variant (every operand holding a call or a storage read evaluated into
 // a fresh local, left to right, the right side of an assignment ahead of its target), and every run agrees with the output the
 // model below computes from the language's rules (left-to-right operands, C++17 assignment sequencing, the assignment table,
-// value semantics). The model walks the generator's own tree; it never runs the engine.
+// value semantics). The model walks the generator's own tree; it never runs the engine. An int slot takes no float, so the
+// generator lands one through cast<int>(e) or math::itrunc(e): where the value's static type is float, and where the model
+// sees a float arrive from a var.
 
 #include "fuzz_harness.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -84,7 +87,7 @@ namespace jai::fuzz::order {
 		bool bare = false;
 	};
 
-	enum class ek : uint8_t { lit, read, bin, neg, lnot, tern, call, math, alias };
+	enum class ek : uint8_t { lit, read, bin, neg, lnot, tern, call, math, alias, cast };
 	struct expr {
 		ek kind = ek::lit;
 		mval lit;
@@ -242,6 +245,7 @@ namespace jai::fuzz::order {
 				for (size_t i = 0; i < e->args.size(); ++i) { if (i) { s += ", "; } s += expr_text(e->args[i]); }
 				return s + ")";
 			}
+			case ek::cast: return "cast<int>(" + expr_text(e->a) + ")";
 			}
 			return "0";
 		}
@@ -315,6 +319,7 @@ namespace jai::fuzz::order {
 				for (size_t i = 0; i < e->args.size(); ++i) { if (i) { s += ", "; } s += hoist(e->args[i], depth, out); }
 				return s + ")";
 			}
+			case ek::cast: return "cast<int>(" + hoist(e->a, depth, out) + ")";
 			}
 			return "0";
 		}
@@ -423,6 +428,10 @@ namespace jai::fuzz::order {
 			return out_;
 		}
 
+		// the value expressions a float reached an int slot through, in first-arrival order: each lands truncated, as the
+		// explicit conversion the generator then writes around it does
+		const std::vector<const expr*>& float_arrivals() const { return arrivals_; }
+
 	private:
 		struct cell { ty t = ty::v; mval v; };
 		using cellp = std::shared_ptr<cell>;
@@ -441,13 +450,14 @@ namespace jai::fuzz::order {
 			std::map<std::string, std::shared_ptr<lam>> lams;
 			std::map<std::string, std::pair<mval*, ty>> refs;
 		};
-		struct frame { scope s; objv* self = nullptr; bool top = false; bool returned = false; mval ret; };
+		struct frame { scope s; objv* self = nullptr; bool top = false; bool returned = false; mval ret; const expr* ret_source = nullptr; };
 		struct slot { mval* v = nullptr; ty t = ty::v; };
 
 		const prog& p_;
 		scope g_;
 		std::string out_;
 		int depth_ = 0;
+		std::vector<const expr*> arrivals_;
 
 		[[noreturn]] static void no(const std::string& why) { throw abstain{why}; }
 
@@ -465,15 +475,19 @@ namespace jai::fuzz::order {
 			if (!std::isfinite(d) || d >= 9223372036854775808.0 || d < -9223372036854775808.0) { no("float out of int range"); }
 			return static_cast<int64_t>(d);
 		}
-		static mval convert(ty t, const mval& v) {
-			if (t == ty::i || t == ty::f || t == ty::b || t == ty::s) { mval c = convert_typed(t, v); c.dyn = false; return c; }
+		mval truncated_arrival(const mval& v, const expr* source) {
+			if (source && std::find(arrivals_.begin(), arrivals_.end(), source) == arrivals_.end()) { arrivals_.push_back(source); }
+			return mi(checked_trunc(v.f));
+		}
+		mval convert(ty t, const mval& v, const expr* source) {
+			if (t == ty::i || t == ty::f || t == ty::b || t == ty::s) { mval c = convert_typed(t, v, source); c.dyn = false; return c; }
 			return v;
 		}
-		static mval convert_typed(ty t, const mval& v) {
+		mval convert_typed(ty t, const mval& v, const expr* source) {
 			switch (t) {
 			case ty::i:
 				if (v.k == 'i') return v;
-				if (v.k == 'f') return mi(checked_trunc(v.f));
+				if (v.k == 'f') return truncated_arrival(v, source);
 				if (v.k == 'b') return mi(v.b ? 1 : 0);
 				no("null into int");
 			case ty::f:
@@ -486,9 +500,9 @@ namespace jai::fuzz::order {
 			default: return v;
 			}
 		}
-		static mval convert_element(ty t, const mval& v) {
+		mval convert_element(ty t, const mval& v, const expr* source) {
 			if (t == ty::f && v.k == 'b') { no("bool into a float element"); }
-			return convert(t, v);
+			return convert(t, v, source);
 		}
 		static ty kind_of(const mval& v) { return v.k == 'i' ? ty::i : v.k == 'f' ? ty::f : v.k == 'b' ? ty::b : v.k == 's' ? ty::s : ty::v; }
 
@@ -684,6 +698,13 @@ namespace jai::fuzz::order {
 				if (e->op == "ceil") return mf(std::ceil(x));
 				no("alias");
 			}
+			case ek::cast: {
+				const mval a = eval(e->a, f);
+				if (a.k == 'i') return mi(a.i);
+				if (a.k == 'f') return mi(checked_trunc(a.f));
+				if (a.k == 'b') return mi(a.b ? 1 : 0);
+				no("cast of a non-number");
+			}
 			}
 			no("expression");
 		}
@@ -715,18 +736,18 @@ namespace jai::fuzz::order {
 				}
 				auto cp = std::make_shared<cell>();
 				cp->t = pa.t;
-				cp->v = convert(pa.t, eval(e.args[i], caller));
+				cp->v = convert(pa.t, eval(e.args[i], caller), e.args[i].get());
 				f.s.vars[pa.name] = cp;
 			}
 			for (const sptr& s : c.body) { exec(s, f); if (f.returned) break; }
 			--depth_;
 			if (c.ret == ty::none) { return mval{}; }
 			if (!f.returned) { no("fell out"); }
-			return c.ret == ty::untyped ? f.ret : convert(c.ret, f.ret);
+			return c.ret == ty::untyped ? f.ret : convert(c.ret, f.ret, f.ret_source);
 		}
 
-		void store(const slot& s, const mval& v, bool element) {
-			*s.v = element ? convert_element(s.t, v) : convert(s.t, v);
+		void store(const slot& s, const mval& v, bool element, const expr* source) {
+			*s.v = element ? convert_element(s.t, v, source) : convert(s.t, v, source);
 		}
 
 		void exec(const sptr& s, frame& f) {
@@ -736,24 +757,25 @@ namespace jai::fuzz::order {
 				const mval v = eval(s->e, f);
 				auto cp = std::make_shared<cell>();
 				cp->t = s->t == ty::a ? (v.dyn ? ty::v : kind_of(v)) : s->t;   // auto takes its initializer's declared type
-				cp->v = convert(cp->t, v);
+				cp->v = convert(cp->t, v, s->e.get());
 				scope_of(var_p(s->name, s->global), f).vars[s->name] = cp;
 				return;
 			}
 			case sk::assign: {
 				const mval v = eval(s->e, f);
 				const slot sl = resolve(s->target, f);
-				store(sl, v, s->target.kind == pk::elem || s->target.kind == pk::map);
+				store(sl, v, s->target.kind == pk::elem || s->target.kind == pk::map, s->e.get());
 				return;
 			}
 			case sk::compound: {   // the right side first, then every part of the target and its read (docs/site/guide/04-operators.html "Evaluation order is a contract")
-				const mval v = eval(s->e, f);
+				mval v = eval(s->e, f);
 				const slot sl = resolve(s->target, f);
-				store(sl, arith(s->op, *sl.v, v), s->target.kind == pk::elem || s->target.kind == pk::map);
+				if (sl.t == ty::i && v.k == 'f') { v = truncated_arrival(v, s->e.get()); }
+				store(sl, arith(s->op, *sl.v, v), s->target.kind == pk::elem || s->target.kind == pk::map, nullptr);
 				return;
 			}
 			case sk::eval: (void)eval(s->e, f); return;
-			case sk::ret: f.ret = s->e ? eval(s->e, f) : mval{}; f.returned = true; return;
+			case sk::ret: f.ret = s->e ? eval(s->e, f) : mval{}; f.ret_source = s->e.get(); f.returned = true; return;
 			case sk::if_: {
 				const bool c = truthy(eval(s->e, f));
 				for (const sptr& b : c ? s->body : s->other) { exec(b, f); if (f.returned) return; }
@@ -780,7 +802,7 @@ namespace jai::fuzz::order {
 			case sk::arr_decl: {
 				auto a = std::make_shared<arr>();
 				a->elem = s->t;
-				for (const auto& e : s->list) { a->v.push_back(convert_element(s->t, eval(e, f))); }
+				for (const auto& e : s->list) { a->v.push_back(convert_element(s->t, eval(e, f), e.get())); }
 				scope_of(var_p(s->name, s->global), f).arrays[s->name] = a;
 				return;
 			}
@@ -789,7 +811,7 @@ namespace jai::fuzz::order {
 				m->vt = s->t;
 				std::vector<mval> vals;
 				for (const auto& e : s->list) { vals.push_back(eval(e, f)); }
-				for (size_t i = 0; i < vals.size(); ++i) { m->v[s->keys[i]] = convert_element(s->t, vals[i]); }
+				for (size_t i = 0; i < vals.size(); ++i) { m->v[s->keys[i]] = convert_element(s->t, vals[i], s->list[i].get()); }
 				scope_of(var_p(s->name, s->global), f).maps[s->name] = m;
 				return;
 			}
@@ -818,6 +840,145 @@ namespace jai::fuzz::order {
 				from.lams[c.name] = l;
 				return;
 			}
+			}
+		}
+	};
+
+	// ---------------------------------------------------------------- int slots
+
+	// the value expression becomes its explicit truncation, cast<int>(e) and math::itrunc(e) by turns
+	inline void truncate_in_place(expr& e, int ordinal) {
+		if (e.kind == ek::cast || (e.kind == ek::math && (e.op == "itrunc" || e.op == "ifloor"))) return;
+		auto inner = std::make_shared<expr>(e);
+		e = expr{};
+		if (ordinal % 2 == 0) { e.kind = ek::cast; e.a = std::move(inner); }
+		else { e.kind = ek::math; e.op = "itrunc"; e.args.push_back(std::move(inner)); }
+	}
+
+	// truncates every value whose static type is float where it lands in an int slot: a declaration, a store, a compound
+	// store's right side, a by-value argument, a return, an element of an int array or map literal
+	class static_float_truncation {
+	public:
+		static_float_truncation(prog& p, int& ordinal) : p_(p), ordinal_(ordinal) {}
+
+		void run() {
+			names empty;
+			for (const sptr& s : p_.globals) { statement(s, empty, nullptr); }
+			for (const klass& k : p_.classes) { for (int m : k.methods) { callable_body(m, empty); } }
+			for (int f : p_.functions) { callable_body(f, empty); }
+			for (const sptr& s : p_.top) { statement(s, empty, nullptr); }
+		}
+
+	private:
+		using names = std::map<std::string, ty>;
+		prog& p_;
+		int& ordinal_;
+		names globals_;
+
+		static ty known(ty t) { return t == ty::i || t == ty::f || t == ty::b || t == ty::s ? t : ty::v; }
+		ty named(const std::string& name, bool global, const names& local) const {
+			if (!global) { if (auto it = local.find(name); it != local.end()) return it->second; }
+			if (auto it = globals_.find(name); it != globals_.end()) return it->second;
+			return ty::v;
+		}
+		ty place_type(const place& p, const names& local) const {
+			if (p.kind == pk::field) return p.field == "v" ? ty::i : ty::f;
+			return named(p.name, p.global, local);
+		}
+		static bool is_compare(const std::string& op) { return op == "<" || op == "<=" || op == ">" || op == ">=" || op == "==" || op == "!="; }
+		static ty numeric_join(ty a, ty b) {
+			if (a == ty::f || b == ty::f) return ty::f;
+			return a == ty::i && b == ty::i ? ty::i : ty::v;
+		}
+		ty type_of(const eptr& e, const names& local) const {
+			switch (e->kind) {
+			case ek::lit: return e->lit.k == 'i' ? ty::i : e->lit.k == 'f' ? ty::f : e->lit.k == 'b' ? ty::b : e->lit.k == 's' ? ty::s : ty::v;
+			case ek::read: return known(place_type(e->p, local));
+			case ek::bin: {
+				if (is_compare(e->op) || e->op == "&&" || e->op == "||") return ty::b;
+				const ty a = type_of(e->a, local), b = type_of(e->b, local);
+				if (a == ty::s || b == ty::s) return ty::s;
+				return numeric_join(a, b);
+			}
+			case ek::neg: { const ty a = type_of(e->a, local); return a == ty::i || a == ty::f ? a : ty::v; }
+			case ek::lnot: return ty::b;
+			case ek::tern: {
+				const ty a = type_of(e->b, local), b = type_of(e->c, local);
+				return a == b ? a : a == ty::f || b == ty::f ? ty::f : ty::v;
+			}
+			case ek::call: {
+				const callable& c = p_.calls[static_cast<size_t>(e->callee)];
+				return c.ret_ref ? ty::i : known(c.ret);
+			}
+			case ek::math:
+				if (e->op == "abs") { const ty a = type_of(e->args[0], local); return a == ty::i || a == ty::f ? a : ty::v; }
+				if (e->op == "itrunc" || e->op == "ifloor") return ty::i;
+				if (e->op == "min" || e->op == "max") return numeric_join(type_of(e->args[0], local), type_of(e->args[1], local));
+				return ty::f;
+			case ek::alias: return ty::f;
+			case ek::cast: return ty::i;
+			}
+			return ty::v;
+		}
+		void land(const eptr& e, ty slot, const names& local) {
+			if (slot == ty::i && type_of(e, local) == ty::f) { truncate_in_place(*e, ordinal_++); }
+		}
+		void operands(const eptr& e, const names& local) {
+			if (!e) return;
+			if (e->kind == ek::read && e->p.index) { operands(e->p.index, local); }
+			operands(e->a, local);
+			operands(e->b, local);
+			operands(e->c, local);
+			for (const eptr& a : e->args) { operands(a, local); }
+			if (e->kind == ek::call) {
+				const callable& c = p_.calls[static_cast<size_t>(e->callee)];
+				for (size_t i = 0; i < e->args.size() && i < c.params.size(); ++i) { if (!c.params[i].ref) { land(e->args[i], c.params[i].t, local); } }
+			}
+		}
+		void callable_body(int index, names local) {
+			const callable& c = p_.calls[static_cast<size_t>(index)];
+			for (const param& pa : c.params) { local[pa.name] = pa.t; }
+			for (const sptr& s : c.body) { statement(s, local, &c); }
+		}
+		void block(const std::vector<sptr>& b, names& local, const callable* owner) {
+			for (const sptr& s : b) { statement(s, local, owner); }
+		}
+		void statement(const sptr& s, names& local, const callable* owner) {
+			switch (s->kind) {
+			case sk::decl: {
+				operands(s->e, local);
+				const ty t = s->t == ty::a ? type_of(s->e, local) : s->t;
+				land(s->e, t, local);
+				(s->global || !owner ? globals_ : local)[s->name] = t;
+				return;
+			}
+			case sk::assign: case sk::compound:
+				operands(s->e, local);
+				if (s->target.index) { operands(s->target.index, local); }
+				land(s->e, place_type(s->target, local), local);
+				return;
+			case sk::eval: operands(s->e, local); return;
+			case sk::ret:
+				if (!s->e) return;
+				operands(s->e, local);
+				if (owner && !owner->ret_ref) { land(s->e, owner->ret, local); }
+				return;
+			case sk::if_:
+				operands(s->e, local);
+				block(s->body, local, owner);
+				block(s->other, local, owner);
+				return;
+			case sk::for_: case sk::while_:
+				local[s->name] = ty::i;
+				block(s->body, local, owner);
+				return;
+			case sk::print: for (const eptr& e : s->list) { operands(e, local); } return;
+			case sk::arr_decl: case sk::map_decl:
+				for (const eptr& e : s->list) { operands(e, local); land(e, s->t, local); }
+				(s->global || !owner ? globals_ : local)[s->name] = s->t;
+				return;
+			case sk::obj_decl: return;
+			case sk::lambda_decl: callable_body(s->callee, local); return;
 			}
 		}
 	};
@@ -851,18 +1012,31 @@ namespace jai::fuzz::order {
 			if (rng_.chance(60)) { emit_top_hazards(); }
 			emit_final_prints();
 			generated g;
+			int truncations = 0;
+			static_float_truncation(p_, truncations).run();
+			// a float a var hands an int slot is known only by running: the model lands each truncated and names its expression,
+			// the generator writes the truncation there, until a run meets none
+			for (int pass = 0; pass < 8; ++pass) {
+				model m(p_);
+				g.expected.clear();
+				g.abstained.clear();
+				g.model_ok = false;
+				try {
+					g.expected = m.run();
+					g.model_ok = true;
+				} catch (const abstain& a) {
+					g.abstained = a.why;
+				}
+				if (m.float_arrivals().empty()) break;
+				if (pass == 7) { g.model_ok = false; g.abstained = "int slots still take floats after eight passes"; }
+				for (const expr* e : m.float_arrivals()) { truncate_in_place(const_cast<expr&>(*e), truncations++); }
+			}
 			g.original.seed = seed_;
 			g.original.host_math_aliases = true;
 			g.original.segments.push_back(renderer(p_, false).render());
 			g.variant.seed = seed_;
 			g.variant.host_math_aliases = true;
 			g.variant.segments.push_back(renderer(p_, true).render());
-			try {
-				g.expected = model(p_).run();
-				g.model_ok = true;
-			} catch (const abstain& a) {
-				g.abstained = a.why;
-			}
 			return g;
 		}
 

@@ -24,6 +24,7 @@ the page's output block the runner did not print). Exit code 1 on failures, dive
 """
 
 import argparse
+import html
 import pathlib
 import re
 import shutil
@@ -109,10 +110,10 @@ class Extractor(HTMLParser):
             self._p.append(data)
 
 
-def plan_page(page):
-    """Return (samples, pool, notes). samples: dicts to run; pool: name -> support code."""
+def page_blocks(text):
+    """Every codeblock in document order; a jaiscript or template block carries name and support (a file samples load)."""
     ex = Extractor()
-    ex.feed(page.read_text(encoding="utf-8"))
+    ex.feed(text)
     ex.close()
     blocks = ex.blocks
     jai = [b for b in blocks if b["kind"] in ("cb-jai", "cb-spider")]   # a cb-spider block is a template file, never a sample
@@ -131,7 +132,13 @@ def plan_page(page):
         if m:
             b["name"] = m.group(1)
             b["support"] = m.group(1) in referenced
+    return blocks
 
+
+def plan_page(page):
+    """Return (samples, pool, notes). samples: dicts to run; pool: name -> support code."""
+    blocks = page_blocks(page.read_text(encoding="utf-8"))
+    jai = [b for b in blocks if b["kind"] in ("cb-jai", "cb-spider")]
     pool, notes = {}, []
     for b in jai:
         if b["support"]:
@@ -228,6 +235,54 @@ def compare_expected(expected, stdout, stderr):
     return missing
 
 
+HERO_RE = re.compile(r'<div class="demo" id="hero-demo".*?<pre>(.*?)</pre>', re.S)
+HERO_MAIN = """include "world.jai";
+include "gator.jai";
+include "stage.jai";
+for (int i = 0; i < 1200; ++i) { frame(); }
+print(state());
+"""
+
+
+def check_hero(runner, out, timeout):
+    """The landing page's gator.jai is the text its scene runs, on world.jai and stage.jai: it must load and eat cake."""
+    found = HERO_RE.search((SITE / "index.html").read_text(encoding="utf-8"))
+    if not found:
+        return ["index.html: no hero gator.jai"]
+    hero = out / "hero"
+    hero.mkdir()
+    (hero / "gator.jai").write_text(html.unescape(re.sub(r"<[^>]+>", "", found.group(1))) + "\n", encoding="utf-8", newline="\n")
+    for name in ("world.jai", "stage.jai"):
+        shutil.copy2(SITE / "assets" / "gator" / name, hero / name)
+    (hero / "main.jai").write_text(HERO_MAIN, encoding="utf-8", newline="\n")
+    printed = {}
+    for be in ("vm", "interp"):
+        rc, so, se = run(runner, be, hero / "main.jai", None, timeout)
+        if rc != 0 or "Nom." not in so:
+            return ["hero gator.jai [%s]: exit %s, printed %r %r" % (be, rc, so.strip(), se.strip()[:400])]
+        printed[be] = so
+    return [] if printed["vm"] == printed["interp"] else ["hero gator.jai: vm printed %r, interp %r" % (printed["vm"], printed["interp"])]
+
+
+def check_sandbox_game(runner, timeout):
+    """The Play page's sandbox opens on cakewalk.jai, which live.jai plays: it stays under 300 lines and draws the same frames on both backends."""
+    game = SITE / "play" / "sandbox" / "cakewalk.jai"
+    lines = len(game.read_text(encoding="utf-8").splitlines())
+    if lines >= 300:
+        return ["play/sandbox/cakewalk.jai: %d lines, and the sandbox's game stays under 300" % lines]
+    printed = {}
+    for be in ("vm", "interp"):
+        try:
+            p = subprocess.run([str(runner), "--no-pause", "--backend=" + be, "live.jai", "--", game.name, "45"], cwd=str(game.parent),
+                               capture_output=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return ["play/sandbox/cakewalk.jai [%s]: no end after %ss" % (be, timeout)]
+        if p.returncode != 0 or b"CAKEWALK  cave 1" not in p.stdout:
+            return ["play/sandbox/cakewalk.jai [%s]: exit %s, %r" % (be, p.returncode, p.stderr.decode("utf-8", "replace").strip()[:400])]
+        printed[be] = p.stdout
+    return [] if printed["vm"] == printed["interp"] else ["play/sandbox/cakewalk.jai: vm and interp drew different frames"]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runner", default=str(DEFAULT_RUNNER))
@@ -314,6 +369,9 @@ def main():
                 if missing:
                     drift.append((tag + (" [--warnings]" if s["expected_warnings"] else ""), missing, so_c, se_c))
 
+    hero_failures = check_hero(runner, out, args.timeout) if not args.page or args.page in "index.html" else []
+    if not args.page or args.page in "play/index.html":
+        hero_failures += check_sandbox_game(runner, args.timeout)
     print("\n%d samples on %d pages: %d skipped (data-host), %d intentional-error samples matched"
           % (total, len(pages), skipped, len(error_ok)))
     for n in notes_all:
@@ -364,9 +422,14 @@ def main():
             for l in (so + ("\n" + se if se else "")).split("\n")[:8]:
                 print("      got      | " + l)
 
+    if hero_failures:
+        print("\nPAGE PROGRAMS (the landing scene, the sandbox game):")
+        for line in hero_failures:
+            print("  " + line)
+
     if not args.keep:
         shutil.rmtree(out, ignore_errors=True)
-    return 1 if (hard or diverge or (drift and not args.allow_drift)) else 0
+    return 1 if (hard or diverge or hero_failures or (drift and not args.allow_drift)) else 0
 
 
 if __name__ == "__main__":

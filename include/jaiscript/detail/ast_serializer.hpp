@@ -36,7 +36,7 @@ namespace jai::detail {
     // BUMP THIS on any change to what a parse produces: the serialized bytes and the parse-time semantics baked into the
     // AST (slot assignment, node and token numbers, capture plans). A stale sidecar is reparsed and rewritten (the version
     // check feeds the corrupt-file fallback), so a bump is always safe and a missed one leaves stale caches.
-    inline constexpr uint32_t k_jaibite_version = 56;
+    inline constexpr uint32_t k_jaibite_version = 58;
     // Header flags (u32):
     // bit 0 = the bite was static-checked clean under the SAVING engine's surface —
     // trusted on load only when the registration fingerprint also matches.
@@ -46,7 +46,7 @@ namespace jai::detail {
     // BUMP THIS whenever the static checker's rules change (a new diagnostic, a rule that rejects more): a checked-clean
     // stamp records the revision that checked it (flag bits 8..31), and a bite stamped under another revision is checked
     // again on load instead of trusted. A parse change bumps k_jaibite_version instead, which re-parses as well.
-    inline constexpr uint32_t k_jaibite_checker_revision = 9;
+    inline constexpr uint32_t k_jaibite_checker_revision = 12;
     inline constexpr uint32_t jaibite_checked_clean_flags() { return k_jaibite_flag_checked_clean | (k_jaibite_checker_revision << 8); }
     // The stamp is trusted only from this checker revision
     inline constexpr bool jaibite_stamped_clean(uint32_t flags) {
@@ -438,7 +438,7 @@ namespace jai::detail {
             node(e->target.get());
             tok(e->op);
             node(e->value.get());
-            u8(static_cast<uint8_t>((e->postfix_old_result ? 1 : 0) | (e->incdec_desugar ? 2 : 0) | (e->yields_reference ? 4 : 0)));
+            u8(static_cast<uint8_t>((e->postfix_old_result ? 1 : 0) | (e->incdec_desugar ? 2 : 0) | (e->yields_reference ? 4 : 0) | (e->bare_condition ? 8 : 0)));
         }
 
         JAI_NOINLINE void write_call_expr(const ast_node* n) {
@@ -457,6 +457,7 @@ namespace jai::detail {
             flag(e->is_arrow);
             flag(e->is_static);
             flag(e->null_safe);
+            flag(e->on_caught);   // the escape-mark pass's, kept for a body copied on its own (a converted closure)
         }
 
         JAI_NOINLINE void write_lambda_expr(const ast_node* n) {
@@ -522,7 +523,7 @@ namespace jai::detail {
         JAI_NOINLINE void write_cast_expr(const ast_node* n) {
             auto* e = static_cast<const cast_expr*>(n);
             type(e->target);
-            u8(static_cast<uint8_t>((e->by_reference ? 1 : 0) | (e->implicit_ref ? 2 : 0) | (e->binding_ref ? 4 : 0)));
+            u8(static_cast<uint8_t>((e->by_reference ? 1 : 0) | (e->implicit_ref ? 2 : 0) | (e->binding_ref ? 4 : 0) | (e->instance_test ? 8 : 0)));
             node(e->operand.get());
         }
 
@@ -556,6 +557,7 @@ namespace jai::detail {
             node(s->condition.get());
             node(s->update.get());
             node(s->body.get());
+            flag(s->fresh_binding);   // the escape-mark pass's, kept for a body copied on its own (a converted closure)
         }
 
         JAI_NOINLINE void write_range_for_stmt(const ast_node* n) {
@@ -600,6 +602,8 @@ namespace jai::detail {
             symbol(s->catch_var_id, UINT64_MAX);
             slot(s->catch_slot_index);
             node(s->catch_block.get());
+            varint(s->clause_types.size());
+            for (const std::string& type : s->clause_types) { str(type); }
         }
 
         JAI_NOINLINE void write_switch_stmt(const ast_node* n) {
@@ -1310,7 +1314,7 @@ namespace jai::detail {
         JAI_NOINLINE ast_node_ptr read_assignment_expr(const source_location& loc) {
             auto e = assignment_head(loc, expr_req());
             e->value = expr_req();
-            { const uint8_t fl = u8(); e->postfix_old_result = (fl & 1) != 0; e->incdec_desugar = (fl & 2) != 0; e->yields_reference = (fl & 4) != 0; }
+            { const uint8_t fl = u8(); e->postfix_old_result = (fl & 1) != 0; e->incdec_desugar = (fl & 2) != 0; e->bare_condition = (fl & 8) != 0; e->yields_reference = (fl & 4) != 0; }
             return e;
         }
 
@@ -1334,6 +1338,7 @@ namespace jai::detail {
             auto e = std::make_shared<member_expr>(loc, obj, member, member_id, arrow, is_static);
             e->getter_id = getter_id;
             e->null_safe = flag();
+            e->on_caught = flag();
             return e;
         }
 
@@ -1438,6 +1443,7 @@ namespace jai::detail {
             auto e = std::make_shared<cast_expr>(loc, target, (cast_flags & 1) != 0, expr_req());
             e->implicit_ref = (cast_flags & 2) != 0;
             e->binding_ref = (cast_flags & 4) != 0;
+            e->instance_test = (cast_flags & 8) != 0;
             return e;
         }
 
@@ -1471,7 +1477,9 @@ namespace jai::detail {
             auto c = expr_opt();
             auto u = expr_opt();
             auto b = [&] { auto body = loop_body(); return stmt_req(); }();
-            return std::make_shared<for_stmt>(loc, i, c, u, b);
+            auto loop = std::make_shared<for_stmt>(loc, i, c, u, b);
+            loop->fresh_binding = flag();
+            return loop;
         }
 
         JAI_NOINLINE ast_node_ptr read_range_for_stmt(const source_location& loc) {
@@ -1532,6 +1540,9 @@ namespace jai::detail {
             s->catch_var_id = catch_id;
             s->catch_slot_index = catch_slot;
             track_slot(catch_slot, catch_id, false, true);
+            const uint64_t clause_count = varint();
+            if (clause_count > remaining()) { jaibite_fail("corrupt catch clause count"); }
+            for (uint64_t i = 0; i < clause_count; ++i) { s->clause_types.push_back(str()); }
             return s;
         }
 

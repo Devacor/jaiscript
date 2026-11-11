@@ -585,11 +585,14 @@ public:
                 constructor_called = false;
                 Tracker t = Tracker();
                 constructor_called = false;
-                t = null;
+                var nothing = null;
+                var refused = "";
+                try { t = nothing; } catch (e) { refused = e; }
             )");
 
             auto called = eng->execute("constructor_called");
             check_eq(called.as<bool>(), false);
+            check_eq(std::string("Cannot assign null to 't' (declared Tracker)"), eng->execute("refused").to_string());
         });
 
         test("exact_match_priority", [&]() {
@@ -758,12 +761,12 @@ public:
             eng->execute(R"(
                 class NodeA {
                     int value = 0;
-                    NodeA child = null;
+                    shared_ptr<NodeA> child = null;
                 }
 
                 class NodeB {
                     int value = 0;
-                    NodeB child = null;
+                    shared_ptr<NodeB> child = null;
 
                     NodeB(NodeA a) {
                         this.value = a.value * 2;
@@ -786,6 +789,7 @@ public:
 
             auto b_value = eng->execute("b_val");
             check_eq(b_value.as<script_int>(), 2);
+            check_eq((script_int)4, eng->execute("NodeB(a1).child.value").as<script_int>());
         });
 
         test("conversion_with_side_effects", [&]() {

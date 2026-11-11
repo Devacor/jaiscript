@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="Coroutines — JaiScript Guide">
 <meta property="og:description" content="Coroutines and yield: handles you advance with next(), drivable by range-for, and the shapes that make multi-frame behavior easy to write.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/guide/08-coroutines.html">
+<meta property="og:url" content="https://jaiscript.com/guide/08-coroutines.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,129 +33,50 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li class="current"><a href="../guide/08-coroutines.html" aria-current="page">Coroutines</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Coroutines</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li class="current"><a href="../guide/08-coroutines.html" aria-current="page">Coroutines</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>08</nav>
 <article class="chapter"><h1 id="coroutines">Coroutines<a class="hlink" href="#coroutines" aria-label="link">&#8203;</a></h1>
-<p>Coroutines turn stateful multi-frame behavior (AI, cutscenes, staged animations) into straight-line code that pauses where it yields. Declare one with the <code>coroutine</code> keyword. Calling it returns a <strong>coroutine handle</strong> instead of running the body, and nothing in the body runs until the first step. There are three ways to take steps:</p>
-<ul><li>A range-based <code>for</code> over the handle runs the body and hands out each yielded value.</li><li><code>handle.advance(v)</code> is the same step written by hand.</li><li><code>handle.next()</code> / <code>handle.done()</code> are the protocol underneath both.</li></ul>
-<p>The interpreter implements coroutines by continuation replay, the VM by fibers. Behavior is identical.</p>
+<p>A coroutine is a function that pauses at each <code>yield</code>, so multi-frame behavior (AI, cutscenes, staged animations) is straight-line code.</p>
+<ul><li>The <code>coroutine</code> prefix declares one. A call runs none of the body and returns a <strong>handle</strong>. Each call is an independent instance.</li><li>A step runs the body to its next <code>yield</code>. A body with <em>N</em> yields takes <em>N</em> + 1 steps: the last runs from the final yield to the end, and only then is <code>done()</code> true.</li><li>A handle is a reference. A copy (into a field, an array or map element, a by-value parameter, another variable, a deep copy of an instance that holds one) drives the one live coroutine.</li></ul>
+<div class="tablewrap"><table><thead><tr><th>Form</th><th>A step that reaches a <code>yield</code></th><th>The step that finishes the body</th><th>After that</th></tr></thead><tbody><tr><td><code>for (auto v : h)</code></td><td><code>v</code> is the yielded value</td><td>the loop ends; the <code>return</code> value is never iterated</td><td>no iterations</td></tr><tr><td><code>h.advance(v)</code></td><td><code>true</code>, the value stored into <code>v</code></td><td><code>false</code>, <code>v</code> unchanged</td><td><code>false</code>, <code>v</code> unchanged</td></tr><tr><td><code>h.next()</code></td><td>the yielded value</td><td>the <code>return</code> value (<code>null</code> when there is none)</td><td>raises <code>Cannot resume a completed coroutine</code></td></tr><tr><td><code>h.next(n)</code></td><td colspan="3"><code>n</code> calls to <code>next()</code>, returning the last value; <code>n</code> is an <code>int</code> of at least 1. When the body ends early, the steps before the end run, then it raises the same text.</td></tr><tr><td><code>h.done()</code></td><td><code>false</code></td><td colspan="2"><code>true</code>. It only asks: it never starts or advances the body.</td></tr><tr><td><code>h.result()</code></td><td colspan="2">raises <code>Coroutine has not finished</code></td><td>the <code>return</code> value, a copy each time, whichever form drove the body; <code>null</code> when the body returned nothing or failed</td></tr></tbody></table></div>
 <h2 id="range-for-drives-a-coroutine">Range-for drives a coroutine<a class="hlink" href="#range-for-drives-a-coroutine" aria-label="link">&#8203;</a></h2>
-<p>This is the way to consume a coroutine. A range-based <code>for</code> over a handle (or a handle-producing call) advances it until done, iterating the yielded values (never the final <code>return</code> value). A handle already advanced with <code>next()</code> continues from where it stands:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int squares(int n) {
-    for (int i = 1; i &lt;= n; ++i) { yield i * i; }
-}
-auto total = 0;
-for (auto v : squares(5)) {
-    print("got {}", v);
-    total += v;
-}
-total;</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">got 1
-got 4
-got 9
-got 16
-got 25
-== result: 55</code></pre></div>
-<h2 id="advance-the-manual-loop">advance: the manual loop<a class="hlink" href="#advance-the-manual-loop" aria-label="link">&#8203;</a></h2>
-<p>When the steps cannot sit in one loop (one step per frame, a handle parked in a field), <code>h.advance(v)</code> takes one step. It is shaped like a C++ <code>bool advance(T&amp; v)</code> and resumes the body once:</p>
-<ul><li>When the body yielded, it returns <code>true</code>, with the yielded value stored into <code>v</code>.</li><li>When the body ran to its end, or had already ended, it returns <code>false</code> and leaves <code>v</code> as it was.</li></ul>
-<p>The answer never depends on the value, so a coroutine that yields <code>null</code> is driven like any other:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine scan() { yield "wall"; yield null; yield "door"; }
-auto h = scan();
-var seen;
-while (h.advance(seen)) { print("saw {}", seen); }
-print("again: {}, seen: {}", h.advance(seen), seen);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">saw wall
-saw null
-saw door
-again: false, seen: door</code></pre></div>
-<p><code>v</code> binds as a <code>T&amp;</code> parameter does: a variable, a field or an element, bound at the call before the body runs.</p>
-<ul><li>A temporary fails the load when the checker sees it (<code>advance() writes the yielded value through its argument; pass a variable</code>). Otherwise it raises <code>Cannot pass non-lvalue to reference parameter</code> without resuming.</li><li>A <code>const</code> fails the load.</li><li>The yielded value converts to <code>v</code>&#x27;s declared type as an assignment would. When the checker knows the coroutine&#x27;s declared type and <code>v</code>&#x27;s, a pair no assignment accepts fails the load (<code>advance() cannot store the yielded 'string' into 'int'</code>).</li></ul>
-<p>The <code>advance</code> that finishes the body returns <code>false</code>. The body&#x27;s <code>return</code> value is then <code>h.result()</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int forage(int patches) {
-    int total = 0;
-    for (int i = 1; i &lt;= patches; ++i) {
-        total += i * 3;
-        yield total;   // the running count, one step per patch
-    }
-    return total / patches;   // the average per patch
-}
-auto h = forage(3);
-int so_far = 0;
-while (h.advance(so_far)) { print("so far {}", so_far); }
-print("average {}", h.result());
-try { forage(1).result(); } catch (e) { print("too early: {}", e); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">so far 3
-so far 9
-so far 18
-average 6
-too early: Coroutine has not finished: result() is available once done() is true</code></pre></div>
-<p><code>result()</code> answers once <code>done()</code> is <code>true</code>:</p>
-<ul><li>It answers however the body was driven (by <code>advance</code>, <code>next()</code> or a range-for), as often as it is asked, each time a copy.</li><li>A body that returns nothing gives <code>null</code>, and so does one that failed (its throw reached the step that ran it).</li><li>Before the body finishes it raises <code>Coroutine has not finished: result() is available once done() is true</code>.</li><li>The checker types it as the coroutine&#x27;s declared type.</li></ul>
-<h2 id="yield-next-done">yield / next / done<a class="hlink" href="#yield-next-done" aria-label="link">&#8203;</a></h2>
-<p><code>handle.next()</code> runs to the next <code>yield</code> and returns the yielded value. The call that finishes the body returns the final <code>return</code> value. <code>handle.done()</code> reports completion:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int counter() {
-    yield 1;
-    yield 2;
-    return 3;
-}
-auto c = counter();
-print("next: {}", c.next());
-print("next: {}", c.next());
-print("done? {}", c.done());
-print("next: {}", c.next());
-print("done? {}", c.done());</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">next: 1
-next: 2
-done? false
-next: 3
-done? true</code></pre></div>
-<p><code>done()</code> only asks: it never starts or advances the body. <code>next(n)</code> advances <code>n</code> yields and returns the value of the last one, the same as <code>n</code> calls to <code>next()</code> in a row. The count is an <code>int</code> of at least 1. A loop on <code>done()</code> runs a coroutine to the end and sees the final value too:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int steps() {
-    for (int i = 1; i &lt;= 5; ++i) { yield i * 10; }
-    return -1;
-}
-auto h = steps();
-print("skip ahead: {}", h.next(3));
-while (!h.done()) { print("then: {}", h.next()); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">skip ahead: 30
-then: 40
-then: 50
-then: -1</code></pre></div>
-<h3 id="step-by-step">Step by step<a class="hlink" href="#step-by-step" aria-label="link">&#8203;</a></h3>
-<p>A body with <em>N</em> yields takes <em>N</em> + 1 steps. The first <em>N</em> stop at the yields. The last runs the body from its last yield to its end. After the last yield <code>done()</code> is still <code>false</code>, because the body has not finished. It turns <code>true</code> only once that last step has run.</p>
-<p>That last step is where the forms differ:</p>
-<ul><li><code>next()</code> returns the final value (the <code>return</code> value, or <code>null</code> when the body returns nothing).</li><li><code>advance(v)</code> returns <code>false</code>.</li><li>A range-for ends.</li></ul>
-<p>From then on <code>result()</code> holds the final value whichever form took the step. For <code>counter()</code> above, each row one step taken with either call:</p>
-<div class="tablewrap"><table><thead><tr><th>Step</th><th>The body runs</th><th><code>c.next()</code> returns</th><th><code>c.advance(v)</code> returns</th><th><code>done()</code> afterwards</th><th><code>c.result()</code> afterwards</th></tr></thead><tbody><tr><td><code>auto c = counter();</code></td><td>nothing</td><td>(the call returns the handle)</td><td></td><td><code>false</code></td><td>raises</td></tr><tr><td>1st</td><td>to <code>yield 1</code></td><td><code>1</code></td><td><code>true</code>, <code>v</code> is <code>1</code></td><td><code>false</code></td><td>raises</td></tr><tr><td>2nd</td><td>to <code>yield 2</code></td><td><code>2</code></td><td><code>true</code>, <code>v</code> is <code>2</code></td><td><code>false</code></td><td>raises</td></tr><tr><td>3rd</td><td>to the end</td><td><code>3</code> (<code>null</code> for a body with no <code>return</code> value)</td><td><code>false</code>, <code>v</code> unchanged</td><td><code>true</code></td><td><code>3</code></td></tr><tr><td>4th</td><td>nothing</td><td>raises <code>Cannot resume a completed coroutine</code></td><td><code>false</code>, <code>v</code> unchanged</td><td><code>true</code></td><td><code>3</code></td></tr></tbody></table></div>
-<p>So the three loops below see the same yields. The <code>next()</code> loop, which asks <code>done()</code> <em>before</em> each step, also hands out the final value. After any of them <code>result()</code> holds it:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int waves() { yield 1; yield 2; return 3; }
-for (auto v : waves()) { print("for got {}", v); }
+<p>A range-based <code>for</code> is the way to consume a coroutine. It takes a handle or a call that makes one, and a handle already advanced continues from where it stands. When the steps cannot sit in one loop (one step per frame), <code>h.advance(v)</code> takes one, shaped like a C++ <code>bool advance(T&amp; v)</code>; a yielded <code>null</code> is a step like any other. A loop on <code>done()</code> and <code>next()</code> hands out the final value too:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int waves() { yield 1; yield 2; yield 3; return 9; }
+for (auto w : waves()) { print("for got {}", w); }
+
 auto a = waves();
 int v = 0;
 while (a.advance(v)) { print("advance got {}", v); }
-print("then result {}", a.result());
+print("again: {}, v: {}, result: {}", a.advance(v), v, a.result());
+
 auto b = waves();
+print("skip ahead: {}", b.next(2));
 while (!b.done()) { print("next gave {}", b.next()); }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">for got 1
 for got 2
+for got 3
 advance got 1
 advance got 2
-then result 3
-next gave 1
-next gave 2
-next gave 3</code></pre></div>
-<p>Coroutines take parameters like any function. Each argument takes its value at the call, and the first <code>next()</code> moves it into its parameter, so a by-value parameter is one object that lives as long as the body's frame. <code>yield</code> works inside loops and conditionals. Side effects in a yield expression run exactly once, however the suspension is implemented underneath.</p>
+advance got 3
+again: false, v: 3, result: 9
+skip ahead: 2
+next gave 3
+next gave 9</code></pre></div>
+<p><code>v</code> binds as a <code>T&amp;</code> parameter does (a variable, a field or an element), at the call, before the body runs. A <code>const</code> or a temporary fails the load; a temporary the checker cannot see raises <code>Cannot pass non-lvalue to reference parameter</code> without resuming. The yielded value converts to <code>v</code>&#x27;s declared type as an assignment would, and a pair of known types no assignment accepts fails the load.</p>
+<p>A value cannot be sent into a running coroutine. Pass inputs as parameters, or share state with the caller (a field of its instance, a program-scope variable). <code>advance()</code> without its variable, a non-integer count and a count below 1 each raise (<a href="../reference/errors.html#run-time-errors">Run-time errors</a>). Any other member is a load error: <code>h.resume()</code> reports <code>no member 'resume' on 'coroutine_handle' (did you mean 'next'?)</code>.</p>
 <h2 id="spellings">Spellings<a class="hlink" href="#spellings" aria-label="link">&#8203;</a></h2>
-<p><code>coroutine</code> is a prefix, and it goes in front of <em>every</em> function spelling from the <a href="../guide/06-functions.html#declaration-forms">Functions chapter</a>: return-type-first, trailing arrow, the <code>function</code> keyword, or nothing at all. Methods take the same forms, <code>static</code> ones included:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int a() { yield 1; }                 // return-type-first
+<p><code>coroutine</code> goes in front of every function spelling from the <a href="../guide/06-functions.html#declaration-forms">Functions chapter</a>, for methods (<code>static</code> ones included) and functions in a <code>namespace</code> body too:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int a() { yield 1; }                 // return-type-first
 coroutine b() -&gt; int { yield 2; }              // trailing arrow
 coroutine function c() -&gt; auto { yield 3; }    // function keyword + arrow
 coroutine function d() { yield 4; }            // function keyword, inferred
@@ -156,87 +85,55 @@ print("{} {} {} {} {}", a().next(), b().next(), c().next(), d().next(), e().next
 
 class Spawner {
     int base = 10;
-    coroutine function waves(int n) { for (int i = 0; i &lt; n; ++i) { yield base + i; } }
-    coroutine int w2() { yield base * 2; }
-    coroutine w3() -&gt; int { yield base * 3; }
+    coroutine w() -&gt; int { yield base * 3; }
     static coroutine int ticks() { yield 1; yield 2; }
 }
-auto s = Spawner();
-for (auto w : s.waves(3)) { print("wave {}", w); }
-print("{} {}", s.w2().next(), s.w3().next());
+namespace ns { coroutine int g() { yield 7; } }
 auto t = Spawner::ticks();
-print("{} {}", t.next(), t.next());</code></pre></div>
+print("{} {} {} {}", Spawner().w().next(), t.next(), t.next(), ns::g().next());</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 2 3 4 5
-wave 10
-wave 11
-wave 12
-20 30
-1 2</code></pre></div>
-<p>The type you write describes what the body <em>yields and returns</em>. It is never the type of the call, which is always a handle. At run time each <code>yield</code> and the final <code>return</code> convert to it (see the last sample in this chapter).</p>
-<p><strong>What a coroutine cannot be.</strong></p>
-<ul><li>There is no coroutine lambda, and a coroutine cannot return a reference. Both are parse errors.</li><li>Nor can it take a parameter by reference (<code>T&amp;</code>, <code>const T&amp;</code>, <code>auto&amp;</code>, <code>var&amp;</code>): it runs on after the call returns, past the argument&#x27;s lifetime. So <code>coroutine int count_up(int&amp; n)</code> is the parse error <code>coroutine 'count_up' cannot take 'n' by reference: it runs on after the call returns, past the argument's lifetime; take it by value (int n), or pass a shared_ptr to share an object</code>.</li><li>A <code>shared_ptr&lt;T&gt;</code> parameter is the spelling for an object the coroutine and its caller both change.</li></ul>
-<p>A <code>namespace</code> body declares coroutines like any other function (<code>namespace ns { coroutine int g() { ... } }</code>, called as <code>ns::g()</code>).</p>
-<h2 id="each-call-is-an-independent-instance">Each call is an independent instance<a class="hlink" href="#each-call-is-an-independent-instance" aria-label="link">&#8203;</a></h2>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int letters() { yield 1; yield 2; yield 3; }
-auto x = letters();
-auto y = letters();
-print("{} {} {} {}", x.next(), x.next(), y.next(), x.next());
-y.done();</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 2 1 3
-== result: false</code></pre></div>
+30 1 2 7</code></pre></div>
+<p>The declared type describes what the body yields and returns, never the call, which is always a handle. A handle has no type name of its own: hold it in <code>auto</code> or <code>var</code>. <code>type_of</code> names it <code>"coroutine_handle"</code>.</p>
+<p>Each <code>yield e</code> and the final <code>return</code> convert to the declared type as a <code>return</code> does. A float the checker sees yielded from an int coroutine fails the load; any other value the type cannot take raises at the yield, catchable around the step, and the failed step finishes the coroutine. A bare <code>yield;</code> hands out nothing and is not converted:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine float g() { yield 2; yield "three"; return 4; }
+auto h = g();
+print(h.next());
+try { h.next(); } catch (e) { print("caught: ", e); }
+print(h.done());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2.0
+caught: Cannot yield string from &#x27;g&#x27; (declared -&gt; float)
+true</code></pre></div>
+<p>A coroutine cannot be a lambda, return a reference, or take a parameter by reference (<code>T&amp;</code>, <code>const T&amp;</code>, <code>auto&amp;</code>, <code>var&amp;</code>). All are parse errors: <code>coroutine int count_up(int&amp; n)</code> reports <code>coroutine 'count_up' cannot take 'n' by reference: it runs on after the call returns, past the argument's lifetime; take it by value (int n), or pass a shared_ptr to share an object</code>.</p>
 <h2 id="method-coroutines">Method coroutines<a class="hlink" href="#method-coroutines" aria-label="link">&#8203;</a></h2>
-<p>Class methods can be coroutines. The suspended body sees <code>this</code>. Fields read/write normally across suspensions, and every instance gets independent generators:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Gen {
+<p>A method coroutine sees <code>this</code>, and fields read and write normally across suspensions. Derived classes inherit method coroutines. The handle <strong>pins the receiver alive</strong>, here past the frame that made it:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Gen {
     int id = 0;
     Gen(int i) { id = i; }
-    coroutine int gen() { yield id; yield id * 2; }
+    coroutine int gen() { yield id; id *= 10; yield id; }
 }
-auto a = Gen(1);
-auto b = Gen(2);
-auto ga = a.gen();
-auto gb = b.gen();
+function make(int i) {
+    auto g = Gen(i);
+    return g.gen();
+}
+auto ga = make(1);
+auto gb = make(2);
 print("{} {} {} {}", ga.next(), gb.next(), ga.next(), gb.next());</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 2 2 4</code></pre></div>
-<p>Range-for drives method coroutines too, and inherited method coroutines work on derived classes.</p>
-<h2 id="receiver-pinning">Receiver pinning<a class="hlink" href="#receiver-pinning" aria-label="link">&#8203;</a></h2>
-<p>The handle <strong>pins the receiver alive</strong>. Even if the only strong reference to the instance dies with the frame that created it, resuming still sees the fields:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class D {
-    int v = 7;
-    coroutine int g() { yield v; v = 99; yield v; }
-}
-function make() {
-    auto d = D();
-    return d.g();
-}
-auto h = make();
-print("{}", h.next());
-print("{}", h.next());
-h.done();</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">7
-99
-== result: false</code></pre></div>
-<p>The handle keeps the instance alive for as long as the coroutine is suspended.</p>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 2 10 20</code></pre></div>
+<p>So a field holding a handle of its own instance&#x27;s method is a strong cycle, broken by reassigning or nulling the field. A <code>static</code> coroutine&#x27;s handle carries no receiver.</p>
 <h2 id="a-behaviour-in-a-field">A behaviour in a field<a class="hlink" href="#a-behaviour-in-a-field" aria-label="link">&#8203;</a></h2>
-<p>A game object keeps its behaviour as a handle in a field and advances it once a frame. A handle has no type name of its own: the field is declared <code>auto</code> from the call that makes the handle, or <code>var</code> when the behaviour starts later. The call runs none of the body, so a field initializer can make it: the body starts at the first <code>next()</code>, and each instance gets its own coroutine over its own fields.</p>
-<p>Without a <code>yield from</code>, one coroutine runs another step by step with a range-for that yields what it yields. That makes small behaviours reusable: a <code>wait</code> that idles for some frames, a <code>charge</code> that one boss phase runs, chained in order inside the coroutine the field holds:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine string wait(int frames) {
+<p>A game object keeps its behaviour as a handle in a field and advances it once a frame. The field is <code>auto</code> from the call that makes the handle (a field initializer can make it), or <code>var</code> when the behaviour starts later. There is no <code>yield from</code>: one coroutine runs another (a free function, a method of the same or another object) with a range-for that yields what it yields:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine string wait(int frames) {
     for (int i = 0; i &lt; frames; ++i) { yield "waiting"; }
 }
 
 class Boss {
     int hp = 30;
     string phase = "";
-    coroutine string charge() {
-        phase = "charge";
-        for (int i = 0; i &lt; 2; ++i) { yield "charging"; }
-        yield "slam";
-    }
+    coroutine string charge() { phase = "charge"; yield "charging"; yield "slam"; }
     coroutine string fight() {
         while (hp &gt; 20) { phase = "volley"; yield "fires a volley"; hp -= 5; }
-        for (auto step : wait(2)) { yield step; }        // a pause between phases
-        for (auto step : charge()) { yield step; }       // a whole sub-behaviour, step by step
-        phase = "enraged";
-        yield "roars";
+        for (auto step : wait(2)) { yield step; }
+        for (auto step : charge()) { yield step; }
     }
     auto brain = fight();
     void think() {
@@ -247,34 +144,20 @@ class Boss {
 }
 
 Boss boss;
-for (int frame = 0; frame &lt; 12; ++frame) { boss.think(); }</code></pre></div>
+for (int frame = 0; frame &lt; 10; ++frame) { boss.think(); }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">volley: fires a volley
 volley: fires a volley
 volley: waiting
 volley: waiting
 charge: charging
-charge: charging
-charge: slam
-enraged: roars</code></pre></div>
-<ul><li><code>for (auto step : wait(2)) { yield step; }</code> is the idiom: the inner coroutine runs to its end, one outer step per inner step. A free function, a method of the same object and a method of another object all nest this way.</li><li>Phases are sequential code: the boss leaves its volley when its <code>hp</code> drops, then pauses, then charges, then enrages. A branch or a loop around the nested calls picks or repeats phases.</li><li><code>think</code> checks <code>done()</code> before it advances, since <code>next()</code> on a finished coroutine raises <code>Cannot resume a completed coroutine</code>.</li><li>A copy of the object shares the handle, and the shared coroutine keeps changing the original&#x27;s fields (<a href="03-value-semantics.html#copies-share-a-coroutine">Value Semantics</a>). A copy that needs a behaviour of its own assigns its field a new call.</li></ul>
+charge: slam</code></pre></div>
+<p>A copy of the object shares the handle, and the shared coroutine keeps changing the original&#x27;s fields (<a href="03-value-semantics.html#copies-share-a-coroutine">Value Semantics</a>). A copy that needs a behaviour of its own assigns its field a new call.</p>
 <h2 id="rules-and-edges">Rules and edges<a class="hlink" href="#rules-and-edges" aria-label="link">&#8203;</a></h2>
-<ul><li><strong>Handles are reference-semantic.</strong> Copying a handle (into a field, an array/map element, a by-value parameter, another variable) shares the ONE live coroutine. Every alias sees the same <code>next()</code>/<code>advance()</code>/<code>done()</code>/<code>result()</code> state. Even deep-copying an instance shares its handle field (a handle references a <em>running computation</em>; there is no meaningful deep copy). This is what lets an AI park its behavior coroutine in a field of its own game object and advance it every tick.</li><li><strong>A handle of an instance&#x27;s own method is a deliberate strong cycle.</strong> When an instance&#x27;s field holds a handle of its <em>own</em> method, the handle pins the receiver. Break it by re-assigning/nulling the field, exactly like any shared structure. <code>static</code> coroutine methods work the same way; the handle just carries no receiver. <code>type_of</code> names a handle <code>"coroutine_handle"</code>, as its error texts do.</li><li>Handles advance correctly across separate <code>execute()</code> calls, through by-ref helper params, and from inside running functions without disturbing the caller&#x27;s frame.</li><li><strong>A value cannot be sent into a running coroutine.</strong> <code>next()</code> takes only its optional count, <code>advance()</code> only the variable it stores into, and <code>done()</code> and <code>result()</code> take no arguments:<ul><li><code>h.advance()</code> raises <code>advance() takes 1 argument (the variable that receives the yielded value)</code>.</li><li><code>h.next("go")</code> raises <code>next() count must be an integer</code>.</li><li><code>h.next(0)</code> raises <code>next() count must be at least 1</code>.</li></ul>Give it its inputs as parameters when it is created, or let it read state it shares with the caller: a field of its instance for a method coroutine, or a program-scope variable.</li><li>A failed <code>next()</code> marks only that handle done. Calling <code>next()</code> on a finished coroutine raises the catchable <code>Cannot resume a completed coroutine</code>. A <code>next(n)</code> that reaches the end before its last step runs the steps before the end, then raises the same text.</li><li>Hot reload: a free coroutine can be redefined while one of its handles is suspended (the old handle keeps the old body), and method coroutines survive field-changing reloads of their class.</li><li>The execution budget still applies during <code>next()</code>, and budget errors skip catches inside coroutines too.</li><li><strong>The checker stays out of the body&#x27;s way.</strong> Yield and return values are not checked statically, and what <code>next()</code> returns is unknown, so everything downstream of it is lenient. <code>result()</code> has the declared type, as a lenient type: a body that falls off its end gives <code>null</code>. The handle itself is typed: a member other than <code>next</code>, <code>advance</code>, <code>done</code> or <code>result</code> is a load error (<code>h.resume()</code> reports <code>no member 'resume' on 'coroutine_handle' (did you mean 'next'?)</code>).</li></ul>
-<p>A <code>yield e</code> hands out a value as a <code>return e</code> would. An existing object (a global, the coroutine&#x27;s own local, an element) is copied, so the receiver never shares it, and the coroutine keeps its locals as they were.</p>
-<p>The declared type still does its work at run time. A <code>yield e</code> converts like a <code>return</code> of the same type, and a value the type cannot take raises at the yield, catchable around the <code>next()</code>. A failed <code>next()</code> finishes the coroutine. A bare <code>yield;</code> hands out nothing and is not converted:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int g() { yield 2.9; yield "three"; return 4; }
-auto h = g();
-print(h.next());
-try { h.next(); } catch (e) { print("caught: ", e); }
-print(h.done());</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2
-caught: Cannot yield string from &#x27;g&#x27; (declared -&gt; int)
-true</code></pre></div>
+<ul><li><strong>Parameters.</strong> Each argument takes its value at the call, and the first step moves it into its parameter: a by-value parameter is one object that lives as long as the body&#x27;s frame. A <code>shared_ptr&lt;T&gt;</code> parameter is the spelling for an object the coroutine and its caller both change.</li><li><strong>Yielded values are copies.</strong> <code>yield e</code> hands out a value as <code>return e</code> would: an existing object (a global, a local, an element) is copied, never shared. Side effects in a yield expression run exactly once.</li><li><strong>A failed step marks only that handle done</strong>, and its throw reaches the code that took the step.</li><li><strong>Handles keep working</strong> across separate <code>execute()</code> calls and when passed by reference.</li><li><strong>Hot reload.</strong> A free coroutine can be redefined while one of its handles is suspended (the old handle keeps the old body), and method coroutines survive field-changing reloads of their class.</li><li><strong>The execution budget</strong> applies during a step, and budget errors skip catches inside coroutines too.</li><li><strong>The checker</strong> does not check yield and return values statically, and treats what <code>next()</code> returns as unknown. <code>result()</code> has the declared type, leniently, since a body that falls off its end gives <code>null</code>.</li></ul>
 <h2 id="sleep">sleep: behavior that waits<a class="hlink" href="#sleep" aria-label="link">&#8203;</a></h2>
-<p><code>sleep(seconds)</code> waits that long on the engine&#x27;s time source (<a href="14-time.html">Time</a>). It is a builtin of the language, like <code>print</code>: every engine has it, with no library to install.</p>
-<ul><li>A float or an int is a number of seconds, and anything else raises <code>sleep expects a number of seconds</code>.</li><li>Zero or less returns at once and never suspends a run (it is not a yield).</li><li><code>sleep(0)</code> is the debugger&#x27;s sync point, where an attach, a breakpoint edit or a pause the debugger made while the program runs takes effect. So a loop the host drives calls it once per frame (<a href="../embedding/12-debugging.html">Debugging</a>).</li></ul>
-<p>What waiting does depends on how the host runs the program. The program is the same either way:</p>
-<ul><li>A host that starts it as a <strong>run</strong> (<code>engine::start</code>, <a href="../embedding/17-host-api.html#suspendable-runs">Suspendable runs</a>) gets control back at every <code>sleep</code>. The whole run suspends with every frame and local where it is, and the host goes on with its own work. It resumes the run once the time has passed, which continues right after the <code>sleep</code>. The standalone runner runs every file this way.</li><li>A plain <code>execute()</code> never suspends: there <code>sleep</code> blocks the thread for that long.</li></ul>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int countdown(int from) {
+<p><code>sleep(seconds)</code> waits that long on the engine&#x27;s time source (<a href="14-time.html">Time</a>). It is a builtin like <code>print</code>: every engine has it, and a program-scope function named <code>sleep</code> replaces it.</p>
+<ul><li>The argument is a float or an int; anything else raises.</li><li>Zero or less returns at once and never suspends. <code>sleep(0)</code> is the debugger&#x27;s sync point, so a loop the host drives calls it once per frame (<a href="../embedding/12-debugging.html">Debugging</a>).</li><li>Under a <strong>run</strong> (<code>engine::start</code>, <a href="../embedding/17-host-api.html#suspendable-runs">Suspendable runs</a>) the whole program suspends at the <code>sleep</code>, every frame and local in place, and the host has control until the time has passed. The standalone runner runs every file this way.</li><li>Under a plain <code>execute()</code> nothing suspends: <code>sleep</code> blocks the thread.</li></ul>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int countdown(int from) {
     for (int n = from; n &gt; 0; --n) { sleep(0.01); yield n; }
 }
 float start = time::now();
@@ -284,11 +167,11 @@ print("liftoff after at least 30 ms: {}", time::now() - start &gt;= 0.03);</code
 2...
 1...
 liftoff after at least 30 ms: true</code></pre></div>
-<ul><li><strong>A sleep in a coroutine body is not a yield.</strong> The run waits as a whole, the caller of <code>next()</code> included, and the coroutine is still running meanwhile: another <code>next()</code> on the same handle raises <code>Coroutine is already running</code>.</li><li><strong>A sleep under native code blocks.</strong> A run suspends only where script alone is on the way down from the host. A sleep reached through a host function&#x27;s callback, a destructor, a signal receiver, an include or import&#x27;s file, <code>hot_reload_migrate</code>, or a builtin&#x27;s callback (a <code>sort</code> comparator, a <code>filter</code> predicate) blocks as it would in an <code>execute()</code>. The run reports one warning the first time: <code>sleep blocks here: a run suspends only where no host callback, destructor, signal receiver, include, import or hot_reload_migrate is running</code>.</li><li><strong>The checker</strong> warns of a <code>sleep</code> written in a destructor (<code>'sleep' in a destructor blocks: a run never suspends inside a destructor</code>) or in <code>hot_reload_migrate</code>. It refuses one in a <code>parallel_for</code> body or a lambda handed to <code>parallel_transform</code> or <code>parallel_reduce</code> (<code>'sleep' cannot be called in a parallel body</code>).</li><li><strong>Hot reload reaches a waiting run.</strong> A frame that is waiting finishes the body it started; every call made after a reload runs the new definitions, so <code>while (true) { step(); sleep(0.1); }</code> picks up a reloaded <code>step()</code> at its next turn.</li><li><strong>The budget covers each stretch.</strong> Every resume is a host entry of its own with a fresh execution budget, and time asleep never counts against it. <code>time::execute_elapsed()</code> counts from the start of the run, its time asleep included.</li><li>A script may define its own <code>sleep</code>: a program-scope function of that name replaces the builtin, as it would <code>print</code>.</li></ul><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/07-classes.html"><span>&larr; previous</span>Classes</a><a class="next" rel="next" href="../guide/09-containers-strings.html"><span>next &rarr;</span>Containers &amp; Strings</a></nav></article>
+<ul><li><strong>A sleep in a coroutine body is not a yield.</strong> The whole run waits, the caller of <code>next()</code> included, and the coroutine counts as running meanwhile: another <code>next()</code> on the same handle raises <code>Coroutine is already running</code>.</li><li><strong>A sleep under native code blocks</strong>, as under <code>execute()</code>, and the run warns once: <code>sleep blocks here: a run suspends only where no host callback, destructor, signal receiver, include, import or hot_reload_migrate is running</code>. A builtin&#x27;s callback (a <code>sort</code> comparator, a <code>filter</code> predicate) counts as a host callback.</li><li><strong>The checker</strong> warns of a <code>sleep</code> written in a destructor (<code>'sleep' in a destructor blocks: a run never suspends inside a destructor</code>) or in <code>hot_reload_migrate</code>, and refuses one in a <code>parallel_for</code> body or a lambda handed to <code>parallel_transform</code> or <code>parallel_reduce</code>.</li><li><strong>Hot reload reaches a waiting run.</strong> A waiting frame finishes the body it started, and every call made after a reload runs the new definitions.</li><li><strong>The budget covers each stretch.</strong> Every resume is a host entry with a fresh execution budget, and time asleep never counts against it. <code>time::execute_elapsed()</code> counts from the start of the run, time asleep included.</li></ul><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/07-classes.html"><span>&larr; previous</span>Classes</a><a class="next" rel="next" href="../guide/09-containers-strings.html"><span>next &rarr;</span>Containers &amp; Strings</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

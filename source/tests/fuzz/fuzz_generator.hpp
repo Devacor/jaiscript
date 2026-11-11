@@ -67,7 +67,7 @@ namespace jai::fuzz {
 		bool has_op_plus = false;
 		bool has_op_lt = false;
 		std::string coroutine_method;                     // own or inherited (empty = none)
-		std::string typed_int_field;                      // declared-int field (typed writes convert)
+		std::string typed_int_field;                      // declared-int field (typed writes take cast floats)
 	};
 
 	enum class band_mode { sometimes, always, never };
@@ -324,7 +324,11 @@ namespace jai::fuzz {
 		}
 		std::string param_type(unsigned kinds) {
 			if (rng_.chance(40)) { switch (rng_.below(3)) { case 0: return ""; case 1: return "var "; default: return "auto "; } }
-			if ((kinds & ~(K_NUM | K_B)) == 0) { static constexpr const char* const t[] = {"int ", "float ", "string "}; return t[rng_.below(3)]; }
+			if ((kinds & ~(K_NUM | K_B)) == 0) {
+				static constexpr const char* const t[] = {"int ", "float ", "string "};
+				const char* const drawn = t[rng_.below(3)];
+				return (kinds & K_F) && drawn == t[0] ? t[1] : drawn;   // an int parameter takes no float element
+			}
 			return "string ";
 		}
 		std::string callee(const std::vector<operand>& a, bool& returns) {
@@ -1157,7 +1161,7 @@ namespace jai::fuzz {
 			}
 
 			// Coroutine method: yields this-fields across suspensions, sometimes with a
-			// float final return (typed conversion) or a field mutation mid-flight
+			// cast float final return or a field mutation mid-flight
 			if (rng_.chance(30)) {
 				std::string cm = fresh("cog");
 				ci.coroutine_method = cm;
@@ -1165,7 +1169,7 @@ namespace jai::fuzz {
 				lines_.push_back("yield " + first_int_field + ";");
 				if (rng_.chance(50)) lines_.push_back(first_int_field + " = " + first_int_field + " + 1;");
 				lines_.push_back("yield " + first_int_field + " + " + std::to_string(rng_.range(1, 5)) + ";");
-				if (rng_.chance(30)) lines_.push_back("return " + float_literal() + ";");
+				if (rng_.chance(30)) lines_.push_back("return cast<int>(" + float_literal() + ");");
 				else lines_.push_back("return " + first_int_field + ";");
 				lines_.push_back("}");
 			}
@@ -1428,8 +1432,8 @@ namespace jai::fuzz {
 				}
 			}
 			if (rng_.chance(70)) {
-				// typed final return, sometimes a float needing conversion (spicy)
-				if (rng_.chance(25)) lines_.push_back("return " + float_literal() + ";");
+				// typed final return, sometimes a cast float
+				if (rng_.chance(25)) lines_.push_back("return cast<int>(" + float_literal() + ");");
 				else lines_.push_back("return " + acc + " * 2;");
 			}
 			lines_.push_back("}");
@@ -1914,11 +1918,11 @@ namespace jai::fuzz {
 					}
 					return;
 				}
-				case 5: { // typed-field converting writes (int field: float assigns/compounds truncate)
+				case 5: { // typed-field writes (int field: cast float assigns/compounds)
 					if (ci.typed_int_field.empty()) { break; }
 					switch (rng_.below(3)) {
-						case 0: lines_.push_back(o->name + "." + ci.typed_int_field + " = " + float_literal() + ";"); break;
-						case 1: lines_.push_back(o->name + "." + ci.typed_int_field + " += " + float_literal() + ";"); break;
+						case 0: lines_.push_back(o->name + "." + ci.typed_int_field + " = cast<int>(" + float_literal() + ");"); break;
+						case 1: lines_.push_back(o->name + "." + ci.typed_int_field + " += cast<int>(" + float_literal() + ");"); break;
 						default: lines_.push_back(o->name + "." + ci.typed_int_field + " %= " + std::to_string(rng_.range(2, 7)) + ";"); break;
 					}
 					lines_.push_back("print(" + o->name + "." + ci.typed_int_field + ");");

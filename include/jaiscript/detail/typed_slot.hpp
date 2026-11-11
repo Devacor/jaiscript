@@ -128,8 +128,7 @@ namespace jai::detail {
                                 break;
                             }
                         } else if (param.type->base_type == src ||
-                                   (src == script_value_type::jai_int_type && param.type->base_type == script_value_type::jai_float_type) ||
-                                   (src == script_value_type::jai_float_type && param.type->base_type == script_value_type::jai_int_type)) {
+                                   (src == script_value_type::jai_int_type && param.type->base_type == script_value_type::jai_float_type)) {
                             matching = true;
                             break;
                         }

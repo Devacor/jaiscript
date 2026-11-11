@@ -19,6 +19,8 @@ SITE = pathlib.Path(__file__).resolve().parent.parent / "site"
 
 VERSION = "0.5 beta"
 REPO = "https://github.com/Devacor/jaiscript"
+SITE_URL = "https://jaiscript.com/"
+NOT_FOUND = "404.html"   # Apache serves it for any missing path, so its chrome links from the site root
 
 FONTS = (
     '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
@@ -117,6 +119,10 @@ EMBEDDING = [
      "Every way into a project in full: CMake, Visual Studio and MSBuild, Xcode and an installed package, with the sources, flags and defines each needs, one file or per file, and Debug and Release notes."),
     ("19-jai-spider.html", "jai_spider: a Web Application Host",
      "jai_spider serves a JaiScript program over HTTP/1.1: the handler the app hands to spider::spin, Request and a Router in script, spider::Response shared with the spider:: client, SQLite bound as a class, cookie sessions, static files, and modules that reload on the request after they are saved."),
+    ("20-foundry.html", "Foundry: Testing a Host",
+     "Foundry is the test framework JaiScript's own suite is written in, one header and one runner source file: suites, checks, the runner's flags, and a test executable for a project of your own."),
+    ("21-visual-studio.html", "Visual Studio, Step by Step",
+     "From a fresh Windows install to a C++ program that runs a script: install Visual Studio's C++ workload, then add JaiScript to a Console App project or open a CMake folder, with the errors a missed step gives and their fixes."),
 ]
 
 LANGUAGE_BRIDGES = [
@@ -151,6 +157,19 @@ CODE_MIGRATIONS = [
 
 BRIDGES = LANGUAGE_BRIDGES + CODE_MIGRATIONS
 
+REFERENCE = [
+    ("rules.html", "Language Rules",
+     "Operators, keywords, the type-conversion table, cast, extern, the checker attributes, include and import, and the language's contractual rules, one per row."),
+    ("errors.html", "Errors and Diagnostics",
+     "How to read a static listing and a run-time error, the error kinds, and the catalogue of every error text with when it is raised and how to fix it."),
+    ("library.html", "Library Reference",
+     "Builtin methods of arrays, maps, strings and smart pointers, the library namespaces at a glance, and the lookup tables for formatting, binary data, regular expressions, JSON, reflection, web and random numbers."),
+    ("host.html", "Host and Runner Reference",
+     "The engine API by task, the host-side tables of the embedding chapters, the command-line runner and its host API, performance rules of thumb, and the repository's documents."),
+    ("api.html", "Full API Signatures",
+     "Full callable signatures, defaults, return types, effects and availability for builtins, the standard library and standalone runner."),
+]
+
 SECTION_INDEX_DESC = {
     "tour/index.html":
         "Ten minutes, one small game: value semantics, the strict checker, a swarm, coroutines, hot reload and parallel_for, every line run on both backends.",
@@ -159,20 +178,24 @@ SECTION_INDEX_DESC = {
     "guide/index.html":
         "Twenty chapters covering the whole core language, the opt-in web:: library, random numbers and crypto, HTML templates and a terminal game - every standalone sample runs on both backends, with the output it prints.",
     "embedding/index.html":
-        "Nineteen chapters on hosting JaiScript in a C++ engine: binding classes, choosing a backend, safety rails, hot reload, shipping, editor support, host math types, a thread pool for host work, and a web application host.",
+        "Twenty chapters on hosting JaiScript in a C++ engine: binding classes, choosing a backend, safety rails, hot reload, shipping, editor support, host math types, a thread pool for host work, a web application host, and a test framework.",
     "examples/index.html":
         "Complete, playable programs written in JaiScript - a raycast shooter, a dungeon crawler, a demoscene reel, an online RPG and a DOOM port - and what each one proves.",
+    "play/index.html":
+        "Write JaiScript and run it in the page, or play GLOOM, GRUBWELL and the demo reel: the JaiScript engine compiled to WebAssembly runs the scripts.",
     "reference/index.html":
-        "Quick-lookup tables distilled from the guide and embedding chapters: operators, types, conversions, the host API, and rules of thumb.",
+        "The lookup pages: language rules, the error catalogue, the library, the host and runner API, and full signatures.",
     "index.html":
         "An embedded scripting language for C++ engines: C++-flavored syntax, script classes with hot reload, coroutines, and gradual typing.",
     "stability.html":
         "What is settled in the language and the embedding API, and what a 0.x release may still change before 1.0.",
+    NOT_FOUND:
+        "No page lives at this address. Start from the tour, the guide or the reference, or search the docs.",
 }
 
 SECTION_TITLE = {"tour": "The Ten-Minute Tour", "bridges": "Bridges",
                  "guide": "The Language Guide", "embedding": "Embedding &amp; Engine Guide",
-                 "examples": "The Example Games", "reference": "Reference"}
+                 "examples": "The Example Games", "play": "Play in the Browser", "reference": "Reference"}
 
 # ---------------------------------------------------------------- chrome parts
 
@@ -181,7 +204,20 @@ def attr(text):
     return text.replace('"', "&quot;")
 
 
-def head(title, desc, root):
+def canonical(rel):
+    """The one address a page is indexed under; build_sitemap.py lists the same."""
+    return SITE_URL if rel == "index.html" else SITE_URL + rel
+
+
+FOLD_SIDEBAR = (
+    '<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;\n'
+    'var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>'
+)
+
+
+def head(title, desc, root, rel):
+    address = ('<meta name="robots" content="noindex">' if rel == NOT_FOUND
+               else '<link rel="canonical" href="%s">\n<meta property="og:url" content="%s">' % (canonical(rel), canonical(rel)))
     return "\n".join([
         "<head>",
         '<meta charset="utf-8">',
@@ -194,8 +230,15 @@ def head(title, desc, root):
         '<meta property="og:site_name" content="JaiScript docs">',
         '<meta property="og:title" content="%s">' % attr(title),
         '<meta property="og:description" content="%s">' % attr(desc),
-        '<meta name="twitter:card" content="summary">',
+        '<meta property="og:image" content="%sassets/og-card.png">' % SITE_URL,
+        '<meta property="og:image:width" content="1200">',
+        '<meta property="og:image:height" content="630">',
+        '<meta name="twitter:card" content="summary_large_image">',
+        '<meta name="twitter:image" content="%sassets/og-card.png">' % SITE_URL,
+        address,
+        '<link rel="icon" href="%sfavicon.ico" sizes="32x32">' % root,
         '<link rel="icon" href="%sassets/favicon.svg" type="image/svg+xml">' % root,
+        '<link rel="apple-touch-icon" href="%sassets/apple-touch-icon.png">' % root,
         FONTS,
         '<link rel="stylesheet" href="%sassets/style.css">' % root,
         THEME_BOOTSTRAP,
@@ -215,12 +258,19 @@ def header(section, root):
         '<span class="brand-sub">docs</span></a>' % root,
         '<nav class="site-nav" aria-label="Sections">'
         + nav("tour", "Tour") + nav("bridges", "Bridges") + nav("guide", "Guide") + nav("embedding", "Embedding")
-        + nav("examples", "Examples") + nav("reference", "Reference") + "</nav>",
+        + nav("examples", "Examples") + nav("play", "Play") + nav("reference", "Reference") + "</nav>",
         '<div class="header-tools">',
         '<div class="search" role="search"><input id="search-box" type="search" '
         'placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" '
         'aria-controls="search-results" aria-expanded="false" aria-autocomplete="list">'
         '<div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>',
+        '<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub">'
+        '<svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 '
+        '3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28'
+        '-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31'
+        '-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44'
+        ' 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46'
+        '.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>',
         '<button id="theme-toggle" type="button" aria-label="Switch to light theme" '
         'title="Switch to light theme">&#9681;</button>',
         "</div>",
@@ -240,34 +290,39 @@ def chapter_items(section, chapters, current, root):
     return "".join(items)
 
 
-def chapter_box(label, items, first_number=1):
+def chapter_box(label, chapters, items, current, first_number=1):
+    """current, when it is one of chapters, shows in the summary: all a folded box (a narrow page) says of where it is."""
     counter = "" if first_number == 1 else ' style="counter-reset: ch %d"' % (first_number - 1)
-    return ('<details class="sidebar-box" open><summary class="sidebar-title">%s</summary>'
-            '<ol class="chapter-list"%s>%s</ol></details>' % (label, counter, items))
+    here = "".join('<span class="sidebar-current">%s</span>' % title for name, title, _ in chapters if name == current)
+    return ('<details class="sidebar-box" open><summary class="sidebar-title">%s%s</summary>'
+            '<ol class="chapter-list"%s>%s</ol></details>' % (label, here, counter, items))
 
 
 def chapter_sidebar(section, chapters, current, root):
     if section == "bridges":
-        boxes = (chapter_box("Language Bridges", chapter_items(section, LANGUAGE_BRIDGES, current, root))
-                 + chapter_box("Code Migrations", chapter_items(section, CODE_MIGRATIONS, current, root),
-                               len(LANGUAGE_BRIDGES) + 1))
+        boxes = (chapter_box("Language Bridges", LANGUAGE_BRIDGES,
+                             chapter_items(section, LANGUAGE_BRIDGES, current, root), current)
+                 + chapter_box("Code Migrations", CODE_MIGRATIONS,
+                               chapter_items(section, CODE_MIGRATIONS, current, root), current, len(LANGUAGE_BRIDGES) + 1))
     else:
-        label = {"guide": "Guide", "embedding": "Embedding"}[section]
-        boxes = chapter_box(label, chapter_items(section, chapters, current, root))
-    return '<aside class="sidebar" aria-label="Chapters">%s</aside>' % boxes
+        label = {"guide": "Guide", "embedding": "Embedding", "reference": "Reference"}[section]
+        boxes = chapter_box(label, chapters, chapter_items(section, chapters, current, root), current)
+    if section == "reference":
+        boxes = boxes.replace('data-page-toc', 'data-page-toc data-toc-h3')
+    return '<aside class="sidebar" aria-label="Chapters">%s</aside>\n%s' % (boxes, FOLD_SIDEBAR)
 
 
 def page_sidebar(with_h3):
     flag = " data-toc-h3" if with_h3 else ""
     return ('<aside class="sidebar" aria-label="On this page">'
             '<details class="sidebar-box" open><summary class="sidebar-title">On this page</summary>'
-            '<ol class="page-toc" data-page-toc%s></ol></details></aside>' % flag)
+            '<ol class="page-toc" data-page-toc%s></ol></details></aside>\n%s' % (flag, FOLD_SIDEBAR))
 
 
 def footer(root):
     return "\n".join([
         '<footer class="site-footer">',
-        '<p>JaiScript %s &middot; <a href="%s/blob/master/LICENSE">MIT license</a> &middot; '
+        '<p>JaiScript %s &middot; <a href="%s/blob/main/LICENSE">MIT license</a> &middot; '
         '<a href="%s">source</a> &middot; <a href="%s/issues">report a docs bug</a></p>'
         % (VERSION, REPO, REPO, REPO),
         '<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>',
@@ -280,7 +335,7 @@ def footer(root):
 
 
 SECTION_CRUMB = {"tour": "Tour", "bridges": "Bridges", "guide": "Guide", "embedding": "Embedding",
-                 "examples": "Examples", "reference": "Reference"}
+                 "examples": "Examples", "play": "Play", "reference": "Reference"}
 
 
 def crumbs(rel, section, root):
@@ -296,7 +351,7 @@ def crumbs(rel, section, root):
     else:
         parts.append('<a href="index.html">%s</a>' % SECTION_CRUMB[section])
         number = re.match(r"(\d+)-", name)
-        parts.append(number.group(1) if number else "API" if name == "api.html" else name)
+        parts.append(number.group(1) if number else dict((n, t) for n, t, _ in REFERENCE).get(name, name))
     return ('<nav class="crumbs" aria-label="Breadcrumb">%s</nav>'
             % '<span class="sep" aria-hidden="true">/</span>'.join(parts))
 
@@ -324,6 +379,7 @@ def build_pages():
 
     pages.append(("index.html", None, "", SECTION_INDEX_DESC["index.html"], "", ""))
     pages.append(("stability.html", None, "", SECTION_INDEX_DESC["stability.html"], page_sidebar(True), ""))
+    pages.append((NOT_FOUND, None, "/", SECTION_INDEX_DESC[NOT_FOUND], "", ""))
 
     pages.append(("tour/index.html", "tour", "../", SECTION_INDEX_DESC["tour/index.html"], page_sidebar(True),
                   prevnext(None, ("../guide/01-hello.html", "next &middot; the guide", GUIDE[0][1]))))
@@ -373,13 +429,18 @@ def build_pages():
                            ("../reference/index.html", "next &middot; reference",
                             SECTION_TITLE["reference"]))))
 
+    pages.append(("play/index.html", "play", "../", SECTION_INDEX_DESC["play/index.html"], "", ""))
+
+    reference_index = ("../reference/index.html", "reference", SECTION_TITLE["reference"])
     pages.append(("reference/index.html", "reference", "../",
-                  SECTION_INDEX_DESC["reference/index.html"], page_sidebar(True),
-                  prevnext(("../examples/index.html", "previous &middot; examples",
-                            SECTION_TITLE["examples"]), None)))
-    pages.append(("reference/api.html", "reference", "../",
-                  "Full callable signatures, defaults, return types, effects and availability for builtins, the standard library and standalone runner.",
-                  page_sidebar(False), ""))
+                  SECTION_INDEX_DESC["reference/index.html"], chapter_sidebar("reference", REFERENCE, None, "../"),
+                  prevnext(("../examples/index.html", "previous &middot; examples", SECTION_TITLE["examples"]),
+                           ("../reference/" + REFERENCE[0][0], "next", REFERENCE[0][1]))))
+    for i, (name, title, desc) in enumerate(REFERENCE):
+        prev = reference_index if i == 0 else ("../reference/" + REFERENCE[i - 1][0], "previous", REFERENCE[i - 1][1])
+        nxt = None if i == len(REFERENCE) - 1 else ("../reference/" + REFERENCE[i + 1][0], "next", REFERENCE[i + 1][1])
+        pages.append(("reference/" + name, "reference", "../", desc,
+                      chapter_sidebar("reference", REFERENCE, name, "../"), prevnext(prev, nxt)))
     return pages
 
 
@@ -413,7 +474,7 @@ def rewrite(src, rel, section, root, desc, sidebar, nav):
     else:
         body = PREVNEXT_RE.sub("", body)
 
-    out = (prologue + head(title, desc, root) + "\n<body>\n" + header(section, root)
+    out = (prologue + head(title, desc, root, rel) + "\n<body>\n" + header(section, root)
            + '\n<div class="layout">\n' + sidebar
            + '\n<main class="content" id="main" tabindex="-1">' + crumbs(rel, section, root) + body
            + "</main>\n</div>\n"

@@ -1,11 +1,14 @@
 // MUSIC — the soundtrack is procedural synthwave, and the scenes hear it. Each scene
 // has a cue: its bars of music composed at boot from the reel's seed and the scene's
-// mood (a key and a progression of lush seventh and added-ninth chords, a drum style
+// mood (a minor key and a progression of seventh and added-ninth chords, a drum style
 // on a vintage drum machine, instruments, an energy curve), with an impact on each of
-// the scene's own big moments: a reverse cymbal swelling over the bar before it, a
-// snare roll, a beat of silence and the drop. The kick pumps the chords (a sidechain
-// duck), the bass pulses in octaves, the arpeggio and the lead echo on the dotted
-// eighth. The score is data: it renders to a Standard MIDI File the runner plays, and
+// the scene's own big moments: a reverse cymbal swelling and the filters opening over
+// the bar before it, a snare roll, a beat of silence and the drop. The kick pumps the
+// chords (a sidechain duck) and a gate chops the pad at the peaks, the bass rolls in
+// sixteenths and walks into each chord change, the arpeggio leans on three, three and
+// two, and it and the lead echo on the dotted eighth. Every third pass through the
+// progression starts from its second half, and brass stabs off the beat when the energy
+// is up. The score is data: it renders to a Standard MIDI File the runner plays, and
 // it answers the scene frame by frame (how hard the kick just landed, which chord is
 // sounding, how much energy the section has), so every scene moves with the music it
 // is played to, with no audio analysis and to the last byte the same on every run.
@@ -22,13 +25,25 @@ var MUSIC_CHORDS = [[0, 4, 7, 11], [0, 3, 7, 10], [0, 4, 7, 14], [0, 3, 7, 14], 
 // the progressions: four chords, each [semitones over the key's tonic, quality]
 var MUSIC_PROGRESSIONS = [
 	[[0, 3], [8, 0], [3, 2], [10, 2]],     // night drive: i(add9) bVImaj7 bIII(add9) bVII(add9)
-	[[0, 2], [7, 2], [9, 1], [5, 0]],      // anthem: I(add9) V(add9) vi7 IVmaj7
-	[[5, 0], [7, 4], [4, 1], [9, 1]],      // city lights: IVmaj7 V7sus4 iii7 vi7
-	[[0, 0], [2, 2], [0, 0], [2, 2]],      // lydian float: Imaj7 II(add9)
+	[[0, 3], [3, 2], [10, 2], [5, 1]],     // outrun: i(add9) bIII(add9) bVII(add9) iv7
+	[[8, 0], [10, 2], [0, 3], [0, 1]],     // neon: bVImaj7 bVII(add9) i(add9) i7
+	[[0, 1], [1, 0], [0, 3], [10, 1]],     // phrygian: i7 bIImaj7 i(add9) bvii7
 	[[0, 3], [10, 2], [8, 0], [10, 4]],    // dark drive: i(add9) bVII(add9) bVImaj7 bVII7sus4
-	[[8, 0], [10, 2], [0, 2], [0, 0]],     // triumph: bVImaj7 bVII(add9) I(add9) Imaj7
-	[[0, 0], [4, 1], [9, 1], [5, 0]]       // sunset: Imaj7 iii7 vi7 IVmaj7
+	[[0, 3], [5, 1], [8, 0], [7, 1]],      // chase: i(add9) iv7 bVImaj7 v7
+	[[0, 1], [5, 5], [10, 2], [8, 0]],     // dorian: i7 IV7 bVII(add9) bVImaj7
+	[[8, 0], [10, 2], [0, 2], [0, 0]]      // triumph: bVImaj7 bVII(add9) I(add9) Imaj7, the minor key turning major
 ];
+// the arpeggio's sixteen steps, as chord tones over two octaves: one row a drum style
+var MUSIC_ARPS = [
+	[0, 2, 4, 2, 1, 3, 5, 3, 0, 2, 4, 6, 5, 3, 4, 2],
+	[0, 1, 2, 3, 4, 3, 2, 1, 0, 1, 2, 4, 5, 4, 2, 1],
+	[0, 1, 2, 3, 4, 3, 2, 1, 0, 1, 2, 4, 5, 4, 2, 1],
+	[0, 1, 2, 3, 4, 3, 2, 1, 0, 1, 2, 4, 5, 4, 2, 1],
+	[0, 4, 2, 4, 1, 4, 2, 4, 0, 5, 3, 5, 1, 5, 3, 5]
+];
+// three, three and two: the sixteenths the arpeggio leans on and the pad's gate opens for
+array<bool> MUSIC_ACCENT = [true, false, false, true, false, false, true, false, true, false, false, true, false, false, true, false];
+array<int> MUSIC_GATE = [127, 118, 44, 127, 118, 44, 127, 44, 127, 118, 44, 127, 118, 44, 127, 44];
 
 // General MIDI drum kits (the GS set on channel 10): the power kit's gated snare, the
 // electronic kit's pads, the 808
@@ -36,7 +51,7 @@ int KIT_POWER = 16;
 int KIT_ELECTRONIC = 24;
 int KIT_808 = 25;
 
-// drum styles: 0 outrun (four on the floor, octave bass), 1 breakbeat, 2 half time, 3 ostinato, 4 driving sixteenths
+// drum styles: 0 outrun (four on the floor, a rolling octave bass), 1 breakbeat, 2 half time, 3 ostinato, 4 driving (a galloping bass)
 class Mood {
 	int prog = 0;        // into MUSIC_PROGRESSIONS
 	int style = 0;
@@ -122,6 +137,8 @@ class Cue {
 	var orch = Lane();     // the orchestra hit on the big hits
 	var swell = Lane();    // a reverse cymbal into each big hit
 	array<int> duck = [];  // the chords' expression per step: the kick's sidechain pump
+	array<int> gate = [];  // the pad's expression per step: the pump, chopped three, three and two at the peaks
+	array<int> bright = [];    // the synths' filter per step: it follows the energy and opens over the bar into a big hit
 	array<float> energy_bar = [];
 	array<int> chord_root = [];    // per bar: the chord's root, a MIDI note in the bass register
 	array<int> chord_q = [];       // per bar: the chord's quality, into MUSIC_CHORDS
@@ -255,7 +272,7 @@ class Cue {
 		var prog = MUSIC_PROGRESSIONS[mood.prog];
 		int steps = bars * 16;
 		for (int k0 = 0; k0 < hit_t.size(); ++k0) {
-			if (hit_level[k0] >= 2) { big_steps.push(itrunc(hit_t[k0] / MUSIC_STEP + 0.5)); }
+			if (hit_level[k0] >= 2) { big_steps.push(math::itrunc(hit_t[k0] / MUSIC_STEP + 0.5)); }
 		}
 		// the energy curve: the title bar is quiet, then the mood's level, a build into each big
 		// hit and a drop on it, easing back down after
@@ -274,8 +291,10 @@ class Cue {
 				energy_bar[hb] = energy_bar[hb] + 0.12 > 1.0 ? 1.0 : energy_bar[hb] + 0.12;
 			}
 		}
+		// every third pass through the progression starts from its second half
 		for (int b2 = 0; b2 < bars; ++b2) {
-			var ch = prog[(b2 / mood.chord_bars) % 4];
+			int pass = b2 / (mood.chord_bars * 4);
+			var ch = prog[(b2 / mood.chord_bars + (pass % 4 == 2 ? 2 : 0)) % 4];
 			int off = ch[0] > 6 ? ch[0] - 12 : ch[0];
 			chord_root.push(mood.root + off);
 			chord_q.push(ch[1]);
@@ -304,18 +323,22 @@ class Cue {
 			int tb = to_big(s);
 			bool gap = tb <= 4;    // the beat of silence before the drop
 			drums(s, st, e, tb);
-			if (e > 0.3 && !gap && !is_big(s)) { bass(s, st, e, croot); }
+			bool turning = (b3 + 1) % mood.chord_bars == 0 && b3 + 1 < bars && chord_root[b3 + 1] != croot;
+			if (e > 0.3 && !gap && !is_big(s)) { bass(s, st, e, croot, turning); }
 			// the pad holds the chord from each chord's first bar
 			if (st == 0 && b3 % mood.chord_bars == 0) {
-				for (int v = 0; v < 4; ++v) { pad_lane.add(s, (v == 0 ? 64 : 56) + itrunc(e * 30.0), croot + 24 + tone(b3, v), 16 * mood.chord_bars); }
+				for (int v = 0; v < 4; ++v) { pad_lane.add(s, (v == 0 ? 64 : 56) + math::itrunc(e * 30.0), croot + 24 + tone(b3, v), 16 * mood.chord_bars); }
 			}
-			// the arpeggio runs the chord up and down in sixteenths once the energy is up
+			// the arpeggio runs the chord over two octaves in sixteenths once the energy is up
 			if (e > 0.5 && !gap) {
-				var pat = mood.style == 4 ? [0, 2, 4, 2, 1, 3, 5, 3] : [0, 1, 2, 3, 4, 3, 2, 1];
-				int n = croot + 24 + tone(b3, pat[st % 8]);
-				int v2 = 60 + (st % 4 == 0 ? 24 : 0) + itrunc(e * 14.0);
+				int n = croot + 24 + tone(b3, MUSIC_ARPS[mood.style][st]);
+				int v2 = 58 + (MUSIC_ACCENT[st] ? 28 : 0) + math::itrunc(e * 14.0);
 				arp_lane.add(s, v2, n, 1);
-				if (st % 4 == 0) { echo.add(s + 3, v2 / 2, n, 1); }
+				if (MUSIC_ACCENT[st]) { echo.add(s + 3, v2 / 2, n, 1); }
+			}
+			// brass off the beat on every other bar of a peak
+			if (e > 0.82 && !gap && tb > 16 && b3 % 2 == 1 && (st == 6 || st == 11) && (mood.style == 0 || mood.style == 4)) {
+				for (int v7 = 0; v7 < 3; ++v7) { stab.add(s, st == 6 ? 88 : 76, croot + 24 + tone(b3, v7), 1); }
 			}
 			// the lead sings the motif at the peaks, a tone higher on every other pass, each note
 			// repeating on the dotted eighth
@@ -334,7 +357,7 @@ class Cue {
 		// the hits: a crash, a low boom, an orchestra hit and brass on the chord, the bass dropping
 		// an octave under it, a reverse cymbal swelling over the bar before
 		for (int k2 = 0; k2 < hit_t.size(); ++k2) {
-			int hs = itrunc(hit_t[k2] / MUSIC_STEP + 0.5);
+			int hs = math::itrunc(hit_t[k2] / MUSIC_STEP + 0.5);
 			if (hs < 0 || hs >= steps) { continue; }
 			int hb3 = hs / 16;
 			int hroot = chord_root[hb3];
@@ -356,6 +379,12 @@ class Cue {
 		sort_lane(bass_lane);
 		sort_lane(stab);
 		sort_lane(echo);
+		// the filters: as open as the section is loud, sweeping from shut to wide over the bar into a big hit
+		for (int s3 = 0; s3 < steps; ++s3) {
+			int tb2 = to_big(s3);
+			float open = tb2 <= 16 ? 0.2 + 0.8 * (16 - tb2) / 16.0 : 0.3 + 0.55 * energy_bar[s3 / 16];
+			bright.push(is_big(s3) ? 127 : math::itrunc(open * 127.0));
+		}
 		// the sidechain: every kick ducks the chords and they swell back over the beat
 		for (int s2 = 0; s2 < steps; ++s2) { duck.push(127); }
 		float depth = 52.0 + mood.energy * 24.0;
@@ -364,32 +393,40 @@ class Cue {
 			for (int j = 0; j < 4; ++j) {
 				int at = kick.at[ki] + j;
 				if (at >= steps) { break; }
-				int v6 = 127 - itrunc(depth * shape[j] * kick.vel[ki] / 127.0);
+				int v6 = 127 - math::itrunc(depth * shape[j] * kick.vel[ki] / 127.0);
 				if (v6 < duck[at]) { duck[at] = v6; }
 			}
+		}
+		for (int s4 = 0; s4 < steps; ++s4) {
+			bool chopped = energy_bar[s4 / 16] > 0.7 && mood.style != 2 && mood.style != 3 && to_big(s4) > 16;
+			gate.push(chopped ? duck[s4] * MUSIC_GATE[s4 % 16] / 127 : duck[s4]);
 		}
 	}
 
 	// the chord's root an octave down, kept at E1 or above where a synth bass still speaks
 	int bass_root(int croot) { return croot - 12 < 28 ? croot : croot - 12; }
 
-	void bass(int s, int st, float e, int croot) {
+	// `turning`: the bar is the chord's last, and the four-on-the-floor styles walk its last two
+	// sixteenths through the fifth and the seventh into the next chord
+	void bass(int s, int st, float e, int croot, bool turning) {
 		int lo = bass_root(croot);
 		int style = mood.style;
-		if (style == 0) {
-			// outrun: the root pumping in eighths, every other one an octave up, sixteenth ghosts at the peaks
-			if (st % 2 == 0) { bass_lane.add(s, st % 4 == 0 ? 114 : 96, lo + (st % 4 == 2 ? 12 : 0), 1); }
-			else if (e > 0.85) { bass_lane.add(s, 66, lo, 1); }
+		if ((style == 0 || style == 4) && turning && st >= 14 && e > 0.6) {
+			bass_lane.add(s, 104, lo + (st == 14 ? 7 : 10), 1);
+		} else if (style == 0) {
+			// outrun: the root rolling in sixteenths, the octave bouncing on every off beat; eighths while the section is low
+			var groove = [116, 72, 100, 80];
+			if (e > 0.6 || st % 2 == 0) { bass_lane.add(s, groove[st % 4], lo + (st % 4 == 2 ? 12 : 0), 1); }
 		} else if (style == 4) {
-			// driving: a rolling sixteenth on the root, the octave on the last of each beat
-			bass_lane.add(s, st % 4 == 0 ? 116 : (st % 2 == 0 ? 92 : 74), lo + (st % 4 == 3 && e > 0.7 ? 12 : 0), 1);
+			// driving: a gallop, an eighth and two sixteenths a beat, the octave on the last at the peaks
+			if (st % 4 != 1) { bass_lane.add(s, st % 4 == 0 ? 118 : (st % 4 == 2 ? 88 : 98), lo + (st % 4 == 3 && e > 0.7 ? 12 : 0), st % 4 == 0 ? 2 : 1); }
 		} else if (style == 1) {
 			if (st == 0 || st == 3 || st == 6 || st == 10 || st == 12 || st == 14) { bass_lane.add(s, st == 0 ? 116 : 94, lo + (st == 6 || st == 14 ? 12 : 0), st == 0 ? 3 : 1); }
 		} else if (style == 2) {
 			if (st == 0 || st == 6 || st == 8 || st == 14) { bass_lane.add(s, st == 0 || st == 8 ? 112 : 88, lo + (st == 14 ? 12 : 0), st == 0 || st == 8 ? 5 : 2); }
 		} else {
 			// ostinato: eighths on the root, the octave on the last of each half bar
-			if (st % 2 == 0) { bass_lane.add(s, 70 + itrunc(e * 36.0) + (st % 8 == 0 ? 10 : 0), lo + (st % 8 == 6 ? 12 : 0), 1); }
+			if (st % 2 == 0) { bass_lane.add(s, 70 + math::itrunc(e * 36.0) + (st % 8 == 0 ? 10 : 0), lo + (st % 8 == 6 ? 12 : 0), 1); }
 		}
 	}
 
@@ -419,11 +456,12 @@ class Cue {
 		}
 		// into a big hit: a snare roll climbing through the last half bar, through the silence
 		if (tb <= 8) { snare.add(s, 64 + (8 - tb) * 8, 38, 1); }
-		// a fill into every fourth bar: the toms falling through the last beat
-		bool fill = tb > 16 && e > 0.5 && (s / 16) % 4 == 3 && st >= 12;
+		// a fill into every fourth bar: the toms falling through the last beat, through the last two into every eighth
+		int from = (s / 16) % 8 == 7 ? 8 : 12;
+		bool fill = tb > 16 && e > 0.5 && (s / 16) % 4 == 3 && st >= from;
 		if (fill) {
-			var toms = [50, 48, 47, 45];
-			snare.add(s, 96 + (st - 12) * 7, toms[st - 12], 1);
+			var toms = [50, 50, 48, 50, 50, 48, 47, 45];
+			snare.add(s, 84 + (st - 8) * 5, toms[st - 8] - (from == 8 && st >= 12 ? 2 : 0), 1);
 		}
 		if (e > 0.3 && !gap) {
 			bool sixteen = style == 4 || e > 0.85;
@@ -462,13 +500,15 @@ class Cue {
 		// channels: 0 bass, 1 pad, 2 arpeggio, 3 lead and the echoes, 4 brass, 5 reverse cymbal, 6 orchestra hit, 9 drums
 		var chans = [0, 1, 2, 3, 4, 5, 6, 9];
 		var programs = [mood.bass, mood.pad, mood.arp, mood.lead, 62, 119, 55, mood.kit];
-		var volumes = [112, 84, 70, 96, 90, 100, 100, 116];
-		var reverb = [16, 84, 72, 76, 64, 90, 80, 64];
+		var volumes = [118, 84, 76, 98, 90, 100, 100, 118];
+		var pans = [64, 64, 88, 46, 76, 64, 64, 64];
+		var reverb = [12, 84, 72, 80, 64, 90, 80, 56];
 		var chorus = [24, 72, 40, 56, 30, 0, 20, 0];
 		for (int c = 0; c < chans.size(); ++c) {
 			int ch = chans[c];
 			m.ev(0, "" + to_char(192 | ch) + to_char(programs[c]));
 			m.ev(0, b3(176 | ch, 7, volumes[c]));
+			m.ev(0, b3(176 | ch, 10, pans[c]));
 			m.ev(0, b3(176 | ch, 91, reverb[c]));
 			m.ev(0, b3(176 | ch, 93, chorus[c]));
 		}
@@ -477,13 +517,23 @@ class Cue {
 		array<int> cursor = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 		int steps = bars * 16;
 		int last_duck = 127;
+		int last_gate = 127;
+		int last_bright = -1;
 		for (int s = 0; s < steps; ++s) {
 			int tick = s * s16;
 			m.flush(tick);
+			if (gate[s] != last_gate) {
+				m.ev(tick, b3(176 | 1, 11, gate[s]));
+				last_gate = gate[s];
+			}
 			if (duck[s] != last_duck) {
-				m.ev(tick, b3(176 | 1, 11, duck[s]));
 				m.ev(tick, b3(176 | 2, 11, duck[s]));
 				last_duck = duck[s];
+			}
+			// the brightness controller on the bass, the pad and the arpeggio
+			if (bright[s] != last_bright) {
+				for (int bc = 0; bc < 3; ++bc) { m.ev(tick, b3(176 | bc, 74, bright[s])); }
+				last_bright = bright[s];
 			}
 			for (int li = 0; li < lanes.size(); ++li) {
 				var& lane = lanes[li];
@@ -561,19 +611,20 @@ class MidiTrack {
 // [progression, drum style, tonic, kit, bass, pad, arpeggio, lead, base energy, bars a chord]
 function music_mood(int idx) -> var {
 	switch (idx) {
-		case 0: return Mood(1, 0, 38, KIT_POWER, 39, 90, 80, 62, 0.74, 2);         // DONUT: D anthem, outrun, synth brass lead
-		case 1: return Mood(0, 4, 40, KIT_ELECTRONIC, 38, 95, 81, 81, 0.85, 1);    // JULIA: E night drive, driving sixteenths
-		case 2: return Mood(3, 2, 41, KIT_808, 38, 89, 98, 82, 0.64, 2);           // LAVALAMP: F lydian float, half time, crystal
-		case 3: return Mood(2, 0, 43, KIT_POWER, 39, 90, 81, 81, 0.76, 2);         // PIPEDREAM: G city lights, outrun saw
-		case 4: return Mood(6, 2, 38, KIT_808, 38, 89, 98, 73, 0.56, 2);           // BOIDS: D sunset, half time, flute
-		case 5: return Mood(4, 4, 36, KIT_ELECTRONIC, 39, 95, 87, 30, 0.82, 1);    // GLOBHUNTER: C dark drive, distortion lead
-		case 6: return Mood(1, 0, 46, KIT_POWER, 39, 50, 81, 62, 0.72, 2);         // CANYONRUN: B flat anthem, synth strings
-		case 7: return Mood(6, 0, 40, KIT_ELECTRONIC, 38, 89, 11, 81, 0.72, 2);    // CHROME: E sunset, vibes arpeggio
-		case 8: return Mood(0, 3, 42, KIT_808, 38, 91, 14, 81, 0.5, 2);            // OSSUARY: F sharp night drive, an ostinato under choir and bells
-		case 9: return Mood(2, 1, 44, KIT_808, 38, 94, 81, 80, 0.72, 2);           // MAELSTROM: A flat city lights, breakbeat
-		case 10: return Mood(5, 0, 45, KIT_POWER, 39, 90, 81, 81, 0.74, 2);        // FINALE: A major triumph, the reel's anthem
+		case 0: return Mood(0, 0, 45, KIT_POWER, 39, 90, 81, 81, 0.76, 2);         // EIGHT: A minor night drive, the reel's theme
+		case 1: return Mood(1, 0, 38, KIT_POWER, 38, 90, 80, 84, 0.78, 2);         // DONUT: D minor outrun, charang lead
+		case 2: return Mood(4, 4, 40, KIT_ELECTRONIC, 38, 95, 81, 81, 0.85, 1);    // JULIA: E minor dark drive, the gallop
+		case 3: return Mood(6, 2, 41, KIT_808, 38, 89, 98, 80, 0.64, 2);           // LAVALAMP: F dorian, half time, crystal
+		case 4: return Mood(5, 0, 43, KIT_POWER, 39, 90, 81, 81, 0.78, 2);         // PIPEDREAM: G minor chase, outrun saw
+		case 5: return Mood(0, 2, 47, KIT_808, 38, 89, 98, 82, 0.58, 2);           // BOIDS: B minor night drive, half time
+		case 6: return Mood(3, 4, 36, KIT_ELECTRONIC, 39, 95, 87, 30, 0.85, 1);    // GLOBHUNTER: C phrygian, distortion lead
+		case 7: return Mood(2, 0, 46, KIT_POWER, 39, 50, 81, 84, 0.76, 2);         // CANYONRUN: B flat minor neon, synth strings
+		case 8: return Mood(1, 0, 42, KIT_ELECTRONIC, 38, 89, 11, 81, 0.72, 2);    // CHROME: F sharp minor outrun, vibes arpeggio
+		case 9: return Mood(3, 3, 37, KIT_808, 38, 91, 14, 81, 0.5, 2);            // OSSUARY: C sharp phrygian, an ostinato under choir and bells
+		case 10: return Mood(4, 1, 44, KIT_808, 38, 94, 81, 80, 0.76, 2);          // MAELSTROM: A flat minor dark drive, breakbeat
+		case 11: return Mood(7, 0, 40, KIT_POWER, 39, 90, 81, 81, 0.82, 2);        // FINALE: E triumph, the send-off
 	}
-	// the cold open: F dark drive, driving sixteenths, starting from silence
+	// the cold open: F minor dark drive, the gallop, starting from silence
 	var result = Mood(4, 4, 41, KIT_ELECTRONIC, 39, 95, 81, 81, 0.82, 1);
 	result.cut_crash = false;
 	return result;

@@ -52,17 +52,17 @@ public:
         });
 
         // Regression: the interpreter's continuation-replay path skipped the typed-return
-        // conversion on the coroutine's FINAL return (2.5 leaked out as float; vm converts)
+        // conversion on the coroutine's FINAL return (the value leaked out unconverted; vm converts)
         test("coroutine_final_typed_return_converts", [this]() {
             auto engine = make_engine();
             engine->execute(R"(
-                coroutine int g() { yield 1; return 2.5; }
+                coroutine int g() { yield 1; return true; }
                 var c = g();
                 var first = c.next();
             )");
             auto final_val = engine->execute("c.next();");
             check_true(final_val.is_int());
-            check_eq(static_cast<script_int>(2), final_val.as<script_int>());
+            check_eq(static_cast<script_int>(1), final_val.as<script_int>());
         });
 
         // Regression: end-of-execute reset_environment_pool() reset(nullptr)'d the suspended
@@ -314,7 +314,7 @@ public:
                         yield this.x;
                         x = x + 5;
                         yield x;
-                        return 2.9;
+                        return true;
                     }
                 }
                 auto c = Counter();
@@ -325,7 +325,7 @@ public:
                 var e = g.next();
                 to_string(a) + "|" + to_string(b) + "|" + to_string(d) + "|" +
                     type_of(e) + ":" + to_string(e) + "|" + to_string(g.done()) + "|" + to_string(c.x)
-            )", "1|10|15|int:2|true|15", "this-field reads/writes across suspensions + typed final return + done()"},
+            )", "1|10|15|int:1|true|15", "this-field reads/writes across suspensions + typed final return + done()"},
                 {R"(
                 class Gen {
                     int n = 3;
@@ -492,7 +492,7 @@ public:
             }
             for (const char* head : heads) {
                 for (bool use_vm : {false, true}) {
-                    check_eq(std::string("int:2"), run(use_vm, std::string(head) + " { yield 1; return 2.5; }\nauto h = gen(); h.next(); var r = h.next(); type_of(r) + \":\" + to_string(r)"),
+                    check_eq(std::string("int:1"), run(use_vm, std::string(head) + " { yield 1; return true; }\nauto h = gen(); h.next(); var r = h.next(); type_of(r) + \":\" + to_string(r)"),
                         std::string(head) + (use_vm ? " vm" : " interp") + ": the completion value converts to int");
                 }
             }
@@ -747,11 +747,11 @@ public:
 
         test("decl_spellings_free", [this, both_drained]() {
             const std::string drive = "auto h = g(); drain(h) + \"#\" + to_string(h.done())";
-            both_drained("coroutine int g() { yield 1; return 2.9; }\n" + drive, "1|2#true", "coroutine int g()");
-            both_drained("coroutine function g() -> auto { yield 1; return 2.9; }\n" + drive, "1|2.9#true", "coroutine function g() -> auto");
-            both_drained("coroutine function g() { yield 1; return 2.9; }\n" + drive, "1|2.9#true", "coroutine function g()");
-            both_drained("coroutine var g() { yield 1; return 2.9; }\n" + drive, "1|2.9#true", "coroutine var g()");
-            both_drained("coroutine auto g() { yield 1; return 2.9; }\n" + drive, "1|2.9#true", "coroutine auto g()");
+            both_drained("coroutine int g() { yield 1; return true; }\n" + drive, "1|1#true", "coroutine int g()");
+            both_drained("coroutine function g() -> auto { yield 1; return true; }\n" + drive, "1|true#true", "coroutine function g() -> auto");
+            both_drained("coroutine function g() { yield 1; return true; }\n" + drive, "1|true#true", "coroutine function g()");
+            both_drained("coroutine var g() { yield 1; return true; }\n" + drive, "1|true#true", "coroutine var g()");
+            both_drained("coroutine auto g() { yield 1; return true; }\n" + drive, "1|true#true", "coroutine auto g()");
             both_drained("coroutine string g() { yield \"1\"; return \"2\"; }\n" + drive, "1|2#true", "coroutine string g()");
             both_drained("coroutine void g() { yield; yield; }\n" + drive, "null|null|null#true", "coroutine void g()");
         });
@@ -759,27 +759,27 @@ public:
         test("decl_spellings_free_arrow_only", [this, both_drained]() {
             // `coroutine name() -> T` (no leading type, no `function`): landing with the coroutine syntax pass
             const std::string drive = "auto h = g(); drain(h) + \"#\" + to_string(h.done())";
-            both_drained("coroutine g() -> int { yield 1; return 2.9; }\n" + drive, "1|2#true", "coroutine g() -> int");
-            both_drained("coroutine g() -> auto { yield 1; return 2.9; }\n" + drive, "1|2.9#true", "coroutine g() -> auto");
+            both_drained("coroutine g() -> int { yield 1; return true; }\n" + drive, "1|1#true", "coroutine g() -> int");
+            both_drained("coroutine g() -> auto { yield 1; return true; }\n" + drive, "1|true#true", "coroutine g() -> auto");
             both_drained("coroutine g() -> string { yield \"1\"; return \"2\"; }\n" + drive, "1|2#true", "coroutine g() -> string");
         });
 
         test("decl_spellings_methods", [this, both_drained]() {
             const std::string drive = "auto c = C(); auto h = c.g(); drain(h) + \"#\" + to_string(h.done()) + \"#\" + to_string(c.v)";
-            both_drained("class C { int v = 3; coroutine int g() { yield v; v = 4; return 2.9; } }\n" + drive, "3|2#true#4", "coroutine int g() method");
-            both_drained("class C { int v = 3; coroutine function g() -> auto { yield v; v = 4; return 2.9; } }\n" + drive, "3|2.9#true#4", "coroutine function g() -> auto method");
-            both_drained("class C { int v = 3; coroutine function g() { yield v; v = 4; return 2.9; } }\n" + drive, "3|2.9#true#4", "coroutine function g() method");
-            both_drained("class C { int v = 3; coroutine var g() { yield v; v = 4; return 2.9; } }\n" + drive, "3|2.9#true#4", "coroutine var g() method");
-            both_drained("class C { int v = 3; coroutine auto g() { yield v; v = 4; return 2.9; } }\n" + drive, "3|2.9#true#4", "coroutine auto g() method");
+            both_drained("class C { int v = 3; coroutine int g() { yield v; v = 4; return true; } }\n" + drive, "3|1#true#4", "coroutine int g() method");
+            both_drained("class C { int v = 3; coroutine function g() -> auto { yield v; v = 4; return true; } }\n" + drive, "3|true#true#4", "coroutine function g() -> auto method");
+            both_drained("class C { int v = 3; coroutine function g() { yield v; v = 4; return true; } }\n" + drive, "3|true#true#4", "coroutine function g() method");
+            both_drained("class C { int v = 3; coroutine var g() { yield v; v = 4; return true; } }\n" + drive, "3|true#true#4", "coroutine var g() method");
+            both_drained("class C { int v = 3; coroutine auto g() { yield v; v = 4; return true; } }\n" + drive, "3|true#true#4", "coroutine auto g() method");
             both_drained("class C { int v = 3; coroutine void g() { yield; v = 4; } }\n" + drive, "null|null#true#4", "coroutine void g() method");
-            both_drained("class B { int v = 3; } class C : B { coroutine int g() { yield v; v = 4; return 2.9; } }\n" + drive, "3|2#true#4", "coroutine method over an inherited field");
-            both_drained("class B { int v = 3; coroutine int g() { yield v; return 1; } } class C : B { coroutine override int g() { yield v; v = 4; return 2.9; } }\n" + drive, "3|2#true#4", "coroutine override int g() method");
+            both_drained("class B { int v = 3; } class C : B { coroutine int g() { yield v; v = 4; return true; } }\n" + drive, "3|1#true#4", "coroutine method over an inherited field");
+            both_drained("class B { int v = 3; coroutine int g() { yield v; return 1; } } class C : B { coroutine override int g() { yield v; v = 4; return true; } }\n" + drive, "3|1#true#4", "coroutine override int g() method");
         });
 
         test("decl_spellings_methods_arrow_only", [this, both_drained]() {
             const std::string drive = "auto c = C(); auto h = c.g(); drain(h) + \"#\" + to_string(h.done()) + \"#\" + to_string(c.v)";
-            both_drained("class C { int v = 3; coroutine g() -> int { yield v; v = 4; return 2.9; } }\n" + drive, "3|2#true#4", "coroutine g() -> int method");
-            both_drained("class C { int v = 3; coroutine g() -> auto { yield v; v = 4; return 2.9; } }\n" + drive, "3|2.9#true#4", "coroutine g() -> auto method");
+            both_drained("class C { int v = 3; coroutine g() -> int { yield v; v = 4; return true; } }\n" + drive, "3|1#true#4", "coroutine g() -> int method");
+            both_drained("class C { int v = 3; coroutine g() -> auto { yield v; v = 4; return true; } }\n" + drive, "3|true#true#4", "coroutine g() -> auto method");
         });
 
         // A yield with no resume value evaluates to null; every expression position must
@@ -870,8 +870,10 @@ public:
         });
 
         test("typed_completion_values", [this, both_drained]() {
-            both_drained("coroutine int g() { yield 1.5; return 2.7; }\nauto h = g(); var a = h.next(); var b = h.next(); type_of(a) + \":\" + to_string(a) + \"|\" + type_of(b) + \":\" + to_string(b)",
-                "int:1|int:2", "the yields and the completion value convert to the declared type");
+            both_drained("coroutine float g() { yield 1; return 2; }\nauto h = g(); var a = h.next(); var b = h.next(); type_of(a) + \":\" + to_string(a) + \"|\" + type_of(b) + \":\" + to_string(b)",
+                "float:1.0|float:2.0", "the yields and the completion value convert to the declared type");
+            both_drained("coroutine int g() { yield 1; var f = 2.7; return f; }\nauto h = g(); h.next(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t + \"|\" + to_string(h.done())",
+                "Cannot return float from 'g' (declared -> int)|true", "a float never completes an int coroutine");
             both_drained("coroutine string g() { yield \"a\"; var n = 2; return n; }\nauto h = g(); h.next(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t",
                 "Cannot return int from 'g' (declared -> string)", "a string completion takes text only");
             both_drained("coroutine int g() { yield 1; var x = \"s\"; return x; }\nauto h = g(); h.next(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t + \"|\" + to_string(h.done())",
@@ -882,13 +884,13 @@ public:
 
         test("yields_take_the_declared_type", [this, both_drained]() {
             // a yield hands out the declared type like a return: the slot table converts, a mismatch raises the yield's text
-            both_drained("coroutine int g() { yield 2.9; yield true; return 0; }\nauto h = g(); var a = h.next(); var b = h.next(); type_of(a) + \":\" + to_string(a) + \"|\" + type_of(b) + \":\" + to_string(b)",
-                "int:2|int:1", "a float and a bool convert into int");
+            both_drained("coroutine int g() { yield true; var f = 2.9; yield f; return 0; }\nauto h = g(); var a = h.next(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } type_of(a) + \":\" + to_string(a) + \"|\" + t",
+                "int:1|Cannot yield float from 'g' (declared -> int)", "a bool converts into int, a float never does");
             both_drained("coroutine string g() { yield 1; return \"x\"; }\nauto h = g(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t",
                 "Cannot yield int from 'g' (declared -> string)", "an int never converts into string");
             both_drained("coroutine float g() { yield 1; yield 2; return 0.0; }\nstring s = \"\"; for (auto v : g()) { s += type_of(v); } s",
                 "floatfloat", "a range-for drive sees the converted values");
-            both_drained("coroutine int g() { yield \"s\"; yield 2.9; return 0; }\nauto h = g(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t + \"|\" + to_string(h.done())",
+            both_drained("coroutine int g() { yield \"s\"; yield 2; return 0; }\nauto h = g(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t + \"|\" + to_string(h.done())",
                 "Cannot yield string from 'g' (declared -> int)|true", "a mismatch raises at the resume; the handle is done");
             both_drained("coroutine int g() { var s = \"s\"; try { yield s; } catch (e) { yield 7; } return 0; }\nauto h = g(); drain(h)",
                 "7|0", "a catch around the yield sees its failure");
@@ -1501,9 +1503,9 @@ public:
             check_both("coroutine int g() { yield 1; yield 2; return 3; }\nauto h = g(); int v = 0; string s = \"\"; "
                        "while (h.advance(v)) { s += to_string(v) + \",\"; } s + to_string(h.result()) + \"|\" + to_string(h.result())",
                        "1,2,3|3", "after the advance that finished the body, as often as asked");
-            check_both("coroutine int g() { yield 1; return 2.9; }\nauto h = g(); var a = h.next(); var b = h.next(); "
+            check_both("coroutine int g() { yield 1; return true; }\nauto h = g(); var a = h.next(); var b = h.next(); "
                        "to_string(a) + \"|\" + to_string(b) + \"|\" + to_string(h.result()) + \"|\" + to_string(h.done())",
-                       "1|2|2|true", "after the next() that finished the body: the same converted value");
+                       "1|1|1|true", "after the next() that finished the body: the same converted value");
             check_both("coroutine int g() { yield 1; }\nauto h = g(); for (auto v : h) { } to_string(h.result())",
                        "null", "a body that returns nothing gives null, here after a range-for");
             check_both("coroutine int g() { yield 1; return 5; }\nauto h = g(); string t = \"\"; try { h.result(); } catch (e) { t = to_string(e); } "

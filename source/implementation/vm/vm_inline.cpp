@@ -310,7 +310,7 @@ script_value_type value_kind(const expression* e, const inline_context& c) {
 		const K a = value_kind(t->then_expression.get(), c);
 		return a == value_kind(t->else_expression.get(), c) ? a : K::jai_null_type;
 	}
-	case node_type::cast_expr: { auto* k = static_cast<const cast_expr*>(e); return !k->by_reference && scalar_type(k->target.get()) ? k->target->base_type : K::jai_null_type; }
+	case node_type::cast_expr: { auto* k = static_cast<const cast_expr*>(e); return !k->by_reference && !k->instance_test && scalar_type(k->target.get()) ? k->target->base_type : K::jai_null_type; }
 	default: return K::jai_null_type;
 	}
 }
@@ -371,7 +371,7 @@ script_value_type kind_of(const expression* e, const F& slot_kind, const call_ex
 		const K a = kind_of(t->then_expression.get(), slot_kind, replace, replace_kind);
 		return a == kind_of(t->else_expression.get(), slot_kind, replace, replace_kind) ? a : K::jai_null_type;
 	}
-	case node_type::cast_expr: { auto* k = static_cast<const cast_expr*>(e); return !k->by_reference && scalar_type(k->target.get()) ? k->target->base_type : K::jai_null_type; }
+	case node_type::cast_expr: { auto* k = static_cast<const cast_expr*>(e); return !k->by_reference && !k->instance_test && scalar_type(k->target.get()) ? k->target->base_type : K::jai_null_type; }
 	case node_type::call_expr: return e == replace ? replace_kind : K::jai_null_type;
 	default: return K::jai_null_type;
 	}
@@ -643,6 +643,7 @@ expression_ptr clone_expr(const expression_ptr& e, inline_context& c) {
 		auto o = clone_expr(m->object, c);
 		if (!c.ok) return nullptr;
 		auto n = c.make<member_expr>(m->location, o, m->member, m->member_id, m->is_arrow, m->is_static);
+		n->on_caught = m->on_caught;
 		n->null_safe = m->null_safe; n->getter_id = m->getter_id; n->enum_constant = m->enum_constant; n->call_result_discarded = m->call_result_discarded;
 		return n;
 	}
@@ -656,7 +657,9 @@ expression_ptr clone_expr(const expression_ptr& e, inline_context& c) {
 		auto* k = static_cast<const cast_expr*>(e.get());
 		auto o = clone_expr(k->operand, c);
 		if (!c.ok) return nullptr;
-		return c.make<cast_expr>(k->location, k->target, k->by_reference, o);
+		auto made = c.make<cast_expr>(k->location, k->target, k->by_reference, o);
+		made->instance_test = k->instance_test;
+		return made;
 	}
 	case node_type::call_expr: {
 		auto* ce = static_cast<const call_expr*>(e.get());
@@ -801,7 +804,9 @@ statement_ptr clone_stmt(const statement_ptr& s, inline_context& c, bool final_p
 		statement_ptr body = clone_stmt(fs->body, c, false);
 		--c.loop_depth;
 		if (!c.ok) return nullptr;
-		return c.make<for_stmt>(fs->location, init, cond, upd, body);
+		auto loop = c.make<for_stmt>(fs->location, init, cond, upd, body);
+		loop->fresh_binding = fs->fresh_binding;
+		return loop;
 	}
 	case node_type::while_stmt: {
 		auto* ws = static_cast<const while_stmt*>(s.get());
@@ -982,6 +987,13 @@ const char* vm_compiler::inline_eligible(const call_expr* call, const function_d
 				const auto* identifier = static_cast<const identifier_expr*>(a);
 				if (identifier->global_qualified) return "a reference argument spelled ::name";
 				if (identifier->slot_index == SIZE_MAX) return "a reference argument that is not a local";   // a global, a field or a method name binds through the caller's rules
+				if (p.ref_store_unproven) {   // a float store a variable that is not a float may refuse: the refusal names the parameter
+					const type_info* held = nullptr;
+					if (frame && identifier->slot_index < frame->size()) { held = (*frame)[identifier->slot_index]; }
+					else if (auto found = callable_.slot_types.find(static_cast<uint32_t>(identifier->slot_index)); found != callable_.slot_types.end()) { held = found->second; }
+					if (held && held->is_reference()) { held = held->element_type().get(); }
+					if (!held || held->base_type != script_value_type::jai_float_type) return "a reference parameter whose float store its variable may refuse";
+				}
 				if (p.type && !any_type(p.type.get()) && p.type->type_name != "auto") {
 					// the alias names the caller's variable in the parameter's place, skipping the bind's admission and the parameter's
 					// declared type at the stores: only a variable statically of that type (a local declared it, a
@@ -1005,6 +1017,7 @@ const char* vm_compiler::inline_eligible(const call_expr* call, const function_d
 				const auto declared = callable_.slot_types.find(static_cast<uint32_t>(id->slot_index));
 				if (declared == callable_.slot_types.end() || !declared->second || declared->second->is_reference() || declared->second->base_type != script_value_type::jai_array_type) return "a reference argument that may not be an lvalue";
 				if (i < captures.size() && captures[i] != 0) return "an element a later argument may move";   // the call binds it where it is evaluated
+				if (p.ref_store_unproven) return "a reference parameter whose float store its element may refuse";
 				continue;
 			}
 			return "a reference argument that is not a name or an element";

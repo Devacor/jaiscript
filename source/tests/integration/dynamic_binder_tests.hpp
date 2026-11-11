@@ -7,6 +7,8 @@
 #include <jaiscript/properties/macros.hpp>
 #include <jaiscript/properties/property_serialization.hpp>
 #include <jaiscript/stdlib/stdlib.hpp>
+#include <jaiscript/detail/engine_access.hpp>
+#include <jaiscript/core/registrar.hpp>
 #include <map>
 #include <memory>
 #include <string>
@@ -53,6 +55,37 @@ struct PlainCopy {
 }
 
 namespace jai::foundry::tests {
+
+struct binder_plane;
+struct binder_hangar {
+    std::shared_ptr<binder_plane> plane;
+    int64_t bays = 3;
+    int64_t bay_count() const { return bays; }
+};
+struct binder_plane {
+    std::shared_ptr<binder_hangar> home;
+    int64_t seats = 2;
+};
+struct binder_listed_plane;
+struct binder_listed_hangar {
+    std::shared_ptr<binder_listed_plane> plane;
+    int64_t bays = 3;
+};
+struct binder_listed_plane {
+    std::shared_ptr<binder_listed_hangar> home;
+    int64_t seats = 2;
+};
+// Registrars apply in script-name order: the hangar's, which names the plane, runs first
+struct binder_registrar_context {};
+inline registrar<binder_listed_hangar, binder_registrar_context> binder_listed_hangar_registrar("AaRegistrarHangar", [](dynamic_binder<binder_listed_hangar>& builder, const binder_registrar_context&) {
+    builder.property("plane", &binder_listed_hangar::plane).property("bays", &binder_listed_hangar::bays);
+});
+inline registrar<binder_listed_plane, binder_registrar_context> binder_listed_plane_registrar("ZzRegistrarPlane", [](dynamic_binder<binder_listed_plane>& builder, const binder_registrar_context&) {
+    builder.property("home", &binder_listed_plane::home).property("seats", &binder_listed_plane::seats);
+});
+struct binder_chain_root { int64_t depth = 0; };
+struct binder_chain_middle : binder_chain_root {};
+struct binder_chain_leaf : binder_chain_middle {};
 
 // Test classes for binding
 class DynamicBinderPoint {
@@ -2452,6 +2485,113 @@ public:
             check_near(1.0, eng->execute("shape.base_val();").as<double>(), 0.0001);
             eng->add_global("shape2", eng->make_object(std::make_shared<derived_shape>()));
             check_near(1.0, eng->execute("shape2.base_val();").as<double>(), 0.0001);
+        });
+        test("mutual_references_register_in_either_order", [this]() {
+            const char* script = "var h = Hangar(); var p = Plane(); p.home = h; h.plane = p; p.home.bays + h.plane.seats;";
+            auto first = make_engine();
+            dynamic_binder<binder_hangar>(*first, "Hangar").property("plane", &binder_hangar::plane).property("bays", &binder_hangar::bays);
+            dynamic_binder<binder_plane>(*first, "Plane").property("home", &binder_plane::home).property("seats", &binder_plane::seats);
+            check_eq((int64_t)5, first->execute(script).as_int());
+            check_eq((size_t)1, detail::engine_access::binding_settle_count(*first));
+
+            auto second = make_engine();
+            dynamic_binder<binder_plane>(*second, "Plane").property("home", &binder_plane::home).property("seats", &binder_plane::seats);
+            dynamic_binder<binder_hangar>(*second, "Hangar").property("plane", &binder_hangar::plane).property("bays", &binder_hangar::bays);
+            check_eq((int64_t)5, second->execute(script).as_int());
+        });
+
+        test("registrars_that_name_each_other_bind_in_name_order", [this]() {
+            auto eng = make_engine();
+            bind_registrar(*eng, binder_registrar_context{});
+            check_eq((int64_t)5, eng->execute("var h = AaRegistrarHangar(); var p = ZzRegistrarPlane(); p.home = h; h.plane = p; p.home.bays + h.plane.seats;").as_int());
+        });
+
+        // An engine with nothing pending never enters the settle path: the gate is one flag test
+        test("settled_bindings_cost_no_gate_work", [this]() {
+            auto eng = make_engine();
+            dynamic_binder<binder_plane>(*eng, "Plane").property("seats", &binder_plane::seats);
+            check_eq((int64_t)2, eng->execute("Plane().seats;").as_int());
+            auto bite = eng->jaibite("Plane().seats + 1;");
+            check_eq((int64_t)3, eng->execute(bite).as_int());
+            check_false(eng->check("var p = Plane();").has_errors());
+            check_eq((size_t)0, detail::engine_access::binding_settle_count(*eng));
+        });
+
+        test("unresolved_type_is_listed_at_each_load_until_registered", [this]() {
+            auto eng = make_engine();
+            dynamic_binder<binder_hangar>(*eng, "Hangar").property("plane", &binder_hangar::plane).property("bays", &binder_hangar::bays);
+            const std::string expected =
+                "Bindings are incomplete:\n"
+                "  'Hangar.plane' uses the C++ type 'jai::foundry::tests::binder_plane', which is not registered. "
+                "Register it: jai::dynamic_binder<jai::foundry::tests::binder_plane>(engine, \"binder_plane\");";
+            const auto failure_of = [&](auto&& load) {
+                try { load(); } catch (const jai::runtime_error& e) { return std::string(e.what()); }
+                return std::string("no error");
+            };
+            check_eq(expected, failure_of([&]() { eng->execute("1;"); }));
+            check_eq(expected, failure_of([&]() { eng->check("1;"); }));
+            check_eq(expected, failure_of([&]() { eng->jaibite("1;"); }));
+            dynamic_binder<binder_plane>(*eng, "Plane").property("seats", &binder_plane::seats);
+            check_eq((int64_t)3, eng->execute("Hangar().bays;").as_int());
+            const size_t settled = detail::engine_access::binding_settle_count(*eng);
+            check_eq((int64_t)2, eng->execute("Plane().seats;").as_int());
+            check_eq(settled, detail::engine_access::binding_settle_count(*eng));
+        });
+
+        // The root's commit links a leaf that already reaches it through the middle: build() throws that, the implicit
+        // commit records it for the first load
+        test("implicit_commit_failure_is_reported_at_first_load", [this]() {
+            const auto bind_middle_and_leaf = [](engine& eng) {
+                dynamic_binder<binder_chain_middle>(eng, "Middle").base_class<binder_chain_root>();
+                dynamic_binder<binder_chain_leaf>(eng, "Leaf").base_class<binder_chain_middle>().base_class<binder_chain_root>();
+            };
+            auto explicit_engine = make_engine();
+            bind_middle_and_leaf(*explicit_engine);
+            check_throws([&]() { dynamic_binder<binder_chain_root>(*explicit_engine, "Root").build(); });
+
+            auto eng = make_engine();
+            bind_middle_and_leaf(*eng);
+            dynamic_binder<binder_chain_root>(*eng, "Root").property("depth", &binder_chain_root::depth);
+            std::string failure;
+            try { eng->execute("1;"); } catch (const jai::runtime_error& e) { failure = e.what(); }
+            check_eq(std::string("Bindings are incomplete:\n  class 'Root' failed to register: Diamond inheritance detected while resolving a deferred base-class link"), failure);
+            check_eq((int64_t)2, eng->execute("1 + 1;").as_int());
+        });
+
+        test("live_binder_commits_at_first_load_and_keeps_binding", [this]() {
+            auto eng = make_engine();
+            dynamic_binder<binder_hangar> hangar(*eng, "Hangar");
+            hangar.property("bays", &binder_hangar::bays).property("plane", &binder_hangar::plane);
+            dynamic_binder<binder_plane> plane(*eng, "Plane");
+            plane.property("home", &binder_plane::home).property("seats", &binder_plane::seats);
+            check_eq((int64_t)5, eng->execute("var h = Hangar(); var p = Plane(); p.home = h; h.plane = p; p.home.bays + h.plane.seats;").as_int());
+            hangar.method("bay_count", &binder_hangar::bay_count);
+            hangar.build();
+            check_eq((int64_t)3, eng->execute("Hangar().bay_count();").as_int());
+        });
+
+        test("moved_binder_commits_once_from_its_new_home", [this]() {
+            auto eng = make_engine();
+            {
+                dynamic_binder<binder_hangar> first(*eng, "Hangar");
+                first.property("bays", &binder_hangar::bays);
+                dynamic_binder<binder_plane> plane(*eng, "Plane");
+                dynamic_binder<binder_hangar> moved(std::move(first));
+                moved.method("bay_count", &binder_hangar::bay_count);
+                check_eq((int64_t)6, eng->execute("var h = Hangar(); h.bays + h.bay_count();").as_int());
+            }
+            check_eq((int64_t)2, eng->execute("Plane(); 2;").as_int());
+            check_eq((size_t)1, detail::engine_access::binding_settle_count(*eng));
+        });
+
+        test("binder_that_outlives_its_engine_destructs_quietly", [this]() {
+            auto eng = make_engine();
+            auto first = std::make_unique<dynamic_binder<binder_hangar>>(*eng, "Hangar");
+            auto second = std::make_unique<dynamic_binder<binder_plane>>(*eng, "Plane");
+            first->property("bays", &binder_hangar::bays);
+            eng.reset();
+            second.reset();
+            first.reset();
         });
     }
 };

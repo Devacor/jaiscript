@@ -261,7 +261,7 @@ namespace jai::detail {
         script_value method_value{std::monostate{}, nullptr};
         std::shared_ptr<function_decl> resolved;   // null: a host method (or accessor), called with its receiver first
         // By argument count (a bit each, the last for 63 and more): the overloads over a non-const receiver, which run only on
-        // an object the chunk owns, and those marked serial_method(), whose call raises the refusal
+        // an object the chunk owns, and those bound jai::serial, whose call raises the refusal
         uint64_t mutating_arities = 0;
         uint64_t serial_arities = 0;
     };

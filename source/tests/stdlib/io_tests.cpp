@@ -224,6 +224,62 @@ public:
             check(message.find("the format text of 'format' must be a string literal: vformat(fmt, ...) formats a run-time text, and + or a template string joins text") != std::string::npos, message);
             check_eq(std::string("5 units"), engine->execute(R"(int n = 5; format(n, " units");)").as<std::string>());
         });
+
+        // docs/site/guide/01-hello.html: a format text's placeholders and the values after it pair up; a literal's mismatch
+        // fails the load, vformat's run-time text raises the same counts when it runs
+        test("format_placeholders_and_arguments_pair_up", [this]() {
+            auto engine = make_engine();
+            stdlib::register_all(*engine);
+            const auto load_error = [&](const std::string& a_code) {
+                try {
+                    engine->execute(a_code);
+                } catch (const static_check_error& e) {
+                    const std::string what = e.what();
+                    const size_t at = what.find("the format text of ");
+                    return at == std::string::npos ? what : what.substr(at, what.find('\n', at) - at);
+                }
+                return std::string("loaded");
+            };
+            check_eq(std::string("the format text of 'print' has 2 placeholder(s) for 1 argument(s)"), load_error(R"(print("{} {}", 1);)"));
+            check_eq(std::string("the format text of 'print' names {2}, past its 1 argument(s)"), load_error(R"(print("{2}", 1);)"));
+            check_eq(std::string("the format text of 'format' has 1 placeholder(s) for 2 argument(s)"), load_error(R"(string s = format("{} items", 5, 6);)"));
+            check_eq(std::string("the format text of 'format' never uses argument 1 of its 2 argument(s)"), load_error(R"(string s = format("{0} {0}", 5, 6);)"));
+            check_eq(std::string("the format text of 'print' has 2 placeholder(s) for 1 argument(s)"), load_error(R"(print("{:>4} {}", 1, skip_newline);)"));
+            check_eq(std::string("the format text of 'print' has 2 placeholder(s) for 1 argument(s)"), load_error(R"(function f(var a) { print("{} {}", a); })"));
+            check_eq(std::string("the format text of 'print' has 3 placeholder(s) for 2 argument(s)"), load_error(R"(function f(var a) { print("{} {} {}", 1, a); })"));
+            // a format text alone pairs its placeholders with no values
+            check_eq(std::string("the format text of 'print' has 1 placeholder(s) for 0 argument(s)"), load_error(R"(print("{}");)"));
+            check_eq(std::string("the format text of 'print' has 1 placeholder(s) for 0 argument(s)"), load_error(R"(print("{:>4}", skip_newline);)"));
+            check_eq(std::string("the format text of 'format' names {0}, past its 0 argument(s)"), load_error(R"(string s = format("{0}");)"));
+            check_eq(std::string("{}|{{}}|a {{ b }}|plain\n"), printed_text(*engine, R"(
+                string braces = "{}";
+                print(braces, "|", skip_newline);
+                print("{{}}", skip_newline);
+                print("|a {{ b }}|", skip_newline);
+                print(format("plain"));
+            )"));
+            // a value's place a control may take is the run's to count; text without a placeholder is no format text
+            check_eq(std::string("1 2|1|2 1 2|x = 5|[7]\n"), printed_text(*engine, R"(
+                function show(var v) { print("{}|", v, skip_newline); }
+                print("{} {}|", 1, 2, skip_newline);
+                show(1);
+                print("{1} {0} {1}|", 1, 2, skip_newline);
+                print("x = ", 5, skip_newline);
+                print("|[{:d}]", 7);
+            )"));
+
+            const auto raised = [&](const std::string& a_code) {
+                return engine->execute("string r = \"none\"; try { " + a_code + " } catch (e) { r = e; } r;").as<std::string>();
+            };
+            check_eq(std::string("Format text has 2 placeholder(s) for 1 argument(s)"), raised(R"(string t = "{} {}"; vformat(t, 1);)"));
+            check_eq(std::string("Format text has 1 placeholder(s) for 0 argument(s)"), raised(R"(string t = "{}"; vformat(t);)"));
+            check_eq(std::string("Format text has 1 placeholder(s) for 0 argument(s)"), raised(R"([[warn_mode]] print("{}");)"));
+            check_eq(std::string("Format text has 1 placeholder(s) for 0 argument(s)"), raised(R"([[warn_mode]] string s = format("{}");)"));
+            check_eq(std::string("Format text names {2}, past its 1 argument(s)"), raised(R"(string t = "{2}"; vformat(t, 1);)"));
+            check_eq(std::string("Format text has 1 placeholder(s) for 2 argument(s)"), raised(R"(string t = "{} items"; vformat(t, 5, 6);)"));
+            check_eq(std::string("Format text never uses argument 0 of its 2 argument(s)"), raised(R"(string t = "{1}{1:d}"; vformat(t, 5, 6);)"));
+            check_eq(std::string("Format text has 1 placeholder(s) for 2 argument(s)"), raised(R"(function line(var last) -> string { return format("{}", 1, last); } line(2);)"));
+        });
     }
 };
 

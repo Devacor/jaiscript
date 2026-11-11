@@ -22,7 +22,7 @@ namespace jai {
 		static void add_emit(dynamic_binder<signal_emitter<R(Args...), Sync>>& a_builder) {
 			a_builder.method("emit", [](signal_emitter<R(Args...), Sync>& a_self, Args... a_args) {
 				a_self.emit(std::forward<Args>(a_args)...);
-			});
+			}, serial);   // emit runs other objects' receivers
 		}
 	};
 
@@ -33,20 +33,20 @@ namespace jai {
 	void bind_signal_type(engine& a_engine, const std::string& a_name) {
 		if (!a_engine.is_type_registered(a_name)) {
 			dynamic_binder<signal<Sig, Sync>> builder(a_engine, a_name);
+			// serial: a receiver list other objects' code reads and fires
 			builder.method("connect", [](signal<Sig, Sync>& a_self, const std::string& a_id, script_value a_callback) {
 				if (a_callback.is_string()) {
 					a_self.connect(a_id, a_callback.as_string());
 				} else {
 					a_self.connect(a_id, a_callback);
 				}
-			});
+			}, serial);
 			builder.method("disconnect", [](signal<Sig, Sync>& a_self, const std::string& a_id) {
 				a_self.disconnect(a_id);
-			});
+			}, serial);
 			builder.method("connected", [](signal<Sig, Sync>& a_self, const std::string& a_id) {
 				return a_self.connected(a_id);
 			});
-			builder.serial_method("connect").serial_method("disconnect");   // a receiver list other objects' code reads and fires
 			builder.build();
 		}
 		const std::string emitter_name = a_name + "Emitter";
@@ -58,15 +58,14 @@ namespace jai {
 				} else {
 					a_self.connect(a_id, a_callback);
 				}
-			});
+			}, serial);
 			builder.method("disconnect", [](signal_emitter<Sig, Sync>& a_self, const std::string& a_id) {
 				a_self.disconnect(a_id);
-			});
+			}, serial);
 			builder.method("connected", [](signal_emitter<Sig, Sync>& a_self, const std::string& a_id) {
 				return a_self.connected(a_id);
 			});
 			signal_emit_binder<Sig, Sync>::add_emit(builder);
-			builder.serial_method("connect").serial_method("disconnect").serial_method("emit");   // emit runs other objects' receivers
 			builder.build();
 		}
 	}

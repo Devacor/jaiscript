@@ -30,7 +30,7 @@ void mt_clear_field(int n) {
 string mt_connect(int proto_sent) {
 	string choice = "";
 	for (int i = 0; i < 1500 && TM_PAGE == "connecting" && choice == ""; ++i) {
-		NOW_MS = time::now() * 1000;
+		NOW_MS = cast<int>(time::now() * 1000);
 		int proto = NET_PROTO;
 		NET_PROTO = proto_sent;
 		choice = title_update();
@@ -59,7 +59,7 @@ void mt_join_page(string addr, string port, string name) {
 	title_key("down");
 	TM_NAME = "";
 	mt_type(name);
-	NOW_MS = time::now() * 1000;
+	NOW_MS = cast<int>(time::now() * 1000);
 }
 
 int mt_menu_index(int arg) {
@@ -89,7 +89,7 @@ int run_menutest(string base_dir, int port) {
 	print("menus:");
 	sim_init(5);
 	BOTS = [];
-	NOW_MS = time::now() * 1000;
+	NOW_MS = cast<int>(time::now() * 1000);
 	string ps = to_string(port);
 
 	// ---- hosting from the title: a busy port is reported on the page, then the real one opens
@@ -238,7 +238,7 @@ int run_menutest(string base_dir, int port) {
 	net_host_stop("the host has left the swamp");
 	QUIT = false;
 	for (int i = 0; i < 400 && !QUIT; ++i) {
-		NOW_MS = time::now() * 1000;
+		NOW_MS = cast<int>(time::now() * 1000);
 		net_client_pump();
 		sleep(0.001);
 	}

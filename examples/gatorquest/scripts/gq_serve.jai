@@ -23,7 +23,7 @@ int run_serve() {
 		player_create(b, "Bot " + to_string(b + 1), b);
 		bot_add(b);
 	}
-	int next = time::now() * 1000;
+	int next = cast<int>(time::now() * 1000);
 	int players = net_player_count();
 	int peak = players;
 	int joins = 0;
@@ -32,7 +32,7 @@ int run_serve() {
 	time::stopwatch work;
 	wall.start();
 	while (ticks == 0 || TICK < ticks) {
-		int now = time::now() * 1000;
+		int now = cast<int>(time::now() * 1000);
 		if (now < next) {
 			NET_SRV.pump();
 			sleep(imin(5, next - now) / 1000.0);
@@ -61,7 +61,7 @@ int run_serve() {
 	}
 	net_host_stop("the host is shutting down");
 	if (SAVES_ON) { print("serve: " + save_world_and_chars()); }
-	int work_pct = work.elapsed() * 100 / math::max(wall.elapsed(), 0.001);
+	int work_pct = cast<int>(work.elapsed() * 100 / math::max(wall.elapsed(), 0.001));
 	print(`serve: done after ${TICK} ticks: peak ${peak} players, ${joins} joins, ${leaves} leaves, ${NET_SNAPS_OUT} snapshots, ${NET_BYTES_OUT / 1024} KB sent, host work ${work_pct}% of wall time`);
 	return 0;
 }
@@ -87,7 +87,7 @@ int run_client() {
 	int max_players = 0;
 	array<string> others;
 	for (int f = 0; f < frames && net_session_live(s); ++f) {
-		NOW_MS = time::now() * 1000;
+		NOW_MS = cast<int>(time::now() * 1000);
 		net_session_pump(s);
 		ClientView& v = NCS_VIEW[s];
 		int me = cv_me(v);

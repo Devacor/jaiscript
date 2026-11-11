@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="Control Flow — JaiScript Guide">
 <meta property="og:description" content="if, while, both for forms, a switch that breaks by default, and try/catch/throw that unwinds loops correctly.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/guide/05-control-flow.html">
+<meta property="og:url" content="https://jaiscript.com/guide/05-control-flow.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,210 +33,153 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li class="current"><a href="../guide/05-control-flow.html" aria-current="page">Control Flow</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Control Flow</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li class="current"><a href="../guide/05-control-flow.html" aria-current="page">Control Flow</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>05</nav>
 <article class="chapter"><h1 id="control-flow">Control Flow<a class="hlink" href="#control-flow" aria-label="link">&#8203;</a></h1>
-<p>Everything you expect from C++ control flow, minus its sharpest edge: <code>switch</code> never falls through by accident, and a runaway loop cannot outlive its execution budget. <code>if/else</code>, <code>while</code>, C-style <code>for</code>, range-based <code>for</code>, <code>break</code>/<code>continue</code>, and <code>try/catch/throw</code>. All of it unwinds correctly out of loops and nested frames on both backends.</p>
-<p>As in C++, a <code>break</code> with no loop or <code>switch</code> around it, or a <code>continue</code> with no loop, is a parse error (<code>'break' outside a loop or switch</code>). A function or lambda body leaves nothing it sits in. A <code>{</code> that starts a statement opens a block, nested blocks included. A map literal written there goes in parentheses, except at a unit&#x27;s top level, where <code>{"key": value}</code> is the unit&#x27;s value (a data file an <code>include</code> reads).</p>
-<h2 id="if-while-for">if / while / for<a class="hlink" href="#if-while-for" aria-label="link">&#8203;</a></h2>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto n = 7;
+<p><code>if</code>, <code>while</code>, <code>do</code>, both <code>for</code> loops, <code>switch</code> and <code>try</code>/<code>catch</code>/<code>throw</code> read as they do in C++. Four things differ:</p>
+<ul><li>A <code>switch</code> case ends where the next one begins; <code>fallthrough;</code> continues on purpose.</li><li>Any value can be thrown, <code>catch (Type e)</code> selects by type, and the engine's own run-time errors arrive as an <code>error</code>.</li><li>A mistake the checker can see fails the load, so no <code>catch</code> ever sees it.</li><li>A script that outruns its execution budget ends with a terminal error that no <code>catch</code> sees.</li></ul>
+<h2 id="if-while-for">if, while, for, do<a class="hlink" href="#if-while-for" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto n = 7;
 if (n % 2 == 0) { print("even"); } else { print("odd"); }
-
-auto sum = 0;
-auto i = 1;
-while (i &lt;= 4) { sum += i; i++; }
-print("while sum 1..4 = {}", sum);
-
 auto total = 0;
 for (int j = 0; j &lt; 10; ++j) {
     if (j == 3) { continue; }
     if (j == 6) { break; }
     total += j;
 }
-print("for with continue/break: {}", total);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">odd
-while sum 1..4 = 10
-for with continue/break: 12</code></pre></div>
-<h2 id="do-while">do ... while<a class="hlink" href="#do-while" aria-label="link">&#8203;</a></h2>
-<p><code>do { body } while (cond);</code> runs the body, then tests the condition, as in C++: the body always runs once, <code>continue</code> goes to the condition and <code>break</code> leaves the loop. The condition cannot see the body's locals. <code>do</code> is a keyword only when a <code>{</code> follows it; anywhere else it is an ordinary name (<code>int do = 3;</code>). There is no <code>goto</code>; writing one is an error that points to <code>break</code>, <code>continue</code> and <code>return</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int tries = 0;
+auto i = 1;
+while (i &lt;= 4) { i++; }
+int tries = 0;
 do {
     tries++;
     if (tries == 2) { continue; }      // continue goes to the condition
 } while (tries &lt; 4);
 int once = 0;
 do { once++; } while (false);          // the body runs before the first test
-print(tries, " ", once);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">4 1</code></pre></div>
+print(total, " ", i, " ", tries, " ", once);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">odd
+12 5 4 1</code></pre></div>
+<ul><li><code>break</code> outside a loop or <code>switch</code>, and <code>continue</code> outside a loop, are parse errors (<code>'break' outside a loop or switch</code>). A function or lambda body leaves nothing it sits in.</li><li>A <code>do</code> condition cannot see the body's locals. <code>do</code> is a keyword only before a <code>{</code>; elsewhere it is an ordinary name.</li><li>There is no <code>goto</code>; writing one is an error that points to <code>break</code>, <code>continue</code> and <code>return</code>.</li><li>A plain <code>=</code> as the whole condition of an <code>if</code>, <code>while</code>, <code>do</code> or <code>for</code> warns: <code>assignment used as a condition: write '==' to compare, or '((a = b))' with parentheses of its own to assign</code>. <code>if ((a = next()))</code> is silent.</li><li>A <code>{</code> that starts a statement opens a block, so a map literal written there goes in parentheses. At a file's top level <code>{"key": value}</code> is the file's value (a data file an <code>include</code> reads).</li><li>A C-style <code>for</code> variable that a closure captures by reference is each iteration's own (<a href="06-functions.html#lambdas-and-captures">Lambdas and captures</a>).</li></ul>
 <h2 id="range-based-for">Range-based for<a class="hlink" href="#range-based-for" aria-label="link">&#8203;</a></h2>
-<p>Iterates arrays (elements), maps (<code>kv.first</code> / <code>kv.second</code> pairs, or <code>for (auto [k, v] : m)</code>, see <a href="09-containers-strings.html#maps">Maps</a>), and coroutines (see <a href="../guide/08-coroutines.html#range-for-drives-a-coroutine">Coroutines</a>). A plain <code>auto item</code> is a copy of each element (a <code>shared_ptr</code> element&#x27;s copy is another handle to the same object, as <code>var x = element;</code> is). <code>auto&amp;</code> mutates in place, and the loop variable may name any type (<code>for (shared_ptr&lt;Node&gt; n : nodes)</code>, <code>for (const array&lt;int&gt;&amp; row : grid)</code>). <code>auto&amp;</code> is one of the escape hatches from copy-by-default in <a href="../guide/03-value-semantics.html#escape-hatch-4-range-for-with-auto">Value Semantics</a>.</p>
-<p>A write into a by-value loop variable that nothing reads afterwards fails the load (<code>'x' writes to 'x', a copy of the element that is never read afterwards, so the write is lost; iterate with 'auto&amp; x' to change the element</code>; see <a href="../guide/03-value-semantics.html#lost-writes">Lost writes</a>):</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto items = ["sword", "shield", "potion"];
-for (auto item : items) { print("- {}", item); }
-
+<p><code>for (auto x : c)</code> walks an array's elements, a string's chars, a map's entries (<code>kv.first</code> and <code>kv.second</code>, or <code>for (auto [k, v] : m)</code>; <a href="09-containers-strings.html#maps">Maps</a>) and a coroutine's yields (<a href="08-coroutines.html#range-for-drives-a-coroutine">Coroutines</a>).</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto items = ["sword", "shield"];
+for (auto item : items) { print("- ", item); }       // item is a copy
+for (auto&amp; s : items) { s = s + "!"; }               // auto&amp; is the element itself
 auto scores = {"alice": 3, "bob": 5};
-for (auto kv : scores) { print("{} scored {}", kv.first, kv.second); }
-
-for (auto&amp; s : items) { s = s + "!"; }
-items[0];</code></pre></div>
+for (auto [name, score] : scores) { print(name, " scored ", score); }
+var loose = [true, 2];
+for (int v : loose) { print(v); }                    // int v = element; per element
+print(items);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">- sword
 - shield
-- potion
 alice scored 3
 bob scored 5
-== result: sword!</code></pre></div>
-<p>A typed loop variable takes each element the way its declaration would:</p>
-<ul>
-<li><strong>By value,</strong> <code>for (int v : a)</code> is <code>int v = element;</code> per element. Over <code>var a = [1.5, 2.5]</code> it sees <code>1</code> and <code>2</code>, and an element the conversion table refuses (a string) raises the declaration&#x27;s error.</li>
-<li><strong>By reference,</strong> <code>for (int&amp; v : a)</code> binds only an element that holds an <code>int</code> (a class: the class or a subclass). The checker rejects a mismatch at load when it knows the element type, and a <code>var</code> container is judged element by element.</li>
-<li>An <code>auto</code> variable takes the elements&#x27; static type: over an <code>array&lt;int&gt;</code> it is an <code>int</code>, over a <code>var</code> array (no static element type) it is a <code>var</code>.</li>
-</ul>
+1
+2
+["sword!", "shield!"]</code></pre></div>
+<div class="tablewrap"><table><thead><tr><th>Loop variable</th><th>What it is</th></tr></thead><tbody><tr><td><code>auto x</code></td><td>a copy of each element, with the elements' static type (<code>int</code> over an <code>array&lt;int&gt;</code>, <code>var</code> over a <code>var</code> array). A copy of a <code>shared_ptr</code> element is another handle to the same object.</td></tr><tr><td><code>auto&amp; x</code></td><td>the element itself: writes change the container (<a href="03-value-semantics.html#escape-hatch-4-range-for-with-auto">Value Semantics</a>).</td></tr><tr><td><code>T x</code></td><td><code>T x = element;</code> per element, with that declaration's conversions and errors. Any type may be named: <code>shared_ptr&lt;Node&gt; n</code>, <code>const array&lt;int&gt;&amp; row</code>.</td></tr><tr><td><code>T&amp; x</code></td><td>binds only an element that holds a <code>T</code> (a class: the class or a subclass). A mismatch fails the load when the checker knows the element type, and a <code>var</code> container is judged element by element.</td></tr></tbody></table></div>
+<p>A write into a by-value loop variable that nothing reads afterwards fails the load: <code>'x' writes to 'x', a copy of the element that is never read afterwards, so the write is lost; iterate with 'auto&amp; x' to change the element</code> (<a href="03-value-semantics.html#lost-writes">Lost writes</a>).</p>
 <h2 id="switch-break-by-default-explicit-fallthrough">switch: break by default, explicit <code>fallthrough;</code><a class="hlink" href="#switch-break-by-default-explicit-fallthrough" aria-label="link">&#8203;</a></h2>
-<div class="callout cpp"><p>Unlike C++, a <code>case</code> ends where the next one begins; <code>fallthrough;</code> continues into the next case on purpose.</p></div>
-<p>The classic C footgun is inverted: cases <strong>never</strong> fall through unless you write <code>fallthrough;</code>. Case values can be integers, strings, enum members, or expressions. A case matches when the language&#x27;s <code>==</code> holds: <code>switch (1)</code> matches <code>case 1.0</code>, an instance matches memberwise or through its <code>operator==</code>, and an error that <code>operator==</code> raises leaves the switch. <code>fallthrough;</code> outside a switch is an error.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function describe(weapon) {
+<div class="callout cpp"><p>Unlike C++, a <code>case</code> ends where the next one begins; <code>fallthrough;</code> continues into the next case on purpose. Stacked labels share a body, as in C++.</p></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function describe(weapon) {
     auto damage = 0;
     switch (weapon) {
-        case "sword": damage = 10;
-        case "bow":   damage = 8;
+        case "sword": case "blade":        // two values, one body
+            damage = 10;
+        case "bow": damage = 8;
         case "magic":
             damage = 15;
-            fallthrough;
-        case "enchanted":
-            damage += 5;
-        default:      damage = 1;
+            fallthrough;                   // continue into the next case
+        case "enchanted": {
+            int bonus = 5;                 // a declaration needs the body in braces
+            damage += bonus;
+        }
+        default: damage = 1;
     }
     return damage;
 }
-print("sword: {}", describe("sword"));
-print("magic: {} (fell through into enchanted)", describe("magic"));
-print("enchanted: {}", describe("enchanted"));
-print("fists: {}", describe("fists"));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">sword: 10
-magic: 20 (fell through into enchanted)
-enchanted: 5
-fists: 1</code></pre></div>
-<p>Note <code>enchanted</code> alone gives <code>0 += 5</code> = 5, and no match lands in <code>default</code>. Switches nest, <code>return</code> works from inside a case, and <code>break</code>/<code>continue</code> in a loop-enclosed switch affect the loop, never leak into the switch.</p>
-<p>A case body holds statements, as in C++. A variable declared in a case needs the body in braces, which also keeps the variable to that case:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string order = "heal";
-switch (order) {
-    case "heal": {
-        int amount = 5;
-        print("healed {}", amount);
-    }
-    default: print("nothing");
-}</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">healed 5</code></pre></div>
-<p>Without the braces the declaration is a parse error:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string order = "heal";
-switch (order) {
-    case "heal":
-        int amount = 5;
-        print("healed {}", amount);
-    default: print("nothing");
-}</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: parse failed:
-&lt;script&gt;:4:9: error: a declaration in a case body needs the body in braces: case value: { ... }
-            int amount = 5;
-            ^</code></pre></div>
-<h2 id="try-catch-throw">try / catch / throw<a class="hlink" href="#try-catch-throw" aria-label="link">&#8203;</a></h2>
-<p>Any value can be thrown. <code>catch (e)</code> binds the error, and <code>catch</code> without a variable is allowed. A bare <code>throw;</code> inside a catch re-throws, and one with no active exception raises the catchable <code>Bare throw with no active exception thrown.</code> <code>throw</code> is an expression, so it composes (<code>x &gt; 0 ? x : throw "negative"</code>). Uncaught script throws surface to the C++ host as exceptions (with a captured script stack trace).</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">try {
-    throw "something broke";
-} catch (e) {
-    print("caught: {}", e);
+print(describe("sword"), " ", describe("blade"), " ", describe("magic"), " ", describe("enchanted"), " ", describe("fists"));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">10 10 20 5 1</code></pre></div>
+<ul><li>A case with statements never falls through without <code>fallthrough;</code>. A case with no statements shares the body of the label below it; an empty last label does nothing. <code>fallthrough;</code> outside a switch is an error.</li><li><code>default</code> runs when no case matches, wherever it is written. It shares a body only as the last label: <code>a label that shares a body with 'default' needs 'default' as the last label of the switch</code>.</li><li>A case value is any expression: an integer, a string, an enum member, a call. It matches when the language's <code>==</code> holds, so <code>switch (1)</code> matches <code>case 1.0</code> and an instance matches memberwise or through its <code>operator==</code> (an error that operator raises leaves the switch).</li><li>A declaration in a case body without braces is a parse error: <code>a declaration in a case body needs the body in braces: case value: { ... }</code>.</li><li>Switches nest, and <code>return</code> works inside a case. In a switch inside a loop, <code>break</code> leaves the switch only and <code>continue</code> reaches the loop.</li></ul>
+<h2 id="try-catch-throw">Exceptions: try, catch, throw<a class="hlink" href="#try-catch-throw" aria-label="link">&#8203;</a></h2>
+<p id="typed-catch">Any value can be thrown. A <code>try</code> has any number of <code>catch (Type e)</code> clauses, tried in order, and the first that takes the thrown value runs:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class LoadError { string what = "load"; }
+class MissingFile : LoadError { }
+string handle(var action) {
+    try { action(); }
+    catch (MissingFile e) { return "missing file"; }
+    catch (LoadError e) { return "load error: " + e.what; }
+    catch (int code) { return "code " + to_string(code + 1); }
+    catch (error e) { return e.kind == error_kind::bounds ? "out of range" : "error: " + e; }
+    catch (e) { return "something else: a " + type_of(e); }
+    return "ok";
 }
-
-try { throw 42; } catch (e) { print("thrown values can be any type: {} (e.value + 1 = {})", e, e.value + 1); }
-
-try {
-    try {
-        throw "inner";
-    } catch (e) {
-        print("rethrowing {}", e);
-        throw;
-    }
-} catch (e) {
-    print("outer caught: {}", e);
-}
-
-try { throw "ignored"; } catch { print("catch without a variable"); }
-"done";</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">caught: something broke
-thrown values can be any type: 42 (e.value + 1 = 43)
-rethrowing inner
-outer caught: inner
-catch without a variable
-== result: done</code></pre></div>
-<p>Throws work mid-argument-evaluation, and C++ exceptions interop in both directions. A bound host function, method, operator or property accessor that throws surfaces as a catchable script error with the exception&#x27;s text where it was called. An uncaught script throw reaches the host with its script stack trace attached. Inside a <code>catch</code>, <code>e</code> reads as the error text alone, and when the same error escapes to the host its <code>what()</code> is that same text.</p>
-<p><strong>A caught error is a value that knows where it came from.</strong> <code>e</code> behaves as its message string everywhere: printing it, <code>to_string(e)</code>, <code>e + "..."</code>, <code>e == "text"</code>, a <code>string</code> variable, the string methods. It also answers <code>e.message</code>, <code>e.file</code>, <code>e.line</code>, <code>e.column</code> and <code>e.stack</code>.</p>
-<ul>
-<li><strong>The place and the value.</strong> For a <code>throw</code> the place is the throw itself and <code>e.value</code> is the thrown value, with its type. A thrown object&#x27;s fields also read straight through <code>e</code>, and its message is its class&#x27;s <code>to_string()</code>, as <code>print</code> shows it. For a run-time error the place is the statement that raised it and <code>e.value</code> is <code>null</code>.</li>
-<li><strong>The stack.</strong> The stack is the script call stack at the error as <code>file:line</code> strings, one per frame, innermost first (below: <code>pick</code>&#x27;s line, then the top level&#x27;s). On the VM a bare self tail call (<code>return f(n - 1);</code>) reuses its frame, so a tail recursion leaves one entry where the interpreter lists every level.</li>
-<li><strong>Deep stacks.</strong> A stack deeper than 64 frames lists the innermost 64 and ends with one line <code>... N more frames</code> for the rest, so the trace stays the same size however deep the error starts.</li>
-<li><strong>The cost of counting.</strong> Counting the rest walks the frames beneath the ones shown and stops at a <code>try</code> an earlier count already passed, so a catch and rethrow at every level of a recursion stays linear in its depth. A throw with no such <code>try</code> beneath it pays for the whole depth each time. A <code>try</code> in a loop at the bottom of a deep recursion that has none of its own, or a host catching repeatedly from deep in a script, counts every frame on every throw.</li>
-<li><strong>Copies.</strong> A copy of <code>e</code> answers the same. A new string built from it (<code>e + ""</code>) is just text.</li>
-<li><strong>Lifetime.</strong> The thrown value lives until the handler that caught it exits, by completing, a <code>return</code>, a <code>break</code> or a new throw. It then dies as C++ destroys the exception object. A bare <code>throw;</code> carries it on to the next handler. A copy of <code>e</code> kept past its handler still answers its message, place and stack, and its <code>e.value</code> is <code>null</code>.</li>
-</ul>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int pick(array&lt;int&gt; xs, int i) {
+print(handle(() =&gt; { throw MissingFile(); }));
+print(handle(() =&gt; { throw LoadError(); }));
+print(handle(() =&gt; { throw 41; }));
+print(handle(() =&gt; { auto xs = [1]; xs[4]; }));
+print(handle(() =&gt; { int zero = 0; print(1 / zero); }));
+print(handle(() =&gt; { throw 2.5; }));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">missing file
+load error: load
+code 42
+out of range
+error: Division by zero
+something else: a float</code></pre></div>
+<div class="tablewrap"><table><thead><tr><th>Clause</th><th>Takes</th></tr></thead><tbody><tr><td><code>catch (Class e)</code></td><td>an instance of the class or a subclass</td></tr><tr><td><code>catch (int e)</code>, <code>catch (string e)</code>, <code>catch (array&lt;int&gt; e)</code>, ...</td><td>that builtin kind and no other: an <code>int</code> is not a <code>float</code></td></tr><tr><td><code>catch (error e)</code></td><td>a run-time error the engine raised (a bad index, a division by zero, a failed <code>cast</code>, a type mismatch); nothing a script throws</td></tr><tr><td><code>catch (e)</code>, <code>catch (var e)</code>, <code>catch (auto e)</code>, <code>catch</code></td><td>everything; it comes last (<code>a catch with no type catches everything: it is the last handler of its try</code>)</td></tr></tbody></table></div>
+<ul><li><code>e</code> names the thrown value itself; no copy is made, where C++ copies. <code>&amp;</code> changes nothing, and <code>const</code> makes it read-only.</li><li>With no clause for it, an error goes on to the next <code>try</code> out, from the place that raised it.</li><li>A bare <code>throw;</code> in a handler re-throws the same value; with no active exception it raises the catchable <code>Bare throw with no active exception thrown.</code></li><li><code>throw</code> is an expression: <code>x &gt; 0 ? x : throw "negative"</code>.</li><li>There is no <code>finally</code>: a destructor runs when its scope ends, a throw included.</li><li>An uncaught throw reaches the C++ host as an exception with the script stack trace attached. A bound C++ function, method, operator or accessor that throws surfaces as a catchable script error with the exception's text.</li></ul>
+<h3 id="what-a-catch-can-see">What the caught value carries<a class="hlink" href="#what-a-catch-can-see" aria-label="link">&#8203;</a></h3>
+<p>A run-time error is an <code>error</code>: <code>type_of(e)</code> is <code>"error"</code>, <code>e.kind</code> is its family (<code>error_kind::bounds</code>; the <a href="../reference/errors.html#error-kinds">reference</a> lists them), and <code>e</code> behaves as its message string everywhere: printed, compared (<code>e == "text"</code>), joined (<code>e + "..."</code>), stored in a <code>string</code>, or under the string methods. The same text is the host's <code>what()</code> when the error escapes.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int pick(array&lt;int&gt; xs, int i) {
     return xs[i];
 }
-try {
-    pick([1, 2, 3], 7);
-} catch (e) {
-    print("{} (line {}, value {})", e, e.line, e.value);
-    print("stack depth: {}", e.stack.size());
+try { pick([1, 2, 3], 7); } catch (e) {
+    print(e, " (", e.kind, ", line ", e.line, ", value ", e.value, ", stack ", e.stack.size(), ")");
 }
 class Oops { int code = 7; }
-try { throw Oops(); } catch (e) { print("code {} at line {}", e.code, e.line); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Array index 7 out of bounds for array of size 3 (line 2, value null)
-stack depth: 2
-code 7 at line 11</code></pre></div>
-<h2 id="what-a-catch-can-see">What a catch can see, and what never reaches one<a class="hlink" href="#what-a-catch-can-see" aria-label="link">&#8203;</a></h2>
-<p>The runtime's own errors are ordinary catchable values: a bad index, a division by zero, a failed <code>cast</code>, and a type mismatch the checker could not see coming because the value came out of a <code>var</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto xs = [1, 2, 3];
-try { xs[5]; } catch (e) { print("caught: {}", e); }
-try { print(10 / 0); } catch (e) { print("caught: {}", e); }
-var v = "seven";
-try { int n = v; } catch (e) { print("caught: {}", e); }
-try { cast&lt;char&gt;(300); } catch (e) { print("caught: {}", e); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">caught: Array index 5 out of bounds for array of size 3
-caught: Division by zero
-caught: Cannot initialize &#x27;n&#x27; (declared int) with string
-caught: Cannot cast &#x27;int&#x27; to &#x27;char&#x27;</code></pre></div>
-<p>Write the same mistake with a literal and no <code>catch</code> will ever see it. The checker (always on, strict) reads the whole program before anything runs, so a string literal heading for an <code>int</code> is a <strong>load error</strong>: the program does not start, and the <code>try</code> around it is just text.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">try {
+try { throw Oops(); } catch (e) { print("code ", e.code, " at line ", e.line); }
+try { try { throw 42; } catch (e) { print(type_of(e), " ", e + 1); throw; } } catch { print("rethrown"); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Array index 7 out of bounds for array of size 3 (bounds, line 2, value null, stack 2)
+code 7 at line 8
+int 43
+rethrown</code></pre></div>
+<div class="tablewrap"><table><thead><tr><th>Member</th><th>A run-time error</th><th>A thrown string, array, map or instance</th></tr></thead><tbody><tr><td><code>e.message</code></td><td>the error text</td><td>its display text (an instance's <code>to_string()</code>)</td></tr><tr><td><code>e.value</code></td><td><code>null</code></td><td><code>e</code> itself</td></tr><tr><td><code>e.file</code>, <code>e.line</code>, <code>e.column</code></td><td>the statement that raised it</td><td>the <code>throw</code></td></tr><tr><td><code>e.stack</code></td><td>the script call stack as <code>file:line</code> strings, innermost first</td><td>the same</td></tr></tbody></table></div>
+<ul><li>A thrown number, bool or null carries no place: it answers <code>e.value</code> and <code>e.message</code> only. An instance's own member of one of these names is read first.</li><li>A stack deeper than 64 frames lists the innermost 64, then one line <code>... N more frames</code>. On the VM a bare self tail call (<code>return f(n - 1);</code>) reuses its frame, so a tail recursion shows one entry where the interpreter lists every level.</li><li>Counting the frames beneath the 64 takes time in proportion to the depth: a loop that throws and catches at the bottom of a deep recursion with no <code>try</code> above it counts every frame on every throw, while a catch and rethrow at every level stays linear.</li><li>The thrown value lives until the handler that caught it exits (by completing, a <code>return</code>, a <code>break</code> or a new throw), as a C++ exception object does. A bare <code>throw;</code> carries it on.</li><li>A copy of an error or of a thrown string kept past its handler still answers its message, place and stack, with a null <code>e.value</code>; a new string built from one (<code>e + ""</code>) is plain text. A thrown array, map or instance answers its place only while its handler runs.</li></ul>
+<h3 id="load-errors">What never reaches a catch<a class="hlink" href="#load-errors" aria-label="link">&#8203;</a></h3>
+<p>The checker reads the whole program before anything runs. A mismatch it can see (a literal, a typed variable, a typed return) fails the load, and a <code>try</code> around it changes nothing. A mismatch it cannot see, because the value came through a <code>var</code>, raises where it lands (<code>Cannot initialize 'n' (declared int) with string</code>) and is catchable there (<a href="02-type-ladder.html#when-a-mismatch-is-caught">The Type Ladder</a>, <a href="13-strict-checking.html">Types That Fail Early</a>):</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">try {
     int n = "seven";
 } catch (e) {
     print("never printed");
 }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
-&lt;script&gt;:2:9: error: cannot initialize &#x27;n&#x27; declared &#x27;int&#x27; with &#x27;string&#x27;
-        int n = &quot;seven&quot;;
+&lt;script&gt;:2:9: error: cannot initialize 'n' declared 'int' with 'string'
+        int n = "seven";
             ^</code></pre></div>
-<p>The rule in one line: a mismatch the checker can see (a literal, a typed local, a typed return) fails the load; a mismatch it cannot see (a <code>var</code>-sourced value) raises where it lands and is catchable there. <a href="../guide/02-type-ladder.html#when-a-mismatch-is-caught">The Type Ladder</a> walks through both halves, and <a href="../guide/13-strict-checking.html">Types That Fail Early</a> collects the whole story. The third kind of error (the terminal kind) is next.</p>
-<h2 id="terminal-errors-execution-budget-memory-cap-are-uncatchable-by-design">Terminal errors: execution budget &amp; memory cap are UNCATCHABLE by design<a class="hlink" href="#terminal-errors-execution-budget-memory-cap-are-uncatchable-by-design" aria-label="link">&#8203;</a></h2>
-<p>Every <code>execute()</code>/coroutine <code>next()</code> call has a wall-clock budget: <strong>default 5.0 seconds</strong> (<code>engine::execution_budget(seconds)</code>; <code>0</code> disables). When it trips, the error is <strong>terminal</strong>: script <code>catch</code> handlers are skipped all the way out, so a runaway script can never swallow its own kill signal and livelock the host.</p>
-<div class="codeblock cb-jai" data-budget="1"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">// engine.execution_budget() defaults to 5.0 seconds per execute()
-try {
+<h2 id="terminal-errors-execution-budget-memory-cap-are-uncatchable-by-design">Terminal errors: the execution budget and the memory cap<a class="hlink" href="#terminal-errors-execution-budget-memory-cap-are-uncatchable-by-design" aria-label="link">&#8203;</a></h2>
+<p>Every <code>execute()</code> and every coroutine <code>next()</code> has a wall-clock budget, <strong>5.0 seconds by default</strong> (<code>engine::execution_budget(seconds)</code>; <code>0</code> disables it). An overrun is <strong>terminal</strong>: every <code>catch</code>, typed or not, is skipped all the way out to the host, so a runaway script cannot swallow its own stop.</p>
+<div class="codeblock cb-jai" data-budget="1" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">try {
     while (true) { }
 } catch (e) {
-    print("this never prints: budget errors are TERMINAL, catch is skipped");
+    print("never printed");
 }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">== error: Script execution budget exceeded - raise engine::execution_budget or break up the work</code></pre></div>
-<p>(The catch body did not run. The error went straight to the host.) Trying this from a terminal? The standalone runner lifts the budget by default, so give it one back: <code>jaiscript --budget=1 runaway.jai</code>.</p>
-<p><code>engine::memory_cap(bytes)</code> works alongside it for allocation bombs: the <strong>first</strong> raise is catchable (the growth is denied), but a <strong>second</strong> raise in the same execute is terminal. Both limits re-arm per <code>execute()</code>, and neither can be swallowed from inside a function, lambda, or coroutine. The terminality is the point.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/04-operators.html"><span>&larr; previous</span>Operators &amp; Arithmetic</a><a class="next" rel="next" href="../guide/06-functions.html"><span>next &rarr;</span>Functions &amp; Lambdas</a></nav></article>
+<p>The standalone runner has no budget unless given one: <code>jaiscript --budget=1 runaway.jai</code>.</p>
+<p><code>engine::memory_cap(bytes)</code> bounds allocation the same way. Its first raise in an execute is catchable (the growth is denied), and a second is terminal. Both limits re-arm per <code>execute()</code>, and neither can be swallowed inside a function, lambda or coroutine.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/04-operators.html"><span>&larr; previous</span>Operators &amp; Arithmetic</a><a class="next" rel="next" href="../guide/06-functions.html"><span>next &rarr;</span>Functions &amp; Lambdas</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

@@ -94,7 +94,7 @@ int run_smoke() {
 	time::stopwatch lap;
 	lap.start();
 	sim_init(seed);
-	int gen_ms = lap.delta() * 1000;
+	int gen_ms = cast<int>(lap.delta() * 1000);
 	print(`world: seed ${seed}, ${TILES.size()} tiles in ${WORLD_COUNT} realms, ${MOB_LIVE} mobiles, ${SP_W.size()} spawners, ${GATE_W.size()} gates (gen ${gen_ms} ms)`);
 	BOTS = [];
 	array<string> names = ["Chomps", "Snappy", "Gumbo", "Bayou Bill"];
@@ -121,7 +121,7 @@ int run_smoke() {
 			}
 		}
 	}
-	int run_us = lap.delta() * 1000000;
+	int run_us = cast<int>(lap.delta() * 1000000);
 	print(`ran ${ticks} ticks in ${run_us / 1000} ms (${run_us / imax(1, ticks)} us/tick), ${MOB_LIVE} mobiles alive, kills ${STAT_KILLS}, spawns ${STAT_SPAWNS}`);
 	for (int b = 0; b < bots; ++b) {
 		print_char_summary(b);

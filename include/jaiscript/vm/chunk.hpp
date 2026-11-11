@@ -247,6 +247,7 @@ namespace jai::vm {
             bool by_reference;
             size_t outer_slot = SIZE_MAX;
             bool init = false;   // an init-capture: its value is on the stack under op_closure, in capture order
+            bool weak_instance = false;   // [weak_this]
         };
         std::vector<explicit_capture> captures;
         uint8_t default_capture = 0;                       // lambda_expr::capture_default

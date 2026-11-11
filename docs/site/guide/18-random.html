@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="Random Numbers &amp; Crypto">
 <meta property="og:description" content="The random type: a generator you own, seeded streams that replay bit for bit on every platform, copies and save files for rollback, draws in parallel loops; and crypto:: for secrets: secure random bytes, SHA-2, HMAC and PHP-compatible bcrypt passwords.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/guide/18-random.html">
+<meta property="og:url" content="https://jaiscript.com/guide/18-random.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,152 +33,104 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li class="current"><a href="../guide/18-random.html" aria-current="page">Random Numbers &amp; Crypto</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Random Numbers &amp; Crypto</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li class="current"><a href="../guide/18-random.html" aria-current="page">Random Numbers &amp; Crypto</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>18</nav>
 <article class="chapter"><h1 id="random">Random Numbers &amp; Crypto<a class="hlink" href="#random" aria-label="link">&#8203;</a></h1>
-<p>Randomness is a value you own. A <code>random</code> object holds one generator: you make it, draw from it, copy it, save it and seed it, and nothing else in the program can move it. There is no hidden global stream to reseed by accident, as there is with C&#x27;s <code>rand</code>.</p>
+<p>Randomness is a value you own: a <code>random</code> object holds one generator, and nothing else in the program can move it. There is no hidden global stream, as there is with C&#x27;s <code>rand</code>.</p>
 <ul>
-<li>A seeded generator draws the same numbers on every platform, compiler and backend, which is what replays, tests and rollback netcode need.</li>
-<li>Secrets (tokens, keys, salts, passwords) come from <code>crypto::</code> instead. It reads the operating system&#x27;s secure generator and can never be seeded.</li>
+<li>A seeded <code>random</code> draws the same numbers on every platform, compiler and backend: what replays, tests and rollback netcode need. Unseeded, it starts from 32 bytes of the operating system&#x27;s secure generator, so every run differs.</li>
+<li>A <code>random</code> is a value like <code>int</code>: a copy holds the same state and replays the same draws, so a snapshot is an assignment and a rollback is another.</li>
+<li>Secrets (tokens, keys, salts, passwords) come from <a href="#crypto"><code>crypto::</code></a>, which can never be seeded.</li>
 </ul>
 <h2 id="a-generator-you-own">A generator you own<a class="hlink" href="#a-generator-you-own" aria-label="link">&#8203;</a></h2>
-<p>Declare one with <code>random r;</code> and draw from it. Without a seed it starts from 32 bytes of the operating system&#x27;s secure generator, so every run differs.</p>
-<ul>
-<li><code>next_int(lo, hi)</code> includes both bounds.</li>
-<li><code>next_float()</code> is in [0, 1), and <code>next_float(lo, hi)</code> in [lo, hi).</li>
-<li><code>next_bool()</code> is a fair coin.</li>
-<li><code>pick(values)</code> returns one element.</li>
-<li><code>shuffle(values)</code> shuffles an array in place.</li>
-<li><code>next_bytes(n)</code> returns a string of n bytes.</li>
-</ul>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">random dice;                          // seeded by the operating system: new numbers every run
+<p><code>next_int(lo, hi)</code> includes both bounds. <code>next_float()</code> is in [0, 1) and <code>next_float(lo, hi)</code> in [lo, hi). <code>next_bool()</code> is a fair coin, <code>pick(values)</code> returns one element, <code>shuffle(values)</code> shuffles an array in place and <code>next_bytes(n)</code> returns a string of n bytes (<a href="../reference/api.html#group-random">signatures</a>). An inverted range, a non-finite float bound, an empty <code>pick</code>, a <code>shuffle</code> of a non-array and a negative byte count raise (<a href="../reference/errors.html#err-random-inverted">texts</a>). Under strict checking the constructor and every method are held to their signatures: <code>random r("x");</code>, <code>random r(1, 2);</code> and <code>r.next_int(1)</code> fail the load.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">random dice;                          // seeded by the operating system: new numbers every run
 int roll = dice.next_int(1, 6);
 print(roll &gt;= 1 &amp;&amp; roll &lt;= 6);
 
 random r(2024);                       // seeded: the same numbers every run, on every machine
-print(r.next_int(1, 6), &quot; &quot;, r.next_int(1, 6), &quot; &quot;, r.next_float(), &quot; &quot;, r.next_bool());
-print(r.next_float(-1.0, 1.0));
-array&lt;string&gt; deck = [&quot;ace&quot;, &quot;king&quot;, &quot;queen&quot;, &quot;jack&quot;];
+print(r.next_int(1, 6), " ", r.next_float(), " ", r.next_float(-1.0, 1.0), " ", r.next_bool());
+array&lt;string&gt; deck = ["ace", "king", "queen", "jack"];
 r.shuffle(deck);
-print(deck.join(&quot; &quot;), &quot; / &quot;, r.pick(deck), &quot; / &quot;, r.next_bytes(4).size(), &quot; bytes&quot;);</code></pre></div>
+print(deck.join(" "), " / ", r.pick(deck), " / ", r.next_bytes(4).size(), " bytes");
+try { r.next_int(6, 1); } catch (e) { print(e); }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true
-1 5 0.07205494006296331 false
-0.5473007794378619
-queen jack king ace / king / 4 bytes</code></pre></div>
-<p><strong>Errors.</strong> A bad argument raises:</p>
-<ul>
-<li>An inverted range: <code>random::next_int range is inverted (max &lt; min)</code> (or <code>random::next_float range is inverted (max &lt; min)</code>).</li>
-<li><code>next_float(lo, hi)</code> with an infinite or NaN bound: <code>random::next_float bounds must be finite</code>.</li>
-<li><code>pick</code> of an empty array: <code>random::pick expects a non-empty array</code>.</li>
-<li><code>shuffle</code> of anything but an array: <code>random::shuffle expects an array</code>.</li>
-<li>A negative count: <code>random::next_bytes count cannot be negative</code>.</li>
-</ul>
-<p>Under strict checking the constructor and every method are held to their signatures: <code>random r("x");</code>, <code>random r(1, 2);</code> and <code>r.next_int(1)</code> fail the load.</p>
+1 0.782103772866755 -0.8558901198740734 false
+king queen ace jack / queen / 4 bytes
+random::next_int range is inverted (max &lt; min)</code></pre></div>
 <h2 id="seeds-replays-and-rollback">Seeds, replays and rollback<a class="hlink" href="#seeds-replays-and-rollback" aria-label="link">&#8203;</a></h2>
-<p>A seed fixes the stream. <code>random r(seed);</code>, <code>random r = random(seed);</code> and <code>r.seed(seed)</code> all start the same stream. A float seed converts as every <code>int</code> parameter of a bound function does: toward zero, saturating at the <code>int</code> range, NaN as 0.</p>
-<p>A <code>random</code> is a value like <code>int</code>: a copy holds the same state and replays the same draws, in a variable, a parameter, a field, an array or a map. So a snapshot is an assignment and a rollback is another.</p>
-<p><strong>Arrays of generators.</strong> An array or map literal shares a C++-backed object it names, as it does every bound object, so <code>[r, r]</code> holds <code>r</code> twice. Build an array of generators from calls, <code>[random(1), random(2)]</code>, or with <code>push</code>, which copies.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">random a(7);
+<ul>
+<li><code>random r(seed);</code>, <code>random r = random(seed);</code> and <code>r.seed(seed)</code> all start the same stream. A float seed converts as every <code>int</code> parameter of a bound function does: toward zero, saturating at the <code>int</code> range, NaN as 0.</li>
+<li>Every copy is independent: a variable, a parameter, a field, an array or map element. <code>[r, r]</code>, also as an <code>array&lt;random&gt;</code>, holds two copies of <code>r</code>&#x27;s state, so each element and <code>r</code> itself draw the same next number.</li>
+<li><code>r.state</code> is the generator&#x27;s whole state as 64 lowercase hex digits. Storing one resumes that stream exactly; anything but 64 hex digits, or all zeros, raises <code>random::state expects 64 hex digits, not all zero</code>.</li>
+<li><code>to_json</code>, <code>from_json</code>, <code>to_base64</code> and <code>from_base64</code> carry the state, so a save file restores a generator mid-stream. A host holds the same generator as <code>jai::stdlib::random</code> (<code>&lt;jaiscript/stdlib/random.hpp&gt;</code>), whose <code>save</code> and <code>load</code> write the same <code>state</code> through the C++ archives (<a href="../embedding/08-serialization.html">Serialization</a>).</li>
+</ul>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">random a(7);
 random b = random(7);
 random c(1);
-c.seed(7);                            // restarts c as random(7) would
-print(a.next_int(0, 99), &quot; &quot;, b.next_int(0, 99), &quot; &quot;, c.next_int(0, 99));
+c.seed(7);
+print(a.next_int(0, 99), " ", b.next_int(0, 99), " ", c.next_int(0, 99));
 
-random world(99);
-world.next_int(0, 9);
-random saved = world;                 // a copy holds the same state: a snapshot
-int before = world.next_int(0, 1000);
-world = saved;                        // roll back
-print(before == world.next_int(0, 1000));
+var two = [a, a];                     // two copies of a's state, not a twice
+print(two[0].next_int(0, 99), " ", two[1].next_int(0, 99), " ", a.next_int(0, 99));
 
+random saved = a;                     // a snapshot
+int before = a.next_int(0, 1000);
+a = saved;                            // roll back
 string json = to_json(saved);
-print(json);
-var restored = from_json(json);
-print(type_of(restored), &quot; &quot;, restored.next_int(0, 1000) == before, &quot; &quot;, from_base64(to_base64(saved)).next_int(0, 1000) == before);
-print(saved.state.size(), &quot; &quot;, from_json(json).state == saved.state);</code></pre></div>
+print(before == a.next_int(0, 1000), " ", from_json(json).next_int(0, 1000) == before, " ", from_json(json).state == saved.state);
+print(json);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">70 70 70
-true
-{&quot;$type&quot;:&quot;random&quot;,&quot;$val&quot;:{&quot;state&quot;:&quot;50d88ab272bd2e909f5bc01a3b9bd0bce57076386f4eb91848ae6245647087df&quot;}}
-random true true
-64 true</code></pre></div>
-<p><code>r.state</code> is the generator&#x27;s whole state as 64 lowercase hex digits. Storing one into <code>r.state</code> resumes that stream exactly, and anything but 64 hex digits (or all zeros) raises <code>random::state expects 64 hex digits, not all zero</code>.</p>
-<p><code>to_json</code>, <code>from_json</code>, <code>to_base64</code> and <code>from_base64</code> carry it, so a save file or a rollback snapshot restores the generator mid-stream. A host holds the same generator as <code>jai::stdlib::random</code> (<code>&lt;jaiscript/stdlib/random.hpp&gt;</code>), and its <code>save</code> and <code>load</code> write the same <code>state</code> through the C++ archives.</p>
+27 27 27
+true true true
+{&quot;$type&quot;:&quot;random&quot;,&quot;$val&quot;:{&quot;state&quot;:&quot;3a5859de077bf1a98f5ee2ecf234241c35275021661965d57675391cadf3b9a9&quot;}}</code></pre></div>
 <h3 id="the-algorithm">The algorithm, exactly<a class="hlink" href="#the-algorithm" aria-label="link">&#8203;</a></h3>
-<p>Every formula below is part of the language, so a seed draws the same bits everywhere:</p>
-<div class="tablewrap"><table><thead><tr><th>Step</th><th>Definition</th></tr></thead><tbody><tr><td>generator</td><td>xoshiro256** 1.0 (Blackman and Vigna): four 64-bit words; a draw is <code>rotl(s1 * 5, 7) * 9</code></td></tr><tr><td>seeding</td><td>the words are four successive splitmix64 outputs from the seed: <code>x += 0x9E3779B97F4A7C15</code>, then <code>z = (x ^ (x &gt;&gt; 30)) * 0xBF58476D1CE4E5B9</code>, <code>z = (z ^ (z &gt;&gt; 27)) * 0x94D049BB133111EB</code>, <code>z ^ (z &gt;&gt; 31)</code></td></tr><tr><td><code>next_int(lo, hi)</code></td><td>Lemire&#x27;s method over span = hi &minus; lo + 1 (the high word of draw &times; span, redrawn while the low word falls under (2<sup>64</sup> &minus; span) mod span); the whole <code>int</code> range is one raw draw</td></tr><tr><td><code>next_float()</code></td><td>(draw &gt;&gt; 11) &times; 2<sup>&minus;53</sup></td></tr><tr><td><code>next_float(lo, hi)</code></td><td><code>fma(u, hi &minus; lo, lo)</code> with u = <code>next_float()</code>, one rounding; a result that rounds up to hi is the float just below it</td></tr><tr><td><code>next_bool()</code></td><td>the draw&#x27;s top bit</td></tr><tr><td><code>next_bytes(n)</code></td><td>one draw per 8 bytes, lowest byte first</td></tr><tr><td><code>shuffle</code>, <code>pick</code></td><td>Fisher&ndash;Yates from the last index down, element i swapped with the one at <code>next_int(0, i)</code>; <code>pick</code> takes the element at <code>next_int(0, size &minus; 1)</code></td></tr></tbody></table></div>
+<p>Every formula is part of the language, so a seed draws the same bits everywhere. The reference gives the bit use of <code>next_float()</code>, <code>next_bool()</code> and <code>next_bytes</code>.</p>
+<p>The generator is xoshiro256** 1.0 seeded through splitmix64; <code>next_int(lo, hi)</code> is Lemire&#x27;s method and <code>shuffle</code> is Fisher&ndash;Yates. Each step&#x27;s definition: <a href="../reference/library.html#random-algorithms">random generator algorithm</a>.</p>
 <h2 id="in-parallel-loops">In parallel loops<a class="hlink" href="#in-parallel-loops" aria-label="link">&#8203;</a></h2>
-<p>A parallel loop gives the same numbers on any number of cores. A parallel body can draw from a <code>random</code> it captures, in the body or in the functions, methods and constructors it calls.</p>
-<p><strong>A captured generator.</strong></p>
-<ol>
-<li>The statement takes one draw from the captured generator before any element runs.</li>
-<li>Element i (the chunk, for <code>parallel_reduce</code>) then draws from its own stream, the one splitmix64 seeds from <code>mix(draw ^ mix(i + 0x9E3779B97F4A7C15))</code> (<code>mix</code> being the output step above).</li>
-</ol>
-<p>So the loop gives the same numbers on any number of cores, and afterwards the captured generator has moved exactly one draw for each statement that captured it. The numbers are not the serial loop&#x27;s: a serial loop draws in element order and a parallel one has no order.</p>
-<p><strong>A generator the element owns.</strong> A <code>random</code> an element owns (an <code>array&lt;random&gt;</code> zipped beside the data, or a field of the element&#x27;s class) or one the body makes draws its own stream as usual. So a field drawn in a parallel loop gives the serial loop&#x27;s numbers.</p>
-<p>Each element must own its generator: two elements holding one object are refused before any element runs, with <code>parallel_for: elements 1 and 2 share one &#x27;random&#x27; in field &#x27;brain&#x27; (an element owns the C++ values it holds: give each element its own, or capture one from outside the loop)</code>.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">random loot(5);
-array&lt;int&gt; drops = [0, 0, 0, 0, 0, 0, 0, 0];
-parallel_for (auto&amp; d : drops) { d = loot.next_int(1, 100); }   // the same drops on any number of cores
-print(drops.join(&quot; &quot;));
-print(loot.next_int(1, 100));                                     // the generator moved one draw for the loop
-
-array&lt;random&gt; brains = [random(1), random(2), random(3)];        // one stream per monster
-array&lt;int&gt; hp = [10, 10, 10];
-parallel_for (auto&amp; h, auto&amp; brain : hp, brains) { h -= brain.next_int(1, 6); }
-print(hp.join(&quot; &quot;));
-try { parallel_for (auto&amp; d : drops) { loot.seed(d); } } catch (e) { print(e); }
-
-class Monster { int hp = 10; random brain; }                       // or a field: each monster&#x27;s own generator
-array&lt;Monster&gt; pack = [];
-for (int i = 1; i &lt;= 3; ++i) { Monster m; m.brain.seed(i); pack.push(m); }
-parallel_for (auto&amp; m : pack) { m.hp -= m.brain.next_int(1, 6); }
-print(`${pack[0].hp} ${pack[1].hp} ${pack[2].hp}`);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">51 17 31 91 93 79 47 67
-61
-5 9 5
-parallel_for: random::seed cannot be called on captured &#x27;loot&#x27; in a parallel body (seed before the loop: each element draws its own stream from it) at 11:45
-5 9 5</code></pre></div>
-<p>Reseeding a captured generator is refused before any element runs, and so is shuffling captured state with it (<code>parallel_for: argument passes enclosing state 'deck' by reference (captured reads are read-only)</code>). Any other captured object keeps the captured-object rules of <a href="16-parallel.html">Parallel Loops</a>: its methods that write no part of it run, and one that writes it is refused.</p>
+<p><a href="16-parallel.html#random-numbers">Parallel Loops</a> has the full treatment and the refusals. In short:</p>
+<ul>
+<li><strong>A captured <code>random</code></strong> gives each element its own stream, seeded from one draw the statement takes from the captured generator. The results are the same at every worker count but are <strong>not</strong> the numbers the serial loop would draw, and the generator moves one draw per statement. Reseeding it in the body, or shuffling captured state with it, is refused before any element runs.</li>
+<li><strong>A generator the element owns</strong> (an <code>array&lt;random&gt;</code> zipped beside the data, or a field of the element&#x27;s class) and a seeded one the body makes draw as they would anywhere, so they give the serial loop&#x27;s numbers. Two elements may not hold one generator object.</li>
+<li><strong>An unseeded <code>random q;</code> made in the body and <code>crypto::</code></strong> are admitted and are not reproducible at all.</li>
+</ul>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">random loot(5);
+random serial = loot;
+array&lt;int&gt; drops = [0, 0, 0, 0];
+array&lt;int&gt; in_order = [0, 0, 0, 0];
+for (auto&amp; d : in_order) { d = serial.next_int(1, 100); }
+parallel_for (auto&amp; d : drops) { d = loot.next_int(1, 100); }
+print(drops.join(" "), " / serial: ", in_order.join(" "));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">51 17 31 91 / serial: 29 61 65 83</code></pre></div>
 <h2 id="crypto">crypto:: for secrets<a class="hlink" href="#crypto" aria-label="link">&#8203;</a></h2>
-<p>Anything an attacker must not guess comes from <code>crypto::</code>. Use a seeded <code>random</code> where the same numbers must come back, and <code>crypto::</code> where they must not.</p>
+<p>Use a seeded <code>random</code> where the same numbers must come back, and <code>crypto::</code> where an attacker must not guess them. Nothing here takes a seed: every number drawn from a seed someone learns can be predicted. The reference lists <a href="../reference/api.html#group-crypto">every function</a>; in outline:</p>
 <ul>
-<li><code>crypto::random_bytes(n)</code> returns n bytes from the operating system&#x27;s secure generator (BCryptGenRandom on Windows, getrandom on Linux and Android, arc4random_buf on Apple platforms and the BSDs).</li>
-<li><code>crypto::random_hex(n)</code> writes n of them as 2n hex digits, a ready-made token.</li>
-<li><code>crypto::random_int(lo, hi)</code> is a secure, unbiased int over lo..hi.</li>
+<li><strong>Secure randomness</strong>: <code>crypto::random_bytes(n)</code>, <code>crypto::random_hex(n)</code> (2n hex digits, a ready-made token) and <code>crypto::random_int(lo, hi)</code> read the operating system&#x27;s generator (BCryptGenRandom on Windows, getrandom on Linux and Android, arc4random_buf on Apple platforms and the BSDs).</li>
+<li><strong>Digests</strong>: <code>crypto::sha256(s)</code> and <code>crypto::sha512(s)</code> hash the bytes of <code>s</code> to lowercase hex. <code>crypto::sha1</code> and <code>crypto::md5</code> exist only to read and write formats that name them and protect nothing. <code>crypto::sha256_file(path)</code> streams a file and needs the filesystem privilege.</li>
+<li><strong>MACs</strong>: <code>crypto::hmac_sha256(key, message)</code> and <code>crypto::hmac_sha512</code>. Check one with <code>crypto::equals(a, b)</code>, which takes time that depends only on the length.</li>
+<li>Every digest and MAC has a <code>_bytes</code> twin that returns raw bytes (<code>crypto::sha256_bytes</code>).</li>
+<li>Every function runs in a parallel body except <code>crypto::sha256_file</code> (<code>parallel_for: crypto::sha256_file cannot be called in a parallel body (it reads a file)</code>).</li>
 </ul>
-<p>None of them takes a seed, and none ever will: a seed is a value someone can learn or guess, and every number drawn from it can then be predicted.</p>
-<p><strong>Digests and MACs.</strong></p>
-<ul>
-<li><code>crypto::sha256(s)</code> and <code>crypto::sha512(s)</code> are the FIPS 180-4 digests of the bytes of <code>s</code> (a <code>utf8_string</code>&#x27;s UTF-8 bytes) in lowercase hex.</li>
-<li><code>crypto::sha1</code> and <code>crypto::md5</code> exist only to read and write formats that name them and protect nothing.</li>
-<li>Each has a <code>_bytes</code> twin that returns the raw digest as a byte string (<code>crypto::sha256_bytes</code>, for one).</li>
-<li><code>crypto::sha256_file(path)</code> streams a file through SHA-256. It needs the filesystem privilege and raises <code>read_file</code>&#x27;s <code>Cannot read file '&lt;path&gt;': &lt;reason&gt;</code>.</li>
-<li><code>crypto::hmac_sha256(key, message)</code> and <code>crypto::hmac_sha512</code> are RFC 2104 HMACs (hex, with <code>_bytes</code> twins).</li>
-<li><code>crypto::equals(a, b)</code> compares two strings in time that depends only on their length, the comparison a MAC or token check needs.</li>
-</ul>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(crypto::sha256(&quot;abc&quot;));
-print(crypto::sha512(&quot;abc&quot;).size(), &quot; &quot;, crypto::md5(&quot;abc&quot;), &quot; &quot;, crypto::sha256_bytes(&quot;abc&quot;).size());
-string signature = crypto::hmac_sha256(&quot;server secret&quot;, &quot;user=7&amp;expires=1700000000&quot;);
-print(signature);
-print(crypto::equals(signature, crypto::hmac_sha256(&quot;server secret&quot;, &quot;user=7&amp;expires=1700000000&quot;)));
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(crypto::sha256("abc"), " ", crypto::sha256_bytes("abc").size());
+string signature = crypto::hmac_sha256("server secret", "user=7&amp;expires=1700000000");
+print(crypto::equals(signature, crypto::hmac_sha256("server secret", "user=7&amp;expires=1700000000")));
+print(crypto::random_hex(16).size(), " ", crypto::random_bytes(8).size(), " ", crypto::random_int(1, 6) &lt;= 6);
 
-string token = crypto::random_hex(16);          // 32 hex digits from the operating system
-print(token.size(), &quot; &quot;, crypto::random_bytes(8).size(), &quot; &quot;, crypto::random_int(1, 6) &lt;= 6);
-
-string stored = &quot;$2y$10$.vGA1O9wmRjrwAVXD98HNOgsNpDczlqm3Jq7KnEd1rVAGv3Fykk1a&quot;;   // written by PHP&#x27;s password_hash
-print(crypto::password_verify(&quot;rasmuslerdorf&quot;, stored), &quot; &quot;, crypto::password_verify(&quot;wrong&quot;, stored));
-string mine = crypto::password_hash(&quot;correct horse&quot;, 10);
-print(mine.substr(0, 7), &quot; &quot;, mine.size(), &quot; &quot;, crypto::password_verify(&quot;correct horse&quot;, mine));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
-128 900150983cd24fb0d6963f7d28e17f72 32
-89416909585f136bc7810bac6add16fadd8dc8c6361edba9c4983caf0f5afedf
+string stored = "$2y$10$.vGA1O9wmRjrwAVXD98HNOgsNpDczlqm3Jq7KnEd1rVAGv3Fykk1a";   // written by PHP's password_hash
+print(crypto::password_verify("rasmuslerdorf", stored), " ", crypto::password_verify("wrong", stored));
+string mine = crypto::password_hash("correct horse", 10);
+print(mine.substr(0, 7), " ", mine.size(), " ", crypto::password_verify("correct horse", mine));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad 32
 true
 32 8 true
 true false
@@ -178,20 +138,16 @@ $2y$10$ 60 true</code></pre></div>
 <h3 id="passwords">Passwords<a class="hlink" href="#passwords" aria-label="link">&#8203;</a></h3>
 <p>Passwords hash and verify the way PHP&#x27;s do, so hashes move between the two unchanged.</p>
 <ul>
-<li><code>crypto::password_hash(password)</code> is bcrypt in the form PHP&#x27;s <code>password_hash</code> writes: <code>$2y$</code>, a two-digit cost, 22 characters of a fresh 16-byte salt and 31 of hash, 60 characters in all.</li>
-<li>The cost is 12 unless a second argument gives one from 4 to 31 (<code>crypto::password_hash cost must be 4 to 31</code>). Each step doubles the work, and cost 12 takes about a quarter of a second.</li>
-<li><code>crypto::password_verify(password, hash)</code> checks a <code>$2y$</code>, <code>$2b$</code>, <code>$2a$</code> or <code>$2x$</code> hash (including <code>$2a$</code>&#x27;s countermeasure for the old sign-extension bug, as PHP computes it) and answers false for any other text. So hashes PHP stored in a user table verify unchanged, and one made here verifies in PHP.</li>
+<li><code>crypto::password_hash(password)</code> writes bcrypt as PHP&#x27;s <code>password_hash</code> does: <code>$2y$</code>, a two-digit cost, 22 characters of a fresh 16-byte salt and 31 of hash, 60 characters in all.</li>
+<li>The cost is 12 unless a second argument gives one from 4 to 31. Each step doubles the work; cost 12 takes about a quarter of a second.</li>
+<li><code>crypto::password_verify(password, hash)</code> checks a <code>$2y$</code>, <code>$2b$</code>, <code>$2a$</code> or <code>$2x$</code> hash (with <code>$2a$</code>&#x27;s countermeasure for the old sign-extension bug, as PHP computes it) in constant time, and answers false for any other text.</li>
+<li>As in PHP, only a password&#x27;s first 72 bytes count. A password holding a NUL byte cannot be hashed (bcrypt reads only up to it), and verifying one is false.</li>
 </ul>
-<p>As in PHP, only a password&#x27;s first 72 bytes count: a longer one hashes like its first 72 bytes. A password holding a NUL byte cannot be hashed (<code>crypto::password_hash: the password contains a NUL byte</code>), since bcrypt reads only up to it, and verifying one is false. Both compare the hash in constant time.</p>
-<h3 id="crypto-in-parallel-loops">In parallel loops<a class="hlink" href="#crypto-in-parallel-loops" aria-label="link">&#8203;</a></h3>
-<p>Every <code>crypto::</code> function runs in a parallel body except <code>crypto::sha256_file</code>, which reads a file and is refused before any element runs (<code>parallel_for: crypto::sha256_file cannot be called in a parallel body (it reads a file)</code>). The secure generator is safe on any thread; its numbers are unpredictable in a parallel loop just as in a serial one.</p>
-<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
-<p>The <a href="../reference/api.html#group-random">full signatures</a> list every method of <code>random</code> and every <code>crypto::</code> function; <a href="16-parallel.html">Parallel Loops</a> has the rest of what a parallel body may do, and <a href="../embedding/08-serialization.html">Serialization</a> how a save file carries a generator.</p>
 <nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/17-web.html"><span>&larr; previous</span>The web:: Library</a><a class="next" rel="next" href="../guide/19-templates.html"><span>next &rarr;</span>HTML Templates</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

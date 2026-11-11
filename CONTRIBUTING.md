@@ -166,7 +166,7 @@ Match the surrounding code. Beyond that:
 Two catalogues move with the code:
 
 - **Error texts** are listed in the "Run-time errors" table of the reference
-  ([`docs/site/reference/index.html`](docs/site/reference/index.html#run-time-errors)) and must
+  ([`docs/site/reference/errors.html`](docs/site/reference/errors.html#run-time-errors)) and must
   stay byte-identical across backends. Change a text, update that table, and check the site for
   output blocks that quote it.
 - **The AST format.** A change to what the serializer writes bumps `k_jaibite_version` in

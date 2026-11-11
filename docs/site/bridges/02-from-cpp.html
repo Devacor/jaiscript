@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="From C++ — JaiScript Language Bridges">
 <meta property="og:description" content="C++ beside JaiScript, idiom by idiom: what carries over, what is absent (pointers, templates, const), what is guaranteed (evaluation order, checked overflow, no fallthrough), and a complete program.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/bridges/02-from-cpp.html">
+<meta property="og:url" content="https://jaiscript.com/bridges/02-from-cpp.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,58 +33,479 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li class="current"><a href="../bridges/02-from-cpp.html" aria-current="page">From C++</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges<span class="sidebar-current">From C++</span></summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li class="current"><a href="../bridges/02-from-cpp.html" aria-current="page">From C++</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>02</nav>
 <article class="chapter"><h1 id="from-cpp">From C++<a class="hlink" href="#from-cpp" aria-label="link">&#8203;</a></h1>
-<p class="lead">JaiScript reads like C++ and keeps C++'s semantics as its contract:</p>
-<ul>
-<li>Classes are value types that copy.</li>
-<li>References are declared with <code>&amp;</code>.</li>
-<li>Destructors run when a scope ends.</li>
-<li>Operators overload.</li>
-<li><code>auto</code>, range-<code>for</code>, capture lists, <code>switch</code> and <code>try</code>/<code>catch</code> mean what they mean in C++, with C++17's left-to-right evaluation order.</li>
-</ul>
-<p>What it leaves out is the machinery a script does not need: raw pointers, <code>delete</code>, templates, headers and undefined behavior. <code>const</code> is the narrow C++ form: declarations, parameters and class constants, without const methods or const types.</p>
-<p>Integers are 64-bit, and overflow and division by zero raise errors a <code>catch</code> sees. A <code>switch</code> never falls through by accident, and a static checker reads the whole program before its first statement runs. From JavaScript it borrows <code>var</code> for a dynamic variable and the <code>function</code> keyword.</p>
-<p>This page sets the two languages side by side, then lists the places where a C++ habit gets a different answer. Every JaiScript line on it was run on both backends, and the output under each sample is what they printed.</p>
-<h2 id="side-by-side">Side by side<a class="hlink" href="#side-by-side" aria-label="link">&#8203;</a></h2>
+<p class="lead">JaiScript reads like C++ and keeps C++'s semantics as its contract: classes are values that copy, references are declared with <code>&amp;</code>, destructors run when a scope ends, operators overload, and <code>auto</code>, range-<code>for</code>, capture lists, <code>switch</code> and <code>try</code>/<code>catch</code> mean what they mean in C++.</p>
+<p>It leaves out what a script does not need (raw pointers, <code>delete</code>, templates, headers, undefined behavior), checks the whole program before the first statement runs, and borrows <code>var</code>, <code>function</code> and arrow lambdas from JavaScript. Five ported programs come first, then the tables; <a href="#watch-out">Watch out</a> lists where a C++ habit gets a different answer.</p>
+<h2 id="ported">Ported side by side<a class="hlink" href="#ported" aria-label="link">&#8203;</a></h2>
+<p>Five small C++20 programs and their JaiScript ports. Each pair was run, built with MSVC and on both JaiScript backends, and printed the output shown. Top-level statements stand in for <code>main</code>, <code>array&lt;T&gt;</code> for <code>std::vector&lt;T&gt;</code> and <code>float</code> for <code>double</code>.</p>
+<h3 id="port-a">A value type and its operators<a class="hlink" href="#port-a" aria-label="link">&#8203;</a></h3>
+<div class="tabs" id="port-a-tabs">
+<div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
+<button type="button" role="tab" id="port-a-tab-cpp" aria-controls="port-a-cpp" aria-selected="true">C++</button>
+<button type="button" role="tab" id="port-a-tab-jai" aria-controls="port-a-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="port-a-cpp" role="tabpanel" aria-labelledby="port-a-tab-cpp" tabindex="0">
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;format&gt;
+#include &lt;iostream&gt;
+#include &lt;vector&gt;
+
+struct Vec2 {
+    double x = 0.0;
+    double y = 0.0;
+    Vec2 operator+(const Vec2&amp; o) const { return {x + o.x, y + o.y}; }
+    Vec2 operator*(double s) const { return {x * s, y * s}; }
+    Vec2&amp; operator+=(const Vec2&amp; o) { x += o.x; y += o.y; return *this; }
+    bool operator==(const Vec2&amp; o) const = default;
+};
+
+int main() {
+    std::vector&lt;Vec2&gt; points = {{1.0, 2.0}, {3.0, 4.0}, {-2.0, 0.5}};
+    const Vec2 velocity{0.5, -1.0};
+    for (auto&amp; p : points) { p += velocity * 2.0; }
+    Vec2 first = points[0];                      // a copy
+    first.x = 100.0;
+    Vec2 sum;
+    for (const auto&amp; p : points) { sum = sum + p; }
+    std::cout &lt;&lt; std::format("{:.1f} {:.1f}\n", points[0].x, first.x);
+    std::cout &lt;&lt; std::format("{:.1f} {:.1f} {}\n", sum.x, sum.y, points[0] == Vec2{2.0, 0.0});
+}</code></pre></div>
+</div>
+<div class="tab-panel" id="port-a-jai" role="tabpanel" aria-labelledby="port-a-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Vec2 {
+    float x = 0.0;
+    float y = 0.0;
+    Vec2 operator+(const Vec2&amp; o) { return Vec2{x + o.x, y + o.y}; }
+    Vec2 operator*(float s) { return Vec2{x * s, y * s}; }
+}
+
+array&lt;Vec2&gt; points = [Vec2{1.0, 2.0}, Vec2{3.0, 4.0}, Vec2{-2.0, 0.5}];
+const Vec2 velocity{0.5, -1.0};
+for (auto&amp; p : points) { p += velocity * 2.0; }
+Vec2 first = points[0];                      // a copy
+first.x = 100.0;
+Vec2 sum;
+for (const auto&amp; p : points) { sum = sum + p; }
+print("{:.1f} {:.1f}", points[0].x, first.x);
+print("{:.1f} {:.1f} {}", sum.x, sum.y, points[0] == Vec2{2.0, 0.0});</code></pre></div>
+</div>
+</div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2.0 100.0
+5.0 0.5 true</code></pre></div>
+<ul><li>The rest is C++ as written: a class is a value, <code>auto&amp;</code> names the element, and <code>Vec2 first = points[0];</code> copies.</li><li><code>+=</code> runs <code>operator+</code> and stores the result; a compound operator is not declared on its own. <code>==</code> compares fields without a declaration. Braces name their class (<code>Vec2{1.0, 2.0}</code>), and there are no const methods.</li></ul>
+<h3 id="port-b">Shared ownership<a class="hlink" href="#port-b" aria-label="link">&#8203;</a></h3>
+<div class="tabs" id="port-b-tabs">
+<div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
+<button type="button" role="tab" id="port-b-tab-cpp" aria-controls="port-b-cpp" aria-selected="true">C++</button>
+<button type="button" role="tab" id="port-b-tab-jai" aria-controls="port-b-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="port-b-cpp" role="tabpanel" aria-labelledby="port-b-tab-cpp" tabindex="0">
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;iostream&gt;
+#include &lt;memory&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+struct Node {
+    std::string name;
+    std::vector&lt;std::shared_ptr&lt;Node&gt;&gt; children;
+    std::weak_ptr&lt;Node&gt; parent;
+    explicit Node(std::string n) : name(std::move(n)) {}
+    ~Node() { std::cout &lt;&lt; "~" &lt;&lt; name &lt;&lt; "\n"; }
+};
+
+std::shared_ptr&lt;Node&gt; add_child(std::shared_ptr&lt;Node&gt; parent, std::string name) {
+    auto child = std::make_shared&lt;Node&gt;(std::move(name));
+    child-&gt;parent = parent;
+    parent-&gt;children.push_back(child);
+    return child;
+}
+
+int main() {
+    std::weak_ptr&lt;Node&gt; watch;
+    {
+        auto root = std::make_shared&lt;Node&gt;("root");
+        auto leaf = add_child(add_child(root, "branch"), "leaf");
+        watch = leaf;
+        std::shared_ptr&lt;Node&gt; up = leaf-&gt;parent.lock();
+        std::cout &lt;&lt; up-&gt;name &lt;&lt; " " &lt;&lt; leaf.use_count() &lt;&lt; " " &lt;&lt; root-&gt;children.size() &lt;&lt; "\n";
+    }
+    std::cout &lt;&lt; "expired: " &lt;&lt; std::boolalpha &lt;&lt; watch.expired() &lt;&lt; "\n";
+}</code></pre></div>
+</div>
+<div class="tab-panel" id="port-b-jai" role="tabpanel" aria-labelledby="port-b-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Node {
+    string name;
+    array&lt;shared_ptr&lt;Node&gt;&gt; children;
+    weak_ptr&lt;Node&gt; parent;
+    Node(string n) { name = n; }
+    ~Node() { print("~", name); }
+}
+
+shared_ptr&lt;Node&gt; add_child(shared_ptr&lt;Node&gt; parent, string name) {
+    auto child = make_shared&lt;Node&gt;(name);
+    child-&gt;parent = parent;
+    parent-&gt;children.push(child);
+    return child;
+}
+
+weak_ptr&lt;Node&gt; watch;
+{
+    auto root = new Node("root");                // new is make_shared
+    auto leaf = add_child(add_child(root, "branch"), "leaf");
+    watch = leaf;
+    shared_ptr&lt;Node&gt; up = leaf-&gt;parent.lock();
+    print(up-&gt;name, " ", leaf.use_count(), " ", root-&gt;children.size());
+}
+print("expired: ", watch.expired());</code></pre></div>
+</div>
+</div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">branch 2 1
+~root
+~branch
+~leaf
+expired: true</code></pre></div>
+<ul><li><code>new Node("root")</code> is <code>make_shared&lt;Node&gt;("root")</code>: it returns a <code>shared_ptr&lt;Node&gt;</code>, and nothing is ever deleted by hand. The last handle frees the object, so the destructors run in C++'s order.</li><li><code>weak_ptr</code>, <code>lock()</code>, <code>expired()</code> and <code>use_count()</code> keep their meaning. There is no member initializer list: a constructor assigns its fields in its body.</li></ul>
+<h3 id="port-c">A class hierarchy<a class="hlink" href="#port-c" aria-label="link">&#8203;</a></h3>
+<div class="tabs" id="port-c-tabs">
+<div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
+<button type="button" role="tab" id="port-c-tab-cpp" aria-controls="port-c-cpp" aria-selected="true">C++</button>
+<button type="button" role="tab" id="port-c-tab-jai" aria-controls="port-c-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="port-c-cpp" role="tabpanel" aria-labelledby="port-c-tab-cpp" tabindex="0">
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;format&gt;
+#include &lt;iostream&gt;
+#include &lt;memory&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+class Shape {
+public:
+    virtual ~Shape() = default;
+    virtual std::string name() const { return "shape"; }
+    virtual double area() const { return 0.0; }
+    std::string describe() const { return std::format("{} {:.2f}", name(), area()); }
+};
+class Circle : public Shape {
+public:
+    explicit Circle(double r) : radius(r) {}
+    std::string name() const override { return "circle"; }
+    double area() const override { return 3.14159 * radius * radius; }
+private:
+    double radius;
+};
+class Rect : public Shape {
+public:
+    Rect(double w, double h) : width(w), height(h) {}
+    double area() const override { return width * height; }
+private:
+    double width;
+    double height;
+};
+
+int main() {
+    std::vector&lt;std::unique_ptr&lt;Shape&gt;&gt; shapes;
+    shapes.push_back(std::make_unique&lt;Circle&gt;(1.0));
+    shapes.push_back(std::make_unique&lt;Rect&gt;(2.0, 3.5));
+    double total = 0.0;
+    for (const auto&amp; s : shapes) {
+        std::cout &lt;&lt; s-&gt;describe() &lt;&lt; "\n";
+        total += s-&gt;area();
+    }
+    std::cout &lt;&lt; std::format("total {:.2f}\n", total);
+}</code></pre></div>
+</div>
+<div class="tab-panel" id="port-c-jai" role="tabpanel" aria-labelledby="port-c-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Shape {
+public:
+    string name() { return "shape"; }
+    float area() { return 0.0; }
+    string describe() { return format("{} {:.2f}", name(), area()); }
+}
+class Circle : Shape {
+public:
+    Circle(float r) { radius = r; }
+    string name() override { return "circle"; }
+    float area() override { return 3.14159 * radius * radius; }
+private:
+    float radius;
+}
+class Rect : Shape {
+public:
+    Rect(float w, float h) { width = w; height = h; }
+    float area() override { return width * height; }
+private:
+    float width;
+    float height;
+}
+
+array&lt;shared_ptr&lt;Shape&gt;&gt; shapes;
+shapes.push(make_shared&lt;Circle&gt;(1.0));
+shapes.push(make_shared&lt;Rect&gt;(2.0, 3.5));
+float total = 0.0;
+for (const auto&amp; s : shapes) {
+    print(s-&gt;describe());
+    total += s-&gt;area();
+}
+print("total {:.2f}", total);</code></pre></div>
+</div>
+</div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">circle 3.14
+shape 7.00
+total 10.14</code></pre></div>
+<ul><li>No <code>virtual</code>: every method is virtual, and a redefinition must say <code>override</code>. <code>private:</code> admits subclasses.</li><li>No <code>unique_ptr</code>: the container holds <code>shared_ptr&lt;Shape&gt;</code>. An <code>array&lt;Shape&gt;</code> of values works too, because a base-typed element is <a href="#no-slicing">never sliced</a>.</li></ul>
+<h3 id="port-d">Lambdas and a callback<a class="hlink" href="#port-d" aria-label="link">&#8203;</a></h3>
+<div class="tabs" id="port-d-tabs">
+<div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
+<button type="button" role="tab" id="port-d-tab-cpp" aria-controls="port-d-cpp" aria-selected="true">C++</button>
+<button type="button" role="tab" id="port-d-tab-jai" aria-controls="port-d-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="port-d-cpp" role="tabpanel" aria-labelledby="port-d-tab-cpp" tabindex="0">
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;functional&gt;
+#include &lt;iostream&gt;
+#include &lt;string&gt;
+#include &lt;vector&gt;
+
+struct Button {
+    std::string label;
+    std::function&lt;void(const std::string&amp;)&gt; on_click;
+    void click() const { if (on_click) { on_click(label); } }
+};
+
+int main() {
+    int clicks = 0;
+    std::vector&lt;std::string&gt; log;
+    Button ok{"ok"};
+    ok.click();                                  // no handler yet
+    ok.on_click = [&amp;clicks, &amp;log](const std::string&amp; label) { clicks += 1; log.push_back(label); };
+    ok.click();
+    ok.click();
+
+    int base = 10;
+    auto add_base = [base](int v) { return v + base; };
+    base = 99;                                   // the lambda keeps its copy
+
+    auto counter = [n = 0]() mutable { n += 1; return n; };
+    counter();
+    auto copy = counter;                         // copies the lambda and its n
+    counter();
+    std::cout &lt;&lt; clicks &lt;&lt; " " &lt;&lt; log.size() &lt;&lt; " " &lt;&lt; add_base(1) &lt;&lt; " " &lt;&lt; counter() &lt;&lt; " " &lt;&lt; copy() &lt;&lt; "\n";
+}</code></pre></div>
+<div class="codeblock cb-plain"><span class="cb-label">output</span><pre><code class="lang-plain">2 2 11 3 2</code></pre></div>
+</div>
+<div class="tab-panel" id="port-d-jai" role="tabpanel" aria-labelledby="port-d-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Button {
+    string label;
+    function on_click;
+    void click() { if (on_click != nullptr) { on_click(label); } }
+}
+
+int clicks = 0;
+array&lt;string&gt; log;
+Button ok{"ok"};
+ok.click();                                  // no handler yet
+ok.on_click = [&amp;clicks, &amp;log](const string&amp; label) { clicks += 1; log.push(label); };
+ok.click();
+ok.click();
+
+int base = 10;
+auto add_base = [base](int v) { return v + base; };
+base = 99;                                   // the lambda keeps its copy
+
+auto counter = [n = 0]() { n += 1; return n; };
+counter();
+auto copy = counter;                         // both names count on one n
+counter();
+print(clicks, " ", log.size(), " ", add_base(1), " ", counter(), " ", copy());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 2 11 3 4</code></pre></div>
+</div>
+</div>
+<ul><li>Capture lists mean what they mean in C++, and a by-value capture is writable without <code>mutable</code>. A <code>function</code> slot holds any callable or null and declares no signature.</li><li>The last number differs. C++ copies a lambda together with its <code>n</code>; in JaiScript <code>copy</code> and <code>counter</code> are two names for one lambda and count on one <code>n</code>.</li></ul>
+<h3 id="port-e">A thrown class, a destructor and a map<a class="hlink" href="#port-e" aria-label="link">&#8203;</a></h3>
+<div class="tabs" id="port-e-tabs">
+<div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
+<button type="button" role="tab" id="port-e-tab-cpp" aria-controls="port-e-cpp" aria-selected="true">C++</button>
+<button type="button" role="tab" id="port-e-tab-jai" aria-controls="port-e-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="port-e-cpp" role="tabpanel" aria-labelledby="port-e-tab-cpp" tabindex="0">
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;iostream&gt;
+#include &lt;map&gt;
+#include &lt;stdexcept&gt;
+#include &lt;string&gt;
+
+struct OutOfStock {
+    std::string item;
+    int wanted;
+    int have;
+};
+struct Audit {
+    std::string what;
+    explicit Audit(std::string w) : what(std::move(w)) {}
+    ~Audit() { std::cout &lt;&lt; "audited " &lt;&lt; what &lt;&lt; "\n"; }
+};
+
+void take(std::map&lt;std::string, int&gt;&amp; stock, const std::string&amp; item, int wanted) {
+    Audit audit{"take " + item};
+    int&amp; have = stock.at(item);                  // a missing key throws std::out_of_range
+    if (have &lt; wanted) { throw OutOfStock{item, wanted, have}; }
+    have -= wanted;
+}
+
+int main() {
+    std::map&lt;std::string, int&gt; stock = {{"rope", 2}, {"arrow", 20}};
+    for (std::string item : {"arrow", "rope", "sword"}) {
+        try {
+            take(stock, item, 5);
+        } catch (const OutOfStock&amp; e) {
+            std::cout &lt;&lt; "wanted " &lt;&lt; e.wanted &lt;&lt; " " &lt;&lt; e.item &lt;&lt; ", have " &lt;&lt; e.have &lt;&lt; "\n";
+        } catch (const std::out_of_range&amp;) {
+            std::cout &lt;&lt; "no " &lt;&lt; item &lt;&lt; " at all\n";
+        }
+    }
+    for (const auto&amp; [item, count] : stock) { std::cout &lt;&lt; item &lt;&lt; "=" &lt;&lt; count &lt;&lt; "\n"; }
+}</code></pre></div>
+</div>
+<div class="tab-panel" id="port-e-jai" role="tabpanel" aria-labelledby="port-e-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class OutOfStock {
+    string item;
+    int wanted;
+    int have;
+}
+class Audit {
+    string what;
+    Audit(string w) { what = w; }
+    ~Audit() { print("audited ", what); }
+}
+
+void take(map&lt;string, int&gt;&amp; stock, const string&amp; item, int wanted) {
+    Audit audit{"take " + item};
+    int&amp; have = stock[item];                     // a missing key raises a run-time error
+    if (have &lt; wanted) { throw OutOfStock{item, wanted, have}; }
+    have -= wanted;
+}
+
+map&lt;string, int&gt; stock = {"rope": 2, "arrow": 20};
+for (string item : ["arrow", "rope", "sword"]) {
+    try {
+        take(stock, item, 5);
+    } catch (const OutOfStock&amp; e) {
+        print("wanted ", e.wanted, " ", e.item, ", have ", e.have);
+    } catch (error e) {
+        print("no ", item, " at all");
+    }
+}
+for (const auto&amp; [item, count] : stock) { print(item, "=", count); }</code></pre></div>
+</div>
+</div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">audited take arrow
+audited take rope
+wanted 5 rope, have 2
+audited take sword
+no sword at all
+arrow=15
+rope=2</code></pre></div>
+<ul><li>Any value can be thrown, <code>catch</code> selects by type, and <code>Audit</code>'s destructor runs during the unwind.</li><li>Reading <code>stock[item]</code> for a missing key raises a run-time error, caught as <code>error</code>; C++'s <code>operator[]</code> would insert it, and <code>at</code> throws. <code>stock.get(item, 0)</code> reads with a default.</li></ul>
+<h2 id="side-by-side">Feature by feature<a class="hlink" href="#side-by-side" aria-label="link">&#8203;</a></h2>
 <h3 id="types-and-values">Types and values<a class="hlink" href="#types-and-values" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>C++</th><th>JaiScript</th></tr></thead><tbody><tr><td>integer</td><td><code>int</code>, <code>int64_t</code>, <code>unsigned</code>, <code>long</code></td><td><code>int</code>: always 64-bit and signed; no <code>unsigned</code>, <code>long</code> or sized integer types</td></tr><tr><td>floating point</td><td><code>double</code>, <code>float</code></td><td><code>float</code>, 64-bit; <code>double</code> names the same type</td></tr><tr><td>character</td><td><code>char</code>, signed or unsigned by platform</td><td><code>char</code>, unsigned: 0..255</td></tr><tr><td>string</td><td><code>std::string</code></td><td><code>string</code>: bytes, a value; <code>utf8_string</code> counts characters</td></tr><tr><td>deduced</td><td><code>auto x = 5;</code></td><td><code>auto x = 5;</code></td></tr><tr><td>dynamic</td><td><code>std::any</code></td><td><code>var x = 5;</code> holds anything</td></tr><tr><td>constant</td><td><code>const int k = 3;</code>, <code>constexpr</code></td><td><code>const int k = 3;</code>; no <code>constexpr</code> (a <code>const</code> with a constant initializer is folded at compile time); a reference parameter that the body never writes binds like a <code>const T&amp;</code></td></tr><tr><td>null</td><td><code>nullptr</code></td><td><code>null</code> (<code>nullptr</code> reads as <code>null</code>)</td></tr><tr><td>initialization</td><td><code>int i{5};</code>, <code>T x;</code>, <code>T x(a, b);</code></td><td>the same three; <code>T x;</code> default-constructs a class and zeroes a number, never garbage</td></tr><tr><td>containers</td><td><code>std::vector&lt;int&gt;</code>, <code>std::map&lt;std::string, int&gt;</code></td><td><code>array&lt;int&gt;</code>, <code>map&lt;string, int&gt;</code> (iterates in key order, hashed lookup)</td></tr><tr><td>container literals</td><td><code>{1, 2, 3}</code></td><td><code>[1, 2, 3]</code> and <code>{"key": 1}</code></td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int i{5};
-double d = 2;                 // double is float
-char c = 'A';
-var p = nullptr;
-array&lt;int&gt; scores = [90, 72];
-map&lt;string, int&gt; ages = {"ana": 31};
-array&lt;int&gt; none;              // T x; default-constructs: an empty array
-int zero;                     // and a number starts at 0
-print(i, " ", d, " ", type_of(d), " ", cast&lt;int&gt;(c), " ", p == null, " ", scores.size() + ages.size(), " ", none.size(), " ", zero);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">5 2.0 float 65 true 3 0 0</code></pre></div>
+<div class="tablewrap"><table><thead><tr><th></th><th>C++</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td>integer</td><td><code>int</code>, <code>int64_t</code>, <code>unsigned</code></td><td><code>int</code>: always 64-bit and signed, the only integer type</td></tr>
+<tr><td>floating point</td><td><code>double</code>, <code>float</code></td><td><code>float</code> and <code>double</code> both name the 64-bit type</td></tr>
+<tr><td>character, string</td><td><code>char</code>, <code>std::string</code></td><td><code>char</code>, unsigned 0..255; <code>string</code>, a value of bytes (<code>utf8_string</code> counts characters)</td></tr>
+<tr><td>deduced, dynamic</td><td><code>auto x = 5;</code>, <code>std::any</code></td><td><code>auto x = 5;</code>; <code>var x = 5;</code> holds anything</td></tr>
+<tr><td>constant</td><td><code>const</code>, <code>constexpr</code></td><td><code>const int k = 3;</code> on declarations, parameters and class constants; no const methods, const types or <code>constexpr</code></td></tr>
+<tr><td>null</td><td><code>nullptr</code></td><td><code>nullptr</code> or <code>null</code>, held by a <code>shared_ptr&lt;T&gt;</code>, a <code>weak_ptr&lt;T&gt;</code>, a <code>function</code> or a <code>var</code></td></tr>
+<tr><td>initialization</td><td><code>int i{5};</code>, <code>T x;</code>, <code>T x(a, b);</code></td><td>the same three; <code>T x;</code> default-constructs a class and zeroes a number</td></tr>
+<tr><td>containers</td><td><code>std::vector&lt;int&gt;</code>, <code>std::map&lt;std::string, int&gt;</code>, <code>{1, 2, 3}</code></td><td><code>array&lt;int&gt;</code>, <code>map&lt;string, int&gt;</code> (iterates in key order), <code>[1, 2, 3]</code>, <code>{"key": 1}</code></td></tr>
+<tr><td>casts</td><td><code>static_cast&lt;int&gt;(2.7)</code>, <code>dynamic_cast&lt;Square&amp;&gt;(s)</code>, <code>std::static_pointer_cast&lt;Square&gt;(p)</code></td><td><code>cast&lt;int&gt;(2.7)</code>, <code>cast&lt;Square&amp;&gt;(s)</code>, <code>cast&lt;shared_ptr&lt;Square&gt;&gt;(p)</code>; a wrong class raises the catchable <code>Cannot cast 'X' to 'T'</code> (<a href="../guide/02-type-ladder.html#cast-the-explicit-boundary">cast</a>)</td></tr>
+<tr><td>is it a Square?</td><td><code>if (dynamic_cast&lt;Square*&gt;(p))</code></td><td><code>if (s instanceof Square)</code>, then <code>cast&lt;Square&amp;&gt;(s)</code>, which cannot fail after the test (<a href="../guide/07-classes.html#instanceof">instanceof</a>)</td></tr>
+<tr><td>identity</td><td><code>&amp;a == &amp;b</code></td><td><code>same_object(a, b)</code></td></tr>
+</tbody></table></div>
 <h3 id="functions-references-lambdas">Functions, references and lambdas<a class="hlink" href="#functions-references-lambdas" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>C++</th><th>JaiScript</th></tr></thead><tbody><tr><td>function</td><td><code>int add(int a, int b)</code></td><td>the same, or <code>auto add(int a, int b) -&gt; int</code>, or <code>function add(a, b)</code> with types optional</td></tr><tr><td>default argument</td><td><code>int hit(int d = 5)</code></td><td>the same</td></tr><tr><td>reference parameter</td><td><code>void heal(int&amp; hp)</code></td><td>the same; a field or an element binds too: <code>heal(h.hp)</code>, <code>heal(arr[i])</code></td></tr><tr><td><code>const T&amp;</code> parameter</td><td><code>int total(const std::vector&lt;int&gt;&amp; xs)</code></td><td><code>int total(const array&lt;int&gt;&amp; xs)</code>; a plain <code>array&lt;int&gt;&amp; xs</code> the body never writes takes a literal or a temporary too</td></tr><tr><td>reference variable</td><td><code>auto&amp; r = x;</code></td><td>the same; a reference cannot be a field or an element</td></tr><tr><td>overloading</td><td>free functions overload</td><td>the same, at program scope, in namespaces and in classes; a second definition of the same signature in one file is an error, and one from another unit replaces it; two overloads that differ only by reference, <code>f(int)</code> and <code>f(int&amp;)</code>, are an error at the second definition</td></tr><tr><td>template</td><td><code>template&lt;class T&gt; T biggest(T a, T b)</code></td><td><code>auto biggest(auto a, auto b)</code>; no templates</td></tr><tr><td>lambda</td><td><code>[x, &amp;y](int v) { ... }</code></td><td>the same capture syntax: <code>[]</code>, <code>[x]</code>, <code>[&amp;x]</code>, <code>[=]</code>, <code>[&amp;]</code>, <code>[this]</code>, <code>[n = expr]</code></td></tr><tr><td><code>mutable</code> lambda</td><td><code>[n]() mutable { n++; }</code></td><td><code>[n]() { n++; }</code>: no keyword; a copied capture is the lambda's own variable, writable and kept between calls</td></tr><tr><td>callable slot</td><td><code>std::function&lt;int(int)&gt; f;</code></td><td><code>function f;</code> (any callable, or null)</td></tr><tr><td>variadic</td><td><code>template&lt;class... A&gt; void f(A... a)</code></td><td>none in script; a host (C++) function can take any number of arguments</td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">void heal(int&amp; hp, int amount) { hp += amount; }
-int total(array&lt;int&gt;&amp; xs) { int s = 0; for (auto x : xs) { s += x; } return s; }
-auto biggest(auto a, auto b) { return a &gt; b ? a : b; }
-class Hero { int hp = 10; }
-Hero h;
-heal(h.hp, 5);                          // a field binds to int&amp;
-auto&amp; alias = h.hp;
-alias += 1;
-int bonus = 3;
-auto add_bonus = [bonus](int v) { return v + bonus; };
-function f = add_bonus;
-print(h.hp, " ", total([1, 2, 3]), " ", biggest(3, 9), " ", biggest("ab", "b"), " ", f(10));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">16 6 9 b 13</code></pre></div>
+<div class="tablewrap"><table><thead><tr><th></th><th>C++</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td>function</td><td><code>int add(int a, int b)</code>, default arguments, overloads</td><td>the same, at program scope, in namespaces and in classes; a default cannot name an earlier parameter</td></tr>
+<tr><td>reference</td><td><code>void heal(int&amp; hp)</code>, <code>auto&amp; r = x;</code></td><td>the same; a field or an element binds too (<code>heal(h.hp)</code>, <code>heal(arr[i])</code>); a reference cannot be a field or an element</td></tr>
+<tr><td>template</td><td><code>template&lt;class T&gt; T biggest(T a, T b)</code></td><td><code>auto biggest(auto a, auto b)</code>; no templates, no variadics in script</td></tr>
+<tr><td>lambda</td><td><code>[x, &amp;y](int v) { ... }</code></td><td>the same captures: <code>[]</code>, <code>[x]</code>, <code>[&amp;x]</code>, <code>[=]</code>, <code>[&amp;]</code>, <code>[this]</code>, <code>[n = expr]</code>; a by-value capture is writable without <code>mutable</code></td></tr>
+<tr><td>callable slot</td><td><code>std::function&lt;int(int)&gt; f;</code></td><td><code>function f;</code>: any callable or null, with no signature</td></tr>
+</tbody></table></div>
 <h3 id="classes">Classes<a class="hlink" href="#classes" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>C++</th><th>JaiScript</th></tr></thead><tbody><tr><td>class</td><td><code>class Hero { public: int hp = 10; };</code></td><td><code>class Hero { int hp = 10; }</code>: members start public</td></tr><tr><td>struct</td><td><code>struct P { int x; };</code></td><td>no <code>struct</code>: every class is a value type</td></tr><tr><td>access</td><td><code>public:</code>, <code>protected:</code>, <code>private:</code></td><td><code>public:</code> and <code>private:</code>; private members reach subclasses too, and <code>protected:</code> means the same as <code>private:</code></td></tr><tr><td>inheritance</td><td><code>class Mage : public Hero</code></td><td><code>class Mage : Hero</code>, with no access specifier</td></tr><tr><td>base constructor</td><td><code>Mage() : Hero(5) {}</code></td><td><code>Mage() : super(5) {}</code>; <code>: this(...)</code> delegates</td></tr><tr><td>virtual</td><td><code>virtual</code> in the base, <code>override</code> optional</td><td>every method is virtual; a redefinition requires <code>override</code></td></tr><tr><td>base call</td><td><code>Hero::describe()</code></td><td><code>super::describe()</code></td></tr><tr><td>destructor</td><td><code>~Hero()</code></td><td><code>~Hero()</code>, run when the value's scope ends, a throw included</td></tr><tr><td>heap object</td><td><code>std::make_shared&lt;Hero&gt;()</code></td><td><code>new Hero()</code> returns a <code>shared_ptr&lt;Hero&gt;</code></td></tr><tr><td><code>-&gt;</code></td><td>member access through a pointer</td><td>a synonym for <code>.</code> on values and handles</td></tr><tr><td><code>delete</code>, raw pointers</td><td><code>delete p;</code>, <code>Hero* p</code></td><td>none: <code>shared_ptr&lt;T&gt;</code>, <code>weak_ptr&lt;T&gt;</code> and references; the last handle frees the object</td></tr><tr><td>statics</td><td><code>Hero::count</code></td><td><code>Hero::count</code>; <code>Hero.count</code> is an error that names the <code>::</code> spelling</td></tr><tr><td>no copies</td><td><code>Hero(const Hero&amp;) = delete;</code></td><td><code>nocopy class Hero { ... }</code></td></tr><tr><td>operators</td><td><code>Vec operator+(const Vec&amp; o) const</code></td><td><code>Vec operator+(Vec o)</code>; C++'s set less <code>&amp;&amp;</code>, <code>||</code>, <code>,</code>, <code>-&gt;</code>, <code>new</code>, <code>delete</code> and <code>!</code>; <code>operator&lt;=&gt;</code> supplies <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code> and, when no <code>operator==</code> takes the operand, <code>==</code> and <code>!=</code>, in both operand orders (C++20 rewriting)</td></tr><tr><td>bool conversion</td><td><code>explicit operator bool() const</code></td><td><code>bool to_bool()</code>; <code>!v</code> is <code>!to_bool(v)</code></td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Shape {
+<div class="tablewrap"><table><thead><tr><th></th><th>C++</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td>class</td><td><code>class Hero { public: int hp = 10; };</code>, <code>struct</code></td><td><code>class Hero { int hp = 10; }</code>: members start public; no <code>struct</code> keyword</td></tr>
+<tr><td>inheritance</td><td><code>class Mage : public Hero</code>, <code>Mage() : Hero(5) {}</code>, <code>Hero::describe()</code></td><td><code>class Mage : Hero</code>, <code>Mage() : super(5) {}</code> (<code>: this(...)</code> delegates), <code>super::describe()</code></td></tr>
+<tr><td>virtual</td><td><code>virtual</code> in the base, <code>override</code> optional</td><td>every method is virtual; a redefinition requires <code>override</code></td></tr>
+<tr><td>destructor</td><td><code>~Hero()</code></td><td><code>~Hero()</code>, run when the value's scope ends, a throw included</td></tr>
+<tr><td>heap object</td><td><code>std::make_shared&lt;Hero&gt;()</code>, <code>Hero*</code>, <code>delete</code></td><td><code>make_shared&lt;Hero&gt;()</code> or <code>new Hero()</code>: a <code>shared_ptr&lt;Hero&gt;</code>. <code>weak_ptr&lt;T&gt;</code> with <code>lock()</code> and <code>expired()</code>. No raw pointers; the last handle frees the object</td></tr>
+<tr><td>statics</td><td><code>Hero::count</code></td><td><code>Hero::count</code></td></tr>
+<tr><td>no copies</td><td><code>Hero(const Hero&amp;) = delete;</code></td><td><code>nocopy class Hero { ... }</code></td></tr>
+<tr><td>operators</td><td><code>Vec operator+(const Vec&amp; o) const</code></td><td><code>Vec operator+(Vec o)</code>; C++'s set less <code>&amp;&amp;</code>, <code>||</code>, <code>,</code>, <code>-&gt;</code>, <code>new</code>, <code>delete</code> and <code>!</code>; <code>operator&lt;=&gt;</code> supplies the comparisons as in C++20</td></tr>
+<tr><td>bool conversion</td><td><code>explicit operator bool() const</code></td><td><code>bool to_bool()</code></td></tr>
+</tbody></table></div>
+<h3 id="control-flow-and-errors">Control flow and the rest<a class="hlink" href="#control-flow-and-errors" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th></th><th>C++</th><th>JaiScript</th></tr></thead><tbody>
+<tr><td>range-for, bindings</td><td><code>for (auto&amp; x : v)</code>, <code>for (auto&amp; [k, v] : m)</code>, <code>auto [a, b] = p;</code></td><td>the same; <code>auto [a, b] = arr;</code> unpacks an array</td></tr>
+<tr><td>loops</td><td><code>do { } while (c);</code>, <code>goto</code></td><td><code>do</code>/<code>while</code> the same; no <code>goto</code></td></tr>
+<tr><td>throw, catch</td><td><code>throw std::runtime_error("x");</code>, <code>catch (const std::exception&amp; e)</code></td><td><code>throw "x";</code> (any value); <code>catch (Err e)</code> by type, <code>catch (error e)</code> for a run-time error, <code>catch (e)</code> for anything</td></tr>
+<tr><td>enum</td><td><code>enum class Dir { N, S = 5 };</code></td><td><code>enum Dir { n, s = 5 }</code>: a type, scoped as <code>Dir::n</code>, converting to <code>int</code> implicitly and back only through <code>cast&lt;Dir&gt;(i)</code></td></tr>
+<tr><td>namespace</td><td><code>namespace util { }</code>, <code>using util::f;</code></td><td>the same; no <code>using namespace</code></td></tr>
+<tr><td>include</td><td><code>#include "x.h"</code></td><td><code>#include "x.jai"</code> runs the file's text in place; <code>import "x.jai";</code> loads a module once and reloads it when it changes</td></tr>
+<tr><td>coroutine</td><td>C++20 <code>co_yield</code></td><td><code>coroutine int gen() { yield 1; }</code>, driven by <code>next()</code> or range-<code>for</code></td></tr>
+<tr><td>formatting</td><td><code>std::format("{} {:.2f}", a, b)</code></td><td><code>format("{} {:.2f}", a, b)</code>, <code>print("{}", a)</code>, <code>`${b:.2f}`</code>; only a literal is a format string, and <code>vformat</code> is <code>std::vformat</code></td></tr>
+</tbody></table></div>
+<div class="tabs" id="sampler-tabs">
+<div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
+<button type="button" role="tab" id="sampler-tab-cpp" aria-controls="sampler-cpp" aria-selected="true">C++</button>
+<button type="button" role="tab" id="sampler-tab-jai" aria-controls="sampler-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="sampler-cpp" role="tabpanel" aria-labelledby="sampler-tab-cpp" tabindex="0">
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;format&gt;
+#include &lt;iostream&gt;
+#include &lt;memory&gt;
+#include &lt;string&gt;
+
+struct Shape {
+    std::string name;
+    explicit Shape(std::string n) : name(std::move(n)) {}
+    virtual ~Shape() = default;
+    virtual double area() const { return 0.0; }
+};
+struct Square : Shape {
+    double side;
+    explicit Square(double s) : Shape("square"), side(s) {}
+    double area() const override { return side * side; }
+    Square operator+(const Square&amp; o) const { return Square(side + o.side); }
+};
+enum class Dir { north, south = 5 };
+void grow(Square&amp; sq, double by) { sq.side += by; }
+auto biggest(auto a, auto b) { return a &gt; b ? a : b; }
+
+int main() {
+    Square sq{3.0};
+    Shape&amp; s = sq;                               // area() dispatches to Square
+    std::shared_ptr&lt;Shape&gt; heap = std::make_shared&lt;Square&gt;(2.0);
+    auto again = heap;                           // a second handle to one object
+    grow(dynamic_cast&lt;Square&amp;&gt;(*again), 3.0);
+    try {
+        throw (sq + sq).side;
+    } catch (double e) {
+        std::cout &lt;&lt; std::format("{} {:.1f} {:.1f} {:.1f} {}\n", s.name, s.area(), heap-&gt;area(), e,
+                                 biggest(std::string("ab"), std::string("b")));
+    }
+    Dir d = Dir::south;
+    std::cout &lt;&lt; std::format("{} {}\n", static_cast&lt;int&gt;(d), d == static_cast&lt;Dir&gt;(5));
+}</code></pre></div>
+</div>
+<div class="tab-panel" id="sampler-jai" role="tabpanel" aria-labelledby="sampler-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Shape {
     string name;
     Shape(string n) { name = n; }
     float area() { return 0.0; }
@@ -85,217 +514,171 @@ class Square : Shape {
     float side;
     Square(float s) : super("square") { side = s; }
     float area() override { return side * side; }
+    Square operator+(const Square&amp; o) { return Square(side + o.side); }
 }
-class Vec {
-    int x = 0; int y = 0;
-    Vec(int px, int py) { x = px; y = py; }
-    Vec operator+(Vec o) { return Vec(x + o.x, y + o.y); }
-}
-Square sq = Square(3.0);
-Shape&amp; s = sq;                          // a base reference: area() dispatches to Square
-shared_ptr&lt;Square&gt; heap = new Square(2.0);
-auto again = heap;                      // a second handle to one object
-again.side = 5.0;
-Vec v = Vec(1, 2) + Vec(3, 4);
-print(s.name, " ", s.area(), " ", heap-&gt;area(), " ", v.x, ",", v.y);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">square 9.0 25.0 4,6</code></pre></div>
-<h3 id="control-flow-and-errors">Control flow and errors<a class="hlink" href="#control-flow-and-errors" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>C++</th><th>JaiScript</th></tr></thead><tbody><tr><td>range-for</td><td><code>for (auto&amp; x : v)</code></td><td>the same; over a map, <code>kv.first</code> and <code>kv.second</code></td></tr><tr><td>structured binding</td><td><code>auto [a, b] = p;</code>, <code>for (auto&amp; [k, v] : m)</code></td><td><code>auto [a, b] = arr;</code> unpacks an array; <code>for (auto&amp; [k, v] : m)</code> binds a map entry's key and value</td></tr><tr><td>switch</td><td>falls through without <code>break</code></td><td>breaks by default; <code>fallthrough;</code> continues into the next case</td></tr><tr><td>do, goto</td><td><code>do { } while (c);</code>, <code>goto end;</code></td><td><code>do { } while (c);</code> is the same; no <code>goto</code> (writing one is an error that says so)</td></tr><tr><td>throw</td><td><code>throw std::runtime_error("x");</code></td><td><code>throw "x";</code>, any value</td></tr><tr><td>catch</td><td><code>catch (const std::exception&amp; e)</code></td><td><code>catch (e)</code>, untyped: <code>e</code> reads as the message and <code>e.value</code> holds what was thrown</td></tr><tr><td>enum</td><td><code>enum class Dir { N, S };</code> and <code>Dir::N</code></td><td><code>enum Dir { n, s }</code>, then <code>Dir::n</code> or <code>Dir.n</code>: plain ints counted from 0; no <code>enum class</code> and no explicit values (<code>n = 5</code> is a parse error)</td></tr><tr><td>namespace</td><td><code>namespace util { }</code> and <code>util::f()</code></td><td>the same</td></tr><tr><td>include</td><td><code>#include "x.h"</code></td><td><code>#include "x.jai"</code> or <code>include "x.jai";</code> runs the file's text in place; <code>import "x.jai";</code> loads a module once and reloads it when it changes</td></tr><tr><td>coroutine</td><td>C++20 <code>co_yield</code></td><td><code>coroutine int gen() { yield 1; }</code>, driven by <code>next()</code> or range-<code>for</code></td></tr><tr><td>formatting</td><td><code>std::format("{} {:.2f}", a, b)</code></td><td><code>format("{} {:.2f}", a, b)</code>, <code>print("{}", a)</code>, <code>`${b:.2f}`</code>; as in C++20 only a string literal is a format string, and <code>vformat(fmt, a)</code> is <code>std::vformat</code></td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">enum Dir { north, south }
-namespace util { int twice(int v) { return v * 2; } }
-auto [lo, hi] = [3, 8];
-map&lt;string, int&gt; stock = {"ore": 4, "gem": 1};
-for (auto [name, count] : stock) { print(name, "=", count); }
+enum Dir { north, south = 5 }
+void grow(Square&amp; sq, float by) { sq.side += by; }
+auto biggest(auto a, auto b) { return a &gt; b ? a : b; }
+
+Square sq{3.0};
+Shape&amp; s = sq;                               // area() dispatches to Square
+shared_ptr&lt;Shape&gt; heap = make_shared&lt;Square&gt;(2.0);
+auto again = heap;                           // a second handle to one object
+grow(cast&lt;Square&amp;&gt;(again), 3.0);
 try {
-    throw util::twice(hi);
-} catch (e) {
-    print("caught ", e.value, " (", type_of(e.value), ") ", Dir.south, " ", lo);
+    throw (sq + sq).side;
+} catch (float e) {
+    print("{} {:.1f} {:.1f} {:.1f} {}", s.name, s.area(), heap-&gt;area(), e,
+          biggest("ab", "b"));
 }
-print(format("{} {:.2f}", "pi", math::PI));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">gem=1
-ore=4
-caught 16 (int) 1 3
-pi 3.14</code></pre></div>
-<h3 id="casts-and-handles">Casts and handles<a class="hlink" href="#casts-and-handles" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>C++</th><th>JaiScript</th></tr></thead><tbody><tr><td>value cast</td><td><code>static_cast&lt;int&gt;(2.7)</code></td><td><code>cast&lt;int&gt;(2.7)</code></td></tr><tr><td>downcast to a reference</td><td><code>dynamic_cast&lt;Square&amp;&gt;(s)</code></td><td><code>cast&lt;Square&amp;&gt;(s)</code>; a wrong class raises the catchable <code>Cannot cast 'X' to 'T'</code></td></tr><tr><td>handle cast</td><td><code>std::static_pointer_cast&lt;Square&gt;(p)</code></td><td><code>cast&lt;shared_ptr&lt;Square&gt;&gt;(p)</code></td></tr><tr><td>weak handle</td><td><code>std::weak_ptr&lt;T&gt;</code></td><td><code>weak_ptr&lt;T&gt;</code>, with <code>lock()</code> and <code>expired()</code></td></tr><tr><td>identity</td><td><code>&amp;a == &amp;b</code></td><td><code>same_object(a, b)</code></td></tr><tr><td>char from an int</td><td><code>static_cast&lt;char&gt;(65)</code></td><td><code>cast&lt;char&gt;(65)</code>, range-checked to 0..255</td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Shape { int sides = 0; }
-class Square : Shape { float side = 2.0; }
-Shape s = Square();                          // a base-typed slot holding a whole Square
-print(cast&lt;Square&amp;&gt;(s).side, " ", cast&lt;int&gt;(2.7), " ", cast&lt;char&gt;(65));
-shared_ptr&lt;Shape&gt; p = new Square();
-shared_ptr&lt;Square&gt; q = cast&lt;shared_ptr&lt;Square&gt;&gt;(p);
-weak_ptr&lt;Shape&gt; w = p;
-print(same_object(p, q), " ", w.expired());
-try { cast&lt;Square&amp;&gt;(Shape()).side; } catch (e) { print("caught: ", e); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2.0 2 A
-true false
-caught: Cannot cast 'Shape' to 'Square&amp;'</code></pre></div>
-<p><a href="../guide/02-type-ladder.html#cast-the-explicit-boundary">The Type Ladder</a> has the full conversion table behind <code>cast</code>.</p>
+Dir d = Dir::south;
+print("{} {}", cast&lt;int&gt;(d), d == cast&lt;Dir&gt;(5));</code></pre></div>
+</div>
+</div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">square 9.0 25.0 6.0 b
+5 true</code></pre></div>
+<h3 id="spellings">Two spellings, one meaning<a class="hlink" href="#spellings" aria-label="link">&#8203;</a></h3>
+<p>The language blends C++ and JavaScript on purpose, so some things have a spelling from each. Both columns mean exactly the same thing:</p>
+<div class="tablewrap"><table><thead><tr><th>C++ spelling</th><th>JavaScript spelling</th></tr></thead><tbody>
+<tr><td><code>nullptr</code></td><td><code>null</code></td></tr>
+<tr><td><code>make_shared&lt;Hero&gt;(5)</code></td><td><code>new Hero(5)</code></td></tr>
+<tr><td><code>int add(int a, int b) { ... }</code></td><td><code>function add(a, b) { ... }</code> (<a href="../guide/06-functions.html#declaration-forms">every form</a>)</td></tr>
+<tr><td><code>[](int x) { return x * 2; }</code></td><td><code>x =&gt; x * 2</code></td></tr>
+<tr><td><code>p-&gt;hp</code></td><td><code>p.hp</code></td></tr>
+<tr><td><code>#include "x.jai"</code></td><td><code>include "x.jai";</code></td></tr>
+</tbody></table></div>
+<p>Within the C++ column, <code>double</code> and <code>float</code> are one type and <code>protected:</code> and <code>private:</code> one access level; within the JavaScript column, <code>let</code> and <code>var</code> are one keyword.</p>
 <h2 id="watch-out">Watch out<a class="hlink" href="#watch-out" aria-label="link">&#8203;</a></h2>
-<p>The differences below are the ones a C++ habit runs into first. Each sample shows what JaiScript does.</p>
-<h3 id="switch">switch does not fall through<a class="hlink" href="#switch" aria-label="link">&#8203;</a></h3>
-<p>A case ends at the next case, with no <code>break</code>. <code>fallthrough;</code> (C++'s <code>[[fallthrough]]</code>) continues into the case below:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int hits = 0;
+<p>Where a C++ habit gets a different answer:</p>
+<div class="tablewrap"><table><thead><tr><th>C++ habit</th><th>JaiScript</th></tr></thead><tbody>
+<tr id="no-slicing"><td>a <code>Derived</code> copied into a <code>Base</code> is sliced</td><td><strong>No slicing.</strong> A base-typed variable, parameter or element keeps the whole object and its overrides; the declared type decides what the checker lets you name, and <code>cast&lt;Derived&amp;&gt;</code> reaches the rest</td></tr>
+<tr><td><code>int i = 3.9;</code> compiles</td><td>a float into an <code>int</code> slot is a load error: <code>cast&lt;int&gt;(3.9)</code> truncates, <code>math::ifloor</code> rounds down. <code>int</code> to <code>float</code> stays implicit</td></tr>
+<tr><td><code>private:</code> is the class only</td><td><code>private:</code> admits the class and its subclasses (C++'s <code>protected</code>); there is no class-only level</td></tr>
+<tr><td>a class may hold a pointer to itself; a pointer may be null</td><td>a class value is never null: <code>Hero h = null;</code> is a load error, and a class that holds itself by value (directly, through a cycle or a base) is one too, as in C++. The link is a <code>shared_ptr&lt;Node&gt;</code></td></tr>
+<tr><td>copying a lambda copies its captures</td><td>a copy of a lambda shares its by-value capture state: both copies count on one <code>n</code></td></tr>
+<tr><td>a non-const reference never binds a literal</td><td><code>const T&amp;</code> binds one, and so does a plain <code>T&amp;</code> the body never writes through. A <code>string&amp;</code> takes a literal even when written (a writable temporary); a written <code>int&amp;</code> needs a variable: <code>'bump' writes through parameter 'x' (line 1); pass a variable</code></td></tr>
+<tr id="reference-captures"><td>a returned <code>[&amp;]</code> lambda dangles</td><td>a reference capture keeps its variable alive, and a C-style <code>for</code> variable captured by reference is fresh per iteration</td></tr>
+<tr id="switch"><td><code>switch</code> falls through</td><td>a case with statements ends at the next case; empty stacked labels (<code>case 1: case 2:</code>) share a body, and <code>fallthrough;</code> continues on purpose</td></tr>
+<tr><td><code>catch (const E&amp; e)</code> avoids a copy</td><td><code>catch (E e)</code> names the thrown value itself; no copy is made either way</td></tr>
+<tr><td><code>obj.count</code> reads a static</td><td>a static through an instance is a load error naming <code>Counter::count</code>; so is <code>Counter.count</code></td></tr>
+<tr id="arithmetic"><td>signed overflow and <code>x / 0</code> are undefined</td><td>integer overflow and integer division by zero raise catchable errors; float division by zero is IEEE (<code>inf</code>); shifts wrap modulo 2<sup>64</sup>; <code>math::wrap_add</code>, <code>wrap_sub</code>, <code>wrap_mul</code> wrap on purpose</td></tr>
+<tr id="evaluation-order"><td>argument order is unspecified</td><td>C++17's sequencing made total: arguments left to right, an assignment's right side before its target</td></tr>
+<tr id="methods-are-called"><td><code>&amp;Player::heal</code></td><td>no pointer to member, and <code>obj.method</code> without a call is an error: <code>reflect::bind(obj, "heal")</code> or a lambda</td></tr>
+<tr id="strings-and-char"><td><code>char</code> may be signed</td><td><code>char</code> is 0..255 and promotes to <code>int</code> in arithmetic; <code>s.size()</code> and <code>s[i]</code> count bytes</td></tr>
+<tr id="declaration-order"><td>prototypes and headers</td><td>none: a function body may call a function declared further down. Top-level statements run in order, so top-level code calls only what is declared above it</td></tr>
+<tr><td>two globals of one name is a link error</td><td>a second top-level declaration of a variable in one file is a load error; a function of the same signature from another file replaces the earlier one (hot reload)</td></tr>
+<tr id="overloads"><td><code>f(int)</code> and <code>f(int&amp;)</code> overload</td><td>overloads must differ in parameter types or count, not only by reference; an ambiguous call raises <code>Ambiguous call to ...</code></td></tr>
+</tbody></table></div>
+<div class="tabs" id="habits-tabs">
+<div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
+<button type="button" role="tab" id="habits-tab-cpp" aria-controls="habits-cpp" aria-selected="true">C++</button>
+<button type="button" role="tab" id="habits-tab-jai" aria-controls="habits-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="habits-cpp" role="tabpanel" aria-labelledby="habits-tab-cpp" tabindex="0">
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;iostream&gt;
+#include &lt;string&gt;
+
+struct Shape {
+    virtual ~Shape() = default;
+    virtual std::string kind() const { return "shape"; }
+};
+struct Circle : Shape {
+    double r = 1.5;
+    std::string kind() const override { return "circle"; }
+};
+void shout(std::string&amp; text) { for (char&amp; c : text) { c = static_cast&lt;char&gt;(std::toupper(c)); } std::cout &lt;&lt; text &lt;&lt; "\n"; }
+
+int main() {
+    Shape s = Circle();                              // sliced to a Shape
+    int n = 0;
+    auto count = [n]() mutable { n += 1; return n; };
+    auto copy = count;                               // its own n
+    count();
+    std::string text = "a variable binds string&amp;";   // shout("a literal") does not compile
+    shout(text);
+    int hits = 0;
+    switch (1) {
+        case 0:
+        case 1: hits += 1;                           // falls through
+        case 2: hits += 10;
+    }
+    double zero = 0.0;                               // 10 / 0 is undefined behavior
+    std::cout &lt;&lt; s.kind() &lt;&lt; " " &lt;&lt; copy() &lt;&lt; " " &lt;&lt; hits &lt;&lt; " " &lt;&lt; static_cast&lt;int&gt;(3.9) &lt;&lt; " " &lt;&lt; 1.0 / zero &lt;&lt; "\n";
+}</code></pre></div>
+<div class="codeblock cb-plain"><span class="cb-label">output</span><pre><code class="lang-plain">A VARIABLE BINDS STRING&amp;
+shape 1 11 3 inf</code></pre></div>
+</div>
+<div class="tab-panel" id="habits-jai" role="tabpanel" aria-labelledby="habits-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Shape { string kind() { return "shape"; } }
+class Circle : Shape { float r = 1.5; string kind() override { return "circle"; } }
+void shout(string&amp; text) { text.to_upper(); print(text); }
+
+Shape s = Circle();                                  // no slicing: s is a Circle
+int n = 0;
+auto count = [n]() { n += 1; return n; };
+auto copy = count;                                   // shares n
+count();
+shout("a literal binds string&amp;");
+int hits = 0;
 switch (1) {
-    case 1: hits += 1;          // ends here
+    case 0:
+    case 1: hits += 1;                               // ends here
     case 2: hits += 10;
 }
-switch (1) {
-    case 1:
-        hits += 100;
-        fallthrough;            // continue into case 2
-    case 2: hits += 1000;
-}
-print(hits);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1101</code></pre></div>
-<h3 id="overloads">Overloads work as in C++<a class="hlink" href="#overloads" aria-label="link">&#8203;</a></h3>
-<p>Functions of one name with different signatures coexist at program scope, in a namespace and in a class, and a call takes the best match; a tie raises <code>Ambiguous call to ...</code>, as C++ rejects an ambiguous call:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">namespace geo {
-    int area(int side) { return side * side; }
-    int area(int w, int h) { return w * h; }
-}
-print(geo::area(4), " ", geo::area(2, 3));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">16 6</code></pre></div>
-<p>At program scope the same holds, and a definition of the same signature from another unit replaces the earlier one, which is what hot reload needs:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int area(int side) { return side * side; }
-int area(int w, int h) { return w * h; }
-float area(float r) { return 3.0 * r * r; }
-print(area(2, 3), " ", area(4), " ", area(1.5));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">6 16 6.75</code></pre></div>
-<p>Overloads must differ in parameter types or count. Two that differ only by reference, <code>void f(int a)</code> and <code>void f(int&amp; a)</code>, are a load error at the second definition: <code>'f(int&amp; a)' differs from 'f(int a)' (line 1) only by reference; overloads must differ in parameter types or count</code>.</p>
-<h3 id="no-slicing">A base-typed variable keeps the whole object<a class="hlink" href="#no-slicing" aria-label="link">&#8203;</a></h3>
-<div class="callout cpp"><p>This is where JaiScript departs from C++: a <code>Base</code> slot holding a <code>Derived</code> keeps the whole object and its overrides, where C++ would slice it.</p></div>
-<p>Copying a derived value into a base-typed variable, parameter or element keeps all of it: no slicing. Assigning one into a base-typed slot that already holds an object keeps that object and turns it into the derived class in place. The variable's type decides what the checker lets you name, and <code>cast&lt;T&amp;&gt;</code> reaches the rest:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Shape { string kind() { return "shape"; } }
-class Circle : Shape { float r = 1.5; string kind() override { return "circle"; } }
-Shape s = Circle();
-array&lt;Shape&gt; all = [Shape(), Circle()];
-print(s.kind(), " ", type_of(s), " ", all[1].kind(), " ", cast&lt;Circle&amp;&gt;(s).r);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">circle Circle circle 1.5</code></pre></div>
-<h3 id="arithmetic">Arithmetic has no undefined behavior<a class="hlink" href="#arithmetic" aria-label="link">&#8203;</a></h3>
-<p>Signed overflow and division by zero, integer or float, raise an error that <code>catch</code> sees and leave the target untouched. Shifts wrap modulo 2<sup>64</sup>, and <code>math::wrap_add</code>, <code>wrap_sub</code> and <code>wrap_mul</code> wrap on purpose. An <code>int</code> is 64 bits everywhere:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int big = 9223372036854775807;
-try { big = big + 1; } catch (e) { print("caught: ", e); }
-try { print(10 / 0); } catch (e) { print("caught: ", e); }
-try { print(1.0 / 0.0); } catch (e) { print("caught: ", e); }
-print(1 &lt;&lt; 63, " ", math::wrap_add(big, 1), " ", 2147483647 + 1);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">caught: Integer overflow in '+'
-caught: Division by zero
-caught: Division by zero
--9223372036854775808 -9223372036854775808 2147483648</code></pre></div>
-<h3 id="evaluation-order">Evaluation order is defined<a class="hlink" href="#evaluation-order" aria-label="link">&#8203;</a></h3>
-<div class="callout cpp"><p>C++17's sequencing, made total: what C++17 leaves unspecified between arguments is left to right here, on both backends.</p></div>
-<p>The C++17 rule, everywhere: the callee, then its arguments left to right; for an assignment, the right side first, then the target (its container, then its index):</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string log = "";
-int note(string s, int v) { log += s + " "; return v; }
-int add(int a, int b) { return a + b; }
-array&lt;int&gt; slots = [0, 0];
-int r = add(note("first", 1), note("second", 2));
-slots[note("index", 0)] = note("value", 7);
-print(log, "| ", r, " ", slots[0]);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">first second value index | 3 7</code></pre></div>
-<h3 id="reference-parameters">Reference parameters and literals<a class="hlink" href="#reference-parameters" aria-label="link">&#8203;</a></h3>
-<div class="callout cpp"><p><code>const T&amp;</code> means what it means in C++, and a plain <code>T&amp;</code> that the body never writes through binds the same way.</p></div>
-<p>A <code>const T&amp;</code> parameter takes a literal or a temporary, and a variable still binds with no copy; a write through it is an error. A plain reference parameter that the body never writes through takes a literal or a temporary as well, decided from the body. A <code>string&amp;</code> takes a literal too, as a writable temporary:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int total(array&lt;int&gt;&amp; xs) { int s = 0; for (auto x : xs) { s += x; } return s; }
-void upper(string&amp; s) { s.to_upper(); print(s); }
-print(total([1, 2, 3]));
-upper("quiet");</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">6
-QUIET</code></pre></div>
-<p>A parameter the body does write keeps needing a variable, and the checker names the line that writes:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">void bump(int&amp; x) { x += 1; }
-bump(5);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
-&lt;script&gt;:2:6: error: 'bump' writes through parameter 'x' (line 1); pass a variable
-    bump(5);
-         ^</code></pre></div>
-<h3 id="reference-captures">A reference capture can outlive its frame<a class="hlink" href="#reference-captures" aria-label="link">&#8203;</a></h3>
-<p><code>[&amp;]</code> and <code>[&amp;x]</code> move the captured local into a shared cell, so returning such a lambda is safe where C++ would leave it dangling:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function make_counter() {
-    int count = 0;
-    return [&amp;count]() { count += 1; return count; };
-}
-auto next = make_counter();
-next();
-print(next());</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2</code></pre></div>
-<h3 id="methods-are-called">Methods are called, not taken<a class="hlink" href="#methods-are-called" aria-label="link">&#8203;</a></h3>
-<p><code>obj.method</code> without a call is an error, and there is no pointer to member. <code>reflect::bind(obj, "name")</code> makes a callable that keeps the object, or a lambda wraps the call:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Player { int hp = 5; void heal() { hp += 1; } }
-Player p;
-var heal = reflect::bind(p, "heal");
-heal();
-heal();
-print(p.hp);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">7</code></pre></div>
-<h3 id="strings-and-char">Strings are bytes, and char is unsigned<a class="hlink" href="#strings-and-char" aria-label="link">&#8203;</a></h3>
-<p><code>s.size()</code> and <code>s[i]</code> count bytes, a <code>char</code> promotes to an int in 0..255 under arithmetic, and the <code>utf8_</code> methods (or a <code>utf8_string</code>) count characters:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = "\xC3\xA9";              // é in UTF-8: two bytes
-utf8_string u = s;
-print(s.size(), " ", s[0] + 0, " ", s.utf8_length(), " ", u.size());</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 195 1 1</code></pre></div>
-<h3 id="declaration-order">No forward declarations, and the top level runs in order<a class="hlink" href="#declaration-order" aria-label="link">&#8203;</a></h3>
-<p>There are no prototypes or headers: a function body may call a function declared further down, because the call happens when the body runs. Top-level statements, though, run in order like a script, and a function or class exists once its declaration has run, so call into the file from below the declarations (or from a function the host calls later):</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int first(int x) { return second(x) + 1; }   // second is declared below: fine
-int second(int x) { return x * 10; }
-print(first(2));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">21</code></pre></div>
-<h3 id="not-there">What is not there<a class="hlink" href="#not-there" aria-label="link">&#8203;</a></h3>
-<p>Raw pointers (<code>T*</code>, <code>&amp;x</code>, <code>delete</code>), templates, const methods, const types and <code>const_cast</code>, <code>constexpr</code>, <code>unsigned</code> and sized integer types, <code>struct</code>, <code>virtual</code>, <code>mutable</code>, <code>enum class</code>, <code>goto</code>, typed <code>catch</code> clauses, <code>static_cast</code> (spelled <code>cast</code>) and <code>sizeof</code>.</p>
-<ul>
-<li><code>&amp;x</code>, <code>delete</code>, a const method or type, <code>const_cast</code>, <code>constexpr</code>, a <code>mutable</code> field, <code>virtual</code>, <code>goto</code> and a typed <code>catch</code> are parse errors that name the JaiScript spelling.</li>
-<li>The others, a <code>mutable</code> lambda among them, fail as a parse error, a load error or an error when the line runs, and the message does not name the missing feature.</li>
-</ul>
-<p>So a puzzling message on a C++-shaped line is worth checking against this list.</p>
-<h2 id="complete-program">A complete program<a class="hlink" href="#complete-program" aria-label="link">&#8203;</a></h2>
-<p>A small simulation step in the shape a C++ programmer would write it: value types with operators, a reference parameter for the hot loop, a scope guard whose destructor marks the end of each step, and a snapshot that is a real copy.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Vec2 {
-    float x = 0.0;
-    float y = 0.0;
-    Vec2() {}
-    Vec2(float px, float py) { x = px; y = py; }
-    Vec2 operator+(Vec2 o) { return Vec2(x + o.x, y + o.y); }
-    Vec2 operator*(float k) { return Vec2(x * k, y * k); }
-}
-class Body {
-    string name;
-    Vec2 pos;
-    Vec2 vel;
-    Body() {}
-    Body(string n, Vec2 p, Vec2 v) { name = n; pos = p; vel = v; }
-}
-class Scope {
-    string label;
-    Scope(string l) { label = l; print("begin ", label); }
-    ~Scope() { print("end ", label); }
-}
-void step(array&lt;Body&gt;&amp; bodies, float dt) {
-    Scope guard = Scope("step");
-    for (auto&amp; b : bodies) { b.pos = b.pos + b.vel * dt; }
-}
+float zero = 0.0;
+print(s.kind(), " ", copy(), " ", hits, " ", cast&lt;int&gt;(3.9), " ", 1.0 / zero);
+try { print(10 / 0); } catch (error e) { print("caught: ", e.message); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">A LITERAL BINDS STRING&amp;
+circle 2 1 3 inf
+caught: Division by zero</code></pre></div>
+</div>
+</div>
+<p>The same lines, different answers: the C++ <code>s</code> is sliced, its lambda copy counts alone, and its <code>switch</code> falls through.</p>
+<div class="tabs" id="load-errors-tabs">
+<div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
+<button type="button" role="tab" id="load-errors-tab-cpp" aria-controls="load-errors-cpp" aria-selected="true">C++</button>
+<button type="button" role="tab" id="load-errors-tab-jai" aria-controls="load-errors-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="load-errors-cpp" role="tabpanel" aria-labelledby="load-errors-tab-cpp" tabindex="0">
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;iostream&gt;
 
-array&lt;Body&gt; world = [Body("ship", Vec2(0.0, 0.0), Vec2(2.0, 1.0)),
-                     Body("rock", Vec2(10.0, 0.0), Vec2(-1.0, 0.0))];
-array&lt;Body&gt; snapshot = world;            // a deep copy, like std::vector&lt;Body&gt;
-step(world, 0.5);
-step(world, 0.5);
-for (auto&amp; b : world) { print(`${b.name}: (${b.pos.x:.1f}, ${b.pos.y:.1f})`); }
-print(`snapshot ship: (${snapshot[0].pos.x:.1f}, ${snapshot[0].pos.y:.1f})`);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">begin step
-end step
-begin step
-end step
-ship: (2.0, 1.0)
-rock: (9.0, 0.0)
-snapshot ship: (0.0, 0.0)</code></pre></div>
+struct Node { int v = 0; Node* next = nullptr; };
+
+int main() {
+    Node* head = nullptr;
+    double f = 3.9;
+    int i = f;                                   // compiles; /W4 warns of a possible loss of data
+    std::cout &lt;&lt; (head == nullptr) &lt;&lt; " " &lt;&lt; i &lt;&lt; "\n";
+}</code></pre></div>
+<div class="codeblock cb-plain"><span class="cb-label">output</span><pre><code class="lang-plain">1 3</code></pre></div>
+</div>
+<div class="tab-panel" id="load-errors-jai" role="tabpanel" aria-labelledby="load-errors-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Node { int v = 0; Node next; }
+Node head = null;
+float f = 3.9;
+int i = f;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
+&lt;script&gt;:1:30: error: class 'Node' holds itself by value (Node.next): a class value is never null; make one link a 'shared_ptr&lt;Node&gt;' (an array or a map of them starts empty)
+    class Node { int v = 0; Node next; }
+                                 ^
+&lt;script&gt;:2:6: error: cannot initialize 'head' declared 'Node' with 'null': a 'Node' is never null; declare 'shared_ptr&lt;Node&gt;' (or var) for a slot that can be empty
+    Node head = null;
+         ^
+&lt;script&gt;:4:5: error: cannot initialize 'i' declared 'int' with 'float': cast&lt;int&gt;(x) truncates toward zero, math::ifloor(x) rounds down
+    int i = f;
+        ^</code></pre></div>
+</div>
+</div>
+<p>The C++ side links through a pointer and compiles with one conversion warning; the same intent written with values stops the JaiScript load.</p>
+<h3 id="not-there">What is not there<a class="hlink" href="#not-there" aria-label="link">&#8203;</a></h3>
+<p>Raw pointers (<code>T*</code>, <code>&amp;x</code>, <code>delete</code>), templates, const methods and types, <code>const_cast</code>, <code>constexpr</code>, <code>unsigned</code> and sized integers, <code>struct</code>, <code>virtual</code>, <code>mutable</code>, <code>enum class</code>, <code>goto</code>, <code>static_cast</code> (spelled <code>cast</code>) and <code>sizeof</code>. <code>&amp;x</code>, <code>delete</code>, a const method or type, <code>const_cast</code>, <code>constexpr</code>, a <code>mutable</code> field, <code>virtual</code> and <code>goto</code> are parse errors that name the JaiScript spelling; the others fail with a message that does not name the missing feature, so a puzzling error on a C++-shaped line is worth checking against this list.</p>
 <h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
-<p><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> covers the reference escape hatches and what each one costs. <a href="../guide/04-operators.html">Operators &amp; Arithmetic</a> has the overloading rules and the evaluation order, <a href="../guide/07-classes.html">Classes</a> constructors, access and hot reload, and <a href="../guide/13-strict-checking.html">Types That Fail Early</a> what the checker stops at load. Embedding JaiScript in a C++ program starts at the <a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a>.</p>
+<p><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> has the copy and reference rules, <a href="../guide/07-classes.html">Classes</a> constructors, access and hot reload, and <a href="../guide/13-strict-checking.html">Types That Fail Early</a> what the checker stops at load. Embedding starts at the <a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a>.</p>
 <nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../guide/01-hello.html"><span>next &middot; the guide &rarr;</span>Hello &amp; Basics</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

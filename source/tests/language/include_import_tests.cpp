@@ -365,7 +365,7 @@ public:
         
         test("include_is_textual_the_file_runs_at_the_include_site", [=, this]() {
             // Includes are the includer's scope. The included declarations belong to the including unit (a
-            // later `var x` in the includer writes the included x in place, and the included function sees it), and an include
+            // later store to x in the includer writes the included x, and the included function sees it), and an include
             // inside a block or a function body scopes with it (docs/site/guide/10-modules.html)
             auto eng = make_engine();
             jai::stdlib::register_all(*eng);
@@ -377,7 +377,7 @@ public:
                 var y = 9;
             )");
             eng->add_include_path(jai::foundry::test_temp_directory().string());
-            check_eq(std::string("3 5 5"), eng->execute(R"(var x = 1; include "textual_lib.jai"; var after = x; var x = 5; to_string(after) + " " + to_string(x) + " " + to_string(readx());)").as<std::string>());
+            check_eq(std::string("3 5 5"), eng->execute(R"(var x = 1; include "textual_lib.jai"; var after = x; x = 5; to_string(after) + " " + to_string(x) + " " + to_string(readx());)").as<std::string>());
             check_eq(std::string("9 gone 9 gone"), eng->execute(R"(string r = ""; { include "textual_blk.jai"; r = to_string(y); } try { r = r + " " + to_string(y); } catch (e) { r = r + " gone"; } function f() { include "textual_blk.jai"; return y; } r = r + " " + to_string(f()); try { r = r + " " + to_string(y); } catch (e) { r = r + " gone"; } r;)").as<std::string>());
             cleanup_temp_file(lib);
             cleanup_temp_file(blk);
@@ -2353,7 +2353,7 @@ public:
                 std::error_code ec;
                 std::filesystem::last_write_time(path, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(2 * ++tick), ec);
             };
-            const std::string use = "int dr_twice() { int n = 0; n = dr_level(); return n * 2; }\nvar dr_read() { var v = dr_level(); return v; }\n";
+            const std::string use = "float dr_twice() { float n = 0.0; n = dr_level(); return n * 2; }\nvar dr_read() { var v = dr_level(); return v; }\n";
             const std::string root = "import(\"dr_use.jai\");\nimport(\"dr_lvl.jai\");\n";
             const auto probe = [&](engine& eng) {
                 std::string manifests;

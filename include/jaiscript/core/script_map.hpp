@@ -92,7 +92,7 @@ namespace jai {
         return c < 0 ? -1 : c > 0 ? 1 : 0;
     }
 
-    class script_map {
+    class alignas(8) script_map {
     public:
         using key_type = script_value;
         using mapped_type = script_value;

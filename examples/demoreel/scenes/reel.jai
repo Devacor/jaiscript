@@ -14,6 +14,7 @@ class Scene {
 	float replay = 3.0;   // the sim-seconds a jump replays to arrive mid-flight
 	var cue = null;       // the scene's music (scenes/music.jai): ask it for the kick, the chord, the energy, the hits
 	int pixel_budget = 0; // set in the scene's constructor: past this many pixels the scene renders smaller and scales up
+	bool titled = true;   // whether the reel lays its title card over the scene's first bar
 
 	void setup(int w_, int h_, int seed_) {
 		w = w_;
@@ -27,7 +28,7 @@ class Scene {
 	void build() {}
 	void update(float t, float dt) {}
 	void render(var& grid) {}
-	void text_rows(var& rows) {}    // glyph rows laid over the picture (the finale's credits)
+	void text_rows(var& rows) {}    // glyph rows laid over the picture (FINALE's credits)
 	// the scene's big moments in its own seconds (on beats or bar lines), and how big:
 	// 2 an impact with a riser into it, 1 an accent; the composer scores them
 	array<float> hit_times() { return []; }
@@ -73,8 +74,8 @@ class Reel {
 	bool hud_full = false;   // 'h' steps the HUD: the performance chip, the full status and key bars, off
 	bool paused = false;
 
-	int nscenes = 11;
-	int intro_idx = 11;    // the cold open: one more entry past the scenes, played once at the start
+	int nscenes = 12;
+	int intro_idx = 12;    // the cold open: one more entry past the scenes, played once at the start
 	var bars = [];         // each scene's length in bars of the 124 bpm soundtrack
 	var cues = [];
 	var seed_slots = [];   // each scene seeds from its own slot, so the running order never changes a scene's frames
@@ -90,12 +91,12 @@ class Reel {
 	bool finish_pending = false;
 	float trans_t = 0.0;
 	int trans_kind = 0;
-	// how each scene hands over to the next: DONUT dives through its hole into JULIA, JULIA swirls
-	// into the lamps, the wax ripples into chrome pipes, the pipes iris onto the flock, the flock
-	// melts like Doom into GLOBHUNTER, the hunt zooms out over the canyon, the canyon ripples
-	// into CHROME, the glass shatters into OSSUARY, the web swirls into the ink, the ink dives
-	// into FINALE, and FINALE irises back to the start
-	array<int> out_transition = [5, 8, 7, 3, 4, 5, 7, 6, 8, 5, 3, 5];
+	// how each scene hands over to the next: EIGHT's fire wall melts onto DONUT, the lens zooms
+	// through DONUT's hole into JULIA, JULIA swirls into the lamps, the wax ripples into chrome pipes, the pipes
+	// iris onto the flock, the flock melts like Doom into GLOBHUNTER, the hunt zooms out over the
+	// canyon, the canyon ripples into CHROME, the glass shatters into OSSUARY, the web swirls into
+	// the ink, the ink dives into FINALE, and FINALE's black sky irises back to EIGHT
+	array<int> out_transition = [4, 5, 8, 7, 3, 4, 5, 7, 6, 8, 5, 3, 5];
 	int trans_count = 0;
 	int trans_frame = 0;
 
@@ -145,29 +146,30 @@ class Reel {
 		ui_shine = ui.add(255, 255, 255);
 		ui_shadow = ui.add(4, 2, 12);
 		ui_edge = ui.add(255, 244, 200);
-		bars = [6, 6, 6, 7, 7, 8, 8, 6, 21, 8, 49, 4];
-		seed_slots = [3, 4, 5, 6, 8, 9, 10, 13, 15, 17, 16, 21];
+		bars = [32, 6, 6, 6, 7, 7, 8, 8, 6, 21, 8, 24, 4];
+		seed_slots = [16, 3, 4, 5, 6, 8, 9, 10, 13, 15, 17, 23, 21];
 		for (int i = 0; i <= intro_idx; ++i) {
 			var probe = make_scene(i);
 			if (probe.length_bars() > 0) { bars[i] = probe.length_bars(); }
-			cues.push(Cue(bars[i], music_mood(i), seed + i * 101, probe.hit_times(), probe.hit_levels()));
+			cues.push(Cue(bars[i], music_mood(i), seed + seed_slots[i] * 101, probe.hit_times(), probe.hit_levels()));
 		}
 		start_scene(intro_idx, 0.0);
 	}
 
 	var make_scene(int idx) {
 		switch (idx) {
-			case 0: return Donut();
-			case 1: return Julia();
-			case 2: return Lava();
-			case 3: return Pipes();
-			case 4: return Boids();
-			case 5: return GlobHunter();
-			case 6: return CanyonRun();
-			case 7: return Chrome();
-			case 8: return Ossuary();
-			case 9: return Maelstrom();
-			case 10: return Finale();
+			case 0: return Eight();
+			case 1: return Donut();
+			case 2: return Julia();
+			case 3: return Lava();
+			case 4: return Pipes();
+			case 5: return Boids();
+			case 6: return GlobHunter();
+			case 7: return CanyonRun();
+			case 8: return Chrome();
+			case 9: return Ossuary();
+			case 10: return Maelstrom();
+			case 11: return Finale();
 			default: return Intro();
 		}
 	}
@@ -186,8 +188,8 @@ class Reel {
 		int sh = ph;
 		if (sc.pixel_budget > 0 && pw * ph > sc.pixel_budget) {
 			float k = math::sqrt(sc.pixel_budget * 1.0 / (pw * ph));
-			sw = itrunc(pw * k);
-			sh = itrunc(ph * k);
+			sw = math::itrunc(pw * k);
+			sh = math::itrunc(ph * k);
 		}
 		sc.setup(sw, sh, seed + seed_slots[idx] * 7919);
 	}
@@ -289,8 +291,8 @@ class Reel {
 	// replay up to their replay seconds so they arrive mid-flight instead of empty.
 	void jump(int idx, float at_t) {
 		start_scene(idx, at_t);
-		int steps = itrunc(at_t * 30.0);
-		int most = itrunc(cur.replay * 30.0);
+		int steps = math::itrunc(at_t * 30.0);
+		int most = math::itrunc(cur.replay * 30.0);
 		steps = steps > most ? most : steps;
 		float ft = at_t - steps * 0.0333333333;
 		for (int i = 0; i < steps; ++i) {
@@ -376,7 +378,7 @@ class Reel {
 			flash_noise.push(noise_rng.next(1000));
 			float dx = (i % pw - pw * 0.5) / (pw * 0.5);
 			float dy = (i / pw - ph * 0.5) / (ph * 0.5);
-			ring.push(itrunc((dx * dx + dy * dy) * 500.0));
+			ring.push(math::itrunc((dx * dx + dy * dy) * 500.0));
 		}
 	}
 
@@ -384,7 +386,7 @@ class Reel {
 	void cut_flash(float prog) {
 		float k = 1.0 - prog / 0.14;
 		if (k <= 0.0) { return; }
-		dither_flash(itrunc(k * k * 1000.0));
+		dither_flash(math::itrunc(k * k * 1000.0));
 	}
 
 	void dither_flash(int keep) {
@@ -422,7 +424,7 @@ class Reel {
 			var& rg = ring;
 			int dark = ui_off + ui_shadow;
 			// past the iris everything is dark, across a thin rim it dithers in
-			int edge = itrunc((1.04 - close) * 1000.0);
+			int edge = math::itrunc((1.04 - close) * 1000.0);
 			int rim = 70;
 			for (int i = 0; i < pw * ph; ++i) {
 				int over = rg[i] - edge + rim;
@@ -431,8 +433,8 @@ class Reel {
 		}
 		if (since < 0.32) {
 			float amp = (0.32 - since) / 0.32 * (sext ? 4.0 : 2.5);
-			int dx = itrunc(math::sin(t * 97.0) * amp);
-			int dy = itrunc(math::cos(t * 71.0) * amp * 0.6);
+			int dx = math::itrunc(math::sin(t * 97.0) * amp);
+			int dy = math::itrunc(math::cos(t * 71.0) * amp * 0.6);
 			if (dx != 0 || dy != 0) { shift_frame(dx, dy); }
 		}
 	}
@@ -479,17 +481,17 @@ class Reel {
 		// three styles take turns: the band opening from the middle, a shutter closing from
 		// both sides, and a glitch whose rows slip sideways on the hats
 		int style = cur_idx % 3;
-		int reach = style == 1 ? band_h / 2 : itrunc(k * band_h * 0.5 + 0.5);
+		int reach = style == 1 ? band_h / 2 : math::itrunc(k * band_h * 0.5 + 0.5);
 		var& pix = HB_PIX;
 		int band = ui_off + ui_band;
-		int kick = cur.cue != null ? itrunc(cur.cue.kick_env(scene_t) * 2.5) : 0;
+		int kick = cur.cue != null ? math::itrunc(cur.cue.kick_env(scene_t) * 2.5) : 0;
 		for (int y = mid - reach; y < mid + reach; ++y) {
 			if (y < 0 || y >= ph) { continue; }
 			int ry = y - y0;
 			int shade = ry * 12 / band_h + kick;
 			int c = ry == 0 ? ui_off + ui_rule : (ry == band_h - 1 ? ui_off + ui_rule + 1 : band + (shade > 11 ? 11 : shade));
 			int gi = y * pw;
-			int edge_l = style == 1 ? itrunc(pw * 0.5 * k) : pw;
+			int edge_l = style == 1 ? math::itrunc(pw * 0.5 * k) : pw;
 			for (int x = 0; x < pw; ++x) {
 				if (style == 1 && x >= edge_l && x < pw - edge_l) { continue; }
 				pix[gi + x] = c;
@@ -499,11 +501,11 @@ class Reel {
 		int tw = gfx.text_width(name, sx);
 		int tx = (pw - tw) / 2;
 		int ty = y0 + 3;
-		int shown = itrunc((scene_t - 0.28) * 34.0) + 1;
+		int shown = math::itrunc((scene_t - 0.28) * 34.0) + 1;
 		gfx.draw_text(pix, pw, ph, name, tx, ty, sx, sy, ui_off + ui_ink, 8, ui_off + ui_shadow, style == 1 ? name.size() : shown);
 		if (style == 2 && cur.cue != null) { title_glitch(ty, ty + 7 * sy, cur.cue.hat_env(scene_t)); }
 		// the shine: a diagonal stripe of white sweeping over the ink
-		int sweep = itrunc((scene_t - 0.6) * 90.0 * sx / 2) - 20;
+		int sweep = math::itrunc((scene_t - 0.6) * 90.0 * sx / 2) - 20;
 		int ink0 = ui_off + ui_ink;
 		for (int y2 = ty; y2 < ty + th; ++y2) {
 			int gi2 = y2 * pw;
@@ -521,8 +523,8 @@ class Reel {
 	// the glitch: rows of the lettering slip sideways in slices, harder on each hat
 	void title_glitch(int y0, int y1, float hit) {
 		var& pix = HB_PIX;
-		int step = itrunc(scene_t / MUSIC_STEP);
-		int amount = itrunc(hit * pw * 0.05) + (scene_t < 0.6 ? 6 : 0);
+		int step = math::itrunc(scene_t / MUSIC_STEP);
+		int amount = math::itrunc(hit * pw * 0.05) + (scene_t < 0.6 ? 6 : 0);
 		if (amount <= 0) { return; }
 		array<int> row = [];
 		for (int x = 0; x < pw; ++x) { row.push(0); }
@@ -564,7 +566,7 @@ class Reel {
 		string keys = " n p  next/prev    1-9 0  jump    f  freeze    h  hud    r  reload    q  quit";
 		keys = keys.size() > w ? keys.substr(0, w) : keys + string::repeat(" ", w - keys.size());
 		float played = scene_t / dur_cur;
-		int filled = itrunc((played > 1.0 ? 1.0 : played) * w);
+		int filled = math::itrunc((played > 1.0 ? 1.0 : played) * w);
 		rows[h - 1] = sgr_bg(52, 38, 96) + sgr_fg(214, 206, 255) + keys.substr(0, filled)
 			+ band + sgr_fg(120, 112, 168) + keys.substr(filled) + RESET;
 	}
@@ -622,7 +624,7 @@ class Reel {
 			drop_fx(cur, scene_t);
 		}
 		int trow = -1;
-		if (!in_trans && !finish_pending && scene_t < title_len && cur_idx != intro_idx) { trow = title_pixels(); }
+		if (!in_trans && !finish_pending && scene_t < title_len && cur.titled) { trow = title_pixels(); }
 		var rows = hb_present();
 		title_text(rows, trow);
 		if (!in_trans) { cur.text_rows(rows); }

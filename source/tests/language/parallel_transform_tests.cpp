@@ -394,7 +394,7 @@ public:
 				int f(int x) { print(x); return x; }
 				try { parallel_transform([1, 2, 3], f); } catch (e) { return e; }
 				return "no-error";
-				)", {"host function 'print' is marked serial_function() and cannot be called in a parallel body"}},
+				)", {"host function 'print' is marked jai::serial and cannot be called in a parallel body"}},
 				// a coroutine's minted value is not a plain script function payload
 				{R"(
 				coroutine int f(int x) { yield x; return x; }
@@ -424,7 +424,7 @@ public:
 				int f(int x) { parallel_transform([1], g); return x; }
 				try { parallel_transform([1, 2, 3], f); } catch (e) { return e; }
 				return "no-error";
-				)", {"host function 'parallel_transform' is marked serial_function() and cannot be called in a parallel body"}},
+				)", {"host function 'parallel_transform' is marked jai::serial and cannot be called in a parallel body"}},
 				{R"(
 				try { parallel_transform(5, thread_count); } catch (e) { return e; }
 				return "no-error";
@@ -1334,22 +1334,22 @@ public:
 		});
 
 		test("worker_copied_instances_register_at_the_join", [this]() {
-			// An instance a worker copies (a by-value store into a cleared field: one holding an instance copy-assigns) parks in the worker's
+			// An instance a worker copies (a by-value store into a fresh array: a field holding an instance copy-assigns) parks in the worker's
 			// pending list and joins the class registry after the region: a later hot reload must
 			// still migrate it (the registry is how migration finds live instances)
 			auto e = make_engine();
 			e->parallel_thread_count(4);
 			e->execute(R"(
 				class Leaf { int v = 0; Leaf() {} Leaf(int n) { v = n; } }
-				class Node { Leaf a = Leaf(0); Leaf b = Leaf(0); Node() {} Node(int n) { a = Leaf(n); b = Leaf(-1); } }
+				class Node { Leaf a = Leaf(0); array<Leaf> b = [Leaf(0)]; Node() {} Node(int n) { a = Leaf(n); b = [Leaf(-1)]; } }
 				array<Node> nodes = [];
 				for (int i = 0; i < 100; i++) { nodes.push(Node(i)); }
-				parallel_for (auto& n : nodes) { n.b = null; n.b = n.a; }
+				parallel_for (auto& n : nodes) { n.b = [n.a]; }
 			)");
 			e->execute(R"(
 				class Leaf { int v = 0; int extra = 7; Leaf() {} Leaf(int n) { v = n; } }
 			)");
-			auto r = e->execute("return [nodes[5].b.v, nodes[5].b.extra, nodes[99].b.extra, nodes[5].a.extra];");
+			auto r = e->execute("return [nodes[5].b[0].v, nodes[5].b[0].extra, nodes[99].b[0].extra, nodes[5].a.extra];");
 			const auto& v = r.as_array();
 			check_eq((int64_t)5, v[0].as_int());
 			check_eq((int64_t)7, v[1].as_int());
@@ -2262,7 +2262,7 @@ public:
 			                        "print(g.reading());\n";
 			const std::string expected =
 				"[17.0,27.0,37.0,47.0]\n"
-				"C++ method 'publish' of 'Gauge' is marked serial_method() and cannot be called in a parallel body\n"
+				"C++ method 'publish' of 'Gauge' is marked jai::serial and cannot be called in a parallel body\n"
 				"C++ method 'add' of 'Gauge' changes an object this parallel body did not make (only its const methods may run on it)\n"
 				"7.0\n";
 			for (size_t workers : {size_t(1), size_t(4), size_t(8)}) {
@@ -2271,7 +2271,7 @@ public:
 				auto out = std::make_shared<std::ostringstream>();
 				e->set_output_stream(out);
 				jai::dynamic_binder<gauge>(*e, "Gauge").constructor<>().method("add", &gauge::add).method("reading", &gauge::reading)
-					.method("publish", &gauge::publish).serial_method("publish", serial_overloads::every).build();
+					.method("publish", &gauge::publish, jai::serial).build();
 				e->parallel_thread_count(workers);
 				try { e->execute(src); } catch (const std::exception& ex) { *out << "threw: " << ex.what(); }
 				check_eq(expected, out->str(), std::to_string(workers));
@@ -3314,7 +3314,7 @@ public:
 				{ "written array destructor", "int deaths = 0; class Res { int v = 0; ~Res() { deaths++; } } array<int> xs = [0, 1]; var loose = [Res(), Res()]; parallel_for (int x : xs) { loose[x] = 5; }",
 				  "parallel_for: body writes enclosing state 'deaths' in the destructor of 'Res' at 1:" },
 				{ "unprovable call", "class T { int v = 0; T(int a) { print(a); v = a; } } array<int> xs = [1, 2]; parallel_for (auto& x : xs) { T t(x); x = t.v; }",
-				  "parallel_for: host function 'print' is marked serial_function() and cannot be called in a parallel body in the constructor of 'T' at 1:" },
+				  "parallel_for: host function 'print' is marked jai::serial and cannot be called in a parallel body in the constructor of 'T' at 1:" },
 				{ "reduce step", "int calls = 0; class Acc { int n = 0; Acc() {} Acc(int a) { calls++; n = a; } } array<int> xs = [1, 2]; parallel_reduce(xs, Acc(), [](Acc a, int x) -> Acc { return Acc(a.n + x); }, [](Acc a, Acc b) -> Acc { return a; });",
 				  "parallel_reduce: body writes enclosing state 'calls' in the constructor of 'Acc' at 1:" },
 			};
@@ -3631,7 +3631,7 @@ public:
 				"parallel_transform", "print", "reflect::bases", "reflect::bind", "reflect::call", "reflect::classes",
 				"reflect::construct", "reflect::construct_shared", "reflect::fields", "reflect::function_arguments",
 				"reflect::functions", "reflect::generation", "reflect::get", "reflect::globals", "reflect::has_field",
-				"reflect::has_method", "reflect::instances", "reflect::invoke", "reflect::is_cpp_bound", "reflect::is_enabled",
+				"reflect::has_method", "reflect::instances", "reflect::invoke", "reflect::is_a", "reflect::is_cpp_bound", "reflect::is_enabled",
 				"reflect::method_arguments", "reflect::methods", "reflect::scoped_template_dirs",
 				"reflect::scoped_template_output_limit", "reflect::set", "reflect::template_output_limit", "reflect::type_name",
 				"resolve_path", "sleep", "spider::Response", "spider::catch", "spider::get", "spider::post", "spider::sling",
@@ -3643,19 +3643,19 @@ public:
 			const std::set<std::string> parallel = {
 				"array::append", "array::concat", "array::fill", "array::resize", "array::reverse", "array::slice", "base64_decode",
 				"base64_encode", "bin_dir", "binary::bytes", "binary::layout", "binary::reader", "binary::text", "binary::width",
-				"binary::writer", "crypto::equals", "crypto::hmac_sha256", "crypto::hmac_sha256_bytes", "crypto::hmac_sha512",
+				"binary::writer", "catch_takes#", "catch_value#", "crypto::equals", "crypto::hmac_sha256", "crypto::hmac_sha256_bytes", "crypto::hmac_sha512",
 				"crypto::hmac_sha512_bytes", "crypto::md5", "crypto::md5_bytes", "crypto::password_hash", "crypto::password_verify",
 				"crypto::random_bytes", "crypto::random_hex", "crypto::random_int", "crypto::sha1", "crypto::sha1_bytes",
 				"crypto::sha256", "crypto::sha256_bytes", "crypto::sha512", "crypto::sha512_bytes", "current_script_dir",
 				"current_script_path", "executable_dir", "executable_path", "file_name", "format", "format_value",
-				"is_registered_type", "math::abs", "math::acos", "math::angle_between", "math::asin", "math::atan", "math::atan2",
+				"is_registered_type", "math::abs", "math::acos", "math::angle", "math::angle_between", "math::asin", "math::atan", "math::atan2",
 				"math::cbrt", "math::ceil", "math::clamp", "math::color", "math::cos", "math::cosh", "math::cross", "math::degrees",
 				"math::degrees_to_radians", "math::distance", "math::distance_squared", "math::dot", "math::exp", "math::exp2",
-				"math::floor", "math::fmod", "math::hypot", "math::ifloor", "math::is_inf", "math::is_nan", "math::itrunc",
+				"math::floor", "math::fmod", "math::from_angle", "math::hypot", "math::ifloor", "math::is_inf", "math::is_nan", "math::itrunc",
 				"math::ivec2", "math::ivec3", "math::length", "math::length_squared", "math::lerp", "math::log", "math::log10",
 				"math::log2", "math::max", "math::min", "math::mix", "math::mix_hsv", "math::mix_in", "math::mix_in_out",
 				"math::mix_out", "math::mix_out_in", "math::mix_rgb", "math::normalize", "math::perpendicular", "math::pow",
-				"math::project", "math::radians", "math::radians_to_degrees", "math::reflect", "math::remap", "math::rotate",
+				"math::project", "math::radians", "math::radians_to_degrees", "math::reflect", "math::remap", "math::rotate", "math::rotate_around",
 				"math::round", "math::saturate", "math::sign", "math::sin", "math::sinh", "math::sqrt", "math::tan", "math::tanh",
 				"math::trunc", "math::unmix", "math::unmix_in", "math::unmix_in_out", "math::unmix_out", "math::unmix_out_in",
 				"math::vec2", "math::vec3", "math::vec4", "math::wrap", "math::wrap_add", "math::wrap_mul", "math::wrap_sub", "merge",
@@ -3723,13 +3723,13 @@ public:
 			shared->v = 5;
 			auto bind = [&](jai::engine& e) {
 				dynamic_binder<host_counter>(e, "Counter").constructor<>()
-					.method("bump", &host_counter::bump).method("value", &host_counter::value).method("reset", &host_counter::reset)
-					.serial_method("reset")
-					.static_method("twice", &host_counter::twice).static_method("halve", &host_counter::halve).serial_static_method("halve")
+					.method("bump", &host_counter::bump).method("value", &host_counter::value).method("reset", &host_counter::reset, jai::serial)
+					.static_method("twice", &host_counter::twice).static_method("halve", &host_counter::halve, jai::serial)
 					.property("v", &host_counter::v).build();
 				e.add_function("scale", [](int64_t x) { return x * 3; });
-				e.add_function("log_it", [](int64_t) {});
-				e.serial_function("log_it");
+				e.add_function("log_it", [](int64_t) {}, jai::serial);
+				e.add_function("try_log", [](int64_t) { return true; }, jai::serial | jai::nodiscard);
+				e.add_variadic_function("log_all", [&e](const std::vector<script_value>&) -> script_value { return e.make_null(); }, jai::serial);
 				e.add_function("fill", [](int64_t& out) { out = 7; });
 				e.add_function("shared_counter", [shared]() { return shared; });
 			};
@@ -3767,15 +3767,19 @@ public:
 			struct refusal { const char* name; const char* source; const char* text; };
 			const refusal refusals[] = {
 				{ "serial function", "array<int> xs = [1, 2]; parallel_for (int x : xs) { log_it(x); }",
-				  "parallel_for: host function 'log_it' is marked serial_function() and cannot be called in a parallel body at 1:" },
+				  "parallel_for: host function 'log_it' is marked jai::serial and cannot be called in a parallel body at 1:" },
+				{ "serial and nodiscard", "array<int> xs = [1, 2]; parallel_for (int x : xs) { bool ok = try_log(x); }",
+				  "parallel_for: host function 'try_log' is marked jai::serial and cannot be called in a parallel body at 1:" },
+				{ "serial variadic function", "array<int> xs = [1, 2]; parallel_for (int x : xs) { log_all(x, x); }",
+				  "parallel_for: host function 'log_all' is marked jai::serial and cannot be called in a parallel body at 1:" },
 				{ "library builtin", "array<int> xs = [1, 2]; parallel_for (int x : xs) { print(x); }",
-				  "parallel_for: host function 'print' is marked serial_function() and cannot be called in a parallel body at 1:" },
+				  "parallel_for: host function 'print' is marked jai::serial and cannot be called in a parallel body at 1:" },
 				{ "serial static method", "array<int> xs = [1, 2]; parallel_for (auto& x : xs) { x = Counter::halve(x); }",
-				  "parallel_for: C++ static method 'Counter::halve' is marked serial_static_method() and cannot be called in a parallel body at 1:" },
+				  "parallel_for: C++ static method 'Counter::halve' is marked jai::serial and cannot be called in a parallel body at 1:" },
 				{ "writeback argument", "int g = 0; array<int> xs = [1, 2]; parallel_for (int x : xs) { fill(g); }",
 				  "parallel_for: argument passes enclosing state 'g' by reference (captured reads are read-only) at 1:" },
 				{ "serial method", "array<int> xs = [1, 2]; parallel_for (int x : xs) { Counter c; c.reset(); }",
-				  "C++ method 'reset' of 'Counter' is marked serial_method() and cannot be called in a parallel body" },
+				  "C++ method 'reset' of 'Counter' is marked jai::serial and cannot be called in a parallel body" },
 				{ "non-const method on a shared object", "array<int> xs = [1, 2]; parallel_for (int x : xs) { var s = shared_counter(); s.bump(); }",
 				  "C++ method 'bump' of 'Counter' changes an object this parallel body did not make (only its const methods may run on it)" },
 				{ "property store on a shared object", "array<int> xs = [1, 2]; parallel_for (int x : xs) { var s = shared_counter(); s.v = x; }",
@@ -3794,6 +3798,11 @@ public:
 				}
 			}
 			check_eq((int64_t)5, shared->v, "the shared object was never written");
+			auto marked = make_engine();
+			bind(*marked);
+			check_true(marked->is_nodiscard_function("try_log") && !marked->is_nodiscard_function("log_it"), "serial | nodiscard marks both");
+			const auto dropped = marked->check("try_log(1);\nint after = 0;");
+			check_true(dropped.format().find("the result of 'try_log' is discarded") != std::string::npos, dropped.format());
 		});
 
 		test("the_binder_guide_s_parallel_call_sample_prints_what_the_page_shows", [this]() {
@@ -3819,8 +3828,8 @@ public:
 			const std::string expected =
 				"[110.0,120.0,130.0]\n"
 				"C++ method 'add' of 'Meter' changes an object this parallel body did not make (only its const methods may run on it)\n"
-				"C++ method 'publish' of 'Meter' is marked serial_method() and cannot be called in a parallel body\n"
-				"parallel_for: host function 'log_line' is marked serial_function() and cannot be called in a parallel body at 10:37\n";
+				"C++ method 'publish' of 'Meter' is marked jai::serial and cannot be called in a parallel body\n"
+				"parallel_for: host function 'log_line' is marked jai::serial and cannot be called in a parallel body at 10:37\n";
 			for (bool vm : {false, true}) {
 				auto e = make_engine();
 				jai::stdlib::register_all(*e);
@@ -3828,10 +3837,9 @@ public:
 				auto out = std::make_shared<std::ostringstream>();
 				e->set_output_stream(out);
 				jai::dynamic_binder<doc_meter>(*e, "Meter").constructor<>().method("add", &doc_meter::add).method("reading", &doc_meter::reading)
-					.method("publish", &doc_meter::publish).serial_method("publish", serial_overloads::every).build();
+					.method("publish", &doc_meter::publish, jai::serial).build();
 				e->add_function("master", [master]() { return master; });
-				e->add_function("log_line", [](const std::string&) {});
-				e->serial_function("log_line");
+				e->add_function("log_line", [](const std::string&) {}, jai::serial);
 				e->parallel_thread_count(8);
 				try { e->execute(src); } catch (const std::exception& ex) { *out << "threw: " << ex.what(); }
 				check_eq(expected, out->str(), vm ? "vm" : "interp");
@@ -3894,8 +3902,9 @@ public:
 
 		test("elements_are_their_chunks_own_receivers_and_marks_cover_non_const_overloads", [this]() {
 			// A parallel_for element (and a zipped one, and a parallel_reduce accumulator) the distinctness check proved the only one
-			// of its C++ object takes non-const methods and property stores; a serial mark covers a name's non-const overloads unless
-			// it says every one
+			// of its C++ object takes non-const methods and property stores; jai::serial on a non-const overload covers the name's
+			// non-const overloads, and on a const one (a const member function, a lambda over const T&) every overload, which a
+			// later non-const one keeps
 			struct host_unit {
 				int64_t hp = 10;
 				void update(int64_t by) { hp += by; }
@@ -3907,9 +3916,10 @@ public:
 				dynamic_binder<host_unit>(e, "Unit").constructor<>()
 					.method("update", &host_unit::update)
 					.method("level", static_cast<int64_t(host_unit::*)() const>(&host_unit::level))
-					.method("level", static_cast<void(host_unit::*)(int64_t)>(&host_unit::level))
-					.method("label", &host_unit::label)
-					.serial_method("level").serial_method("label", serial_overloads::every)
+					.method("level", static_cast<void(host_unit::*)(int64_t)>(&host_unit::level), jai::serial)
+					.method("label", &host_unit::label, jai::serial)
+					.method("label", [](host_unit& self, int64_t by) { self.hp += by; }, jai::serial)
+					.method("tag", [](const host_unit& self) { return self.hp; }, jai::serial)
 					.property("hp", &host_unit::hp).build();
 			};
 			const std::string program = R"(
@@ -3947,9 +3957,11 @@ public:
 			struct refusal { const char* name; const char* source; const char* text; };
 			const refusal refusals[] = {
 				{ "the non-const overload of a marked name", "array<Unit> us = [Unit(), Unit()]; parallel_for (auto& u : us) { u.level(3); }",
-				  "C++ method 'level' of 'Unit' is marked serial_method() and cannot be called in a parallel body" },
+				  "C++ method 'level' of 'Unit' is marked jai::serial and cannot be called in a parallel body" },
 				{ "a const overload marked every", "array<Unit> us = [Unit(), Unit()]; array<int> out = [0, 0]; parallel_for (auto& u, auto& o : us, out) { o = u.label(); }",
-				  "C++ method 'label' of 'Unit' is marked serial_method() and cannot be called in a parallel body" },
+				  "C++ method 'label' of 'Unit' is marked jai::serial and cannot be called in a parallel body" },
+				{ "a const lambda marked serial", "array<Unit> us = [Unit(), Unit()]; array<int> out = [0, 0]; parallel_for (auto& u, auto& o : us, out) { o = u.tag(); }",
+				  "C++ method 'tag' of 'Unit' is marked jai::serial and cannot be called in a parallel body" },
 				{ "one object at two elements", "shared_ptr<Unit> u = new Unit(); array<shared_ptr<Unit>> us = [u, u]; parallel_for (auto& x : us) { x.update(1); }",
 				  "parallel_for: elements 0 and 1 hold the same object" },
 			};
@@ -4943,9 +4955,9 @@ public:
 			}
 			class PendingNode {
 				PendingLeaf a = PendingLeaf(0);
-				PendingLeaf b = PendingLeaf(0);
+				array<PendingLeaf> b = [PendingLeaf(0)];
 				PendingNode() {}
-				PendingNode(int n) { a = PendingLeaf(n); b = PendingLeaf(-1); }
+				PendingNode(int n) { a = PendingLeaf(n); b = [PendingLeaf(-1)]; }
 			}
 			array<PendingNode> pending_nodes = [];
 			for (int i = 0; i < 256; i++) { pending_nodes.push(PendingNode(i)); }
@@ -4953,7 +4965,7 @@ public:
 		)");
 		auto call = eng->jaibite(R"(
 			parallel_for (auto& n : pending_nodes) {
-				if (pending_copy_enabled) { n.b = null; n.b = n.a; }
+				if (pending_copy_enabled) { n.b = [n.a]; }
 			}
 			pending_nodes.size();
 		)");
@@ -5055,7 +5067,7 @@ public:
 			)");
 			check_eq(script_int(1), eng->execute(R"(
 				for (auto& n : pending_nodes) {
-					if (n.a.extra != 7 || n.b.extra != 7) { return 0; }
+					if (n.a.extra != 7 || n.b[0].extra != 7) { return 0; }
 				}
 				return 1;
 			)").as_int(), "immediate hot reload missed surviving worker copies");
@@ -5094,7 +5106,7 @@ public:
 		)");
 		check_eq(script_int(1), eng->execute(R"(
 			for (auto& n : pending_nodes) {
-				if (n.a.extra != 7 || n.b.extra != 7) { return 0; }
+				if (n.a.extra != 7 || n.b[0].extra != 7) { return 0; }
 			}
 			return 1;
 		)").as_int(), "recovered child instances must participate in hot reload");
@@ -5146,22 +5158,22 @@ public:
 				class RegistryLeaf { int v = 0; RegistryLeaf() {} RegistryLeaf(int n) { v = n; } }
 				class RegistryNode {
 					RegistryLeaf a = RegistryLeaf(0);
-					RegistryLeaf b = RegistryLeaf(0);
+					array<RegistryLeaf> b = [RegistryLeaf(0)];
 					RegistryNode() {}
-					RegistryNode(int n) { a = RegistryLeaf(n); b = RegistryLeaf(-1); }
+					RegistryNode(int n) { a = RegistryLeaf(n); b = [RegistryLeaf(-1)]; }
 				}
 				array<RegistryNode> registry_nodes = [];
 				for (int i = 0; i < 256; i++) { registry_nodes.push(RegistryNode(i)); }
 				function registry_shared_leaves() {
-					for (int i = 0; i < 256; i++) { registry_nodes[i].b.v = 1000 + i; }
+					for (int i = 0; i < 256; i++) { registry_nodes[i].b[0].v = 1000 + i; }
 					int shared = 0;
-					for (int i = 0; i < 256; i++) { if (registry_nodes[i].b.v != 1000 + i) { shared++; } }
-					for (int i = 0; i < 256; i++) { registry_nodes[i].b = RegistryLeaf(-1); }
+					for (int i = 0; i < 256; i++) { if (registry_nodes[i].b[0].v != 1000 + i) { shared++; } }
+					for (int i = 0; i < 256; i++) { registry_nodes[i].b = [RegistryLeaf(-1)]; }
 					return shared;
 				}
 			)");
 			auto region = eng->jaibite(R"(
-				parallel_for (auto& n : registry_nodes) { n.b = null; n.b = n.a; }
+				parallel_for (auto& n : registry_nodes) { n.b = [n.a]; }
 				registry_shared_leaves();
 			)");
 			auto& state = detail::engine_access::parallel_state(*eng);

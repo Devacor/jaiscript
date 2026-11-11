@@ -161,13 +161,9 @@ public:
                 }
                 result.passed++;
             } catch (const std::exception& e) {
-                post_test();  // Clean up even on error
-                if (verbose) {
-                    std::cout << "x\n";
-                    std::cout << "    Error: " << e.what() << "\n";
-                }
-                result.failures.push_back({suite_name_, name, e.what()});
-                result.failed++;
+                record_failed_test(result, name, e.what(), verbose);
+            } catch (...) {
+                record_failed_test(result, name, "Unknown exception (not a std::exception)", verbose);
             }
         }
 
@@ -196,6 +192,16 @@ public:
     }
     
 private:
+    void record_failed_test(suite_result& result, const std::string& name, const std::string& error_message, bool verbose) {
+        post_test();  // Clean up even on error
+        if (verbose) {
+            std::cout << "x\n";
+            std::cout << "    Error: " << error_message << "\n";
+        }
+        result.failures.push_back({suite_name_, name, error_message});
+        result.failed++;
+    }
+
     void run_benchmark(const std::string& name, std::function<void()> func, int32_t iterations = 1000) {
         
         // Setup for benchmark

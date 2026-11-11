@@ -146,16 +146,16 @@ function ch_trace(float ox, float oy, float oz, float dx, float dy, float dz, in
 	if (hit >= 0) {
 		float d = ((ox + dx * best - hx) * CH_LX + (oy + dy * best - hy) * CH_LY + (oz + dz * best - hz) * CH_LZ) / hr;
 		d = d < 0.0 ? 0.0 : d;
-		int lv = (0.2 + 0.8 * d) * 7.99;
+		int lv = cast<int>((0.2 + 0.8 * d) * 7.99);
 		return hit == 3 ? CH_SAT + lv : CH_BALL + hit * 8 + lv;
 	}
 	if (dy < -0.0005) {
 		float tf = (0.0 - oy) / dy;
 		float fx = ox + dx * tf;
 		float fz = oz + dz * tf;
-		int ix = fx + 4096.0;
-		int iz = fz + 4096.0;
-		int fog = 11.5 - tf * 0.55;
+		int ix = cast<int>(fx + 4096.0);
+		int iz = cast<int>(fz + 4096.0);
+		int fog = cast<int>(11.5 - tf * 0.55);
 		fog = fog < 0 ? 0 : (fog > 11 ? 11 : fog);
 		// shadow: does the ray toward the sun pass through a sphere?
 		int shade = 0;
@@ -190,7 +190,7 @@ function ch_trace(float ox, float oy, float oz, float dx, float dy, float dz, in
 		return CH_FLOOR + (((ix + iz) & 1) * 2 + shade) * 12 + fog;
 	}
 	if (dx * CH_LX + dy * CH_LY + dz * CH_LZ > 0.993) { return CH_SUN + (dx * CH_LX + dy * CH_LY + dz * CH_LZ > 0.998 ? 1 : 0); }
-	int s = dy * 30.0;
+	int s = cast<int>(dy * 30.0);
 	return s < 0 ? 0 : (s > 23 ? 23 : s);
 }
 
@@ -289,7 +289,7 @@ function ch_row(int y) -> array<int> {
 		float g = mx * CH_LX + my * CH_LY + mz * CH_LZ;
 		float gt = hit == 0 ? CH_GT : 0.975;
 		if (g > gt) {
-			int gl = (g - gt) * (hit == 0 ? CH_GS : 100.0);
+			int gl = cast<int>((g - gt) * (hit == 0 ? CH_GS : 100.0));
 			out.push(CH_GLINT + (gl > 2 ? 2 : gl));
 		} else if (hit == 1 && cosi > 0.3) {
 			// glass: refract in, cross to the far face, refract out
@@ -619,7 +619,7 @@ class Chrome : Scene {
 		}
 		if (since >= 0.35) { return; }
 		float a = 1.0 - since / 0.35;
-		int edge = itrunc(a * a * 17.0);
+		int edge = math::itrunc(a * a * 17.0);
 		for (int y = 0; y < h; ++y) {
 			int row = y * w;
 			int by4 = (y & 3) * 4;
@@ -655,7 +655,7 @@ class Chrome : Scene {
 		}
 		for (int s2 = 0; s2 < sx.size(); ++s2) {
 			float flare = cue != null ? 1.0 + cue.hit(tt) * 2.2 + cue.snare_env(tt) * 0.8 : 1.0;
-			int len = itrunc((3.0 + 4.0 * (0.5 + 0.5 * math::sin(tt * 7.0 + s2 * 1.7))) * flare * h / 120.0) + 2;
+			int len = math::itrunc((3.0 + 4.0 * (0.5 + 0.5 * math::sin(tt * 7.0 + s2 * 1.7))) * flare * h / 120.0) + 2;
 			for (int r = 1; r <= len; ++r) {
 				int ink = r * 3 < len ? glint + 2 : (r * 3 < len * 2 ? glint + 1 : glint);
 				star_px(grid, sx[s2] + r, sy[s2], ink);

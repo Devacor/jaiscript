@@ -701,9 +701,9 @@ public:
 			// a parameter bound by reference downstream (its storage is a cell): the alias sees every store
 			both("function k(int v, int dv, int n) -> int { var& a = v; int i = 0; while (i < n) { v = v + dv; i = i + 1; } return a; } to_string(k(1, 3, 20));",
 			     "61", "reference-escaping parameter");
-			// a float argument converts on entry: the parameter slot holds the declared int before the first store
-			both("function g(int v, int dv, int n) -> int { int i = 0; while (i < n) { v = v + dv; i = i + 1; } return v; } to_string(g(1.0, 3, 20)) + \",\" + to_string(g(true, 3, 2));",
-			     "61,7", "converted arguments");
+			// a bool argument converts on entry: the parameter slot holds the declared int before the first store; a var's float is refused there
+			both("function g(int v, int dv, int n) -> int { int i = 0; while (i < n) { v = v + dv; i = i + 1; } return v; } var f = 1.0; string r = to_string(g(true, 3, 2)); try { r = r + \",\" + to_string(g(f, 3, 20)); } catch (err) { r = r + \",\" + err; } r;",
+			     "7,Cannot pass float to parameter 'v' of 'g' (declared int)", "converted arguments");
 			// array<int> parameters: the element class classifies a read, the store into an int parameter proves
 			both("function s(array<int> t, int acc, int n) -> int { int i = 0; while (i < n) { acc = acc + t[i % 4]; i = i + 1; } return acc; } to_string(s([1, 2, 3, 4], 0, 10));",
 			     "23", "typed array parameter");
@@ -1417,9 +1417,9 @@ public:
 			both(script, "", "values per definition, proofs off", false);
 			// a graft's converting declaration (a load and a declaration, not one row) on a temp slot an earlier graft defined with
 			// another kind writes its own definition's cell
-			const std::string converting = "float g = 1.0; float half() { return 0.5; } int three() { int t = 3.0; return t; }"
+			const std::string converting = "float g = 1.0; float half() { return 0.5; } int three() { int t = true; return t; }"
 				" int run() { int s = 0; for (int i = 0; i < 3; ++i) { bool b = (g + half()) != g; s = s + three(); } return s; } to_string(run());";
-			both(converting, "9", "a converting declaration on a reused temp slot");
+			both(converting, "3", "a converting declaration on a reused temp slot");
 			const std::string vm = run_on(true, script);
 			check_true(vm.find(",throw:") != std::string::npos && vm.find("overflow") != std::string::npos, "the overflow after a float definition of the same temp: " + vm);
 			const std::string listing = listing_of(defs);
@@ -1540,8 +1540,8 @@ public:
 			// draw_seg's shape: a call landing in a declaration, a statement call with a computed and a reference argument, float
 			// math around them, an element read of a var& container guarding a continue; and every effect a callee can have on the
 			// block, re-read after the call: a global the loop reads, an array the loop reads (grown by the callee), an int& taken
-			// on a loop local (the slot is the value from then on), a float result into an int declaration (the checked conversion
-			// and its rejection), a throw out of the callee into the caller's catch (materialized locals), a recursive callee, a
+			// on a loop local (the slot is the value from then on), an int result into a float declaration (the widening) and a
+			// float result into an int declaration (its rejection, the earlier iterations' sum kept), a throw out of the callee into the caller's catch (materialized locals), a recursive callee, a
 			// zero-argument callee, a string result into a var, and the argument values: a negation, a math call, an element read,
 			// an environment name
 			const char* defs = R"JAI(
@@ -1557,10 +1557,10 @@ var grow = function(var& a) -> int { a.push(9); return a.size(); };
 var arrays = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { acc = acc + G[i]; int s = grow(G); acc = acc + s; } return acc; };
 var inc = function(int& v) -> void { v = v + 100; };
 var escape = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { int t = i * 2; inc(t); acc = acc + t; } return acc; };
-var half = function(int a) -> float { return a * 0.5; };
-var narrow = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { int q = half(i * 4); acc = acc + q; } return acc; };
-var huge = function(int a) -> float { return 1e300; };
-var rejects = function(int n) { int acc = 0; try { for (int i = 0; i < n; ++i) { acc = acc + i; int q = huge(i); acc = acc + q; } } catch (e) { return to_string(acc) + " " + e; } return to_string(acc); };
+var twice = function(int a) -> int { return a * 2; };
+var widen = function(int n) { float acc = 0.25; for (int i = 0; i < n; ++i) { float q = twice(i * 2); acc = acc + q; } return acc; };
+var half = function(int a) { if (a < 2) { return a * 2; } return a * 0.5; };
+var rejects = function(int n) { int acc = 0; try { for (int i = 0; i < n; ++i) { acc = acc + i; int q = half(i); acc = acc + q; } } catch (e) { return to_string(acc) + " " + e; } return to_string(acc); };
 var boom = function(int i) -> int { if (i == 2) { throw "boom at " + to_string(i); } return i; };
 var thrown = function(int n) { int acc = 0; float f = 0.5; try { for (int i = 0; i < n; ++i) { int b = boom(i); acc = acc + b; f = f * 2.0; } } catch (e) { return to_string(acc) + " " + to_string(f) + " " + e; } return to_string(acc); };
 var fact = function(int k) -> int { if (k <= 1) { return 1; } return k * fact(k - 1); };
@@ -1574,7 +1574,7 @@ var values = function(int n) { int acc = 0; float r = 2.5; for (int i = 0; i < n
 			struct probe { const char* call; const char* expected; };
 			const probe probes[] = {
 				{ "to_string(seg(6, DONE));", "184" }, { "to_string(globals(3));", "15" }, { "to_string(arrays(3));", "30" }, { "to_string(escape(3));", "306" },
-				{ "to_string(narrow(3));", "6" }, { "rejects(3);", "" }, { "thrown(4);", "1 2.0 boom at 2" }, { "to_string(recursive(5));", "34" },
+				{ "to_string(widen(3));", "12.25" }, { "rejects(3);", "5 Cannot initialize 'q' (declared int) with float" }, { "thrown(4);", "1 2.0 boom at 2" }, { "to_string(recursive(5));", "34" },
 				{ "to_string(zero(3));", "21" }, { "strings(3);", "n0n1n2" }, { "to_string(values(3));", "27" },
 			};
 			for (const probe& p : probes) {
@@ -1595,10 +1595,10 @@ var values = function(int n) { int acc = 0; float r = 2.5; for (int i = 0; i < n
 		test("globals_written_inside_a_block", [this]() {
 			// draw_seg's REMAIN = REMAIN - 1: an environment scalar written by a fused store, a compound, an increment, a move and a
 			// call result; the head reading the written value; the value seen by a callee (written back ahead of the call) and
-			// rewritten by one (re-read after it); a var global changing kind; an int global fed a float (the general conversion);
+			// rewritten by one (re-read after it); a var global changing kind; an int global fed a var's float (the general store's text, the earlier store kept);
 			// a float global fed ints; a throw after the write (the catch sees the written value)
 			const char* defs = R"JAI(
-int REMAIN = 10; var V = 1; int T = 1; float F = 0.0; int SEEN = 0;
+int REMAIN = 10; var V = 1; int T = 1; float F = 0.0; int SEEN = 0; var STEPS = [3, 1.5];
 var peek = function() -> int { return REMAIN; };
 var poke = function(int v) -> void { REMAIN = v; };
 var boom = function() -> void { throw "boom"; };
@@ -1608,7 +1608,7 @@ var head = function() { int acc = 0; while (REMAIN > 0) { REMAIN = REMAIN - 1; a
 var seen_by_callee = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { REMAIN = REMAIN + 1; int p = peek(); acc = acc + p; } return acc; };
 var written_by_callee = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { REMAIN = REMAIN + 1; poke(100); acc = acc + REMAIN; } return acc; };
 var var_kind = function(int n) { for (int i = 0; i < n; ++i) { V = V * 1.5; } return to_string(V) + " " + type_of(V); };
-var narrow = function(int n) { try { for (int i = 0; i < n; ++i) { T = T * 1.5; } } catch (e) { return "caught " + to_string(T); } return to_string(T); };
+var narrow = function(int n) { try { for (int i = 0; i < n; ++i) { T = T * STEPS[i]; } } catch (e) { return e + " " + to_string(T); } return to_string(T); };
 var widen = function(int n) { for (int i = 0; i < n; ++i) { F = F + i; } return to_string(F); };
 var thrown = function(int n) { try { for (int i = 0; i < n; ++i) { REMAIN = REMAIN + 10; if (i == 1) { boom(); } } } catch (e) { return to_string(REMAIN) + " " + e; } return to_string(REMAIN); };
 var mov = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { REMAIN = i; SEEN = 7; acc = acc + REMAIN + SEEN; } return acc; };
@@ -1617,7 +1617,7 @@ var from_call = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { REM
 			struct probe { const char* call; const char* expected; };
 			const probe probes[] = {
 				{ "to_string(count_down(3));", "24" }, { "to_string(compound(2));", "11" }, { "to_string(head());", "10" }, { "to_string(seen_by_callee(3));", "36" },
-				{ "to_string(written_by_callee(3));", "300" }, { "var_kind(2);", "2.25 float" }, { "narrow(2);", "" }, { "widen(3);", "3.0" },
+				{ "to_string(written_by_callee(3));", "300" }, { "var_kind(2);", "2.25 float" }, { "narrow(2);", "Cannot assign float to 'T' (declared int) 3" }, { "widen(3);", "3.0" },
 				{ "thrown(3);", "30 boom" }, { "to_string(mov(3));", "24" }, { "to_string(from_call(2));", "20" },
 				{ "count_down(2); to_string(REMAIN);", "8" }, { "head(); to_string(REMAIN);", "0" },
 			};
@@ -1632,16 +1632,16 @@ var from_call = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { REM
 		test("element_store_values_are_values", [this]() {
 			// draw_seg's `clipsn[x] = cn + 1`: an element store whose value is a value binary lands the binary in a compiler temp and
 			// stores the temp; the store's typed lane and the block hold; a lifted tree, a float value, a value that raises (the
-			// kernel's text first), an int array fed a float value (the checked conversion), a map container and a var& container; a global
+			// kernel's text first), an int array fed a var's float value (the general store's text, the earlier stores kept), a map container and a var& container; a global
 			// stored through a computed index, in an arm the first call never takes (the general store parks its container in the value's
 			// lookup role: the value reads through a role the index leaves free, or the store refuses when the index takes both)
 			const char* defs = R"JAI(
-array<int> G = [0, 0, 0, 0, 0, 0]; array<float> F = [0.0, 0.0, 0.0, 0.0]; var M = {1: 0, 2: 0}; var V = [0, 0, 0, 0];
+array<int> G = [0, 0, 0, 0, 0, 0]; array<float> F = [0.0, 0.0, 0.0, 0.0]; var M = {1: 0, 2: 0}; var V = [0, 0, 0, 0]; var S = [3, 4, 2.5];
 var fill = function(int n, var& a) { int acc = 0; for (int x = 0; x < n; ++x) { int v = a[x]; a[x] = v + x * 2 + 1; acc = acc + a[x]; } return acc; };
 var tree = function(int n) { for (int i = 0; i < n; ++i) { G[i] = i * 3 + (i - 1) * 2; } return to_string(G); };
 var floats = function(int n) { for (int i = 0; i < n; ++i) { F[i] = i * 0.5 + 1.0; } return to_string(F); };
 var raises = function(int n) { int d = 0; try { for (int i = 0; i < n; ++i) { G[i] = i / d; } } catch (e) { return e; } return "no"; };
-var narrow = function(int n) { try { for (int i = 0; i < n; ++i) { G[i] = i * 1.5; } } catch (e) { return e; } return to_string(G); };
+var narrow = function(int n) { try { for (int i = 0; i < n; ++i) { G[i] = S[i] * 2; } } catch (e) { return e + " " + to_string(G); } return to_string(G); };
 var keyed = function(int n) { for (int i = 1; i <= n; ++i) { M[i] = i * 10 + 1; } return to_string(M); };
 var mixed = function(int n) { for (int i = 0; i < n; ++i) { V[i] = i + 0.5; } return to_string(V); };
 int W = 99; int K = 1;
@@ -1652,7 +1652,7 @@ var flashkk = function(int mode) { for (int x = 0; x < 4; ++x) { if (mode == 1) 
 )JAI";
 			struct probe { const char* call; const char* expected; };
 			const probe probes[] = {
-				{ "to_string(fill(4, G));", "16" }, { "tree(4);", "" }, { "floats(4);", "" }, { "raises(3);", "" }, { "narrow(3);", "" }, { "keyed(2);", "" }, { "mixed(3);", "" },
+				{ "to_string(fill(4, G));", "16" }, { "tree(4);", "" }, { "floats(4);", "" }, { "raises(3);", "" }, { "narrow(3);", "Cannot assign 'float' to element of type 'int' [6, 8, 0, 0, 0, 0]" }, { "keyed(2);", "" }, { "mixed(3);", "" },
 				{ "flash(1, 0) + flash(1, 1);", "" }, { "flashadd(2, 0) + flashadd(2, 1);", "" }, { "flashk(0) + flashk(1);", "" }, { "flashkk(0) + flashkk(1);", "" },
 			};
 			for (const probe& p : probes) {
@@ -1732,7 +1732,7 @@ var floats = function(int n) { int acc = 0; float f = -1.0; for (int i = 0; i < 
 					Acc a = Acc(); a.n = 2; int w = 0;
 					for (int i = 0; i < 5; ++i) { w += a.n; }
 					string err = "";
-					En q = null;
+					shared_ptr<En> q = null;
 					try { for (int i = 0; i < 2; ++i) { u += q.x; } } catch (ex) { err = ex; }
 					return `${s},${t},${u},${w},${a.reads}|${err}`;
 				}
@@ -2113,13 +2113,13 @@ var cont = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { if (i ==
 		});
 		test("pinned_operations_skip_their_kind_checks", [this]() {
 			// a loop over declared ints and floats runs its arithmetic and compares in the pinned forms; a var local (an adopted kind)
-			// keeps the checked forms and a kind change inside the loop still lands the same; an int declared from a float
-			// converts through the general form on both backends
+			// keeps the checked forms and a kind change inside the loop still lands the same; an int declared from a cast float
+			// converts as the cast does on both backends
 			const char* defs = R"JAI(
 var ints = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { int t = i * 3 - 1; if (t > 4) { acc = acc + t; } } return acc; };
 var flts = function(int n) { float acc = 0.0; float k = 0.5; int i = 0; while (i < n) { acc = acc + k * 1.5; if (acc > 3.0) { acc = acc - 1.0; } i = i + 1; } return math::itrunc(acc * 100.0); };
 var adopted = function(int n) { var v = 1; int acc = 0; for (int i = 0; i < n; ++i) { v = v + i; if (i == 2) { v = v * 1.5; } acc = acc + math::itrunc(v); } return to_string(acc) + " " + type_of(v); };
-var narrows = function(int n) { int acc = 0; float f = 0.5; for (int i = 0; i < n; ++i) { f = f + 1.25; int q = f; acc = acc + q; } return acc; };
+var narrows = function(int n) { int acc = 0; float f = 0.5; for (int i = 0; i < n; ++i) { f = f + 1.25; int q = cast<int>(f); acc = acc + q; } return acc; };
 )JAI";
 			struct probe { const char* call; const char* expected; };
 			const probe probes[] = { { "to_string(ints(6));", "38" }, { "to_string(flts(8));", "300" }, { "adopted(5);", "31 float" }, { "to_string(narrows(4));", "13" } };
@@ -2653,8 +2653,8 @@ function loop_scalar(int n) { int s = 0; for (int i = 0; i < n; ++i) { s = s + X
 		test("a_guard_temp_is_a_value_at_its_own_point", [this]() {
 			// Two regressions: a getter's captured null is a value, never a sign that no snapshot was taken (the
 			// getter runs once whether it returns null or a table), and a guard temp's slot belongs to later definitions once the guard's
-			// read is past (a live multiply operand of the next statement is never erased: the overflow text and the checked float-to-int
-			// conversion both need it on the general form after a miss)
+			// read is past (a live multiply operand of the next statement is never erased: the overflow text and the float-to-int
+			// cast both need it on the general form after a miss)
 			struct nulls { bool armed = false; bool flips = false; int calls = 0; };
 			auto run_null = [&](bool vm, bool flips, bool proofs) -> std::string {
 				nulls source; source.flips = flips;
@@ -2689,7 +2689,7 @@ function loop_scalar(int n) { int s = 0; for (int i = 0; i < n; ++i) { s = s + X
 			const char* liveness = R"JAI(
 array<int> P = [1, 2, 3, 4];
 var overflow = function(int n, int limit) { array<int> Q = [0, 1, 2, 3]; int total = 0; int value = 0; int i = 0; string m = ""; try { while (i < n) { total = total + P[Q[i]]; value = (i + 1) * (limit - i); i = i + 1; } } catch (err) { m = err; } return m + "|" + to_string(total) + "|" + to_string(value); };
-var conversion = function(int n) { array<int> Q = [0, 1, 2, 3]; int total = 0; int value = 0; int i = 0; while (i < n) { total = total + P[Q[i]]; value = (i + 0.5) * 2.0; i = i + 1; } return to_string(total) + "|" + to_string(value); };
+var conversion = function(int n) { array<int> Q = [0, 1, 2, 3]; int total = 0; int value = 0; int i = 0; while (i < n) { total = total + P[Q[i]]; value = cast<int>((i + 0.5) * 2.0); i = i + 1; } return to_string(total) + "|" + to_string(value); };
 )JAI";
 			auto run_with = [&](bool vm, const std::string& script, bool proofs) -> std::string {
 				auto e = jai::foundry::make_default_engine();
@@ -2916,7 +2916,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			// index; fused, the loop closes over the member container with its float compounds
 			const char* fn = "class Ws { int mw = 8; array<int> pack = []; }"
 			                 " var f = function(var& t, float posx, float posy, float rdx, float rdy) -> float {"
-			                 " int mw = t.mw; int mx = posx; int my = posy;"
+			                 " int mw = t.mw; int mx = math::itrunc(posx); int my = math::itrunc(posy);"
 			                 " float adx = rdx < 0.0 ? -rdx : rdx; float ady = rdy < 0.0 ? -rdy : rdy;"
 			                 " float ddx = adx < 0.00000001 ? 100000000.0 : 1.0 / adx; float ddy = ady < 0.00000001 ? 100000000.0 : 1.0 / ady;"
 			                 " int stepx = rdx < 0.0 ? -1 : 1; int stepy = rdy < 0.0 ? -1 : 1;"
@@ -3014,22 +3014,21 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				check_true(vm.find("\"a\"") != std::string::npos, "the second element is read: " + vm);
 			}
 		});
-		test("ternary_arms_take_every_landing_and_an_int_cell_takes_a_float", [this]() {
+		test("ternary_arms_take_every_landing_and_an_int_cell_takes_a_cast_float", [this]() {
 			// the ray step's column loop shapes (GLOOM pure.jai 28..62) without its inner while: `float adx = rdx < 0.0 ? -rdx : rdx;`
-			// (a unary arm), `int mx = posx;` and `int texcol = wallx * 64.0;` (a float into an int, truncated as the declaration
-			// does), `pdist = pdist < 0.02 ? 0.02 : pdist;` (a ternary assignment); the loop closes and agrees with the interpreter,
-			// and a float out of the int range inside the loop raises the general text on both backends
+			// (a unary arm), `int mx = math::itrunc(posx);` and `int texcol = math::itrunc(wallx * 64.0);` (a float truncated into an int), `pdist = pdist < 0.02 ? 0.02 : pdist;` (a ternary assignment); the loop closes and agrees with the interpreter,
+			// and a cast of a float out of the int range inside the loop raises the cast's text on both backends
 			const char* fn = "var f = function(int n, float posx, float posy, float dirx, float planex, var& out) -> float {"
 			                 " float acc = 0.0; float xstep = 2.0 / (n - 1.0);"
 			                 " for (int x = 0; x < n; ++x) {"
 			                 "  float camx = x * xstep - 1.0; float rdx = dirx + planex * camx;"
-			                 "  int mx = posx; int my = posy;"
+			                 "  int mx = math::itrunc(posx); int my = math::itrunc(posy);"
 			                 "  float adx = rdx < 0.0 ? -rdx : rdx; float ddx = adx < 0.00000001 ? 100000000.0 : 1.0 / adx;"
 			                 "  int stepx = rdx < 0.0 ? -1 : 1;"
 			                 "  float sdx = rdx < 0.0 ? (posx - mx) * ddx : (mx + 1.0 - posx) * ddx;"
 			                 "  float pdist = sdx - ddx; pdist = pdist < 0.02 ? 0.02 : pdist;"
 			                 "  float wallx = posy + pdist * rdx; wallx = wallx - math::floor(wallx);"
-			                 "  int texcol = wallx * 64.0; int shade = 15 - math::itrunc(pdist * 1.55);"
+			                 "  int texcol = math::itrunc(wallx * 64.0); int shade = 15 - math::itrunc(pdist * 1.55);"
 			                 "  shade = shade < 0 ? 0 : (shade > 15 ? 15 : shade);"
 			                 "  out[x] = texcol * 16 + shade + stepx + my; acc = acc + pdist;"
 			                 " }"
@@ -3045,11 +3044,11 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				check_true(vm.find("throw") == std::string::npos, "the call completes: " + vm);
 			}
 			const std::string narrow = "var g = function(int n, float big) -> string { string out = \"\"; int keep = 0;"
-			                           " try { for (int i = 0; i < n; ++i) { float f = i * 2.5 + (i == 3 ? big : 0.0); int t = f; keep = keep + t; int s = 7; s = i > 1 ? f : s; keep = keep + s; } }"
+			                           " try { for (int i = 0; i < n; ++i) { float f = i * 2.5 + (i == 3 ? big : 0.0); int t = cast<int>(f); keep = keep + t; int s = 7; s = i > 1 ? cast<int>(f) : s; keep = keep + s; } }"
 			                           " catch (e) { out = \"caught \" + e; }"
 			                           " return out + \"|\" + to_string(keep); }; g(3, 1.0e30) + \" \" + g(6, 1.0e30) + \" \" + g(4, -0.0);";
 			for (bool proofs : { true, false }) {
-				check_eq(run_on(false, narrow, proofs), run_on(true, narrow, proofs), std::string("a float into an int cell truncates in range and raises the general text out of range") + (proofs ? "" : " (proofs off)"));
+				check_eq(run_on(false, narrow, proofs), run_on(true, narrow, proofs), std::string("a float cast into an int cell truncates in range and raises the cast's text out of range") + (proofs ? "" : " (proofs off)"));
 			}
 		});
 		test("an_outer_loop_closes_over_an_inner_while", [this]() {
@@ -3061,7 +3060,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			                  " int mw = t.mw; float acc = 0.0; float xstep = 2.0 / (n - 1.0);"
 			                  " for (int x = 0; x < n; ++x) {"
 			                  "  float camx = x * xstep - 1.0; float rdx = dirx + planex * camx; float rdy = 0.3 + 0.1 * camx;"
-			                  "  int mx = posx; int my = posy;"
+			                  "  int mx = math::itrunc(posx); int my = math::itrunc(posy);"
 			                  "  float adx = rdx < 0.0 ? -rdx : rdx; float ady = rdy < 0.0 ? -rdy : rdy;"
 			                  "  float ddx = adx < 0.00000001 ? 100000000.0 : 1.0 / adx; float ddy = ady < 0.00000001 ? 100000000.0 : 1.0 / ady;"
 			                  "  int stepx = rdx < 0.0 ? -1 : 1; int stepy = rdy < 0.0 ? -1 : 1;"
@@ -3145,24 +3144,26 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			check_true(l.find("CELLS_BACK") != std::string::npos && l.find("C_INDEX_STORE") != std::string::npos && l.find("-- open loop") == std::string::npos, "the five-site record loop closes: " + l);
 		});
 		test("a_local_the_body_declares_lands_by_its_declaration_on_every_iteration", [this]() {
-			// the ray step's `int mx = posx;`: a narrowing declaration inside the body lands the float by the declaration's kernel on
-			// every iteration of a block run (not only the first, when the cell is empty), a float assigned to a body-declared int
-			// local truncates as the assignment table does, a var re-kinds freely, an out-of-range float raises the general text with
-			// the stores before it kept; the same on both backends, proofs on and off
+			// the ray step's `int mx = cast<int>(posx);`: a narrowing declaration inside the body lands the cast float on every
+			// iteration of a block run (not only the first, when the cell is empty), a cast float assigned to a body-declared int
+			// local truncates alike, a var re-kinds freely, an out-of-range float raises the cast's text and a var's float the
+			// declaration's text, each with the stores before it kept; the same on both backends, proofs on and off
 			const std::string script = R"(
-				function narrow(var& xs, int n) -> int { int acc = 0; float f = 0.5; int i = 0; while (i < n) { f = f + 1.25; int m = f; acc = acc + m; xs[i] = m; i = i + 1; } return acc; }
-				function assign(var& xs, int n) -> int { int acc = 0; float f = 0.5; int i = 0; while (i < n) { f = f + 1.25; int m = 0; m = f; acc = acc + m; xs[i] = m; i = i + 1; } return acc; }
+				function narrow(var& xs, int n) -> int { int acc = 0; float f = 0.5; int i = 0; while (i < n) { f = f + 1.25; int m = cast<int>(f); acc = acc + m; xs[i] = m; i = i + 1; } return acc; }
+				function assign(var& xs, int n) -> int { int acc = 0; float f = 0.5; int i = 0; while (i < n) { f = f + 1.25; int m = 0; m = cast<int>(f); acc = acc + m; xs[i] = m; i = i + 1; } return acc; }
 				function rekind(int n) -> string { string s = ""; float f = 0.5; int i = 0; while (i < n) { var v = i; if ((i % 2) == 1) { v = f; } s = s + to_string(v) + ","; f = f + 1.0; i = i + 1; } return s; }
-				function far(var& xs, int n) -> string { float f = 1.0; int i = 0; try { while (i < n) { f = f * 10000000000.0; int m = f; xs[i] = m; i = i + 1; } } catch (err) { return "caught:" + err + "|" + to_string(i) + "|" + to_string(xs[0]); } return "ok"; }
+				function far(var& xs, int n) -> string { float f = 1.0; int i = 0; try { while (i < n) { f = f * 10000000000.0; int m = cast<int>(f); xs[i] = m; i = i + 1; } } catch (err) { return "caught:" + err + "|" + to_string(i) + "|" + to_string(xs[0]); } return "ok"; }
+				function refuse(var& xs, var& src, int n) -> string { int i = 0; try { while (i < n) { int m = src[i]; xs[i] = m; i = i + 1; } } catch (err) { return "caught:" + err + "|" + to_string(i) + "|" + to_string(xs[1]); } return "ok"; }
 				var XS = [0, 0, 0, 0, 0, 0, 0, 0];
 				string a = to_string(narrow(XS, 6)) + "|" + to_string(assign(XS, 6)) + "|" + rekind(5) + "|" + to_string(XS[3]);
-				a + "|" + far(XS, 6);
+				var SRC = [7, 8, 2.5, 9];
+				a + "|" + far(XS, 6) + "|" + refuse(XS, SRC, 4);
 			)";
 			both(script, "", "body-declared landings");
 			both(script, "", "body-declared landings, proofs off", false);
 			const std::string vm = run_on(true, script);
-			check_true(vm.rfind("27|27|0,1.5,2,3.5,4,|5|caught:", 0) == 0 && vm.find("|1|10000000000") != std::string::npos, "the declaration's kernel on every iteration, the var re-kinded, the out-of-range text after one kept store: " + vm);
-			const std::string l = listing_of("var f = function(var& xs, int n) { int acc = 0; float f = 0.5; int i = 0; while (i < n) { f = f + 1.25; int m = f; acc = acc + m; xs[i] = m; i = i + 1; } return acc; };");
+			check_eq(std::string("27|27|0,1.5,2,3.5,4,|5|caught:Cannot convert float to integer: non-finite or out of range|1|10000000000|caught:Cannot initialize 'm' (declared int) with float|2|8"), vm, "the cast on every iteration, the var re-kinded, each text after its kept stores");
+			const std::string l = listing_of("var f = function(var& xs, int n) { int acc = 0; float f = 0.5; int i = 0; while (i < n) { f = f + 1.25; int m = cast<int>(f); acc = acc + m; xs[i] = m; i = i + 1; } return acc; };");
 			check_true(l.find("CELLS_BACK") != std::string::npos && l.find("-- open loop") == std::string::npos, "the narrowing loop closes: " + l);
 		});
 		test("a_push_of_a_getter_backed_element_misses_before_the_getter_runs", [this]() {
@@ -3380,8 +3381,8 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			check_true(l.find("C_REBIND") != std::string::npos && l.find("C_BOUNDARY") != std::string::npos && l.find("CELLS_BACK") != std::string::npos && l.find("-- open loop") == std::string::npos, "the column loop closes with its alias as a rebind and its cache-fill arm as a boundary: " + l);
 		});
 		test("a_range_for_over_an_array_is_a_block", [this]() {
-			// a range-for over an array as a block head: by value (a typed buffer, a var array, an int-declared variable over floats, which binds
-			// the element as the general form does), by reference over arrays of arrays (a rebind), a continue and a break, the body growing the
+			// a range-for over an array as a block head: by value (a typed buffer, a var array, an int-declared variable over a var array, which binds
+			// each element as the general form does: a bool converts, a float raises the declaration's text), by reference over arrays of arrays (a rebind), a continue and a break, the body growing the
 			// array (the live size), an element the cells do not take (a string: one miss, then the call's iterations run general), a call inside,
 			// an instance element by reference (a miss at the landing until member cells), a scalar element by reference, a mid-body miss that
 			// resumes at the right element, and a nested range-for; both backends, proofs on and off
@@ -3390,7 +3391,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				function twice(int v) -> int { return v * 2; }
 				function sum_typed(int n) -> int { array<int> a = [1, 2, 3, 4]; int s = 0; int k = 0; while (k < n) { for (int v : a) { s = s + v; } k = k + 1; } return s; }
 				function sum_var() -> int { var a = [5, 6, 7]; int s = 0; for (auto v : a) { s = s + v; } return s; }
-				function int_over_floats() -> string { var a = [1.5, 2.5]; string t = ""; for (int v : a) { t = t + type_of(v); } return t; }
+				function int_over_floats() -> string { var a = [true, 2, 2.5]; string t = ""; try { for (int v : a) { t = t + type_of(v) + to_string(v); } } catch (err) { return t + ":" + err; } return t; }
 				function rows() -> int { var g = [[1, 2], [3, 4], [5, 6]]; int s = 0; for (auto& r : g) { r[0] = r[0] + 10; s = s + r[0] + r[1]; } return s + g[2][0]; }
 				function skip_break() -> int { var a = [1, 2, 3, 4, 5, 6]; int s = 0; for (auto v : a) { if (v == 2) { continue; } if (v == 5) { break; } s = s + v; } return s; }
 				function grows() -> int { var a = [1, 2]; int s = 0; for (auto v : a) { if (v == 2) { a.push(9); } s = s + v; } return s; }
@@ -3398,14 +3399,14 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				function calls() -> int { var a = [1, 2, 3]; int s = 0; for (auto v : a) { s = s + twice(v); } return s; }
 				function objs() -> float { array<P> pool = [P(), P(), P()]; for (auto& p : pool) { p.x = p.x + p.vx; } float s = 0.0; for (auto& p : pool) { s = s + p.x; } return s; }
 				function scalar_ref() -> int { var a = [1, 2, 3]; for (auto& v : a) { v = v * 2; } return a[0] + a[1] + a[2]; }
-				function mid_miss() -> string { var a = [1, 2, 2.5, 4]; int s = 0; try { for (auto v : a) { int w = v; s = s + w; } } catch (err) { return "caught:" + to_string(s); } return "ok:" + to_string(s); }
+				function mid_miss() -> string { var a = [1, 2, true, 4]; int s = 0; try { for (auto v : a) { int w = v; s = s + w; } } catch (err) { return "caught:" + to_string(s); } return "ok:" + to_string(s); }
 				function nested() -> int { var g = [[1, 2], [3]]; int s = 0; for (auto& r : g) { for (auto v : r) { s = s + v; } } return s; }
 				to_string(sum_typed(3)) + "|" + to_string(sum_var()) + "|" + int_over_floats() + "|" + to_string(rows()) + "|" + to_string(skip_break()) + "|" + to_string(grows()) + "|" + strings() + "|" + to_string(calls()) + "|" + to_string(objs()) + "|" + to_string(scalar_ref()) + "|" + mid_miss() + "|" + to_string(nested());
 			)";
 			both(script, "", "range-for blocks");
 			both(script, "", "range-for blocks, proofs off", false);
 			const std::string vm = run_on(true, script);
-			check_true(vm.rfind("30|18|intint|66|8|12|3|12|3.0|12|", 0) == 0 && vm.size() > 2 && vm.substr(vm.size() - 2) == "|6", "the shapes: " + vm);
+			check_eq(std::string("30|18|int1int2:Cannot initialize 'v' (declared int) with float|66|8|12|3|12|3.0|12|ok:8|6"), vm, "the shapes");
 			const std::string l = listing_of("var f = function(int n) { array<int> a = [n, 2]; int s = 0; for (int v : a) { s = s + v; } return s; };");
 			check_true(l.find("C_RANGE") != std::string::npos && l.find("C_BACK_STEP") != std::string::npos && l.find("C_LOAD") != std::string::npos && l.find("-- open loop") == std::string::npos, "a by-value range closes with the range head and the stepping back edge: " + l);
 			const std::string m = listing_of("var f = function(var& g) { int s = 0; for (auto& r : g) { r[0] = r[0] + 1; s = s + r[1]; } return s; };");
@@ -3415,8 +3416,8 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			// the general form: a member read of a frame-slot base is a compiler temp (op_get_member's kernel, its place among the operands
 			// kept), so it feeds the fused binaries and the typed lowering; a member store on a frame-slot base reads the base from the slot.
 			// Both members of a binary, a member with a local, a member with a global read first, a user getter in a binary, a getter
-			// that changes the partner global (the order), a null base (the text), a store through a reference parameter, a store into
-			// an int field (the conversion), a store whose value is used, a user setter; both backends, proofs on and off
+			// that changes the partner global (the order), a null base (the text), a store through a reference parameter, a var's float stored into
+			// an int field (the text, the earlier store kept), a store whose value is used, a user setter; both backends, proofs on and off
 			const std::string script = R"(
 				class P { float x = 1.5; float vx = 0.25; int n = 3; string s = "a"; }
 				class G { int hits = 0; int _get_v() { hits = hits + 1; TOTAL = TOTAL + 100; return 7; } void _set_w(int v) { hits = hits + 10; } }
@@ -3427,7 +3428,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				function getter_binary(G g) -> int { int r = g.v * 2 + g.v; return r + g.hits; }
 				function null_base(int k) -> string { P q = P(); var z = null; try { if (k == 1) { return to_string(z.x + 1.0); } } catch (err) { return "caught:" + err; } return to_string(q.n + 1); }
 				function store_ref(P& p, float d) -> float { p.x = p.x + d; p.vx = d; return p.x + p.vx; }
-				function store_int(P p) -> string { try { p.n = p.n + 1; p.n = 2.5; } catch (err) { return "caught:" + to_string(p.n); } return "ok:" + to_string(p.n); }
+				function store_int(P p) -> string { var h = 2.5; try { p.n = p.n + 1; p.n = h; } catch (err) { return "caught:" + err + to_string(p.n); } return "ok:" + to_string(p.n); }
 				function store_used(P p) -> float { float r = (p.x = 4.5) + 1.0; return r + p.x; }
 				function setter(G g) -> int { g.w = 5; g.w = g.hits + 1; return g.hits; }
 				function decls(P p) -> string { float x = p.x; int k = p.n; var s = p.s; auto v = p.vx; p.x = 2.5; try { var q = p.x; int bad = q; return "ok:" + to_string(x + k + v) + s + to_string(bad); } catch (err) { return "caught:" + to_string(x + k + v) + s; } }
@@ -3440,7 +3441,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			both(script, "", "member temps");
 			both(script, "", "member temps, proofs off", false);
 			const std::string vm = run_on(true, script);
-			check_true(vm.rfind("throw:", 0) != 0 && vm.find("caught:") != std::string::npos, "the shapes ran: " + vm);
+			check_true(vm.rfind("throw:", 0) != 0 && vm.find("|caught:Cannot assign float to field 'n' of P (declared int)4|") != std::string::npos, "the shapes ran: " + vm);
 			const std::string l = listing_of("class P { float x = 1.5; float vx = 0.25; } var f = function(P p, float y) { float w = p.x; p.x = w + y; return p.x + p.vx; };");
 			check_true(l.find("MEMBER_TEMP") != std::string::npos && (l.find("SET_MEMBER_FUSED") != std::string::npos || l.find("SET_MEMBER_VALUE") != std::string::npos) && l.find("T_DECL_MOV") != std::string::npos && l.find("GET_MEMBER") == std::string::npos && l.find("SET_MEMBER ") == std::string::npos, "member reads are temps (the declaration a move row) and the store reads its base from the slot: " + l);
 		});
@@ -3481,7 +3482,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 		});
 		test("a_typed_push_moves_the_payload_without_an_intermediate_value", [this]() {
 			// a cell or a typed element pushed into a typed buffer moves its payload; a hetero
-			// destination still takes a value with the cell's declared stamp; the conversion subset, the memory charge, self pushes and the
+			// destination still takes a value with the cell's declared stamp; the conversion subset (a var's float into ints raises with the earlier pushes kept), the memory charge, self pushes and the
 			// fallbacks are the general push's. Both backends, proofs on and off
 			const std::string script = R"(
 				array<int> INTS = [1, 2, 3]; array<float> FLOATS = [0.5, 1.5]; array<string> STRS = ["a", "bb"]; var PAL = ["x", "yy", "zzz"];
@@ -3489,7 +3490,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				function floats(int n) -> float { array<float> out = []; int i = 0; while (i < n) { float v = i * 0.25; out.push(v); out.push(i); int m = i % 2; out.push(FLOATS[m]); i = i + 1; } float s = 0.0; int k = 0; while (k < out.size()) { s = s + out[k]; k = k + 1; } return s * 10.0 + out.size(); }
 				function strings(int n) -> string { array<string> out = []; int i = 0; while (i < n) { int m = i % 2; out.push(STRS[m]); i = i + 1; } string s = ""; int k = 0; while (k < out.size()) { s = s + out[k]; k = k + 1; } return s + to_string(out.size()); }
 				function hetero(int n) -> string { var out = []; int i = 0; while (i < n) { int v = i + 1; float w = i * 0.5; bool b = i % 2 == 0; out.push(v); out.push(w); out.push(b); int m = i % 3; out.push(PAL[m]); out.push(INTS[m]); i = i + 1; } return to_string(out.size()) + type_of(out[0]) + type_of(out[1]) + type_of(out[2]) + type_of(out[3]) + type_of(out[4]) + to_string(out[3]); }
-				function float_into_ints(int n) -> string { array<int> out = []; int i = 0; try { while (i < n) { float v = i * 1.5; out.push(v); i = i + 1; } } catch (err) { return "caught:" + to_string(out.size()); } return "ok:" + to_string(out.size()); }
+				function float_into_ints(int n) -> string { array<int> out = []; int i = 0; try { while (i < n) { var v = i < 2 ? i : i * 1.5; out.push(v); i = i + 1; } } catch (err) { return "caught:" + err + to_string(out.size()); } return "ok:" + to_string(out.size()); }
 				function string_into_ints(int n) -> string { array<int> out = []; int i = 0; try { while (i < n) { int m = i % 2; var s = STRS[m]; out.push(s); i = i + 1; } } catch (err) { return "caught:" + to_string(out.size()); } return "ok:" + to_string(out.size()); }
 				function self_push(int n) -> int { array<int> a = [1, 2]; int i = 0; while (i < n) { a.push(a[i]); i = i + 1; } int s = 0; int k = 0; while (k < a.size()) { s = s + a[k]; k = k + 1; } return s * 100 + a.size(); }
 				function self_push_strings(int n) -> string { array<string> a = ["p", "q"]; int i = 0; while (i < n) { a.push(a[i]); i = i + 1; } string s = ""; int k = 0; while (k < a.size()) { s = s + a[k]; k = k + 1; } return s; }
@@ -3498,7 +3499,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			both(script, "", "typed pushes");
 			both(script, "", "typed pushes, proofs off", false);
 			const std::string vm = run_on(true, script);
-			check_true(vm.rfind("throw:", 0) != 0 && vm.find("caught:") != std::string::npos, "the shapes ran: " + vm);
+			check_true(vm.rfind("throw:", 0) != 0 && vm.find("|caught:Cannot push 'float' to array<int>2|caught:") != std::string::npos, "the shapes ran: " + vm);
 			const std::string l = listing_of("array<int> INTS = [1, 2, 3]; var f = function(int n) { array<int> out = []; int i = 0; while (i < n) { int v = i * 3; out.push(v); int m = i % 3; out.push(INTS[m]); i = i + 1; } return out.size(); };");
 			check_true(l.find("C_PUSH") != std::string::npos && l.find("-- open loop") == std::string::npos, "the typed pushes close the loop: " + l);
 		});
@@ -4934,14 +4935,14 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 		});
 		test("a_global_another_unit_declares_types_the_proofs", [this]() {
 			// ND_X in JaiDOOM's map.jai and G in GLOOM's game.jai; a top-level global one unit declares with a spelled type is typed
-			// by that declaration in every other unit's proof pass (never for its diagnostics), a class-typed one once its class is defined
+			// by that declaration in every other unit's proof pass, a class-typed one once its class is defined
 			// (the importer's proofs re-stamp after the import; its callers are named functions, compiled at their first call after it), so `at`
 			// and `span` graft inside their loops on both accounts
 			namespace fs = std::filesystem;
 			fs::path dir = fs::temp_directory_path() / "jai_row1541";
 			fs::create_directories(dir);
 			std::ofstream(dir / "data.jai") << "array<int> ND = [3, 1, 4, 1, 5, 9, 2, 6];\nclass World { int mw = 8; float px = 2.5; var tiles = []; }\nshared_ptr<World> G = null;\n";
-			std::ofstream(dir / "lib.jai") << "int at(int i) { return ND[i]; }\nfloat span(float a) { return a - G.px; }\nint width() { return G.mw; }\nvoid never() { int bad = ND; }\n"
+			std::ofstream(dir / "lib.jai") << "int at(int i) { return ND[i]; }\nfloat span(float a) { return a - G.px; }\nint width() { return G.mw; }\n"
 			                                 "int sum(int n) { int s = 0; for (int i = 0; i < n; ++i) { s = s + at(i); } return s; }\n"
 			                                 "float walk(int n) { float acc = 0.0; for (int i = 0; i < n; ++i) { acc = acc + span(i * 1.0); } return acc; }\n";
 			std::ofstream(dir / "main.jai") << "import \"lib.jai\";\nimport \"data.jai\";\nG = new World();\nto_string(sum(8)) + \"|\" + to_string(walk(4)) + \"|\" + to_string(width());\n";
@@ -4954,7 +4955,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			std::string l;
 			const std::string iv = run_file(false, nullptr), vv = run_file(true, &l);
 			check_eq(iv, vv, "a global another unit declares: both backends");
-			check_eq(std::string("31|-4.0|8"), vv, "the values (and `int bad = ND` in a body never run is no load error: the diagnostics never read the table)");
+			check_eq(std::string("31|-4.0|8"), vv, "the values");
 			check_true(l.find("-- inlined at") != std::string::npos, "at grafts in the loop: its return reads the typed global's element: " + l);
 			check_true(l.find("-- inlined span") != std::string::npos, "span grafts in the loop: its return reads the class-typed global's field after the re-stamp: " + l);
 			check_true(l.find("-- call kept at ") == std::string::npos, "no kept call for at: " + l);
@@ -5660,14 +5661,16 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			check_true(l.find("-- call kept find line 2: a return inside a loop") != std::string::npos, "the call stays with its rule: " + l);
 		});
 		test("a_typed_reference_parameter_grafts_as_the_callers_variable", [this]() {
-			// an int& parameter bound to an int local is that local (an int& binds only an int): 3.7
-			// stores as the local's int, grafted or not
-			const std::string prelude =
+			// an int& parameter bound to an int local is that local (an int& binds only an int): an int
+			// stores into it, a float raises the reference's text with the earlier stores kept, grafted or not
+			const std::string prelude = "[[warn_mode]]\n"
+				"void add2(int& a, int d) { a = a + d * 2; }\n"
 				"void set37(int& a) { a = 3.7; }\n"
-				"int run() { int u = 1; for (int k = 0; k < 2; ++k) { set37(u); } return u; }\n";
-			both(prelude + "to_string(run());", "3", "a store through a typed reference parameter");
+				"int run() { int u = 1; for (int k = 0; k < 2; ++k) { add2(u, k); } return u; }\n"
+				"string refuse() { int u = 1; try { for (int k = 0; k < 2; ++k) { add2(u, 3); set37(u); } } catch (err) { return err + \"|\" + to_string(u); } return to_string(u); }\n";
+			both(prelude + "to_string(run()) + \" \" + refuse();", "3 Cannot assign float to 'a' (declared int&)|7", "a store through a typed reference parameter");
 			const std::string l = listing_run(prelude + "run();");
-			check_true(l.find("-- inlined set37") != std::string::npos, "the typed reference parameter grafts: " + l);
+			check_true(l.find("-- inlined add2") != std::string::npos, "the typed reference parameter grafts: " + l);
 		});
 		test("a_reference_argument_that_is_not_a_local_keeps_the_call", [this]() {
 			// a var& or typed reference parameter bound to a field or a method name binds through the caller's member rules;
@@ -5997,17 +6000,17 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			check_true(l.find("CALL_TYPED") != std::string::npos, "the calls land typed: " + l.substr(0, 2000));
 		});
 		// a graft's parameter, local or result is a compiler value under its declared type: a block lands it by the declaration's
-		// conversion (an int into a float local widens), never the source's raw kind under the cell's float contract
+		// conversion (an int into a float local widens, a bool into an int local counts), never the source's raw kind under the cell's float contract
 		test("graft_locals_convert_by_their_declared_type_in_a_block", [this]() {
 			const std::string src = "[[warn_mode]]\n"
 				"function f1(int a, int b) -> float { float top = a < b ? a : b; float x = top * 2.0; return x; }\n"
 				"function f2(int a) -> float { float t = a; return t * 0.5; }\n"
-				"function f3(float v) -> int { int k = v; return k + 1; }\n"
+				"function f3(bool v) -> int { int k = v; return k + 1; }\n"
 				"function f4(int a) -> bool { float top = a; if (top < 50.0) { return true; } return false; }\n"
 				"function f5(int a) -> float { return a; }\n"
 				"function run() -> string { float acc = 0.0; int ic = 0; int i = 0;\n"
 				"  while (i < 12) { int a = i * 13 % 100; int b = (i * 7 + 30) % 100;\n"
-				"    float r1 = f1(a, b); float r2 = f2(a); int r3 = f3(a * 0.75); bool r4 = f4(a); float r5 = f5(a);\n"
+				"    float r1 = f1(a, b); float r2 = f2(a); int r3 = f3(a * 3 > 100); bool r4 = f4(a); float r5 = f5(a);\n"
 				"    acc = acc + r1 * 3.0 + r2 * 5.0 + r5 * 7.0; ic = ic + r3 * 11; if (r4) { ic = ic + 1; } i = i + 1; }\n"
 				"  return to_string(acc) + \" \" + to_string(ic); }\n"
 				"run();";
@@ -6707,14 +6710,14 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			}
 		});
 		// a graft's local or result declared from arithmetic the typed rows left general lands in the block by its declared type: an int
-		// result truncates a float, a float local or result widens an int (the ordering fuzz band's metamorphic variant, seed 266)
+		// result takes a cast float, a float local or result widens an int (the ordering fuzz band's metamorphic variant, seed 266)
 		test("a_grafts_declaration_from_general_arithmetic_lands_by_its_declared_type", [this]() {
 			const std::string src = "int GI = 3;\n"
-				"function w(int p) -> int { float tl = p + 0.25; return tl * 2; }\n"
+				"function w(int p) -> int { float tl = p + 0.25; return cast<int>(tl * 2); }\n"
 				"function w4(int p) -> float { float t = p + 1; return t / 2; }\n"
-				"function w5(float p) -> int { int t = p * 3; return t + 1; }\n"
+				"function w5(float p) -> int { int t = cast<int>(p * 3); return t + 1; }\n"
 				"function w6(int p) -> float { return p + GI; }\n"
-				"function w7(float p) -> int { return p * 1.5; }\n"
+				"function w7(float p) -> int { return cast<int>(p * 1.5); }\n"
 				"function run() -> string { float fs = 0.0; float hs = 0.0;\n"
 				"  for (int i = 0; i < 3; i++) {\n"
 				"    var b = w(i); var c = w4(i); var e = w5(1.5); var f = w6(i); var g = w7(3.0); float h = w4(i) + w(i);\n"
@@ -6799,7 +6802,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				"    var v4 = 41; auto e = v4; e += 1.5; a = a + e;\n"
 				"    auto e2 = GV; e2 += 1.5; b = b + e2;\n"
 				"    auto e3 = vv; e3 += 1.5; c = c + e3;\n"
-				"    int n = 41; auto e4 = n; e4 += 1.5; d = d + e4;\n"
+				"    int n = 41; auto e4 = n; e4 = cast<int>(e4 + 1.5); d = d + e4;\n"
 				"  }\n"
 				"  return to_string(a) + \" \" + to_string(b) + \" \" + to_string(c) + \" \" + to_string(d); }\n"
 				"run();";
@@ -6823,12 +6826,14 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				"function run() -> string {\n"
 				"  var L = [=]() { rec(1); return -0.5; };\n"
 				"  int s = 13; int t = 13; float f = 0.25; float g = 0.0;\n"
-				"  for (int i = 0; i < 3; i++) { auto m = L(); s += m; }\n"
-				"  for (int i = 0; i < 3; i++) { auto h = half(); t += h; }\n"
+				"  for (int i = 0; i < 3; i++) { auto m = L(); s = cast<int>(s + m); }\n"
+				"  for (int i = 0; i < 3; i++) { auto h = half(); t = cast<int>(t + h); }\n"
 				"  for (int i = 0; i < 3; i++) { int n = 41 + i; auto k = n; f = f + k; g = g + k / 2; }\n"
-				"  return to_string(s) + \" \" + to_string(t) + \" \" + to_string(f) + \" \" + to_string(g); }\n"
+				"  int u = 13; string refused = \"\";\n"
+				"  try { for (int i = 0; i < 3; i++) { auto q = i < 1 ? rec(0) + 2 : half(); u += q; } } catch (err) { refused = err; }\n"
+				"  return to_string(s) + \" \" + to_string(t) + \" \" + to_string(f) + \" \" + to_string(g) + \" \" + to_string(u) + \" \" + refused; }\n"
 				"run();";
-			const std::string expected = "10 10 126.25 62.0";
+			const std::string expected = "10 10 126.25 62.0 15 Cannot assign float to 'u' (declared int)";
 			both(src, expected, "auto from a call result in a block");
 			both(src, expected, "auto from a call result in a block, proofs off", false);
 			if (!engine::miss_injection_available()) { return; }
@@ -7390,14 +7395,14 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			// a global array receiver resolves through its lookup at entry and at each push; a call that rebinds the global between pushes lands
 			// the next push on the new array, a typed receiver keeps its element rule
 			const std::string defs =
-				"array<int> Q; var V = []; array<int> R;\n"
+				"array<int> Q; var V = []; array<int> R; var HALF = 1.5;\n"
 				"void reset() { R = []; }\n"
 				"int fill(int n) { Q = []; V = []; for (int i = 0; i < n; ++i) { int t = i * 2; Q.push(t); V.push(i); V.push(Q[i]); } return Q.size() + V.size(); }\n"
 				"int rebind(int n) { R = [7]; int s = 0; for (int i = 0; i < n; ++i) { R.push(i); if (i == n / 2) { reset(); } s += R.size(); } return s * 100 + R.size(); }\n"
-				"string bad(int n) { Q = []; string out = \"\"; try { for (int i = 0; i < n; ++i) { Q.push(i); if (i == 3) { Q.push(1.5); } } } catch (e) { out = e; } return out + to_string(Q.size()); }\n";
+				"string bad(int n) { Q = []; string out = \"\"; try { for (int i = 0; i < n; ++i) { Q.push(i); if (i == 3) { Q.push(HALF); } } } catch (e) { out = e; } return out + to_string(Q.size()); }\n";
 			const std::string src = defs + "to_string(fill(200)) + \" \" + to_string(rebind(40)) + \" \" + to_json(R) + \" \" + bad(10) + \" \" + to_string(Q[3]) + \" \" + to_string(V[7]);";
 			const std::string oracle = run_on(false, src);
-			check_true(oracle.find("throw") == std::string::npos, "the interpreter's answer: " + oracle);
+			check_true(oracle.find("throw") == std::string::npos && oracle.find(" Cannot push 'float' to array<int>4 ") != std::string::npos, "the interpreter's answer: " + oracle);
 			both(src, oracle, "environment receivers");
 			both(src, oracle, "environment receivers, proofs off", false);
 			const std::string l = listing_run(src);
@@ -7600,13 +7605,13 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				"function rec0(int n) -> int { var keep = [](int a) { return a; }; if (n <= 0) { return 0; } return rec0(n - 1); }\n"
 				"float G = 1.0;\n"
 				"int H = 10;\n"
-				"function w(float p) -> int { rec0(1); G = G - 2.25; return p * 2; }\n"
+				"function w(int p) -> float { rec0(1); G = G - 2.25; return p * 2; }\n"
 				"function w2(int p) -> int { rec0(2); H = H - 3; return p + H; }\n"
-				"int s = 0;\n"
-				"for (int i = 0; i < 3; ++i) { s = s + w(1.0) + w2(i); }\n"
+				"float s = 0.0;\n"
+				"for (int i = 0; i < 3; ++i) { s = s + w(1) + w2(i); }\n"
 				"to_string(G) + \" \" + to_string(H) + \" \" + to_string(s);";
-			both(src, "-5.75 1 21", "environment writes before a general return");
-			both(src, "-5.75 1 21", "environment writes before a general return, proofs off", false);
+			both(src, "-5.75 1 21.0", "environment writes before a general return");
+			both(src, "-5.75 1 21.0", "environment writes before a general return, proofs off", false);
 			const std::string l = listing_run(src);
 			const size_t wb = l.find("== w ");
 			const std::string wl = wb == std::string::npos ? l : l.substr(wb, l.find("\n== ", wb + 1) - wb);
@@ -7616,7 +7621,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				auto e = jai::foundry::make_default_engine(); e->set_backend(backend_type::vm); e->cells_miss_every(every); stdlib::register_all(*e); register_host_math_fixture(*e);
 				std::string got;
 				try { got = e->execute(src).as_string(); } catch (const std::exception& ex) { got = std::string("throw:") + ex.what(); }
-				check_eq(std::string("-5.75 1 21"), got, "a miss at every " + std::to_string(every));
+				check_eq(std::string("-5.75 1 21.0"), got, "a miss at every " + std::to_string(every));
 			}
 		});
 		test("raw_frames_replan_after_general_code_inside_the_chain", [this]() {
@@ -7672,8 +7677,13 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			};
 			const std::string probe = "to_string(top(12)) + \" \" + to_string(mid(9));";
 			const std::string oracle = reload_session(false, steps, probe);
-			check_true(oracle.find("throw:") == std::string::npos, "runs: " + oracle);
+			check_eq(std::string("352 54|858 135|throw:Cannot return float from 'mid' (declared -> int)|154 27|"), oracle, "a float result reaches mid's int return");
 			check_eq(oracle, reload_session(true, steps, probe), "a leaf reloaded under two levels of callers, its result kind changed once");
+			std::vector<std::string> widened = steps;
+			widened[0] = "int leaf(int x) { return x + 1; }\nfloat mid(int n) { if (n < 1) { return 0; } return leaf(n) + mid(n - 1); }\nfloat top(int n) { float s = 0.0; for (int i = 0; i < n; ++i) { s = s + mid(i); } return s; }";
+			const std::string widened_oracle = reload_session(false, widened, probe);
+			check_true(widened_oracle.find("throw:") == std::string::npos, "runs: " + widened_oracle);
+			check_eq(widened_oracle, reload_session(true, widened, probe), "the result kind changed under callers that widen it");
 		});
 		test("call_facts_follow_a_callee_that_starts_raising", [this, reload_session]() {
 			const std::vector<std::string> steps = {
@@ -7803,12 +7813,12 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				"function setv(var& a) -> void { a = 2.5; }\n"
 				"function bumpv(var& a, float d) -> float { a = a + d; return a * 2.0; }\n"
 				"function run1() -> string { array<float> A = [1.0, 2.0]; setv(A[0]); return to_json(A); }\n"
-				"function run2() -> string { array<int> B = [1, 2]; setv(B[0]); return to_json(B); }\n"
+				"function run2() -> string { array<int> B = [1, 2]; try { setv(B[0]); } catch (err) { return err + to_json(B); } return to_json(B); }\n"
 				"function run3() -> string { var M = [[1, 2], [3, 4]]; for (int i = 0; i < 2; ++i) { setv(M[i]); } return to_json(M); }\n"
 				"function run4(int n) -> string { array<float> A = [0.0, 0.0, 0.0, 0.0]; float t = 0.0; for (int i = 0; i < n; ++i) { t += bumpv(A[i & 3], i * 0.5); } return to_json(A) + \" \" + to_string(t); }\n"
 				"function run5() -> string { var V = [1, \"x\", 2.5]; setv(V[1]); float r = bumpv(V[2], 1.0); return to_json(V) + \" \" + to_string(r); }\n"
 				"run1() + \" \" + run2() + \" \" + run3() + \" \" + run4(10) + \" \" + run5();";
-			const std::string expected = "[2.5,2.0] [2,2] [2.5,2.5] [6.0,7.5,4.0,5.0] 61.0 [1,2.5,3.5] 7.0";
+			const std::string expected = "[2.5,2.0] Cannot assign 'float' to element of type 'int'[1,2] [2.5,2.5] [6.0,7.5,4.0,5.0] 61.0 [1,2.5,3.5] 7.0";
 			both(src, expected, "element references");
 			both(src, expected, "element references, proofs off", false);
 			if (!engine::miss_injection_available()) { return; }
@@ -7820,8 +7830,8 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 			}
 		});
 		// a reference parameter bound to a name is that variable in the graft only where a store through the reference and a store of the
-		// variable agree: an untyped variable, or one declared the parameter's scalar type with every store proven to land it; a store the
-		// variable's declared type would convert keeps the call (the reference's store does not convert)
+		// variable agree: an untyped variable, or one declared the parameter's scalar type with every store proven to land it; a float stored
+		// through a reference to an int variable raises the reference's text and leaves the variable, grafted or not
 		test("a_reference_parameter_bound_to_a_name_stores_as_the_reference", [this]() {
 			const std::string src = "[[warn_mode]]\n"
 				"function setv(var& a) -> void { a = 2.5; }\n"
@@ -7830,16 +7840,18 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				"function addi(int& a, float d) -> void { a += d; }\n"
 				"function bumpf(float& a, float d) -> void { a = a + d; }\n"
 				"function incf(float& a) -> void { ++a; }\n"
-				"function run1() -> string { int x = 1; setv(x); return to_string(x) + \":\" + type_of(x); }\n"
+				"function run1() -> string { int x = 1; try { setv(x); } catch (err) { return err + \":\" + to_string(x); } return to_string(x) + \":\" + type_of(x); }\n"
 				"function run2() -> string { float y = 1.0; setf(y); return to_string(y) + \":\" + type_of(y); }\n"
-				"function run3() -> string { int z = 1; seti(z); return to_string(z) + \":\" + type_of(z); }\n"
-				"function run4() -> string { int w = 1; addi(w, 0.5); return to_string(w) + \":\" + type_of(w); }\n"
+				"function run3() -> string { int z = 1; try { seti(z); } catch (err) { return err + \":\" + to_string(z); } return to_string(z) + \":\" + type_of(z); }\n"
+				"function run4() -> string { int w = 1; try { addi(w, 0.5); } catch (err) { return err + \":\" + to_string(w); } return to_string(w) + \":\" + type_of(w); }\n"
 				"function run5() -> string { var v = 1; setv(v); return to_string(v) + \":\" + type_of(v); }\n"
 				"function run6(int n) -> string { float t = 0.0; for (int i = 0; i < n; ++i) { bumpf(t, i * 0.5); incf(t); } return to_string(t) + \":\" + type_of(t); }\n"
 				"function run7() -> string { float q = 3.0; bumpf(q, 0.25); return to_string(q) + \":\" + type_of(q); }\n"
-				"run1() + \" \" + run2() + \" \" + run3() + \" \" + run4() + \" \" + run5() + \" \" + run6(10) + \" \" + run7();";
+				"function setb(var& a) -> void { a = true; }\n"
+				"function run8() -> string { int b = 5; setb(b); return to_string(b) + \":\" + type_of(b); }\n"
+				"run1() + \"|\" + run2() + \"|\" + run3() + \"|\" + run4() + \"|\" + run5() + \"|\" + run6(10) + \"|\" + run7() + \"|\" + run8();";
 			// a store through a reference runs the variable's own table and a T& binds only a T
-			const std::string expected = "2:int 7.0:float 2:int 1:int 2.5:float 32.5:float 3.25:float";
+			const std::string expected = "Cannot assign float to 'a' (declared int&):1|7.0:float|Cannot assign float to 'a' (declared int&):1|Cannot assign float to a variable declared int:1|2.5:float|32.5:float|3.25:float|1:int";
 			both(src, expected, "name references");
 			both(src, expected, "name references, proofs off", false);
 			const std::string l = listing_run(src);
@@ -7956,7 +7968,7 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				"function inner(var x) { return x * 3 + 1; }\n"
 				"function outer(int x) -> int { return inner(x) + inner(x + 1); }\n"
 				"function idiv(var a, var b) { return a / b; }\n"
-				"function setf(var& r) -> void { r = 2.5; }\n"
+				"function setf(var& r) -> void { r = true; }\n"
 				"function run(int n) -> string {\n"
 				"  array<float> x = [1.0, 2.0, 3.0, 4.0];\n"
 				"  float a = 0.0; int s = 0; float m = 0.0; float d = 0.0; int o = 0;\n"
@@ -7976,8 +7988,8 @@ function by_getter() { var s = ""; int i = 0; while (i < 5) { if (i == 2) { arm(
 				"string out = run(6) + \" | \" + flip(5) + \" | \" + big(3) + \" | \" + zero(3);\n"
 				"A = function(var i, var j) { return 7; };\n"
 				"out + \" | \" + run(2);";
-			// flip's setf(k) stores 2.5 into the int k through the reference: k's own table keeps it an int
-			const std::string want = "7.5400642840316 91 12.0 10.5 156 | 30.54493464052287:int | E:Integer overflow in '*' | E:Division by zero | 42.0 5 3.0 1.5 28";
+			// flip's setf(k) stores true into the int k through the reference: k's own table keeps it an int
+			const std::string want = "7.5400642840316 91 12.0 10.5 156 | 21.761544011544007:int | E:Integer overflow in '*' | E:Division by zero | 42.0 5 3.0 1.5 28";
 			both(src, want, "untyped leaves");
 			both(src, want, "untyped leaves, proofs off", false);
 			const std::string l = listing_run(src);

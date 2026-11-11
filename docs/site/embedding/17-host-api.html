@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="Host API in Depth — JaiScript Embedding">
 <meta property="og:description" content="The rest of the engine's host API: functions and direct entries, live bindings to C++ variables and what writes through them, running files, per-execution variables, calling script and reading its state back, every error surface, and the time source.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/embedding/17-host-api.html">
+<meta property="og:url" content="https://jaiscript.com/embedding/17-host-api.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,47 +33,72 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding</summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li class="current"><a href="../embedding/17-host-api.html" aria-current="page">Host API in Depth</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding<span class="sidebar-current">Host API in Depth</span></summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li class="current"><a href="../embedding/17-host-api.html" aria-current="page">Host API in Depth</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li><li><a href="../embedding/20-foundry.html">Foundry: Testing a Host</a></li><li><a href="../embedding/21-visual-studio.html">Visual Studio, Step by Step</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>17</nav>
 <article class="chapter"><h1 id="host-api-in-depth">Host API in Depth<a class="hlink" href="#host-api-in-depth" aria-label="link">&#8203;</a></h1>
-<p>The <a href="01-embedding-quickstart.html">quickstart</a> covers what a host needs on its first day. This page is the rest of the engine&#x27;s host API, one topic per section:</p>
+<p>The <a href="01-embedding-quickstart.html">quickstart</a> covers a host's first day. This page is the rest of
+<code>jai::engine</code>'s host API. The rules that run through all of it:</p>
 <ul>
-<li>registering functions and the direct entry for hot ones;</li>
-<li>live bindings to C++ variables and exactly what writes through them;</li>
-<li>running files and per-execution variables;</li>
-<li>calling script and reading its state back;</li>
-<li>every error surface;</li>
-<li>the clock scripts read, and how many threads a parallel region runs on.</li>
+<li><strong>A call fails one way.</strong> A call that returns a <code>checked_result</code> reports every failure in it; a
+call that returns a plain value throws. The engine is usable after either.</li>
+<li><strong>A value belongs to its engine and its engine's thread.</strong> Values cross engines by copy and die with
+their engine.</li>
+<li><strong>A host <code>T&amp;</code> parameter writes back</strong> into the script lvalue it was given;
+<code>const T&amp;</code> and by-value parameters only read.</li>
+<li><strong>Write-through belongs to a registered name,</strong> never to a copy stored somewhere else.</li>
+<li><strong>Declare before loading.</strong> Registrations the checker reads (functions, constant arguments,
+<code>nodiscard</code>) come before the scripts that use them.</li>
 </ul>
 <h2 id="registering-c-functions">Registering C++ functions<a class="hlink" href="#registering-c-functions" aria-label="link">&#8203;</a></h2>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">// Typed: signature drives conversion and overload resolution
+<div class="codeblock cb-cpp" data-sample="host-api-register"><span class="cb-label">C++</span><pre><code class="lang-cpp">// Typed: the signature drives conversion and overload resolution
 eng-&gt;add_function(&quot;square&quot;, [](jai::script_int n) { return n * n; });
-eng-&gt;execute(&quot;square(12)&quot;).as_int();      // 144
+std::cout &lt;&lt; eng-&gt;execute(&quot;square(12)&quot;).as_int() &lt;&lt; &quot;\n&quot;;
 
-// Variadic: you receive the raw argument vector
-eng-&gt;add_variadic_function(&quot;sum_all&quot;, [&amp;eng](const std::vector&lt;jai::script_value&gt;&amp; args) {
+// Variadic: the engine and every argument of the call
+eng-&gt;add_variadic_function(&quot;sum_all&quot;, [](jai::engine&amp;, std::span&lt;const jai::script_value&gt; args) {
     jai::script_int total = 0;
-    for (auto&amp; a : args) total += a.as_int();
-    return jai::script_value(total, eng.get());
+    for (const auto&amp; a : args) total += a.as_int();
+    return total;
 });
-eng-&gt;execute(&quot;sum_all(1, 2, 3, 4)&quot;).as_int();   // 10</code></pre></div>
-<p>Registering the same name twice with different signatures creates an <strong>overload set</strong> resolved by argument types at the call site. Use <code>add_variadic_function</code> for <code>print</code>-shaped functions and optional parameters.</p>
-<h3 id="host-direct-entries">A direct entry for a hot host function<a class="hlink" href="#host-direct-entries" aria-label="link">&#8203;</a></h3>
-<p>A typed <code>add_function</code> binding over plain values already has a fast call path. A variadic function goes through its <code>std::function</code> with an argument vector on every call. For one that scripts call in tight loops, give the engine an entry over the arguments where they are: <code>add_host_direct(name, arity, invoke, target)</code>.</p>
-<ul>
-<li><strong>When the entry runs.</strong> A VM call site whose callee is the function the name binds then calls <code>invoke(target, args, arity)</code> for a call of exactly <code>arity</code> arguments, none of them a reference.</li>
-<li><strong>Any arity.</strong> An arity of <code>jai::engine::host_direct_any_arity</code> gives a variadic function's entry, which takes any call of 1 to 8 arguments.</li>
-<li><strong>Every other call calls the function</strong>: another argument count, a reference argument, the interpreter, a name the host registers again or a script rebinds. So <code>invoke</code> must return what the function returns for those arguments.</li>
-</ul>
-<p>Sharing one body between the two keeps them equal:</p>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">// one body for both: the function and its direct entry
+std::cout &lt;&lt; eng-&gt;execute(&quot;sum_all(1, 2, 3, 4)&quot;).as_int() &lt;&lt; &quot;\n&quot;;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">144
+10</code></pre></div>
+<p>Registering a name again with another signature adds an overload, resolved by argument types at the call. A variadic
+function returns what a typed one returns, a <code>script_value</code>, or a <code>checked_result&lt;script_value&gt;</code>
+whose error the script receives. A <code>script_value</code> it constructs takes the engine it is given
+(<code>jai::script_value(total, &amp;eng)</code>) or comes from <code>eng.make_value(v)</code>, <code>make_null()</code>,
+<code>make_array()</code> or <code>make_map()</code>. A callable of the argument vector alone,
+<code>const std::vector&lt;jai::script_value&gt;&amp;</code>, returning a <code>checked_result&lt;script_value&gt;</code>,
+registers as a variadic function too, and captures the engine it needs.</p>
+<p id="more-registration-calls">The raw-arity and overload registrations, custom and container conversions, class and backend queries, <code>text_of</code>, the app folders and <code>set_output_stream</code>: <a href="../reference/host.html#hostapi-registration">registration and engine queries</a>.</p>
+<h3 id="host-direct-entries">A direct entry for a hot variadic function<a class="hlink" href="#host-direct-entries" aria-label="link">&#8203;</a></h3>
+<p>A typed <code>add_function</code> binding has a fast call path unless a parameter is a non-const reference to a value
+(a <code>T&amp;</code> that writes back). <code>const std::string&amp;</code>, a bound object's <code>T&amp;</code>,
+<code>const std::vector&lt;jai::script_value&gt;&amp;</code> and <code>const jai::script_value&amp;</code> parameters
+receive the script's own values, never copies. An engine-first variadic function has one as well: bound alone under its
+name, with no requirement, it runs on the arguments where they are for a VM call of 1 to 8 arguments, none of them a
+reference, with no argument vector and no <code>std::function</code> call. Every other call reaches the same callable
+through the function.</p>
+<div class="codeblock cb-cpp" data-sample="host-api-direct-variadic"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;add_variadic_function(&quot;label&quot;, [](jai::engine&amp;, std::span&lt;const jai::script_value&gt; args) -&gt; std::string {
+    if (args.size() != 1) return &quot;?&quot;;
+    return args[0].is_int() ? &quot;int&quot; : args[0].is_float() ? &quot;float&quot; : &quot;other&quot;;
+});
+std::cout &lt;&lt; eng-&gt;execute(&quot;label(2.5)&quot;).as_string() &lt;&lt; &quot;\n&quot;;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">float</code></pre></div>
+<p>A variadic function of the argument vector pays a <code>std::function</code> call and an argument vector per call.
+<code>add_host_direct(name, arity, invoke, target)</code> gives it, or any function a name binds, an entry over the
+arguments where they are:</p>
+<div class="codeblock cb-cpp" data-sample="host-api-direct-entry"><span class="cb-label">C++</span><pre><code class="lang-cpp">// one body for both: the function and its direct entry
 static jai::checked_result&lt;jai::script_value&gt; label_of(const void* target, const jai::script_value* args, size_t count) {
     auto* eng = static_cast&lt;jai::engine*&gt;(const_cast&lt;void*&gt;(target));
     if (count != 1) return jai::script_value(std::string(&quot;?&quot;), eng);
@@ -76,22 +109,13 @@ eng-&gt;add_variadic_function(&quot;label&quot;, [e = eng.get()](const std::vect
     return label_of(e, args.data(), args.size());
 });
 eng-&gt;add_host_direct(&quot;label&quot;, 1, &amp;label_of, eng.get());   // after the function: it keys on the function &quot;label&quot; binds now
-eng-&gt;execute(&quot;label(2.5)&quot;).as_string();                  // &quot;float&quot;</code></pre></div>
-<p>A typed binding takes the fast path whenever no parameter is a non-const reference to a value (a <code>T&amp;</code> that writes back). <code>const T&amp;</code> parameters take it too. A <code>const std::string&amp;</code>, a bound object&#x27;s <code>T&amp;</code> or <code>const T&amp;</code>, a <code>const std::vector&lt;jai::script_value&gt;&amp;</code> and a <code>const jai::script_value&amp;</code> are the script&#x27;s own values, never copies. A static method a <code>dynamic_binder</code> binds converts exactly as <code>add_function</code> does.</p>
-<h3 id="more-registration-calls">More registration and inspection calls<a class="hlink" href="#more-registration-calls" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th>Call</th><th>What it does</th></tr></thead><tbody>
-<tr><td><code>add_function_with_arity(name, fn, arity)</code></td><td>Registers a raw <code>jai::script_function</code> (it receives the argument vector) that takes exactly <code>arity</code> arguments; <code>SIZE_MAX</code> takes any count.</td></tr>
-<tr><td><code>add_overloaded_function(name, arg_count, fn)</code></td><td>Adds a raw <code>script_function</code> of <code>arg_count</code> arguments to <code>name</code>&#x27;s overload set, creating the set on the first call.</td></tr>
-<tr><td><code>add_custom_conversion&lt;T&gt;(from, to)</code></td><td>Teaches the engine to cross a C++ <code>T</code> it has no binding for: <code>from(const script_value&amp;) -&gt; T</code> and <code>to(const T&amp;) -&gt; script_value</code> are what the engine uses wherever it converts a <code>T</code>.</td></tr>
-<tr><td><code>add_vector_conversion&lt;T&gt;()</code>, <code>add_map_conversion&lt;K, V&gt;()</code></td><td>Registers the <code>std::vector&lt;T&gt;</code> or <code>std::map&lt;K, V&gt;</code> conversion ahead of the first binding that names it (bindings register the shapes they name by themselves).</td></tr>
-<tr><td><code>registered_class_names()</code></td><td>Every class the engine can name, host-bound and script-declared, sorted.</td></tr>
-<tr><td><code>has_registered_class&lt;T&gt;()</code></td><td>Whether a <code>dynamic_binder</code> bound the C++ type <code>T</code> on this engine.</td></tr>
-<tr><td><code>get_backend_type()</code>, <code>get_backend_name()</code></td><td>The engine&#x27;s backend (<code>jai::backend_type::vm</code> unless <code>set_backend</code> chose another) and its name.</td></tr>
-<tr><td><code>text_of(v)</code></td><td>A value&#x27;s text as <code>print</code> and <code>string + v</code> spell it, a class&#x27;s own <code>to_string()</code> included; a failing <code>to_string()</code>&#x27;s error is the result.</td></tr>
-<tr><td><code>app_data_dir(app)</code>, <code>app_cache_dir(app)</code>, <code>engine::executable_path()</code></td><td>The platform&#x27;s per-user data and cache folders for an app called <code>app</code>, and the running executable in generic spelling (empty when the platform cannot say). The folders are what the script builtins answer, through the resolvers <code>app_directory_resolvers(data, cache)</code> installs; they need the filesystem privilege. Queries only: nothing is created.</td></tr>
-</tbody></table></div>
-<p>Every <code>script_value</code> you construct yourself needs the engine pointer: <code>jai::script_value(3.14159, eng.get())</code>, or use the convenience factories <code>eng-&gt;make_value(v)</code> / <code>eng-&gt;make_null()</code> / <code>eng-&gt;make_array()</code> / <code>eng-&gt;make_map()</code>.</p>
-<h2 id="globals-copies-vs-live-bindings">Globals: copies vs live bindings<a class="hlink" href="#globals-copies-vs-live-bindings" aria-label="link">&#8203;</a></h2>
+std::cout &lt;&lt; eng-&gt;execute(&quot;label(2.5)&quot;).as_string() &lt;&lt; &quot;\n&quot;;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">float</code></pre></div>
+<p>The VM calls <code>invoke(target, args, arity)</code> for a call of exactly <code>arity</code> arguments, none of them a
+reference; <code>jai::engine::host_direct_any_arity</code> takes any call of 1 to 8 arguments. Every other call (another
+count, a reference argument, a name re-registered or rebound) calls the function, so <code>invoke</code> must return what
+the function returns. Sharing one body keeps them equal.</p>
+<h2 id="globals-copies-vs-live-bindings">Globals: copies and live bindings<a class="hlink" href="#globals-copies-vs-live-bindings" aria-label="link">&#8203;</a></h2>
 <div class="codeblock cb-cpp" data-sample="host-api-live-global"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;add_global(&quot;PI&quot;, jai::script_value(3.14159, eng.get()));   // copied in
 
 int hp = 100;
@@ -102,15 +126,19 @@ hp = 1;                                           // and the script sees C++ wri
 std::cout &lt;&lt; &quot;script sees: &quot; &lt;&lt; eng-&gt;execute(&quot;hp&quot;).as_int() &lt;&lt; &quot;\n&quot;;</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">hp after script damage: 75
 script sees: 1</code></pre></div>
-<p><code>add_global_ref</code> on a primitive (<code>int8..64</code>, unsigned variants, <code>float</code>, <code>double</code>, <code>bool</code>, <code>char</code>, <code>std::string</code>) creates a <strong>cpp_bound</strong> value: a typed pointer box that reads the live C++ variable and writes through to it. For non-primitive types it falls back to a non-owning aliasing <code>shared_ptr</code>. The caller must guarantee the object outlives the engine (documented in the header, <code>engine.hpp</code> <code>add_global_ref</code>).</p>
-<h3 id="namespace-members">Namespace members: qualified names<a class="hlink" href="#namespace-members" aria-label="link">&#8203;</a></h3>
-<p>A qualified name registers a member of its namespace, as the library registers <code>string::to_lower</code> and <code>time::now</code>. <code>add_global(&quot;game::tick&quot;, v)</code>, <code>add_global_ref(&quot;game::tick&quot;, t)</code>, <code>add_function(&quot;game::spawn&quot;, f)</code> (a second one adds an overload) and the other registration calls make <code>tick</code> and <code>spawn</code> members of namespace <code>game</code>.</p>
-<ul>
-<li><strong>Reading and calling.</strong> Script reads them as <code>game::tick</code> and calls <code>game::spawn(3)</code>. Code inside a script&#x27;s <code>namespace game { }</code> reaches them by their bare names, as it reaches the namespace&#x27;s own members.</li>
-<li><strong>Read-only from script.</strong> A namespace member the host registers is a host entry: <code>game::tick = 1</code> raises <code>Cannot assign to &#x27;tick&#x27;: it is read-only</code>. The host changes it, through the live <code>add_global_ref</code> binding or by registering the name again.</li>
-<li><strong>Loaded earlier.</strong> A unit loaded before the host registers the member declares it with <code>extern game::tick;</code> (<a href="06-static-checking.html#extern">extern</a>).</li>
-<li><strong>From the host.</strong> The host API names it by the qualified spelling: <code>get_variable(&quot;game::tick&quot;)</code>, <code>has_function(&quot;game::spawn&quot;)</code>.</li>
-</ul>
+<p><code>add_global_ref</code> on a primitive (<code>int8</code> to <code>int64</code>, the unsigned widths,
+<code>float</code>, <code>double</code>, <code>bool</code>, <code>char</code>, <code>std::string</code>) binds the C++
+variable itself. For any other type it holds a non-owning pointer. Either way the variable must outlive the engine.</p>
+<div class="tablewrap" id="what-write-through-covers"><table><thead><tr><th>Script does</th><th>The C++ variable</th></tr></thead><tbody>
+<tr><td>reads the name</td><td>is read live, every time</td></tr>
+<tr><td><code>hp = 5</code>, <code>hp += 7</code>, <code>++hp</code>, <code>hp--</code>, string <code>+=</code></td><td>is written, at every width. <code>boundInt += 2.5</code> truncates and still writes through. A bound <code>char</code> is a one-byte int and reads as its code.</td></tr>
+<tr><td><code>auto&amp; r = hp;</code>, then writes <code>r</code>; passes <code>hp</code> to a script <code>int&amp;</code> parameter; <code>auto&amp; h = player.hp;</code> on a bound object</td><td>is written: a reference aliases it</td></tr>
+<tr id="where-the-binding-deliberately-drops-detach-rules"><td>stores it in an array element, a map slot or an object member (<code>[hp]</code>, <code>{"k": hp}</code>, <code>push</code>, assignment)</td><td>is snapshotted: the stored copy is detached</td></tr>
+<tr><td>(host) <code>clone()</code> of the bound <code>script_value</code></td><td>is snapshotted. A plain copy of the <code>script_value</code> stays bound.</td></tr>
+</tbody></table></div>
+<h3 id="namespace-members">Namespace members<a class="hlink" href="#namespace-members" aria-label="link">&#8203;</a></h3>
+<p>A qualified name in any registration call (<code>add_global("game::tick", v)</code>,
+<code>add_global_ref</code>, <code>add_function("game::spawn", f)</code>) registers a member of that namespace.</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">int64_t tick = 41;
 eng-&gt;add_global_ref(&quot;game::tick&quot;, tick);
 eng-&gt;add_function(&quot;game::spawn&quot;, [](int64_t n) { return n * 2; });
@@ -119,15 +147,19 @@ eng-&gt;execute(R&quot;(
     print(`${game::tick} ${game::next()}`);
 )&quot;);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">41 43</code></pre></div>
-<h3 id="what-write-through-covers">What write-through covers<a class="hlink" href="#what-write-through-covers" aria-label="link">&#8203;</a></h3>
-<p>The write-through matrix holds on both backends (the interpreter and the VM, <a href="03-backends.html">chapter 3</a>); the test suite holds them to it:</p>
-<ul><li><strong>Name-level assignment and compound assignment write through</strong>: <code>hp = hp + 50;</code>, <code>hp += 7;</code>, <code>++hp</code>, <code>hp--</code> all mutate the C++ variable, at every width: int8 through uint64, float/double, and <code>std::string</code> <code>+=</code>.</li><li><strong>A reference to the name aliases the C++ variable</strong>: after <code>auto&amp; r = hp;</code> (or <code>int&amp; r = hp;</code>), <code>r = 5</code>, <code>r += 1</code>, <code>++r</code>, and a script function taking <code>int&amp;</code> that writes (<code>bump(hp)</code>) all store into C++ through the bound type&#x27;s conversion. The name stays bound, so later writes from either side are seen by the other. A field of a bound object (<code>auto&amp; h = player.hp;</code>) aliases the C++ member the same way.</li><li><strong>Reads are always live</strong>: change the C++ variable between executes and the script sees the new value.</li><li><strong>Mixed conversions keep the binding</strong>: <code>boundInt += 2.5</code> converts (truncates) and still writes through.</li><li>A bound <code>char</code> is a width-1 bound <strong>int</strong>. It reads as its code point.</li></ul>
-<h3 id="where-the-binding-deliberately-drops-detach-rules">Where the binding deliberately drops (detach rules)<a class="hlink" href="#where-the-binding-deliberately-drops-detach-rules" aria-label="link">&#8203;</a></h3>
-<ul><li><code>clone()</code> of a bound primitive <strong>detaches</strong>. It snapshots the value. A plain copy of the <code>script_value</code> stays bound.</li><li><strong>Every store detaches.</strong> Storing a bound value into an <strong>array element, map slot, or object member</strong> snapshots the value at store time. That holds whether the store is literal construction (<code>[hp]</code>, <code>{"k": hp}</code>), assignment, <code>push</code>, or an implicit-this member store. Write-through belongs to the registered <em>name</em> (and references/captures/by-ref params bound to it), never to stored copies.</li></ul>
-<h2 id="the-exact-width-as-aliasing-rules">The exact-width <code>as&lt;T&amp;&gt;</code> aliasing rules<a class="hlink" href="#the-exact-width-as-aliasing-rules" aria-label="link">&#8203;</a></h2>
-<p>A non-const <code>as&lt;T&amp;&gt;</code> on a bound value gives you a <strong>live reference into the C++ variable</strong> (zero-copy, reads and writes are real), but only when the binding&#x27;s width and signedness exactly match the script-side type:</p>
-<div class="tablewrap"><table><thead><tr><th><code>as&lt;T&amp;&gt;</code> request</th><th>aliases live when the bound C++ type is</th></tr></thead><tbody><tr><td><code>as&lt;jai::script_int&amp;&gt;</code></td><td>exactly <code>int64_t</code> (or <code>script_int</code>)</td></tr><tr><td><code>as&lt;jai::script_float&amp;&gt;</code></td><td>exactly <code>double</code></td></tr><tr><td><code>as&lt;std::string&amp;&gt;</code></td><td><code>std::string</code></td></tr><tr><td><code>as&lt;jai::script_bool&amp;&gt;</code></td><td><code>bool</code></td></tr></tbody></table></div>
-<p>Anything else (an <code>int32_t</code> behind <code>as&lt;script_int&amp;&gt;</code>, a <code>float</code> behind <code>as&lt;script_float&amp;&gt;</code>) throws a <strong>catchable <code>jai::runtime_error</code></strong>, never <code>std::bad_variant_access</code>, and never silently reads the wrong bytes.</p>
+<ul>
+<li>It is read-only from script: <code>game::tick = 1</code> raises <code>Cannot assign to &#x27;tick&#x27;: it is
+read-only</code>. The host changes it through the live binding or by registering the name again.</li>
+<li>A unit loaded before the registration declares it: <code>extern game::tick;</code>
+(<a href="06-static-checking.html#extern">extern</a>).</li>
+<li>The host names it qualified: <code>get_variable("game::tick")</code>, <code>has_function("game::spawn")</code>.</li>
+</ul>
+<h2 id="the-exact-width-as-aliasing-rules">References into C++: <code>as&lt;T&amp;&gt;</code> and <code>T&amp;</code> parameters<a class="hlink" href="#the-exact-width-as-aliasing-rules" aria-label="link">&#8203;</a></h2>
+<p>A non-const <code>as&lt;T&amp;&gt;</code> on a bound value is a live reference into the C++ variable, but only when
+the bound type is exactly the script-side type: <code>int64_t</code> for <code>as&lt;jai::script_int&amp;&gt;</code>,
+<code>double</code> for <code>as&lt;jai::script_float&amp;&gt;</code>, <code>bool</code> for
+<code>as&lt;jai::script_bool&amp;&gt;</code>, <code>std::string</code> for <code>as&lt;std::string&amp;&gt;</code>. Any
+other width throws <code>jai::runtime_error</code>:</p>
 <div class="codeblock cb-cpp" data-sample="host-api-exact-width"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::script_int gold = 10;
 eng-&gt;add_global_ref(&quot;gold&quot;, gold);
 auto v = eng-&gt;execute(&quot;gold&quot;);                    // a bound alias, not a snapshot
@@ -146,11 +178,7 @@ std::cout &lt;&lt; &quot;narrow after script += 7: &quot; &lt;&lt; narrow &lt;&l
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">gold after as&lt;script_int&amp;&gt; += 5: 15
 int32 as&lt;script_int&amp;&gt;: cannot bind a non-const script reference to a C++-bound variable of a different width
 narrow after script += 7: 12</code></pre></div>
-<p>The same rules apply to <strong>non-const <code>T&amp;</code> parameters</strong> of <code>add_function</code> bindings:</p>
-<ul>
-<li>A bound argument of exactly-matching width aliases the live variable (the callee&#x27;s writes land in C++).</li>
-<li>A <em>plain</em> script argument works as in C++: the callee gets a copy of the value the argument names. When it returns (or throws), its final value is stored back into that argument with the store a script <code>=</code> makes, so the variable&#x27;s declared type converts or rejects it with the usual text.</li>
-</ul>
+<p>A non-const <code>T&amp;</code> parameter of a bound function works on any script lvalue:</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;add_function(&quot;heal&quot;, [](int64_t&amp; hp, int64_t amount) { hp = std::min&lt;int64_t&gt;(hp + amount, 100); });
 eng-&gt;add_function(&quot;tag&quot;, [](std::string&amp; name) { name += &quot; (healed)&quot;; });</code></pre></div>
 <div class="codeblock cb-jai" data-host="heal / tag registration"><span class="cb-label">jaiscript (with the host above)</span><pre><code class="lang-jai">int hp = 40;
@@ -160,22 +188,32 @@ heal(party[1], 90);       // party[1] is 100
 tag(player.name);         // a field, a map value, a C++ property (through its setter), v.x of a vector
 heal(hp + 1, 5);          // a temporary: the callee works on a copy, nothing is stored back</code></pre></div>
 <ul>
-<li><strong>Every value kind writes back the same way</strong>: integers, floats, <code>bool</code>, <code>std::string</code>, <code>std::vector</code>, <code>std::map</code>, <code>jai::script_value</code>, <code>std::shared_ptr&lt;T&gt;</code>, enums and the host types a math adapter binds. A registered class taken as <code>T&amp;</code> is the live object itself and needs no store.</li>
-<li><strong>Every lvalue writes back.</strong> Any lvalue a script <code>T&amp;</code> parameter binds is written back (a variable, a field, an element, a map value, a static, a reference, a C++ property), and so is a math component (<code>v.x</code>). A literal or a temporary is passed as a copy and nothing is stored.</li>
-<li><strong>Reads cost nothing extra.</strong> A <code>const T&amp;</code> parameter is a read and costs nothing extra. A binding with no non-const <code>T&amp;</code> parameter has no write-back step: the choice is made when the function is bound.</li>
+<li>The callee gets a copy of the argument's value. When it returns or throws, its final value is stored back with the
+store a script <code>=</code> makes, so the variable's declared type converts or rejects it. A bound argument of
+exactly matching width is aliased instead.</li>
+<li>Every lvalue writes back (a variable, a field, an element, a map value, a static, a reference, a C++ property, a
+math component), and every value kind: numbers, <code>bool</code>, <code>std::string</code>, <code>std::vector</code>,
+<code>std::map</code>, <code>jai::script_value</code>, <code>std::shared_ptr&lt;T&gt;</code>, enums, math-adapted types. A
+registered class taken as <code>T&amp;</code> is the live object and needs no store.</li>
+<li>A binding with no non-const <code>T&amp;</code> parameter has no write-back step.</li>
 </ul>
-<h2 id="running-a-script-file">Running a script file<a class="hlink" href="#running-a-script-file" aria-label="link">&#8203;</a></h2>
+<h2 id="running-a-script-file">Running scripts<a class="hlink" href="#running-a-script-file" aria-label="link">&#8203;</a></h2>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;add_include_path(&quot;scripts&quot;);           // where import/include look after the file&#x27;s own folder
 eng-&gt;execute_file(&quot;scripts/game.jai&quot;);      // parse (or load scripts/.cache/game.jai.jaibite), check, run</code></pre></div>
-<p><code>execute_file</code> runs the file, and the functions, classes and globals the file declares stay in the engine for later calls. It attributes every node to the file&#x27;s canonical path, whatever spelling you pass: check listings, stack traces and debugger breakpoints all name it.</p>
-<p>It keeps a parsed copy in a <code>.cache</code> folder beside the source (<code>game.jai</code> gets <code>.cache/game.jai.jaibite</code>). For the cache:</p>
 <ul>
-<li>add <code>.cache/</code> to your <code>.gitignore</code>;</li>
-<li>send the caches elsewhere with <code>eng-&gt;jaibite_cache_directory(dir, root)</code> when the scripts are read-only (<a href="04-jaibite.html#cache-directory">jaibite</a>);</li>
-<li>or turn the cache off with <code>eng-&gt;jaibite_cache(false)</code>.</li>
+<li>What a script declares (functions, classes, globals) stays in the engine for later calls.</li>
+<li><code>execute_file</code> attributes every node to the file's canonical path: check listings, stack traces and
+debugger breakpoints name it. Code from <code>execute(source)</code> is <code>&lt;script&gt;</code>.</li>
+<li><code>execute_file</code> keeps a parsed copy at <code>.cache/game.jai.jaibite</code> beside the source. Add
+<code>.cache/</code> to <code>.gitignore</code>, move it with <code>eng-&gt;jaibite_cache_directory(dir, root)</code>
+(<a href="04-jaibite.html#cache-directory">jaibite</a>), or turn it off with <code>eng-&gt;jaibite_cache(false)</code>.</li>
+<li><code>execute(source)</code> keeps the last 64 distinct sources parsed and compiled, so repeating a string skips
+both. For hot scripts hold a <a href="04-jaibite.html">jaibite</a>.</li>
 </ul>
-<h2 id="per-execution-variables">Per-execution variables<a class="hlink" href="#per-execution-variables" aria-label="link">&#8203;</a></h2>
-<p><code>execute(source, instance_variables)</code> and <code>execute_file(path, instance_variables)</code> run one execution with extra names in scope. <code>jai::instance_variables</code> is a <code>std::unordered_map&lt;std::string, jai::script_value&gt;</code>. A non-empty map becomes a scope over the globals for that one execution and is discarded when it returns.</p>
+<h3 id="per-execution-variables">Per-execution variables<a class="hlink" href="#per-execution-variables" aria-label="link">&#8203;</a></h3>
+<p><code>execute(source, vars)</code> and <code>execute_file(path, vars)</code> take a
+<code>jai::instance_variables</code> (a <code>std::unordered_map&lt;std::string, jai::script_value&gt;</code>). A non-empty
+map is a scope over the globals for that one execution:</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;execute(&quot;var counter = 0;&quot;);                        // no overlay: a global
 
 jai::instance_variables locals{{&quot;increment&quot;, eng-&gt;make_value(int64_t{5})}};
@@ -186,48 +224,34 @@ eng-&gt;execute(&quot;counter&quot;).as_int();                        // 5
 eng-&gt;execute(&quot;increment&quot;);                               // raises: the overlay is gone
 eng-&gt;execute(&quot;temp&quot;);                                    // raises: temp died with the overlay</code></pre></div>
 <ul>
-<li><strong>It lasts one execute.</strong> The script reads the supplied names; one shadows a global of the same name for that execution only. Assigning to an existing global still writes the global.</li>
-<li><strong>Declarations land in the overlay.</strong> With a non-empty map, a top-level <code>var x = 10;</code> is declared in the overlay and disappears with it; nothing is copied back to the globals. An empty map is the plain <code>execute(source)</code>, whose top-level declarations are globals. The checker treats the supplied names as declared.</li>
-<li><strong>It is not dynamic scope.</strong> A function resolves its free names through the scope it was created in, never its caller's. A function defined by an earlier execute does not see a later execute's overlay; only code from the same execute does.</li>
-<li><strong>Signal receivers use it.</strong> A script-text receiver on a <code>jai::signal</code> runs this way on every emit: the emit's arguments become an overlay named by the signal's <code>parameter_names</code>, so they never leak into the globals (<a href="10-signals-properties.html#script-facing-integration">Connecting from script</a>).</li>
+<li>A supplied name shadows a global of the same name for that execution; the checker treats it as declared.</li>
+<li>Top-level declarations land in the overlay and vanish with it. With an empty map they are globals.</li>
+<li>It is not dynamic scope: a function defined by an earlier execute does not see a later execute's overlay.</li>
+<li>A script-text receiver on a <code>jai::signal</code> runs this way, the emit's arguments as the overlay
+(<a href="10-signals-properties.html#script-facing-integration">Connecting from script</a>).</li>
 </ul>
 <h2 id="calling-script-from-c">Calling script from C++<a class="hlink" href="#calling-script-from-c" aria-label="link">&#8203;</a></h2>
-<p>A script function is a value. Look it up by name and call it with a vector of arguments; the result is a <code>checked_result</code>, not an exception:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int damage_for(int level) { return level * 3; }</code></pre></div>
+<p>A script function is a value: look it up and call it with a vector of arguments.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int damage_for(int level) { return level * 3; }</code></pre></div>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">// examples/embed_quickstart makes these calls
 jai::script_value fn = eng-&gt;get_variable(&quot;damage_for&quot;);
 jai::checked_result&lt;jai::script_value&gt; r = fn.as_function()({eng-&gt;make_value(int64_t{4})});
 if (!r) { throw std::runtime_error(eng-&gt;format_error(r)); }   // &quot;Division by zero&quot;, ...
 int64_t dmg = r.value().as_int();                                  // 12</code></pre></div>
 <ul>
-<li><strong>Errors.</strong> Every failure comes back in the result: a run-time error, a script <code>throw</code> nothing caught (its text), an <code>import</code> the call reaches whose file is missing or whose edited module fails its check (<a href="07-hot-reload.html">Hot Reload</a>). <code>eng-&gt;format_error(r)</code> is the text and <code>eng-&gt;format_stack_trace()</code> the script stack. The call never throws for what the script did, and the engine is ready for the next call. So a result check is all a frame loop needs (<a href="#error-surfaces">Error surfaces</a> lists which calls report and which throw).</li>
-<li><strong>The budget.</strong> A call made while no script runs is a host entry: it gets a fresh execution-budget deadline, like <code>execute()</code> (<a href="05-safety-rails.html">Safety Rails</a>).</li>
-<li><strong><code>external_call_guard</code>.</strong> Needed only when the call can happen <em>while a script is running</em>: from inside a host function the script called, or from a signal the script emitted. Construct <code>jai::engine::external_call_guard guard(eng.get());</code> around the call so reference parameters do not bind against the script call in flight. A call from your own loop needs nothing; the guard is harmless there.</li>
-<li><strong>A typed wrapper.</strong> <code>auto damage = jai::convert_script_function&lt;int64_t(int64_t)&gt;(fn);</code> gives a <code>std::function</code> for callbacks. It is the throwing flavor: every failure inside it (a run-time error, a script <code>throw</code> nothing caught, a failed import) leaves the call as a <code>jai::runtime_error</code> carrying the text (<code>Division by zero</code>). A host function that calls it from script hands that error back to the script as its own.</li>
-<li><strong>Null and non-function values.</strong> A null value converts to an empty <code>std::function</code> (test it with <code>if (cb)</code>; calling it throws <code>std::bad_function_call</code>). Any other value that is not a function makes the conversion throw.</li>
+<li><strong>The result carries every failure,</strong> so a result check is all a frame loop needs.
+<code>eng-&gt;format_error(r)</code> is the text and <code>eng-&gt;format_stack_trace()</code> the script stack.</li>
+<li><strong>A typed wrapper throws instead.</strong> <code>jai::convert_script_function&lt;int64_t(int64_t)&gt;(fn)</code>
+gives a <code>std::function</code> whose failures leave as <code>jai::runtime_error</code>. A null value converts to an
+empty <code>std::function</code> (test it with <code>if (cb)</code>); any other non-function makes the conversion throw.</li>
+<li><strong>A call made while no script runs is a host entry</strong> and gets a fresh execution budget, like
+<code>execute()</code> (<a href="05-safety-rails.html">Safety Rails</a>).</li>
+<li><strong>A call made while a script runs</strong> (from a host function the script called, or a signal it emitted)
+needs <code>jai::engine::external_call_guard guard(eng.get());</code> around it, so reference parameters do not bind
+against the script call in flight. The guard is harmless elsewhere.</li>
 </ul>
 <h2 id="reading-script-state-back">Reading script state back<a class="hlink" href="#reading-script-state-back" aria-label="link">&#8203;</a></h2>
-<p><strong>Values die with their engine.</strong> C++ meets two kinds of value:</p>
-<ul>
-<li><strong>A borrow.</strong> A plain <code>script_value</code> that C++ receives (a bound function&#x27;s argument, a signal&#x27;s argument, a value read out of a container, a copy of a held value) is a borrow. It is valid for the call like a C++ reference parameter, and costs nothing to pass.</li>
-<li><strong>A held value.</strong> <code>execute</code>, <code>execute_file</code>, <code>get_variable</code> and <code>eng-&gt;hold(v)</code> return a <code>jai::held_value</code>: a <code>script_value</code> the host may keep until its engine is destroyed. It never keeps the engine alive.</li>
-</ul>
-<p>When the engine is destroyed, it first releases every held payload while it still runs script (a held instance&#x27;s destructor runs then). Afterwards the held value is outlived:</p>
-<ul>
-<li><code>valid()</code> is false and <code>get_engine()</code> is null;</li>
-<li>every read (<code>as&lt;T&gt;()</code>, <code>as_int()</code>, <code>to_string()</code> and the other accessors) throws <code>jai::runtime_error</code> with <code>Value outlived its engine.</code>;</li>
-<li>copying, assigning or destroying it is safe.</li>
-</ul>
-<p><strong>A value belongs to its engine&#x27;s thread.</strong> Another thread may copy, read, assign or drop one only while the engine is idle, with the hand-off synchronized as for any C++ object (a join, a mutex, a queue the engine&#x27;s thread drains). Destroying the engine while another thread uses one of its values is a race. Debug builds assert when an object dies on another thread while its engine runs.</p>
-<p><strong>Values cross engines by copy.</strong> A value of another engine passed to <code>add_global</code>, <code>make_value</code>, <code>execute</code>&#x27;s instance variables or a script function&#x27;s arguments (a <code>convert_script_function</code> wrapper) enters as this engine&#x27;s own:</p>
-<ul>
-<li>numbers, strings and math values copy;</li>
-<li>arrays and maps convert element by element, so the two engines never share a container;</li>
-<li>an object, a function or a reference into the other engine throws <code>Cannot pass an object from another engine: values cross engines by copy (numbers, strings, math values and arrays and maps of them).</code> (with <code>a function</code> or <code>a reference</code> in place of <code>an object</code>);</li>
-<li>an outlived held value throws <code>Value outlived its engine.</code></li>
-</ul>
-<p><code>get_variable(name)</code> reads a global; <code>as&lt;T&gt;()</code> converts it. How a container comes out follows its declared type: <code>array&lt;int&gt;</code>, <code>array&lt;string&gt;</code> and the other typed arrays are raw buffers that copy out as a <code>std::vector</code>, and only <code>array&lt;var&gt;</code> has a <code>script_value</code> vector to view:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int score = 7;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int score = 7;
 array&lt;string&gt; log = ["spawned", "hit"];
 map&lt;string, int&gt; kills = {"orc": 3, "troll": 1};
 array&lt;var&gt; loot = [12, "rope", 2.5];</code></pre></div>
@@ -243,21 +267,66 @@ jai::script_value log_value = eng-&gt;get_variable(&quot;log&quot;);
 log_value.unchecked_array_node()-&gt;for_each(eng.get(), [](const jai::script_value&amp; line) {
     std::cout &lt;&lt; line.as_string() &lt;&lt; &quot;\n&quot;;                         // any array kind, no copy of the buffer
 });</code></pre></div>
-<p><code>as_array()</code> on a typed array raises an error that names the type and the extraction that works (<code>array&lt;string&gt; is a typed buffer: ... extract as&lt;std::vector&lt;std::string&gt;&gt;</code>). <code>unchecked_array_node()</code> requires <code>is_array()</code>. A bound C++ object comes back with <code>as&lt;std::shared_ptr&lt;Monster&gt;&gt;()</code>, sharing the live object. A host function that takes <code>bound_array&lt;int64_t&gt;&amp;</code> mutates a typed array in place (<code>core/bound_array.hpp</code>). Writing back is <code>add_global(name, value)</code>, or an <code>execute</code> that assigns.</p>
-<h2 id="error-surfaces">Error surfaces<a class="hlink" href="#error-surfaces" aria-label="link">&#8203;</a></h2>
-<p>Each way of calling into script has one failure route. A call that returns a <code>checked_result</code> reports every failure in the result and never throws for what the script did; a call that returns a plain value throws for every failure. Which flavor a call is never depends on what went wrong:</p>
-<div class="tablewrap"><table><thead><tr><th>Call</th><th>A failure</th></tr></thead><tbody><tr><td><code>execute(source)</code>, <code>execute(source, instance_variables)</code>, <code>execute(jaibite&amp;)</code>, <code>execute_file(path)</code>, <code>execute_file_source</code>, <code>jaibite(source)</code></td><td>throws</td></tr><tr><td>a <code>std::function</code> from <code>convert_script_function&lt;Sig&gt;(fn)</code>, or the <code>std::function</code> parameter of a bound host function</td><td>throws (<code>jai::runtime_error</code>)</td></tr><tr><td><code>fn.as_function()(args)</code> on a script function, a lambda, a static method or a <code>reflect::bind</code> value</td><td>in the <code>checked_result</code></td></tr><tr><td><code>coroutine_handle::next(engine*, n)</code></td><td>in the <code>checked_result</code></td></tr><tr><td><code>extend_checked(...)</code> / <code>extend(...)</code></td><td>in the result / throws</td></tr><tr><td>a script receiver of a C++ signal (a function, a lambda or a source snippet)</td><td>throws out of the emit (the text a direct call of the receiver throws); the receivers after it do not run</td></tr></tbody></table></div>
-<p>The failures covered are the same for both flavors:</p>
 <ul>
-<li>a run-time error;</li>
-<li>a script <code>throw</code> nothing caught;</li>
-<li>a parse or check error;</li>
-<li>an <code>import</code> whose file is missing or whose edited module fails its check.</li>
+<li>Typed arrays are raw buffers and copy out as a <code>std::vector</code>; only <code>array&lt;var&gt;</code> has a
+<code>script_value</code> vector for <code>as_array()</code> to view. On a typed array <code>as_array()</code> raises an
+error naming the extraction that works. <code>unchecked_array_node()</code> requires <code>is_array()</code>.</li>
+<li>A bound C++ object comes back with <code>as&lt;std::shared_ptr&lt;Monster&gt;&gt;()</code>, sharing the live object.</li>
+<li>A host function taking <code>bound_array&lt;int64_t&gt;&amp;</code> mutates a typed array in place
+(<code>core/bound_array.hpp</code>).</li>
+<li>Write back with <code>add_global(name, value)</code> or an <code>execute</code> that assigns.</li>
 </ul>
-<p>A call made from inside running script (a host function the script called, calling back into script) is part of that script&#x27;s run: its failure travels on to the script, which can catch it. A signal emit is such a call. A receiver&#x27;s failure leaves the emit, through every emit it is nested in, to the C++ code or the script that fired the signal.</p>
-<p>Checking is <strong>strict</strong>, so the first surface you meet is a <em>load</em> error: the
-script is rejected before a single statement runs.</p>
-<p><code>what()</code> is the whole accumulated listing, compiler style: every error in the source, not just the first:</p>
+<h3 id="value-lifetime">How long a value lives<a class="hlink" href="#value-lifetime" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Value</th><th>Valid</th></tr></thead><tbody>
+<tr><td>a borrow: a <code>script_value</code> C++ receives as an argument, reads out of a container, or copies from a held value</td><td>for the call, like a C++ reference parameter</td></tr>
+<tr><td>a <code>jai::held_value</code>: what <code>execute</code>, <code>execute_file</code>, <code>get_variable</code> and <code>eng-&gt;hold(v)</code> return</td><td>until its engine is destroyed. It never keeps the engine alive.</td></tr>
+<tr><td>a held value after its engine is gone</td><td><code>valid()</code> is false, <code>get_engine()</code> is null, every read throws <code>jai::runtime_error</code> <code>Value outlived its engine.</code>; copying, assigning and destroying it are safe</td></tr>
+</tbody></table></div>
+<ul>
+<li><strong>Teardown.</strong> A destroyed engine first releases every held payload while it can still run script, so a
+held instance's destructor runs then.</li>
+<li><strong>Threads.</strong> Another thread may copy, read, assign or drop a value only while the engine is idle, with
+the hand-off synchronized as for any C++ object. Debug builds assert when an object dies on another thread while its
+engine runs.</li>
+<li><strong>Other engines.</strong> A value of another engine passed to <code>add_global</code>, <code>make_value</code>,
+instance variables or a script function's arguments enters by copy: numbers, strings and math values copy, arrays and
+maps convert element by element. An object, a function or a reference throws <code>Cannot pass an object from another
+engine: values cross engines by copy (numbers, strings, math values and arrays and maps of them).</code> (or <code>a
+function</code>, <code>a reference</code>).</li>
+</ul>
+<h2 id="error-surfaces">Error surfaces<a class="hlink" href="#error-surfaces" aria-label="link">&#8203;</a></h2>
+<p>Which way a call fails depends on the call, never on what went wrong. The failures are the same for all of them: a
+parse error, a check error, a run-time error, a script <code>throw</code> nothing caught, and an <code>import</code>
+whose file is missing or fails its check.</p>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>A failure</th></tr></thead><tbody>
+<tr><td><code>execute(source)</code>, <code>execute(source, vars)</code>, <code>execute(jaibite&amp;)</code>, <code>execute_file(path)</code>, <code>execute_file_source</code>, <code>jaibite(source)</code></td><td>throws</td></tr>
+<tr><td>a <code>std::function</code> from <code>convert_script_function&lt;Sig&gt;(fn)</code>, or the <code>std::function</code> parameter of a bound host function</td><td>throws <code>jai::runtime_error</code></td></tr>
+<tr><td><code>fn.as_function()(args)</code> on a script function, a lambda, a static method or a <code>reflect::bind</code> value</td><td>in the <code>checked_result</code></td></tr>
+<tr><td><code>coroutine_handle::next(engine*, n)</code></td><td>in the <code>checked_result</code></td></tr>
+<tr><td><code>extend_checked(...)</code> / <code>extend(...)</code></td><td>in the result / throws</td></tr>
+<tr><td>a script receiver of a C++ signal</td><td>throws out of the emit; the receivers after it do not run</td></tr>
+</tbody></table></div>
+<p><strong><code>execute</code> never signals failure through its return value.</strong> It returns the value of the
+script's last top-level expression, and a null value when the script ends in anything else (a declaration, a loop), so
+<code>result.is_null()</code> after a normal return says only that the script produced no value. A script that does not
+parse or does not pass the checker throws before any statement runs.</p>
+<p><strong><code>execute&lt;T&gt;(...)</code> is <code>execute(...).as&lt;T&gt;()</code>.</strong> It takes what
+<code>execute</code> takes (a string, a <code>script_source</code>, a string with instance variables) and returns the
+result as a <code>T</code>: <code>int v = eng-&gt;execute&lt;int&gt;("2 + 2");</code>. A result that is not a
+<code>T</code> throws what <code>as&lt;T&gt;()</code> throws. A script int is 64 bits and
+<code>int</code> is <code>int32_t</code>, so <code>execute&lt;int&gt;</code> of a value past its range throws
+<code>Integer value out of range for int</code>; ask for <code>int64_t</code> to take any script int.
+<code>T</code> is a value (a number, a <code>std::string</code>, a copied object); a reference, a pointer or a
+<code>std::string_view</code> does not compile, because the result does not outlive the call.</p>
+<div class="tablewrap"><table><thead><tr><th>Exception</th><th>Raised for</th><th><code>what()</code></th></tr></thead><tbody>
+<tr><td><code>jai::parse_error</code></td><td>syntax</td><td><code>parse failed:</code> and every syntax error with its location</td></tr>
+<tr><td><code>jai::static_check_error</code></td><td>load-time type and name errors</td><td><code>static check failed:</code> and every error in the source, compiler style</td></tr>
+<tr><td><code>jai::script_exception</code></td><td>anything raised while running, an uncaught script <code>throw</code> included</td><td>the error's text, the text a script <code>catch</code> sees</td></tr>
+</tbody></table></div>
+<p>All derive from <code>std::exception</code>, so <code>catch (const std::exception&amp;)</code> is a valid backstop.
+<code>script_exception</code> derives from <code>jai::runtime_error</code>, which with <code>parse_error</code> derives
+from <code>jai::exception</code> and carries a <code>location()</code>; <code>static_check_error</code> derives from
+<code>std::runtime_error</code>, and its listing holds the locations.</p>
 <div class="codeblock cb-cpp" data-sample="host-api-check-listing"><span class="cb-label">C++</span><pre><code class="lang-cpp">try {
     eng-&gt;execute(&quot;int a = missing_one; int b = missing_two;&quot;);
 } catch (const jai::static_check_error&amp; e) {
@@ -270,24 +339,11 @@ script is rejected before a single statement runs.</p>
 &lt;script&gt;:1:30: error: use of undeclared identifier &#x27;missing_two&#x27;
     int a = missing_one; int b = missing_two;
                                  ^</code></pre></div>
-<p>Names your host injects at run time aren&#x27;t in the script&#x27;s text, so the checker cannot see them.
-<code>extern</code> declares one without defining it, and the same script becomes a <em>runtime</em> error
-instead, catchable and raised only if control flow actually reaches the name:</p>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;execute(&quot;extern function spawn_wave; spawn_wave(3);&quot;);
-// throws jai::script_exception: &quot;&#x27;spawn_wave&#x27; is declared extern but never defined&quot;</code></pre></div>
-<p>(<code>what()</code> is the error&#x27;s text, the same text a script <code>catch</code> sees.)</p>
-<p>The other two surfaces are unchanged by checking, and the engine survives all of them:</p>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;execute(&quot;throw \&quot;from script\&quot;;&quot;); // uncaught script throw -&gt; jai::script_exception: &quot;from script&quot;
-eng-&gt;execute(&quot;var x = ;&quot;);              // throws jai::parse_error:
-                                        //   &quot;parse failed:\n&lt;script&gt;:1:9: error: expected expression\n...&quot;
-eng-&gt;execute(&quot;40 + 2&quot;).as_int();        // 42</code></pre></div>
-<p>Every one of them derives from <code>std::exception</code>, so one <code>catch (const std::exception&amp;)</code> is a valid backstop. Put one around the host&#x27;s own script calls: an exception that leaves <code>main</code> ends the process with its buffered output unflushed. The three types:</p>
-<ul>
-<li><code>jai::static_check_error</code> for load-time type and name errors. <code>jai::static_check_error</code> derives from <code>std::runtime_error</code> directly; its listing <em>is</em> the location.</li>
-<li><code>jai::parse_error</code> for syntax.</li>
-<li><code>jai::script_exception</code> for anything raised while running, an uncaught script <code>throw</code> included (it derives from <code>jai::runtime_error</code>).</li>
-</ul>
-<p><code>jai::parse_error</code> and <code>jai::runtime_error</code> share the base <code>jai::exception</code>, which carries a <code>location()</code>. <code>eng-&gt;format_stack_trace()</code> / <code>eng-&gt;last_stack_trace()</code> give the script stack of the most recent failure. For a <code>throw</code> two calls deep:</p>
+<p>A name the host injects later is declared with <code>extern</code>; using it undefined is then a run-time error,
+raised only if control reaches it: <code>eng-&gt;execute("extern function spawn_wave; spawn_wave(3);")</code> throws
+<code>jai::script_exception</code> <code>&#x27;spawn_wave&#x27; is declared extern but never defined</code>.</p>
+<p><code>eng-&gt;format_stack_trace()</code> and <code>eng-&gt;last_stack_trace()</code> give the script stack of the most
+recent failure:</p>
 <div class="codeblock cb-cpp" data-sample="host-api-stack-trace"><span class="cb-label">C++</span><pre><code class="lang-cpp">try {
     eng-&gt;execute(&quot;function inner() { throw \&quot;boom\&quot;; }\n&quot;
                  &quot;function outer() { inner(); }\n&quot;
@@ -299,19 +355,19 @@ eng-&gt;execute(&quot;40 + 2&quot;).as_int();        // 42</code></pre></div>
   at inner (&lt;script&gt;:1)
   at outer (&lt;script&gt;:2)
   at &lt;script&gt; (&lt;script&gt;:3)</code></pre></div>
-<p>For errors that surface where nothing can catch them (a destructor that fails while the engine tears down its program-scope variables), install a sink with <code>eng-&gt;set_script_error_handler(...)</code>. The default sink is <code>std::cerr</code> (<code>engine.hpp</code>, <code>set_script_error_handler</code>).</p>
-<p>One subtlety worth knowing: <em>some</em> recoverable parse errors make the parser synchronize and return null instead of throwing. So the robust contract to code against is &quot;<code>execute()</code> returns and the engine stays usable&quot;, not &quot;every bad input throws&quot;.</p>
-<h2 id="constant-arguments">Constant arguments<a class="hlink" href="#constant-arguments" aria-label="link">&#8203;</a></h2>
-<p>Some arguments must never come from data: the SQL text of a query, a shell command, a template that is itself code. <code>engine::constant_argument(callable, index, refusal)</code> declares that argument <code>index</code> of a host function (<code>"run_sql"</code>) or of a bound method (<code>"Database.query"</code>) only the program&#x27;s own constants may fill. A constant is one of these forms:</p>
 <ul>
-<li>a string literal;</li>
-<li>a <code>const</code> variable whose initializer is a constant;</li>
-<li>a ternary whose arms are constants (the condition is free);</li>
-<li>a <code>+</code> of constants;</li>
-<li>an array literal of them.</li>
+<li><strong>Nested calls.</strong> A call made from inside running script (a host function calling back into script, a
+signal emit) is part of that script's run: its failure travels on to the script, which can catch it.</li>
+<li><strong>Errors nothing can catch</strong> (a destructor failing while the engine tears down its globals) go to the
+sink <code>eng-&gt;set_script_error_handler(...)</code> installs; the default writes to <code>std::cerr</code>.</li>
 </ul>
-<p>A template string with a splice is not one, nor is anything read, computed or passed in.</p>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">engine* raw = eng.get();
+<h2 id="constant-arguments">Constant arguments<a class="hlink" href="#constant-arguments" aria-label="link">&#8203;</a></h2>
+<p>Some arguments must never come from data: SQL text, a shell command. <code>engine::constant_argument(callable, index,
+refusal)</code> declares that argument <code>index</code> of a host function (<code>"run_sql"</code>) or bound method
+(<code>"Database.query"</code>) takes only the program's own constants: a string literal, a <code>const</code> variable
+initialized with a constant, a ternary whose arms are constants, a <code>+</code> of constants, or an array literal of
+them. A template string with a splice is not one, nor is anything read, computed or passed in.</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::engine* raw = eng.get();
 eng-&gt;add_function("run_sql", [raw](const std::string&amp; sql, const jai::script_value&amp; value) -&gt; std::string {
     if (!raw-&gt;constant_argument_admits("run_sql", 0, sql)) {
         throw std::runtime_error("SQL text must be a constant; pass values as parameters (?)");
@@ -323,27 +379,41 @@ eng-&gt;constant_argument("run_sql", 0, "SQL text must be a constant; pass value
 run_sql(FIND, id);                                            // a const
 run_sql(newest ? "SELECT * FROM posts ORDER BY id DESC" : "SELECT * FROM posts", 0);
 run_sql("SELECT * FROM posts WHERE title = '" + title + "'", 0);   // a load error</code></pre></div>
-<p>The guarantee has two halves:</p>
 <ul>
-<li><strong>At load</strong>, the checker refuses any other argument, with the location and the host&#x27;s refusal: <code>argument 1 of &#x27;run_sql&#x27; is not a constant: SQL text must be a constant; pass values as parameters (?)</code>. For a method it does so wherever it knows the receiver&#x27;s class.</li>
-<li><strong>At run time</strong>, nothing depends on the checker. As every unit loads (in any check mode, a <code>.jaibite</code> included), the engine gathers the constant texts its calls pass to the declared argument. <code>constant_argument_admits(callable, index, text)</code> answers whether a text is one of them. A text the program does not spell, however it arrived (a <code>var</code> path, a function value, <code>reflect::invoke</code>), is refused. A text equal to one of the program&#x27;s constants is that constant, harmless by construction. The host raises its refusal when the answer is no.</li>
+<li><strong>At load</strong> the checker refuses any other argument with the host's refusal: <code>argument 1 of
+&#x27;run_sql&#x27; is not a constant: SQL text must be a constant; pass values as parameters (?)</code>. For a method
+it does so wherever it knows the receiver's class.</li>
+<li><strong>At run time</strong> nothing rests on the checker. As each unit loads (a <code>.jaibite</code> and a
+<code>[[warn_mode]]</code> region included) the engine gathers the constant texts its calls pass to the argument, and
+<code>constant_argument_admits(callable, index, text)</code> answers whether a text is one of them. The host function
+refuses the rest, however they arrived (a <code>var</code>, a function value, <code>reflect::invoke</code>).</li>
+<li><strong>Declare before any script loads:</strong> a unit loaded earlier was never gathered, so its texts are
+refused.</li>
 </ul>
-<p>Declare constant arguments before any script loads: a unit that loaded earlier was never gathered, so its texts are refused.</p>
 <h2 id="nodiscard-host">A result the script must use<a class="hlink" href="#nodiscard-host" aria-label="link">&#8203;</a></h2>
-<p>C++&#x27;s own <code>[[nodiscard]]</code> is invisible to a template, so a binding cannot read it off the function. <code>engine::nodiscard_function(callable)</code> declares it instead, for a host function (<code>"try_connect"</code>) or a bound method (<code>"Inventory.take"</code>), and <code>is_nodiscard_function(callable)</code> asks. Register before loading scripts.</p>
-<p>A script call the checker resolves to one is then held to the language&#x27;s <a href="../guide/06-functions.html#nodiscard">[[nodiscard]]</a> rule. An expression statement that drops its result fails the load: <code>the result of 'try_connect' is discarded, but 'try_connect' is [[nodiscard]]: use it, or keep it in the placeholder (auto _ = try_connect(...);)</code>. For a method, this holds wherever the checker knows the receiver&#x27;s class.</p>
-<p>A namespace entry the host describes with a <code>host_entry_signature</code> sets its <code>nodiscard</code> field. <code>in_place_twin</code> adds that the entry copies what the same-named method changes in place, and the text then names that method.</p>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;add_function("try_connect", [](const std::string&amp; host) -&gt; bool { return open_socket(host); });
-eng-&gt;nodiscard_function("try_connect");      // before any script loads</code></pre></div>
+<p>A binding cannot read C++'s <code>[[nodiscard]]</code> off a function, so the host declares it in the registration's
+trailing option, before any script loads:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;add_function("try_connect", [](const std::string&amp; host) -&gt; bool { return open_socket(host); }, jai::nodiscard);
+jai::dynamic_binder&lt;Inventory&gt;(*eng, "Inventory")
+    .method("take", &amp;Inventory::take, jai::nodiscard);</code></pre></div>
+<p>A script statement that drops the result then fails the load, under the language's
+<a href="../guide/06-functions.html#nodiscard">[[nodiscard]]</a> rule: <code>the result of 'try_connect' is discarded,
+but 'try_connect' is [[nodiscard]]: use it, or keep it in the placeholder (auto _ = try_connect(...);)</code>. For a
+method this holds wherever the checker knows the receiver's class. <code>add_variadic_function</code> and <code>.static_method</code>
+take the option too, and it combines with the others: <code>jai::nodiscard | jai::serial | jai::filesystem</code>.
+<code>is_nodiscard_function(callable)</code> asks, by <code>"name"</code> or <code>"Class.method"</code>. A
+namespace entry described with a <code>host_entry_signature</code> sets its <code>nodiscard</code> field;
+<code>in_place_twin</code> adds that the entry copies what the same-named method changes in place, and the error then
+names that method.</p>
 <h2 id="the-time-source">The time source<a class="hlink" href="#the-time-source" aria-label="link">&#8203;</a></h2>
-<p>Every <code>time::</code> call a script makes (<a href="../guide/14-time.html">Time</a> in the language guide) reads one engine-owned clock, and the host can replace it. Three providers make up the source:</p>
-<ul>
-<li><strong>monotonic</strong>: a steady reading, the clock behind <code>time::now()</code>, <code>time::engine_elapsed()</code>, <code>time::execute_elapsed()</code> and every stopwatch;</li>
-<li><strong>wall</strong>: nanoseconds since the Unix epoch in UTC, behind <code>time::unix_time()</code> and every date;</li>
-<li><strong>sleep</strong>: what a <code>sleep</code> that blocks does (the builtin outside a suspendable run).</li>
-</ul>
-<p>An empty provider selects the system one: <code>steady_clock</code>, <code>system_clock</code>, <code>this_thread::sleep_for</code>.</p>
-<p>The source lives on <code>eng-&gt;time()</code>, declared in <code>&lt;jaiscript/core/engine_time.hpp&gt;</code> (its own header because it brings in <code>&lt;chrono&gt;</code>, which a host that never touches the clock does not need to parse). A virtual clock is the whole integration for tests, replays, netcode and deterministic simulation. The script sees exactly the time the host says it is:</p>
+<p>Every <code>time::</code> call a script makes (<a href="../guide/14-time.html">Time</a>) reads an engine-owned clock
+the host can replace. It lives on <code>eng-&gt;time()</code>, in <code>&lt;jaiscript/core/engine_time.hpp&gt;</code>.</p>
+<div class="tablewrap"><table><thead><tr><th>Provider</th><th>Behind</th><th>Empty means</th></tr></thead><tbody>
+<tr><td>monotonic</td><td><code>time::now()</code>, <code>time::engine_elapsed()</code>, <code>time::execute_elapsed()</code>, every stopwatch</td><td><code>steady_clock</code></td></tr>
+<tr><td>wall (nanoseconds since the Unix epoch, UTC)</td><td><code>time::unix_time()</code>, every date</td><td><code>system_clock</code></td></tr>
+<tr><td>sleep</td><td>a <code>sleep</code> that blocks</td><td><code>this_thread::sleep_for</code></td></tr>
+</tbody></table></div>
+<p>A virtual clock is the whole integration for tests, replays and deterministic simulation:</p>
 <div class="codeblock cb-cpp" data-sample="host-api-time-source"><span class="cb-label">C++</span><pre><code class="lang-cpp">std::chrono::nanoseconds sim_now{0};
 const auto epoch = std::chrono::nanoseconds(1700000000000000000LL);   // 2023-11-14T22:13:20Z
 eng-&gt;time().source(
@@ -353,47 +423,26 @@ eng-&gt;time().source(
 sim_now += std::chrono::milliseconds(1500);
 eng-&gt;execute(&quot;print(time::now(), &#x27; &#x27;, time::utc_now().to_string());&quot;);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1.5 2023-11-14T22:13:21.500Z</code></pre></div>
-<p>The engine reads its providers on a strict budget, and a stateful provider (a replay feeding recorded readings) therefore sees the same sequence of reads on every run of the same program:</p>
 <ul>
-<li><strong>Each <code>time::</code> call</strong> reads the provider it needs once, and only when it is called. Constructing a stopwatch or a date reads nothing.</li>
-<li><strong>A host entry.</strong> Outside those calls the engine reads the monotonic provider in exactly one place: at a <strong>host entry</strong> (an <code>execute()</code>/<code>execute_file()</code>/jaibite run, or a script function or coroutine the host invokes while no script is running). It does so only after a loaded program names <code>time::execute_elapsed</code>, whose answer is measured from that reading.</li>
-<li><strong>Nested work</strong>: nested executes, includes and imports belong to the entry that runs them.</li>
+<li><strong>Reads are countable,</strong> so a provider that replays recorded readings sees the same sequence on every
+run of a program. Each <code>time::</code> call reads the provider it needs once; constructing a stopwatch or a date
+reads nothing. Beyond those, the engine reads the monotonic provider once per host entry (an
+<code>execute</code>, a jaibite run, or a function or coroutine the host calls while no script runs), and only after a
+loaded program names <code>time::execute_elapsed</code>. Nested executes, includes and imports belong to their entry.</li>
+<li><strong>The budget ignores the source.</strong> The execution budget and the import check window run on the real
+steady clock, so a virtual clock neither stalls nor trips them.</li>
+<li><strong>Zero is the host's.</strong> <code>time::engine_elapsed()</code> counts from engine construction on the
+system clock; on a host monotonic provider it is the provider's reading.</li>
+<li><strong>The host reads the same clock</strong> through <code>eng-&gt;time().monotonic_now()</code>,
+<code>wall_now()</code>, <code>sleep_for(duration)</code>, <code>eng-&gt;engine_elapsed()</code> and
+<code>execute_elapsed()</code>. <code>eng-&gt;time().source({}, {}, {})</code> restores the system clocks.</li>
+<li><strong>Providers run on the engine's thread only:</strong> a parallel body cannot call <code>time::</code>.</li>
 </ul>
-<p>The execution budget and the import check window run on the real steady clock whatever the source, so a virtual clock can neither stall nor trip them. The engine keeps its own sample of that clock. The sample is read at each host entry (the reading the budget deadline starts from, and <code>time::execute_elapsed</code> too while the source is the system clock) and at the budget check&#x27;s periodic samples.</p>
-<p>While the monotonic provider is the system one, a <code>time::</code> read and a sleep&#x27;s wake refresh the sample as well; a host provider never does.</p>
-<p><code>time::engine_elapsed()</code> counts from the system clock&#x27;s reading when the engine was constructed. On a host monotonic provider it is that provider&#x27;s reading, so the host decides where zero is. <code>eng-&gt;time().source({}, {}, {})</code> restores the system clocks.</p>
-<p>The host reads the same clock scripts do through <code>eng-&gt;time().monotonic_now()</code>, <code>wall_now()</code> and <code>sleep_for(duration)</code>, and <code>eng-&gt;engine_elapsed()</code> and <code>execute_elapsed()</code>. A parallel body cannot call <code>time::</code> at all (the clock would make it differ from its serial run), so providers are only ever called on the engine&#x27;s thread.</p>
-<h2 id="http-transport">The HTTP transport<a class="hlink" href="#http-transport" aria-label="link">&#8203;</a></h2>
-<p>The <a href="../guide/17-web.html#spider"><code>spider::</code> client</a> (<code>spider::catch</code>, <code>sling</code>, <code>get</code>, <code>post</code> and <code>spider::Response</code>) is opt-in, and it sends nothing by itself: the host supplies the HTTP stack, the way it can supply the clock. Three calls make a working client:</p>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/stdlib/spider.hpp&gt;
-#include &lt;jaiscript/net/http_socket_transport.hpp&gt;   // or your own jai::http_transport
-
-jai::stdlib::register_spider(*eng);                  // the functions, spider::Response, the "network" permission
-eng-&gt;http_transport(std::make_shared&lt;jai::net::http_socket_transport&gt;());
-eng-&gt;enable(&quot;network&quot;);                              // registered disabled: the host grants it</code></pre></div>
-<p>A transport implements one call of <code>jai::http_transport</code> (<code>&lt;jaiscript/core/http_transport.hpp&gt;</code>): <code>http_reply exchange(const http_request&amp;)</code>.</p>
-<ul>
-<li><strong>The request</strong> carries the method, an absolute http or https URL, the headers, the body and the seconds left for the call.</li>
-<li><strong>The reply</strong> is the status, every header line as it arrived, the decoded body, or an <code>error</code> text when the exchange failed. The text is <code>"timed out"</code> when the time ran out, which the client reports as <code>timed out after N s</code>.</li>
-<li><strong>No redirects.</strong> A transport follows no redirect: the library applies the options, the redirect policy and the error texts above it, so every transport behaves alike. An exception thrown out of <code>exchange</code> is reported like an error text.</li>
-<li><strong>Threads.</strong> <code>exchange</code> runs on the script&#x27;s thread and blocks it until the answer is complete. One transport may serve many engines on many threads when its <code>exchange</code> takes concurrent calls, as the socket transport (with <code>openssl_tls</code>) and the runner&#x27;s WinHTTP one do. The runner and jai_spider make one per process and install it in every engine they build.</li>
-</ul>
-<p>Without a transport, a call raises <code>spider::catch: no HTTP transport installed: the host provides one with engine::http_transport()</code>. Without the permission, it raises <code>Insufficient privilege: network.</code></p>
-<p>Two transports ship as opt-in headers that nothing in the library includes, so a host that never sends HTTP compiles no socket:</p>
-<ul>
-<li><code>&lt;jaiscript/net/http_socket_transport.hpp&gt;</code>: <code>jai::net::http_socket_transport</code>, HTTP/1.1 over Winsock or POSIX sockets, one connection per call, bodies by Content-Length, chunked or the close, every wait bounded by the timeout (name resolution excepted). An https URL needs a <code>jai::net::tls_layer</code> passed to its constructor; without one it fails with <code>HTTPS needs a transport with TLS: this one speaks plain HTTP only</code>.</li>
-<li><code>&lt;jaiscript/net/openssl_tls.hpp&gt;</code>: <code>jai::net::openssl_tls</code>, that layer on OpenSSL 1.1.1 or 3.x (TLS 1.2 and up, SNI, the chain and the host name verified). Its constructor takes the trust setup, a function of the <code>SSL_CTX*</code>; without one it uses OpenSSL&#x27;s default certificate paths. Include it only where OpenSSL is linked.</li>
-</ul>
-<p>What each host installs:</p>
-<div class="tablewrap"><table><thead><tr><th>Host and platform</th><th>Transport</th><th>HTTPS</th></tr></thead><tbody>
-<tr><td>runner, jai_spider on Windows</td><td>WinHTTP (<code>tools/jaiscript/http_transport.hpp</code>)</td><td>yes: the system&#x27;s TLS and certificate store</td></tr>
-<tr><td>runner, jai_spider on Linux and macOS, built with OpenSSL found</td><td>sockets with <code>openssl_tls</code></td><td>yes: OpenSSL&#x27;s default certificate paths</td></tr>
-<tr><td>runner, jai_spider on Linux and macOS, built without OpenSSL</td><td>sockets</td><td>no: an https URL raises the plain-HTTP error above</td></tr>
-<tr><td>a host that links OpenSSL, on any platform including Android and iOS</td><td>sockets with <code>openssl_tls</code>, its trust setup filling the store from the platform (the Windows ROOT store, SecTrust on Apple platforms, <code>/system/etc/security/cacerts</code> on Android)</td><td>yes</td></tr>
-</tbody></table></div>
-<p>On Windows, <code>JAISCRIPT_HTTP_TRANSPORT=socket</code> in the environment makes the runner and jai_spider install the socket transport instead (plain HTTP only there), which is how the gate runs the socket code on Windows too.</p>
 <h2 id="suspendable-runs">Suspendable runs<a class="hlink" href="#suspendable-runs" aria-label="link">&#8203;</a></h2>
-<p><code>execute()</code> runs a program to its end. A program that waits (a cutscene, an AI&#x27;s routine, a level&#x27;s waves) runs as a <strong>run</strong> instead. <code>eng-&gt;start(...)</code> runs it until a <code>sleep</code> (<a href="../guide/08-coroutines.html#sleep">sleep</a> in the language guide) and hands back a <code>jai::script_run</code>. The host resumes the run when the time has passed, from the line after that <code>sleep</code>. The type is declared in <code>&lt;jaiscript/core/script_run.hpp&gt;</code> (it brings in <code>&lt;chrono&gt;</code>). The script reads the same time source the host drives:</p>
+<p><code>execute()</code> runs a program to its end. A program that waits (a cutscene, an AI routine, a level's waves)
+runs as a <strong>run</strong>: <code>eng-&gt;start(...)</code> runs it to its first
+<a href="../guide/08-coroutines.html#sleep"><code>sleep</code></a> and returns a <code>jai::script_run</code>
+(<code>&lt;jaiscript/core/script_run.hpp&gt;</code>), which the host resumes when the time has passed.</p>
 <div class="codeblock cb-cpp" data-sample="host-api-suspendable-runs"><span class="cb-label">C++</span><pre><code class="lang-cpp">std::chrono::nanoseconds now{0};
 eng-&gt;time().source([&amp;] { return now; }, {}, {});
 jai::script_run run = eng-&gt;start(R&quot;(
@@ -412,45 +461,72 @@ std::cout &lt;&lt; run.result().value().to_string() &lt;&lt; &quot;\n&quot;;</co
 wave 2 at 2.0
 wave 3 at 4.0
 cleared</code></pre></div>
-<div class="tablewrap"><table><thead><tr><th>Call</th><th>Does</th></tr></thead><tbody>
-<tr><td><code>eng-&gt;start(source)</code> <code>start_file(path)</code> <code>start_file_source(path, content)</code> <code>start(bite)</code> <code>start(callable, args)</code></td><td>Starts a run and runs it now, to its first <code>sleep</code> or its end. The run is what <code>execute</code>, <code>execute_file</code>, <code>execute_file_source</code>, a jaibite&#x27;s run or a call of the function value would be; a jaibite must outlive its run.</td></tr>
-<tr><td><code>run.state()</code> <code>run.done()</code></td><td><code>script_run::status::suspended</code>, <code>completed</code> or <code>failed</code>; <code>done()</code> is either of the last two.</td></tr>
-<tr><td><code>run.wake_at()</code></td><td>When the <code>sleep</code> that suspended the run ends, as a reading of the time source&#x27;s monotonic clock; zero once the run is done.</td></tr>
-<tr><td><code>run.resume()</code></td><td>Continues the run to its next <code>sleep</code> or its end and returns its state. Before <code>wake_at()</code> it returns <code>suspended</code> at once, having read the clock and switched nothing, so a host may call it every frame, or read <code>wake_at()</code> and call it when due.</td></tr>
-<tr><td><code>run.cancel()</code></td><td>Ends a suspended run: its <code>sleep</code> raises the terminal <code>Run cancelled</code>, so no catch runs, every frame unwinds and its destructors run, and the run is failed.</td></tr>
-<tr><td><code>run.result()</code></td><td>The run&#x27;s value once completed, its error once failed (<code>eng-&gt;format_error(run.result())</code> spells it).</td></tr>
-<tr><td><code>~script_run()</code></td><td>Cancels a run still suspended. <code>script_run</code> is move-only.</td></tr>
-</tbody></table></div>
+<p>A run also has <code>state()</code> and <code>cancel()</code>, and its destructor cancels a run still suspended. Every call: <a href="../reference/host.html#hostapi-script-run"><code>script_run</code> calls</a>.</p>
 <ul>
-<li><strong>Failure.</strong> A run from source, a file or a jaibite fails as <code>execute()</code> does. The <code>start</code> or <code>resume()</code> that ends it throws the same exception, the run is then failed with its text in <code>result()</code>, and <code>eng-&gt;format_stack_trace()</code> lists its frames. A callable&#x27;s run reports its failure through <code>result()</code> alone, as calling the function value would.</li>
-<li><strong>Runs are independent.</strong> Several runs can wait at once and resume in any order, and the host&#x27;s own executes, calls and other runs go on between them. Each run keeps its frames, its locals, its host entry, its budget and its debugger step. A host function a run calls may start a run of its own, which suspends back into that host function.</li>
-<li><strong>Each resume is a host entry.</strong> It starts with a fresh execution budget, memory allowance and step budget, and time asleep never counts against them. <code>time::execute_elapsed()</code> counts from the start of the run.</li>
-<li><strong>Where a run suspends.</strong> Only where script alone is between the host and the <code>sleep</code>. A <code>sleep</code> reached through native code blocks on the time source&#x27;s sleep provider, and the run reports one warning through <code>set_script_warning_handler</code>. Native code here is a host function&#x27;s callback, a destructor, a signal receiver, an include or import&#x27;s file, <code>hot_reload_migrate</code> or a builtin&#x27;s callback. <code>execute()</code> and a host&#x27;s call of a function value never suspend: their <code>sleep</code> blocks.</li>
-<li><strong>One thread.</strong> A run resumes only on the thread that started it. The misuses:
-<ul>
-<li><code>resume()</code> or <code>cancel()</code> on another thread throws <code>jai::runtime_error</code> <code>A run resumes only on the thread that started it</code>.</li>
-<li>Resuming or cancelling a run from code that run itself is running throws <code>The run is running: it resumes only while suspended</code>.</li>
-<li>A moved-from <code>script_run</code> throws <code>The script_run holds no run</code> from <code>resume()</code>, <code>cancel()</code> and <code>result()</code>.</li>
-<li><code>start</code> of a value that is not a function throws <code>Cannot start a run of a value that is not a function</code>.</li>
-</ul></li>
-<li><strong>Native stacks.</strong> Each run executes on a native fiber of its own. Its stack reserves what the starting thread&#x27;s stack reserves and commits pages as it grows behind a guard page, so the native-stack guard stops a deep recursion at the depth it would on that thread. C++ exceptions never cross a fiber&#x27;s edge: one the run raises is carried out and thrown on the host&#x27;s side. Fibers and run state are pooled: once warm, <code>start</code> allocates nothing.</li><li><strong>Teardown.</strong> Destroying the engine cancels every run still suspended; a <code>script_run</code> that outlives its engine stays done.</li><li><strong>The debugger.</strong> A breakpoint in a run stops it as it would any script, and the host&#x27;s resume continues it. A suspended run is not a stop, and a step over a <code>sleep</code> ends at the run&#x27;s next statement once it resumes, never in another entry&#x27;s code.</li></ul>
-<h2 id="parallel-worker-count">Parallel worker count<a class="hlink" href="#parallel-worker-count" aria-label="link">&#8203;</a></h2>
-<p>A parallel region (<a href="../guide/16-parallel.html">Parallel Loops</a>) runs on at most <code>eng-&gt;parallel_thread_count()</code> threads, the calling thread among them. The default is <code>jai::thread_pool::performance_core_count()</code>, at most <code>std::thread::hardware_concurrency() - 1</code> and at least 1, because a region waits for its slowest chunk. <code>eng-&gt;parallel_thread_count(n)</code> sets an exact count; 0 restores the default. Results never depend on it.</p>
-<p><code>thread_pool::performance_core_count()</code> (<code>&lt;jaiscript/thread_pool.hpp&gt;</code>) counts the cores of the fastest class the platform reports. The answer is between 1 and <code>hardware_concurrency()</code>, detected on the first call and stored.</p>
-<ul>
-<li><strong>Windows</strong>: the physical cores at the highest efficiency class.</li>
-<li><strong>Apple platforms</strong>: <code>hw.perflevel0.physicalcpu</code>.</li>
-<li><strong>Linux</strong>: the physical cores (distinct <code>core_id</code>s) among the CPUs an Intel hybrid chip lists in <code>/sys/devices/cpu_core/cpus</code>, or among every online CPU on any other machine.</li>
-<li><strong>Anywhere else</strong>, or when the query fails, it answers <code>std::thread::hardware_concurrency()</code>.</li>
+<li><strong>Failure.</strong> A run from source, a file or a jaibite fails as <code>execute()</code> does: the
+<code>start</code> or <code>resume()</code> that ends it throws, and the run is then failed with the text in
+<code>result()</code>. A callable's run reports through <code>result()</code> alone.</li>
+<li><strong>Runs are independent.</strong> Several can wait at once and resume in any order, between the host's own executes and calls; each keeps its frames, budget and debugger step. A host function a run calls may start a run of its own.</li>
+<li><strong>Each resume is a host entry</strong> with a fresh execution budget, memory allowance and step budget; time
+asleep never counts. <code>time::execute_elapsed()</code> counts from the start of the run.</li>
+<li><strong>A run suspends only where script alone stands between the host and the <code>sleep</code>.</strong> A
+<code>sleep</code> reached through native code (a host function's callback, a destructor, a signal receiver, an include
+or import's file, <code>hot_reload_migrate</code>, a builtin's callback) blocks on the sleep provider, and the run
+reports one warning through <code>set_script_warning_handler</code>. Under <code>execute()</code> and a host's call of a
+function value, <code>sleep</code> always blocks.</li>
+<li><strong>Native stacks.</strong> Each run has a native stack of its own, reserved as deep as the starting thread's, so deep recursion stops at the same depth. Once warm, <code>start</code> allocates nothing.</li>
+<li><strong>Teardown.</strong> Destroying the engine cancels every suspended run; a <code>script_run</code> that outlives
+its engine stays done.</li>
+<li><strong>The debugger.</strong> A breakpoint stops a run like any script. A suspended run is not a stop, and a step
+over a <code>sleep</code> ends at the run's next statement once it resumes.</li>
 </ul>
-<p>The engine builds its pool with <code>jai::thread_pool pool{count, jai::thread_pool::fast_threads}</code>. Each worker asks the system never to throttle it to save power (EcoQoS on Windows, user-initiated QoS on Apple platforms), since a region finishes with its slowest worker. A pool built without the flag leaves its threads as the system schedules them.</p>
-<h2 id="practical-notes">Practical notes<a class="hlink" href="#practical-notes" aria-label="link">&#8203;</a></h2>
-<ul><li><strong>Reuse engines.</strong> Engine creation plus first-execute lazy init costs on the order of a hundred warm script executions, so an engine-per-evaluation architecture pays mostly overhead. Costs are quantified in <a href="11-performance.html#embedding-costs">Performance</a>.</li><li><code>execute()</code> re-parses only novel strings. A 64-entry LRU source cache makes repeated <code>execute(same_string)</code> skip the parse (and on the VM, the compile). For hot scripts use a <code>jaibite</code> (see the jaibite chapter).</li><li><code>eng-&gt;set_output_stream(stream)</code> redirects <code>print()</code>; pass <code>nullptr</code> to restore <code>std::cout</code>.</li><li>Include paths for script <code>include</code>/<code>import</code>: <code>eng-&gt;add_include_path(dir)</code>.</li>
-<li><strong>Checking is always strict.</strong> Porting a loosely typed codebase? <code>[[warn_mode]];</code> at the top of a file collects its diagnostics as warnings instead of gating, and the attribute does the same for one block or statement. <code>extern</code> declares the names you inject at run time. Full story in <a href="06-static-checking.html">Static Checking</a>.</li></ul><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/16-thread-pool.html"><span>&larr; previous</span>Thread Pool for Host Work</a><a class="next" rel="next" href="../embedding/18-build-integration.html"><span>next &rarr;</span>Building JaiScript into a Host</a></nav></article>
+<p>Resuming on another thread, from inside the run, or through a moved-from <code>script_run</code> throws <code>jai::runtime_error</code>: <a href="../reference/host.html#hostapi-script-run-misuse"><code>script_run</code> misuse</a>.</p>
+<h2 id="parallel-worker-count">Parallel worker count<a class="hlink" href="#parallel-worker-count" aria-label="link">&#8203;</a></h2>
+<p>A parallel region (<a href="../guide/16-parallel.html">Parallel Loops</a>) runs on at most
+<code>eng-&gt;parallel_thread_count()</code> threads, the calling thread among them.
+<code>eng-&gt;parallel_thread_count(n)</code> sets an exact count and 0 restores the default. Results never depend on it.
+The default is <code>jai::thread_pool::performance_core_count()</code>, capped at
+<code>std::thread::hardware_concurrency() - 1</code> and at least 1: a region waits for its slowest chunk, so it stays
+off the slow cores.</p>
+<p><code>performance_core_count()</code> counts the physical cores of the fastest class the platform reports, once: the highest efficiency class on Windows, <code>hw.perflevel0.physicalcpu</code> on Apple platforms, the CPUs an Intel hybrid chip lists in <code>/sys/devices/cpu_core/cpus</code> on Linux (every online CPU on other Linux machines), and <code>std::thread::hardware_concurrency()</code> anywhere else or when the query fails.</p>
+<p>The engine builds its pool with <code>jai::thread_pool pool{count, jai::thread_pool::fast_threads}</code>: each worker
+asks the system never to throttle it to save power (EcoQoS on Windows, user-initiated QoS on Apple platforms).</p>
+<h2 id="http-transport">The HTTP transport<a class="hlink" href="#http-transport" aria-label="link">&#8203;</a></h2>
+<p>The <a href="../guide/17-web.html#spider"><code>spider::</code> client</a> (<code>spider::catch</code>,
+<code>sling</code>, <code>get</code>, <code>post</code>, <code>spider::Response</code>) is opt-in and sends nothing by
+itself: the host supplies the HTTP stack. Three calls make a working client:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/stdlib/spider.hpp&gt;
+#include &lt;jaiscript/net/http_socket_transport.hpp&gt;   // or your own jai::http_transport
+
+jai::stdlib::register_spider(*eng);                  // the functions, spider::Response, the "network" permission
+eng-&gt;http_transport(std::make_shared&lt;jai::net::http_socket_transport&gt;());
+eng-&gt;enable(&quot;network&quot;);                              // registered disabled: the host grants it</code></pre></div>
+<p>Without a transport a call raises <code>spider::catch: no HTTP transport installed: the host provides one with
+engine::http_transport()</code>; without the permission, <code>Insufficient privilege: network.</code></p>
+<p>A transport implements one function of <code>jai::http_transport</code>
+(<code>&lt;jaiscript/core/http_transport.hpp&gt;</code>): <code>http_reply exchange(const http_request&amp;)</code>.</p>
+<ul>
+<li><strong>The request</strong> carries the method, an absolute http or https URL, the headers, the body and the
+seconds left for the call.</li>
+<li><strong>The reply</strong> is the status, every header line as it arrived and the decoded body, or an
+<code>error</code> text. <code>"timed out"</code> is reported as <code>timed out after N s</code>. An exception out of
+<code>exchange</code> is reported like an error text.</li>
+<li><strong>A transport follows no redirect.</strong> The library applies options, redirect policy and error texts
+above it, so every transport behaves alike.</li>
+<li><strong><code>exchange</code> runs on the script's thread</strong> and blocks it until the answer is complete. One
+transport may serve many engines on many threads when its <code>exchange</code> takes concurrent calls, as the two
+below do.</li>
+</ul>
+<p>Two transports ship as opt-in headers that nothing in the library includes:</p>
+<p><code>&lt;jaiscript/net/http_socket_transport.hpp&gt;</code> provides <code>jai::net::http_socket_transport</code>, plain HTTP/1.1 over sockets unless its constructor is given a <code>jai::net::tls_layer</code>. <code>&lt;jaiscript/net/openssl_tls.hpp&gt;</code> provides <code>jai::net::openssl_tls</code>, that layer on OpenSSL. Versions, trust setup and the plain-HTTP error: <a href="../reference/host.html#hostapi-http-headers">HTTP transport headers</a>.</p>
+<p>The runner and jai_spider make one transport per process: WinHTTP on Windows (the system's TLS and certificate
+store), sockets with <code>openssl_tls</code> on Linux and macOS when the build found OpenSSL, and plain sockets
+otherwise, where an https URL raises the plain-HTTP error. <code>JAISCRIPT_HTTP_TRANSPORT=socket</code> in the
+environment makes them use the socket transport on Windows too (plain HTTP only there).</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/16-thread-pool.html"><span>&larr; previous</span>Thread Pool for Host Work</a><a class="next" rel="next" href="../embedding/18-build-integration.html"><span>next &rarr;</span>Building JaiScript into a Host</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

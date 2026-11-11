@@ -28,6 +28,7 @@
 #include <initializer_list>
 #include <unordered_set>
 #include <typeindex>
+#include <type_traits>
 #include <iosfwd>
 
 namespace jai {
@@ -45,7 +46,7 @@ namespace jai {
     struct import_site;
     namespace vm { class vm_backend; struct coverage_tables; }
     namespace debug { class controller; class transport; }
-    namespace detail { struct release_machine; struct run_record; struct run_entry_state; struct run_registry; struct engine_access; }
+    namespace detail { struct release_machine; struct run_record; struct run_entry_state; struct run_registry; struct engine_access; class pending_binder; }
     struct script_namespace_data;
 
     // engine::vm_coverage_summary: the report's class totals as numbers, for a harness that aggregates many runs
@@ -177,6 +178,15 @@ namespace jai {
         // semantics as execute(std::string). Only consulted for tagged sources; the
         // std::string overloads are untouched.
         held_value execute(script_source source);
+
+        // execute<T>(...) is execute(...).as<T>() with the same arguments: it throws when the result is not a T or does
+        // not fit one. T is a value: a reference, a pointer or a view would name the result, which dies with the call.
+        template<typename T, typename... Arguments>
+        T execute(Arguments&&... a_arguments) {
+            static_assert(!std::is_reference_v<T> && !std::is_pointer_v<T> && !std::is_same_v<std::remove_cv_t<T>, std::string_view>,
+                "execute<T> returns a value: ask for std::string, a number or a copied object, never a reference, pointer or view");
+            return execute(std::forward<Arguments>(a_arguments)...).template as<T>();
+        }
 
         // execute_file attributes the script to `script_path`: the path is stamped onto
         // every AST node (file:line:col), so stack traces, error messages, and the
@@ -346,11 +356,6 @@ namespace jai {
             std::vector<param_type_info> param_types;
         };
         bool host_function_signatures(const std::string& name, std::vector<host_overload_signature>& out) const;
-        // A free host function that touches state other objects share: a parallel body may not call it. Every other
-        // registered host function, the library's own included, is taken to be safe on any thread. A namespace entry is
-        // marked by its qualified name (serial_function("game::save")).
-        void serial_function(const std::string& name);
-
         // Constant arguments: a host function ("name") or a bound method ("Class.method") whose argument `index` only the
         // program's own constants may fill: a string literal, a const holding one, a ternary or + of them, an array literal of
         // them. Register before loading scripts. The checker refuses any other argument at load with "argument N of 'name' is
@@ -359,10 +364,7 @@ namespace jai {
         // a unit that was never gathered, is refused: the host raises the refusal).
         void constant_argument(const std::string& callable, size_t index, std::string refusal);
         bool constant_argument_admits(const std::string& callable, size_t index, std::string_view text) const;
-        // [[nodiscard]] for a host function ("name") or a bound method ("Class.method"), as a script declares it on its own: an
-        // expression statement that drops the result of a call the checker resolves to it fails the load. Register before
-        // loading scripts.
-        void nodiscard_function(const std::string& callable);
+        // Whether a host function ("name") or a bound method ("Class.method") was registered with jai::nodiscard.
         bool is_nodiscard_function(const std::string& callable) const;
 
         // Global registration
@@ -628,10 +630,40 @@ namespace jai {
         
         // === FUNCTION REGISTRATION ===
         
-        // Variadic functions - handle any number of arguments at runtime
-        // Use this for functions like print(), max(), or functions with optional parameters
-        // Example: engine.add_variadic_function("print", [](const std::vector<script_value>& args) { ... });
+        // Variadic functions: any number of arguments, as print() and max() take them. The engine-first form returns what a
+        // typed binding returns, a script_value or a checked_result<script_value>; alone under its name, the VM runs it on the
+        // arguments where they are. The vector form returns a checked_result<script_value>.
+        // Example: engine.add_variadic_function("sum_all", [](jai::engine&, std::span<const jai::script_value> args) { ... });
+        template<detail::engine_first_variadic Func>
+        void add_variadic_function(const std::string& name, Func&& func, privilege required = privilege::none) {
+            using call_t = detail::engine_variadic_call<std::decay_t<Func>>;
+            add_engine_variadic_function(name, guard_function(call_t{std::forward<Func>(func), this}, required), {&call_t::invoke, &call_t::locate},
+                                         host_result_kind<typename call_t::result_type>());
+        }
+        template<detail::engine_first_variadic Func>
+        void add_variadic_function(const std::string& name, Func&& func, function_options options) {
+            add_variadic_function(name, std::forward<Func>(func), options.required);
+            apply_function_options(name, options);
+        }
+        template<detail::engine_first_variadic Func>
+        void add_variadic_function(const std::string& name, Func&& func, std::span<const std::string_view> names) {
+            using call_t = detail::engine_variadic_call<std::decay_t<Func>>;
+            add_engine_variadic_function(name, guard_function(call_t{std::forward<Func>(func), this}, names), {&call_t::invoke, &call_t::locate},
+                                         host_result_kind<typename call_t::result_type>());
+        }
+        template<detail::engine_first_variadic Func>
+        void add_variadic_function(const std::string& name, Func&& func, std::string_view required) {
+            add_variadic_function(name, std::forward<Func>(func), std::span(&required, 1));
+        }
+        template<detail::engine_first_variadic Func>
+        void add_variadic_function(const std::string& name, Func&& func, std::initializer_list<std::string_view> names) {
+            add_variadic_function(name, std::forward<Func>(func), std::span(names.begin(), names.size()));
+        }
         void add_variadic_function(const std::string& name, script_function func, privilege required = privilege::none);
+        void add_variadic_function(const std::string& name, script_function func, function_options options) {
+            add_variadic_function(name, std::move(func), options.required);
+            apply_function_options(name, options);
+        }
         void add_variadic_function(const std::string& name, script_function func, std::span<const std::string_view> names) {
             add_variadic_function(name, guard_function(std::move(func), names));
         }
@@ -680,6 +712,12 @@ namespace jai {
                 // Register normally but store arity info for future overloading
                 add_function_with_arity_and_full_types(name, wrapped_func, arity, param_types);
             }
+        }
+
+        template<typename Func>
+        void add_function(const std::string& name, Func&& func, function_options options) {
+            add_function(name, std::forward<Func>(func), options.required);
+            apply_function_options(name, options);
         }
 
         template<typename Func>
@@ -875,6 +913,15 @@ namespace jai {
     private:
         friend struct detail::engine_access;
         friend class caught_error_scope;
+        // [[nodiscard]] for a host function ("name") or a bound method ("Class.method"): what jai::nodiscard records.
+        void nodiscard_function(const std::string& callable);
+        // A host function a parallel body may not call: what jai::serial records. Every other registered host function, the
+        // library's own included, is taken to be safe on any thread. A namespace entry is marked by its qualified name.
+        void serial_function(const std::string& name);
+        void apply_function_options(const std::string& name, function_options options) {
+            if (options.nodiscard) { nodiscard_function(name); }
+            if (options.serial) { serial_function(name); }
+        }
 
         // Attach a requirement to the actual callable, so aliases, overload dispatch
         // and worker-local copies all recheck this engine's current grants. An empty
@@ -1158,7 +1205,8 @@ namespace jai {
         // Engine-owned script namespace registry (namespace_id -> data); survives across backends
         std::unordered_map<uint64_t, std::shared_ptr<script_namespace_data>>& script_namespaces();
         // Names an enum declaration defined (both backends note them): `E::v` reads the value through the enum's variable
-        void note_enum_name(uint64_t name_id);
+        // marks the enum's types (type_info::is_enum) and returns the int type its values are stamped with
+        type_info* note_enum(uint64_t name_id, std::string_view name, const std::vector<int64_t>& numbers);
         bool is_enum_name(uint64_t name_id) const;
 
         // Get string symbolizer for interning identifiers
@@ -1423,20 +1471,32 @@ namespace jai {
         // Writes of the engine's clock sample (host entries, budget-check samples, time:: reads of the system clock)
         uint64_t clock_sample_count() const noexcept;
 
-        // The catch variable's value, both backends at the catch: the error's message as a string (every string operation
-        // reads it unchanged) that also answers e.message, e.file, e.line, e.column, e.stack (file:line per frame,
-        // innermost first) and e.value (a throw's value; null for a run-time error). The place is the throw's, else the
-        // innermost frame's statement.
+        // The catch variable's value, both backends at the catch. A throw binds the thrown value itself; a run-time error
+        // binds an error: its message as a string (every string operation reads it unchanged) whose type_of is "error" and
+        // that answers e.kind. A string, an instance, an array or a map (a value with a node to key on) also answers
+        // e.message, e.file, e.line, e.column, e.stack (file:line per frame, innermost first) and e.value while its handler
+        // runs; a string keeps answering afterwards. The place is the throw's, else the innermost frame's statement.
         // thrown_text: the throw's own message (a thrown object's to_string(), engine::text_of), spoken for a value that is no text
         script_value make_caught_error(const script_value& thrown, bool by_throw, const source_location* throw_site,
-                                       const std::vector<stack_frame>& trace, const char* thrown_text = nullptr);
+                                       const std::vector<stack_frame>& trace, const char* thrown_text = nullptr,
+                                       error_kind kind = error_kind::other);
         // The backends' catch: the captured frames move into the error and are spelled only when e.file, e.line,
         // e.column or e.stack is read
         script_value make_caught_error(const script_value& thrown, bool by_throw, const source_location* throw_site,
-                                       std::vector<stack_frame>&& trace, const char* thrown_text = nullptr);
-        // A member read on a string receiver that is a caught error (nullopt: not one, or not an error member; a thrown
-        // object or map answers its own fields)
-        std::optional<script_value> caught_error_member(const script_value& receiver, uint64_t member_id);
+                                       std::vector<stack_frame>&& trace, const char* thrown_text = nullptr,
+                                       error_kind kind = error_kind::other);
+        // A member read the receiver's own members did not answer, on a caught value (nullopt: not one, or not an error member)
+        // catch_variable: the receiver is read through a handler's variable, where any thrown value answers .value and .message
+        std::optional<script_value> caught_error_member(const script_value& receiver, uint64_t member_id, bool catch_variable = false);
+        // Whether a run-time error's catch variable (type_of's "error", `catch (error e)`)
+        bool is_caught_runtime_error(const script_value& value) const noexcept;
+        int caught_error_tag(const script_value& value) const noexcept;
+        // Whether a typed catch clause takes the value: the clause's type by name, a class through its bases
+        bool catch_clause_takes(const script_value& value, const std::string& type_name) const;
+        // Whether a try's typed clauses take what is being raised, asked before its handler is entered (thrown null: a
+        // run-time error)
+        bool catch_admits(const std::vector<std::string>& clause_types, const script_value* thrown) const;
+        bool clause_takes_thrown(const script_value& value, const std::string& type_name) const;
         // The handler that bound `caught` is done and its variable let go: the thrown value dies, as C++ destroys the exception
         // object when its handler exits, unless a copy of the error (a capture, a stored e) still holds it
         void end_caught_error(const script_value& caught) noexcept;
@@ -1581,6 +1641,7 @@ namespace jai {
             const void* (*locate)(const script_function&) = nullptr;
         };
         void stage_host_direct(host_direct_entry entry);
+        void add_engine_variadic_function(const std::string& name, script_function func, host_direct_entry direct, script_value_type result);
 
         // The single overloaded-function registration algorithm shared by every public entry point
         // (add_function*, add_overloaded_function*, add_variadic_function). create_set_on_first is the
@@ -1659,8 +1720,16 @@ namespace jai {
         // type_index order, not dependency order); resolved when the base arrives.
         void defer_base_link(std::type_index base, std::shared_ptr<class_definition> derived);
 
+        // A bound member of a class type no binder has registered yet is recorded; settle_bindings reports those still missing
+        void require_bound_type(const std::string& class_name, const std::string& member, const std::type_info& type);
+        // Commits the binders still alive, in creation order, then raises one error listing every unresolved type and every
+        // binding whose implicit commit failed. Each load, check and host entry calls it while anything is pending.
+        void settle_bindings();
+        size_t binding_settle_count() const;
+
         // Allow dynamic_binder to access implementation details
         template<typename T> friend class dynamic_binder;
+        friend class detail::pending_binder;
         // Allow function_binder to access conversion registry
         template<typename T> friend struct detail::value_converter;
         // Allow interpreter to access implementation for include/import

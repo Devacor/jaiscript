@@ -236,14 +236,14 @@ function shaft_frame(float descent) -> void {
 			continue;
 		}
 		float v = z * 2.6 + descent;
-		int row = v;
+		int row = cast<int>(v);
 		float u = angle[i] * 30.0 + (row % 2) * 0.5;
-		int brick = u;
+		int brick = cast<int>(u);
 		int tone = v - row < 0.16 || u - brick < 0.08 ? 2 : (lat(brick, row, 3) % 4 == 0 ? 1 : 0);
 		float torch = 15.0 / (1.0 + 0.3 * (z - 1.0) * (z - 1.0));
 		float deep = z > 6.0 ? (z - 6.0) * 1.1 : 0.0;
-		int level = torch + (lat(i, row, 5) % 3) * 0.4;
-		if (deep > torch) { pix[i] = ramps[glow + iclamp(deep, 0, levels - 1)]; }
+		int level = cast<int>(torch + (lat(i, row, 5) % 3) * 0.4);
+		if (deep > torch) { pix[i] = ramps[glow + iclamp(cast<int>(deep), 0, levels - 1)]; }
 		else { pix[i] = ramps[tone * levels + iclamp(level, 0, levels - 1)]; }
 	}
 }
@@ -286,10 +286,10 @@ function shaft_life(int frame) -> void {
 		float t = ((frame + h % life) % life) / (life * 1.0);
 		float r = rim * (0.06 + 1.1 * t * t);
 		float wobble = math::sin(t * 9.0 + k) * 0.18;
-		int x = cx + math::cos(a + wobble) * r;
-		int y = cy + math::sin(a + wobble) * r / 1.1;
-		page_plot(x, y, ember[iclamp(t * 5, 0, 4)]);
-		if (t > 0.55) { page_plot(x + 1, y, ember[iclamp(t * 5, 0, 4)]); }
+		int x = cast<int>(cx + math::cos(a + wobble) * r);
+		int y = cast<int>(cy + math::sin(a + wobble) * r / 1.1);
+		page_plot(x, y, ember[iclamp(cast<int>(t * 5), 0, 4)]);
+		if (t > 0.55) { page_plot(x + 1, y, ember[iclamp(cast<int>(t * 5), 0, 4)]); }
 	}
 	array<int> eye = [pal(0xFF3020), pal(0xFFD040), pal(0x7CFF50)];
 	for (int k = 0; k < 7; ++k) {
@@ -297,8 +297,8 @@ function shaft_life(int frame) -> void {
 		if ((frame / 12 + h) % 9 < 2 || (frame + h) % 37 == 0) { continue; }   // shut, or mid-blink
 		float a = (h % 628) / 100.0;
 		float z = 1.6 + (h / 628 % 30) / 10.0;
-		int x = cx + math::cos(a) * rim / z;
-		int y = cy + math::sin(a) * rim / z / 1.1;
+		int x = cast<int>(cx + math::cos(a) * rim / z);
+		int y = cast<int>(cy + math::sin(a) * rim / z / 1.1);
 		if (y < 0 || y >= PAGE_H * 2 - 1) { continue; }
 		int c = eye[k % 3];
 		int gap = z < 2.6 ? 3 : 2;

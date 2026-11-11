@@ -43,7 +43,7 @@ function dev_poll() -> string {
 	G.renderer.rebuild_look(G.map_i);
 	G.feel.forget_colors();
 	if (changed.contains("sound.jai") || changed.contains("tune.jai")) { sound_boot(); }
-	int ms = rebuild.elapsed() * 1000;
+	int ms = cast<int>(rebuild.elapsed() * 1000);
 	return `reloaded ${changed.size() > 0 ? changed.join(" ") : "the look"} (tables ${ms} ms)`;
 }
 

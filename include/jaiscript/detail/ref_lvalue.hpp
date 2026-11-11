@@ -1204,9 +1204,7 @@ namespace jai::detail {
 					break;
 				}
 				case token_type::slash: {
-					const size_t ri = rightValue.raw_storage_index();
-					if ((ri == script_value::TYPEID_INT && rightValue.unchecked_as_int() == 0) ||
-					    (ri == script_value::TYPEID_FLOAT && rightValue.unchecked_as_float() == 0.0)) {
+					if (math::integer_zero_divisor(currentValue, rightValue)) {
 						return checked_result<script_value>(make_error_code(runtime_error_code::division_by_zero), "Division by zero");
 					}
 					auto r = arith(currentValue, token_type::slash, rightValue);
@@ -1215,7 +1213,7 @@ namespace jai::detail {
 					break;
 				}
 				case token_type::percent: {
-					if (rightValue.raw_storage_index() == script_value::TYPEID_INT && rightValue.unchecked_as_int() == 0) {
+					if (math::integer_zero_divisor(currentValue, rightValue)) {
 						return checked_result<script_value>(make_error_code(runtime_error_code::modulo_by_zero), "Modulo by zero");
 					}
 					auto r = arith(currentValue, token_type::percent, rightValue);

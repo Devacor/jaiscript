@@ -242,7 +242,7 @@ public:
 				string r = "";
 				try { byval()[0] = 7; } catch (e) { r = e; }
 				r + "|" + to_string(arr[0]);
-			)", "Cannot assign to rvalue expression|1");
+			)", "Cannot assign to rvalue expression|1", warn_region);   // the load's error where the checker judges it
 		});
 		// docs/site/guide/03-value-semantics.html and C++ [expr.ass]: built-in assignment to a member of a class prvalue is
 		// ill-formed, so a store into a member of a class value no storage holds raises the math temporary's text
@@ -306,12 +306,12 @@ public:
 				return std::to_string(e.execute("g(0)").as_int()) + "|" + std::to_string(e.execute("K().m(0)").as_int());
 			});
 		});
-		// docs/site/reference/index.html "Run-time errors": a store through null names the member and the receiver as the read
+		// docs/site/reference/errors.html "Run-time errors": a store through null names the member and the receiver as the read
 		// does; a store to a member a namespace lacks is the read's undefined name; a vector constructor names the shape it takes
 		test("store_and_constructor_texts_name_what_failed", [this]() {
 			expect("null receivers", R"(
 				class V { int x = 1; }
-				V v = null;
+				shared_ptr<V> v = null;
 				var w = null;
 				var nothing() { return null; }
 				string t(function f) { string r = "stored"; try { f(); } catch (e) { r = e; } return r; }
@@ -471,6 +471,13 @@ public:
 				}
 				array<int> items = [1]; read(items);
 			)", "1|7|Reference to a removed array element");
+			// docs/site/guide/03-value-semantics.html: an element reference names an index, a map entry reference its key
+			expect("an element reference names its index", R"(
+				var a = [10, 20, 30]; auto& x = a[1]; a.insert(0, 99); x = 5;
+				var b = [3, 1, 2]; auto& y = b[0]; b.sort(); y = 9;
+				var m = {"a": 1, "b": 2}; auto& e = m["b"]; m["0"] = 0; m.erase("a"); e = 7;
+				`${a}|${b}|${m}`;
+			)", "[99, 5, 20, 30]|[9, 2, 3]|{\"0\": 0, \"b\": 7}");
 		});
 		test("inline_float_parse_preserves_fallback_and_text_contract", [this]() {
 			expect("complete parse and fallback", R"(
@@ -601,8 +608,8 @@ public:
 				string a = "a"; string b = string::append(a,"b"); a.append("c"); a + "|" + b;
 			)", "ac|ab");
 			expect("typed map filter", R"(
-				map<string,int> m = {"a":1,"b":2}; map<string,int> f = map::filter(m, [](string k,int& v) -> bool { v += 1.5; return v > 2; });
-				map<string,int> g = {"a":1,"b":2}; g.filter([](string k,int& v) -> bool { v += 1.5; return v > 2; });
+				map<string,int> m = {"a":1,"b":2}; map<string,int> f = map::filter(m, [](string k,int& v) -> bool { v += 1; return v > 2; });
+				map<string,int> g = {"a":1,"b":2}; g.filter([](string k,int& v) -> bool { v += 1; return v > 2; });
 				to_json(m) + "|" + to_json(f) + "|" + to_json(g);
 			)", "{\"a\":2,\"b\":3}|{\"b\":3}|{\"b\":3}");
 		});
@@ -672,10 +679,12 @@ public:
 				nocopy class Item { int n = 1; }
 				map<string,var> left = {"x":Item()}; map<string,var> right = {"x":2};
 				var replaced = merge(left,right);
-				map<string,int> integers = {"a":1}; var floats = {"b":2.5}; auto joined = merge(integers,floats); bool rejects = false;
+				map<string,int> integers = {"a":1}; var flags = {"b":true}; auto joined = merge(integers,flags); bool rejects = false;
 				try { joined["a"] = "bad"; } catch (e) { rejects = true; }
-				to_json(replaced) + "|" + to_json(joined) + "|" + to_string(rejects);
-			)", "{\"x\":2}|{\"a\":1,\"b\":2}|true");
+				var floats = {"c":2.5}; string refused = "";
+				try { merge(integers,floats); } catch (e) { refused = e; }
+				to_json(replaced) + "|" + to_json(joined) + "|" + to_string(rejects) + "|" + refused;
+			)", "{\"x\":2}|{\"a\":1,\"b\":1}|true|Cannot store 'float' in map value of type 'int'");
 			expect("handle projections", R"(
 				class Item { int n = 1; }
 				array<shared_ptr<Item>> a = [new Item(), null];
@@ -803,82 +812,86 @@ private:
 		test("assignment_value_is_the_stored_value_for_every_destination_kind", [this]() {
 			expect("stored value", R"(
 				class A { int raw = 0; int _get_x() { return raw * 10; } void _set_x(int v) { raw = v; } }
-				class C { int n = 0; static int s = 0; int set_bare() { return (n = 7.9); } int set_this() { return (this.n = 8.9); } }
+				class C { float n = 0.0; static float s = 0.0; var set_bare() { return (n = 7); } var set_this() { return (this.n = 8); } }
 				function run() -> string {
-					int t = 0; C c = C(); A a = A();
-					array<int> xs = [0]; map<string, int> m = {"k": 0};
-					var r1 = (t = 3.9);
-					var r2 = (c.n = 4.9);
-					var r3 = (C::s = 5.9);
+					float t = 0.0; C c = C(); A a = A();
+					array<float> xs = [0.0]; map<string, float> m = {"k": 0.0};
+					array<int> flags = [0];
+					var r1 = (t = 3);
+					var r2 = (c.n = 4);
+					var r3 = (C::s = 5);
 					var r4 = (a.x = 4);
-					var r5 = (xs[0] = 2.9);
-					var r6 = (m["k"] = 1.5);
+					var r5 = (xs[0] = 2);
+					var r6 = (m["k"] = 1);
 					var r7 = c.set_bare();
 					var r8 = c.set_this();
-					return `${r1},${r2},${r3},${r4},${r5},${r6},${r7},${r8}|${type_of(r1)}${type_of(r5)}${type_of(r6)}`;
+					var r9 = (flags[0] = true);
+					return `${r1},${r2},${r3},${r4},${r5},${r6},${r7},${r8},${r9}|${type_of(r1)}${type_of(r5)}${type_of(r6)}${type_of(r9)}`;
 				}
 				run();
-			)", "3,4,5,40,2,1,7,8|intintint");
+			)", "3.0,4.0,5.0,40,2.0,1.0,7.0,8.0,1|floatfloatfloatint");
 		});
 		test("compound_and_postfix_assignment_values_follow_the_destination", [this]() {
 			// compound x op= y is x = T(x op y); postfix yields the old stored value
 			expect("compound/postfix", R"(
-				class C { int n = 1; }
+				class C { float n = 1.5; }
 				function run() -> string {
-					int t = 1; C c = C(); array<int> xs = [5]; map<string, int> m = {"k": 5};
-					var r1 = (t += 2.5);
-					var r2 = (c.n *= 2.9);
+					float t = 1.0; C c = C(); array<int> xs = [5]; map<string, int> m = {"k": 5};
+					var r1 = (t += 2);
+					var r2 = (c.n *= 2);
 					var r3 = xs[0]++;
 					var r4 = m["k"]--;
 					var r5 = ++xs[0];
-					var r6 = (xs[0] -= 0.5);
-					return `${r1},${r2},${r3},${r4},${r5},${r6}|${t},${c.n},${xs[0]},${m["k"]}`;
+					var r6 = (xs[0] -= 1);
+					var half = 0.5; string refused = "";
+					try { xs[0] -= half; } catch (e) { refused = e; }
+					return `${r1},${r2},${r3},${r4},${r5},${r6}|${t},${c.n},${xs[0]},${m["k"]}|${type_of(r1)}${type_of(r2)}|${refused}`;
 				}
 				run();
-			)", "3,2,5,5,7,6|3,2,6,4");
+			)", "3.0,3.0,5,5,7,6|3.0,3.0,6,4|floatfloat|Cannot assign 'float' to element of type 'int'");
 		});
 		test("setter_only_member_assignment_yields_its_right_hand_side", [this]() {
-			// "A setter-only member (no field, no getter in the chain) yields its right-hand side"; the int parameter truncates
+			// "A setter-only member (no field, no getter in the chain) yields its right-hand side"; the int parameter converts
 			expect("setter only", R"(
 				class W { var got = null; void _set_v(int x) { got = x; } }
-				function run() -> string { W w = W(); var r = (w.v = 2.5); return `${r}|${w.got}|${type_of(r)}`; }
+				function run() -> string { W w = W(); var r = (w.v = true); return `${r}|${w.got}|${type_of(r)}`; }
 				run();
-			)", "2.5|2|float");
+			)", "true|1|bool");
 		});
 		test("top_level_implicit_result_is_never_read_back", [this]() {
 			// a typed local or plain static store converts before producing anything; an explicit field, accessor, element or
 			// map store hands the host its right-hand side
 			struct row { const char* src; const char* expected; };
 			const row rows[] = {
-				{"int n = 0; n = 3.9;", "i:3"},
-				{"class S { static int s = 0; } S::s = 2.5;", "i:2"},
-				{"class C { int n = 0; } C c = C(); c.n = 3.9;", "f:3.9"},
-				{"array<int> a = [0]; a[0] = 2.5;", "f:2.5"},
-				{"map<string, int> m = {}; m[\"k\"] = 1.5;", "f:1.5"},
-				{"class A { int raw = 0; int _get_x() { return raw * 10; } void _set_x(int v) { raw = v; } } A a = A(); a.x = 4.5;", "f:4.5"},
+				{"int n = 0; n = true;", "i:1"},
+				{"class S { static int s = 0; } S::s = true;", "i:1"},
+				{"class C { int n = 0; } C c = C(); c.n = true;", "b:true"},
+				{"array<int> a = [0]; a[0] = true;", "b:true"},
+				{"map<string, int> m = {}; m[\"k\"] = true;", "b:true"},
+				{"class A { int raw = 0; int _get_x() { return raw * 10; } void _set_x(int v) { raw = v; } } A a = A(); a.x = true;", "b:true"},
 			};
 			for (const auto& r : rows) {
 				every_config(r.src, r.expected, [&](engine& e) { return spec::typed_render(e.execute(r.src)); });
 			}
 		});
 		test("assignment_value_inside_a_ternary_in_a_leaf_called_from_a_counted_loop", [this]() {
-			// element, typed local and field destinations, each read back as the stored int
+			// element, typed local and field destinations, each read back as the stored float
 			expect("ternary leaf", R"(
-				array<int> xs = [0, 0, 0, 0, 0, 0];
-				class Acc { int v = 0; }
+				array<float> xs = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+				class Acc { float v = 0.0; }
 				Acc A = Acc();
-				function leaf(int i) -> int { return i % 2 == 0 ? (xs[i] = i * 1.5) : (xs[i] = i - 0.5); }
-				function leaf2(int i) -> int { int t = 0; return i > 2 ? (t = i * 1.9) : (t = -i * 1.9); }
-				function leaf3(int i) -> int { return (A.v = A.v + i * 0.75); }
+				function leaf(int i) -> var { return i % 2 == 0 ? (xs[i] = i * 3) : (xs[i] = i - 1); }
+				function leaf2(int i) -> var { float t = 0.0; return i > 2 ? (t = i * 2) : (t = -i * 2); }
+				function leaf3(int i) -> var { return (A.v = i * 3); }
 				function run() -> string {
-					int acc = 0; int acc2 = 0; int acc3 = 0;
+					var acc = 0; var acc2 = 0; var acc3 = 0;
 					for (int i = 0; i < 6; i++) { acc += leaf(i); acc2 += leaf2(i); acc3 += leaf3(i); }
 					string s = "";
 					for (int i = 0; i < 6; i++) { s += `${xs[i]},`; }
 					return `${acc}|${s}|${acc2}|${acc3},${A.v}`;
 				}
 				run();
-			)", "15|0,0,3,2,6,4,|17|19,9");
+			)", "24.0|0.0,0.0,6.0,2.0,12.0,4.0,|18.0|45.0,15.0");
 		});
 	}
 
@@ -976,7 +989,7 @@ private:
 					return `${G.size()},${h.items.size()},${rows[0].size()},${loc.size()}`;
 				}
 				run();
-			)", "4,1,1,1");
+			)", "4,1,1,1", warn_region);   // h.get().push(2) changes a copy: the load's error where the checker judges it
 		});
 		test("a_by_value_return_of_an_aggregate_shares_its_shared_ptr_members", [this]() {
 			expect("aggregate return", R"(
@@ -1095,7 +1108,7 @@ private:
 				class K { void m(C p = c) { p.x = 7; } }
 				var lam = [](C p = c) { p.x = 7; };
 				by_value(); untyped(); element(); conditional(); K().m(); lam();
-				function truncated(int p = 2.7) { return p; }
+				function converted(int p = true) { return p; }
 				function widened(float p = 1) { return p; }
 				function typed_row(array<int> p = [1, 2]) { return p; }
 				var row = typed_row();
@@ -1105,8 +1118,17 @@ private:
 				bump();
 				function touch(C& p = c) { p.x = 3; }
 				touch();
-				`${cs[0].x} ${truncated()} ${widened()} ${pushed} ${g} ${c.x}`;
-			)", "0 2 1.0 refused 11 3");
+				`${cs[0].x} ${converted()} ${widened()} ${pushed} ${g} ${c.x}`;
+			)", "0 1 1.0 refused 11 3");
+			every_config("a default the parameter refuses is a load error", "1|1", [](engine& e) {
+				const auto has = [&](const char* src, const char* text) {
+					const auto rep = e.check(src);
+					for (const auto& d : rep.diagnostics) { if (d.severity == check_diagnostic::level::error && d.message.find(text) != std::string::npos) { return std::string("1"); } }
+					return rep.format(src);
+				};
+				return has("function truncated(int p = 2.7) { return p; }", "default value of 'p' declared 'int' has type 'float'") + "|" +
+				       has("class C { int x = 0; } function empty(C d = null) { return d; }", "default value of 'd' declared 'C' has type 'null'");
+			});
 		});
 		// A conditional whose arms both name storage is the lvalue it picks (C++): a T& argument, an auto& or T& declaration, a T&
 		// default, a -> T& return, a cast<T&> operand and an assignment target bind or write the chosen variable and never the other,
@@ -1352,18 +1374,19 @@ private:
 				run();
 			)", "7,8,Cannot cast 'Base' to 'Der&',4957");
 		});
-		test("null_passes_the_value_and_handle_casts_and_fails_the_reference_cast", [this]() {
+		test("null_passes_the_handle_cast_and_fails_the_value_and_reference_casts", [this]() {
 			expect("cast null", R"(
 				class Base { int b = 1; }
 				class Der : Base { int t = 0; }
 				function run() -> string {
 					var n = null; string s = "";
-					s += to_string(cast<Der>(n) == null) + "," + to_string(cast<shared_ptr<Der>>(n) == null) + ",";
+					try { var d = cast<Der>(n); s += "cast,"; } catch (e) { s += `${e},`; }
+					s += to_string(cast<shared_ptr<Der>>(n) == null) + ",";
 					try { cast<Der&>(n).t = 1; s += "bound"; } catch (e) { s += "raised"; }
 					return s;
 				}
 				run();
-			)", "true,true,raised");
+			)", "Cannot cast 'null' to 'Der',true,raised");
 		});
 	}
 
@@ -1476,12 +1499,14 @@ private:
 				function run() -> string {
 					string s = ""; var str = "str";
 					try { n4::y = str; } catch (e) { s += `${e}|`; }
-					var r = (n4::y = 2.9);
-					n4::y += 1.5; n4::y++;
-					return `${s}${r}|${n4::y}`;
+					var half = 2.9;
+					try { n4::y = half; } catch (e) { s += `${e}|`; }
+					var r = (n4::y = true);
+					n4::y += 2; n4::y++;
+					return `${s}${type_of(r)}:${r}|${n4::y}`;
 				}
 				run();
-			)", "Cannot assign string to 'y' (declared int)|2|4");
+			)", "Cannot assign string to 'y' (declared int)|Cannot assign float to 'y' (declared int)|int:1|4");
 		});
 		test("a_qualified_namespace_variable_binds_a_reference", [this]() {
 			expect("ns ref", R"(
@@ -1558,8 +1583,11 @@ private:
 				class In { int x = 1; }
 				function run() -> string {
 					string s = "";
-					array<array<int>> g = [[1], [2]]; var row = [2.9]; g.push(row); s += `${g[2][0]},`;
-					map<string, array<int>> m = {}; m["a"] = [1.9, 2]; s += `${m["a"][0]},`;
+					array<array<int>> g = [[1], [2]]; var row = [2]; g.push(row); s += `${g[2][0]},`;
+					map<string, array<int>> m = {}; m["a"] = [true, 2]; s += `${m["a"][0]},`;
+					var floats = [2.9];
+					try { g.push(floats); } catch (e) { s += `${e},`; }
+					try { m["a"] = floats; } catch (e) { s += `${e},`; }
 					array<int> ai = []; var str = "x";
 					try { ai.push(str); } catch (e) { s += `${e},`; }
 					array<string> as = []; var one = 1;
@@ -1574,11 +1602,11 @@ private:
 					return s;
 				}
 				run();
-			)", "2,1,Cannot push 'string' to array<int>,Cannot push 'int' to array<string>,true,1,2,Cannot store null in array<In>,Cannot push 'null' to array<In>,Cannot push 'In' to array<int>");
+			)", "2,1,Cannot store float in array<int>,Cannot store float in array<int>,Cannot push 'string' to array<int>,Cannot push 'int' to array<string>,true,1,2,Cannot store null in array<In>,Cannot push 'null' to array<In>,Cannot push 'In' to array<int>");
 		});
 	}
 
-	// docs/site/reference/index.html "Operators": ++/-- work on every lvalue
+	// docs/site/reference/rules.html "Operators": ++/-- work on every lvalue
 	void increments() {
 		test("increments_on_members_elements_map_entries_and_nested_lvalues", [this]() {
 			expect("incdec", R"(
@@ -1772,7 +1800,7 @@ private:
 				function i1() -> int { log += "a"; return 0; }
 				function i2() -> int { log += "b"; return 1; }
 				function two(int& p, int& q) { }
-				function typed_name() -> string { int x = 1; int& r = x; var s = "s"; string m = ""; try { x = s; } catch (e) { m = e; } x = 2.7; return m + "|" + to_string(x); }
+				function typed_name() -> string { int x = 1; int& r = x; var s = "s"; string m = ""; try { x = s; } catch (e) { m = e; } var f = 2.7; try { r = f; } catch (e) { m += "|" + e; } x = true; return m + "|" + to_string(x); }
 				function run() -> string {
 					auto& r = f(); r = 5;
 					var A = [1, 2]; two(A[i1()], A[i2()]);
@@ -1785,7 +1813,7 @@ private:
 					return `${G}|${log}|${a}|${arr[0]}${m["k"]}|${to_string(o == d && o != "")}${mm["k"]}|${typed_name()}`;
 				}
 				run();
-			)", "5|ab|1|39|true1|Cannot assign string to 'x' (declared int)|2");
+			)", "5|ab|1|39|true1|Cannot assign string to 'x' (declared int)|Cannot assign float to 'r' (declared int&)|1");
 		});
 		test("a_reference_held_across_yields_follows_its_element", [this]() {
 			expect("ref across yield", R"(
@@ -1867,11 +1895,12 @@ private:
 				return e.execute("`${ns::get()}`;").as_string();
 			});
 		});
-		test("a_typed_namespace_store_is_checked_at_run_time_under_strict", [this]() {
+		test("a_typed_namespace_store_through_var_is_checked_at_run_time", [this]() {
 			expect("ns strict", R"(
 				namespace ns { int y = 0; }
 				string m = "";
-				try { ns::y = "s"; } catch (e) { m = e; }
+				var text = "s";
+				try { ns::y = text; } catch (e) { m = e; }
 				m;
 			)", "Cannot assign string to 'y' (declared int)");
 		});
@@ -2046,7 +2075,7 @@ private:
 		test("checked_float_to_int_texts_leave_the_destination_unwritten", [this]() {
 			const std::string text = "Cannot convert float to integer: non-finite or out of range";
 			expect_texts({
-				{"assignment", "var f = 1e100; int x = 0;", "x = f;", text.c_str()},
+				{"assignment", "var f = 1e100; int x = 0;", "x = f;", "Cannot assign float to 'x' (declared int)"},
 				{"itrunc", "var f = 1e100;", "var z = math::itrunc(f);", text.c_str()},
 				{"ifloor", "var f = -1e100;", "var z = math::ifloor(f);", text.c_str()},
 				{"cast", "var f = 1e100;", "var z = cast<int>(f);", text.c_str()},
@@ -2086,7 +2115,7 @@ private:
 				std::string out;
 				try { e.max_call_depth(backend_type::interpreter, 0); out += "accepted"; } catch (const std::exception& ex) { out += ex.what(); }
 				out += "|";
-				// not a tail call: a VM self tail call reuses its frame and runs into the budget instead (docs/site/reference/index.html "Run-time errors")
+				// not a tail call: a VM self tail call reuses its frame and runs into the budget instead (docs/site/reference/errors.html "Run-time errors")
 				e.execution_budget(0);
 				try { e.execute(spec::in_warn_region("function r() { return r() + 1; } r();")); out += "no error"; } catch (const std::exception& ex) { out += ex.what(); }
 				out += "|";
@@ -2397,7 +2426,8 @@ private:
 				{"a typed reference parameter binds only its type", "function f(int& r) { } string s = \"x\"; f(s);", 1},
 				{"itrunc is int", "char c = math::itrunc(1.5);", 1},
 				{"sin is float", "char c = math::sin(1.0);", 1},
-				{"sin into int converts", "int i = math::sin(1.0);", 0},
+				{"sin into int is refused", "int i = math::sin(1.0);", 1},
+				{"itrunc and ifloor into int", "int i = math::itrunc(1.5); int j = math::ifloor(1.5); int k = cast<int>(math::sin(1.0));", 0},
 				{"abs and max follow their operands", "char a = math::abs(1); char b = math::abs(1.5); char c = math::max(1, 2.5);", 2},
 				{"an unknown math name is a load error", "char c = math::no_such(1);", 1},
 				{"math arity is a runtime error", "var z = math::pow(2);", 0},
@@ -2407,7 +2437,7 @@ private:
 				{"builtin results stay lenient", "map<string, int> m = {\"a\": 1}; var k = m.keys()[0].to_upper();", 0},
 				{"element stores through a range reference are runtime", "array<int> a = [1]; for (auto& x : a) { x = \"s\"; }", 0},
 				{"out of bounds is runtime", "array<int> a = [1]; int x = a[5];", 0},
-				{"namespace variables are dynamic reads", "namespace ns { int x = 1; } char c = ns::x;", 0},
+				{"a namespace variable reads by its declared type", "namespace ns { int x = 1; } char c = ns::x;", 1},
 				{"missing map key is runtime", "map<string, int> m = {\"a\": 1}; int x = m[\"missing\"];", 0},
 			};
 			for (const auto& r : rows) {
@@ -2415,7 +2445,7 @@ private:
 			}
 		});
 		test("a_bare_return_is_an_error_where_the_result_holds_no_null", [this]() {
-			every_config("bare return", "1|0 0|1", [](engine& e) {
+			every_config("bare return", "1|0 1|0", [](engine& e) {
 				auto shape = [&](const char* src) {
 					const auto rep = e.check(src);
 					size_t warnings = 0;
@@ -3016,14 +3046,14 @@ private:
 			const char* src = R"(
 				array<int> ai = [1, 2];
 				class P { int n = 0; }
-				auto n = 5; n = 1.5;
-				auto e = ai[0]; e = 2.9;
+				auto n = 5; n = true;
+				auto e = ai[0]; e = false;
 				auto s = "a"; s = `b${5}`;
 				auto p = P();
 				function t(function g) -> string { string r = "none"; try { g(); } catch (err) { r = err; } return r; }
-				`${type_of(n)}:${n}|${type_of(e)}:${e}|${s}|${t([]() { auto q = P(); var o = 5; q = o; })}`;
+				`${type_of(n)}:${n}|${type_of(e)}:${e}|${s}|${t([]() { auto q = P(); var o = 5; q = o; })}|${t([]() { auto k = 5; var h = 1.5; k = h; })}|${t([]() { auto k = ai[0]; var h = 2.9; k = h; })}`;
 			)";
-			expect("auto from known", src, "int:1|int:2|b5|Cannot assign int to 'q' (declared P)", warn_region);
+			expect("auto from known", src, "int:1|int:0|b5|Cannot assign int to 'q' (declared P)|Cannot assign float to 'k' (declared int)|Cannot assign float to 'k' (declared int)", warn_region);
 		});
 		test("an_auto_in_a_counted_loop_follows_the_static_type_on_every_lane", [this]() {
 			expect("auto in loops", R"(
@@ -3034,7 +3064,7 @@ private:
 				}
 				function from_ints() -> string {
 					array<int> arr = [1, 2, 3]; string s = "";
-					for (int i = 0; i < 3; i++) { auto x = arr[i]; x = x + 0.5; s += `${x} `; }
+					for (int i = 0; i < 3; i++) { auto x = arr[i]; string kept = ""; try { x = x + 0.5; } catch (e) { kept = "!"; } s += `${x}${kept} `; }
 					return s;
 				}
 				function sum_var() -> float {
@@ -3043,11 +3073,11 @@ private:
 					return total;
 				}
 				`${from_var()}|${from_ints()}|${sum_var()}`;
-			)", "1.5 2.5 3.5 |1 2 3 |6.75", warn_region);
+			)", "1.5 2.5 3.5 |1! 2! 3! |6.75", warn_region);
 		});
 		test("a_jaibite_keeps_the_auto_spelling_and_types_it_again_at_load", [this]() {
 			every_config("auto through jaibite", "string:s|int:1", [](engine& e) {
-				auto bite = e.jaibite(spec::in_warn_region("var arr = [1]; auto x = arr[0]; x = \"s\"; auto n = 5; n = 1.5; `${type_of(x)}:${x}|${type_of(n)}:${n}`;"));
+				auto bite = e.jaibite(spec::in_warn_region("var arr = [1]; auto x = arr[0]; x = \"s\"; auto n = 5; n = true; `${type_of(x)}:${x}|${type_of(n)}:${n}`;"));
 				std::string first = spec::render(e.execute(bite));
 				auto loaded = e.jaibite_load_bytes(bite.save_bytes());
 				std::string second = spec::render(e.execute(loaded));
@@ -3116,15 +3146,15 @@ private:
 		test("f1_a_nested_assignment_yields_the_destinations_stored_value", [this]() {
 			// The value of an assignment is the destination's stored value, consumed anywhere
 			expect("nested stored value", R"(
-				class C { int n = 0; static int s = 0; }
+				class C { float n = 0.0; static float s = 0.0; }
 				function id(var v) { return v; }
-				C c = C(); array<int> a = [0];
-				var r1 = 0; r1 = (c.n = 3.9);
-				var r2 = 0; r2 = (a[0] = 3.9);
-				string r3 = to_string(a[0] = 4.9);
-				var r4 = id(C::s = 5.9);
+				C c = C(); array<float> a = [0.0];
+				var r1 = 0; r1 = (c.n = 3);
+				var r2 = 0; r2 = (a[0] = 3);
+				string r3 = to_string(a[0] = 4);
+				var r4 = id(C::s = 5);
 				`${type_of(r1)}:${r1} ${type_of(r2)}:${r2} ${r3} ${type_of(r4)}:${r4}`;
-			)", "int:3 int:3 4 int:5", warn_region);
+			)", "float:3.0 float:3.0 4.0 float:5.0", warn_region);
 		});
 		test("f2_a_handle_store_yields_a_value", [this]() {
 			expect("handle store value", R"(
@@ -3378,7 +3408,7 @@ private:
 				{"an unrelated class", "function u1() { shared_ptr<E> s = new E(); shared_ptr<D> d = s; } function u2() { shared_ptr<E> s = new E(); ns::nd = s; }", 2},
 				{"a cast, a var source and an upcast", "function ok() { shared_ptr<B> s = new D(); shared_ptr<D> d = cast<shared_ptr<D>>(s); var v = s; shared_ptr<D> d2 = v;"
 				 " shared_ptr<D> dd = new D(); shared_ptr<B> b = dd; }", 0},
-				{"other namespace stores stay run-time checks", "function f() { ns::n = \"text\"; ns::n = 2.5; }", 0},
+				{"a namespace variable's store checks against its declared type", "function f() { ns::n = \"text\"; ns::n = 2.5; }", 2},
 			};
 			for (const auto& r : rows) {
 				every_config(r.label, std::to_string(r.errors), [&](engine& e) { return std::to_string(e.check(P + r.src).error_count()); });
@@ -3702,7 +3732,7 @@ private:
 		// ++, a script T& parameter that writes) converts through the bound type and writes C++, and the name stays bound
 		test("a_reference_to_a_host_bound_int_stores_through_to_cpp", [this]() {
 			int64_t hp = 0;
-			every_config("int", "5 42,42 43 44 45 145 7 3 9 2 11 same 11", [&](engine& e) {
+			every_config("int", "5 42,42 43 44 45 145 7 3 9 1 Cannot assign float to 'fresh' (declared int&) 1 11 same 11", [&](engine& e) {
 				auto lax = [&e](const std::string& src) { return e.execute(spec::in_warn_region(src)); };
 				hp = 10;
 				e.add_global_ref("hp", hp);
@@ -3716,7 +3746,8 @@ private:
 				lax("hp = 7;"); out += " " + std::to_string(hp);
 				lax("function set3(int& x) { x = 3; } set3(r);"); out += " " + std::to_string(hp);
 				hp = 9; out += " " + spec::render(lax("to_string(r);"));
-				lax("int& typed = hp; typed = 2.9;"); out += " " + std::to_string(hp);
+				lax("int& typed = hp; typed = true;"); out += " " + std::to_string(hp);
+				out += " " + spec::render(lax("string refused = \"\"; var f = 2.9; int& fresh = hp; try { fresh = f; } catch (err) { refused = err; } refused;")); out += " " + std::to_string(hp);
 				lax("function local_ref() { auto& lr = hp; lr = 11; } local_ref();"); out += " " + std::to_string(hp);
 				out += " " + spec::render(lax(R"(
 					string a = ""; try { hp = "x"; } catch (err) { a = err; }
@@ -3883,13 +3914,16 @@ private:
 				auto& rb = a.b; rb = 5; d.b = 5;
 				auto& rs = a.s; rs = "x"; d.s = "x";
 				string plain = (`${d.f} ${d.g} ${d.b} ${d.s}`) == (`${a.f} ${a.g} ${a.b} ${a.s}`) ? "match" : "differ";
-				rf += 2.7; d.f += 2.7;
+				rf += 2; d.f += 2;
 				rb = 0; d.b = 0;
 				string compound = (`${d.f} ${d.b}`) == (`${a.f} ${a.b}`) ? `match ${a.f}` : `differ ${a.f} vs ${d.f}`;
 				string e1 = t([]() { O o; o.f = "x"; return 1; });
 				string e2 = t([]() { O o; auto& r = o.f; r = "x"; return 1; });
-				`${plain}|${compound}|${(e1 == e2 ? "same text" : e1 + " vs " + e2)}`;
-			)", "match|match 3|same text", warn_region);
+				string e3 = t([]() { O o; var f = 2.7; o.f = f; return 1; });
+				string e4 = t([]() { O o; var f = 2.7; auto& r = o.f; r = f; return 1; });
+				string e5 = t([]() { O o; auto& r = o.f; r += 2.7; return 1; });
+				`${plain}|${compound}|${(e1 == e2 ? "same text" : e1 + " vs " + e2)}|${(e3 == e4 && e4 == e5 ? e3 : e3 + " vs " + e4 + " vs " + e5)}`;
+			)", "match|match 3|same text|Cannot assign float to field 'f' of O (declared int)", warn_region);
 		});
 	}
 
@@ -4133,7 +4167,7 @@ private:
 		test("a_compound_operator_has_one_table_at_every_destination", [this]() {
 			// the simplification audit's F9-F12 (one semantics per compound operator, one zero-divisor text per operator family):
 			// member '/=' divides like the local's, '+=' appends text only to a text target at every destination (a local, a field,
-			// this's field, an element, a map entry, a reference), '/' and '/=' raise 'Division by zero', '%' and '%=' 'Modulo by zero'
+			// this's field, an element, a map entry, a reference), an integer '/' and '/=' raise 'Division by zero', '%' and '%=' 'Modulo by zero'
 			expect("one compound table", R"(
 				class T { string s = "a"; var n = 7; int big = 9007199254740993; float f = 1.0; void half() { n /= 2; } void addc() { s += 'c'; } }
 				function t(function f) -> string { string r = ""; try { r = `${f()}`; } catch (e) { r = e; } return r; }
@@ -4152,16 +4186,45 @@ private:
 				t([]() { int x = 5; int z = 0; return x % z; }) + "|" +
 				t([]() { int x = 5; x /= 0; return x; }) + "|" +
 				t([]() { int x = 5; int z = 0; return x / z; }) + "|" +
-				t([]() { float x = 5.0; x %= 0.0; return x; }) + "|" +
-				t([]() { float x = 5.0; float z = 0.0; return x / z; }) + "|" +
-				t([]() { T o; o.f /= 0.0; return o.f; }) + "|" +
 				t([]() { array<int> a = [4]; a[0] %= 0; return 1; }) + "|" +
 				t([]() { array<int> ai = [3]; auto& e0 = ai[0]; e0 %= 0; return 1; });
 			)", "int:3|3|9007199254740993|acc|ac|vz|"
 			    "Cannot apply '+=' to string and int|Cannot apply '+=' to string and int|Cannot apply '+=' to string and int|"
 			    "Cannot apply '+=' to int and string|Cannot apply '+=' to string and int|"
-			    "Modulo by zero|Modulo by zero|Division by zero|Division by zero|Modulo by zero|Division by zero|Division by zero|"
+			    "Modulo by zero|Modulo by zero|Division by zero|Division by zero|"
 			    "Modulo by zero|Modulo by zero", warn_region);
+		});
+		test("float_division_and_modulo_by_zero_are_ieee", [this]() {
+			// docs/site/guide/04-operators.html "Arithmetic": a float '/' or '%' (an int operand promoted beside a float included) gives
+			// an infinity or NaN at every destination and on every path (literals, typed locals, var, loops, elements, members, a
+			// reference, a vec); two ints still raise, and a float result never enters an int slot
+			expect("ieee float division", R"(
+				class T { float f = 1.0; var n = 2.5; }
+				function t(function f) -> string { string r = ""; try { r = `${f()}`; } catch (e) { r = e; } return r; }
+				function loops() -> string {
+					array<float> w = [1.0, -1.0, 0.0]; float z = 0.0; float acc = 0.0; string s = "";
+					for (int i = 0; i < 3; i++) { float q = w[i] / z; float m = w[i] % z; s += `${q},${m};`; w[i] /= z; acc = acc + 1.0 / z; }
+					var d = 0.0; var v = 3.0;
+					for (int i = 0; i < 2; i++) { v = v / d; }
+					return `${s}${w[0]},${w[1]},${w[2]};${acc};${v}`;
+				}
+				t([]() { return 1.0 / 0.0; }) + "|" + t([]() { return -1.0 / 0.0; }) + "|" + t([]() { return 0.0 / 0.0; }) + "|" +
+				t([]() { return 1.5 % 0.0; }) + "|" + t([]() { return 1 / 0.0; }) + "|" + t([]() { return 1.0 / 0; }) + "|" + t([]() { return 1.0 % 0; }) + "|" +
+				t([]() { float x = 5.0; x %= 0.0; return x; }) + "|" +
+				t([]() { float x = 5.0; float z = 0.0; return x / z; }) + "|" +
+				t([]() { float x = 5.0; x /= 0; return x; }) + "|" +
+				t([]() { var x = 5; x /= 0.0; return `${type_of(x)}:${x}`; }) + "|" +
+				t([]() { var x = 5.0; int z = 0; return x % z; }) + "|" +
+				t([]() { var z = 0.0; var h = 0.5; return `${0.5 / z},${0.5 % z},${h % 0.0}`; }) + "|" +
+				t([]() { T o; o.f /= 0.0; o.n %= 0; return `${o.f},${o.n}`; }) + "|" +
+				t([]() { map<string, float> m = {"k": 2.0}; m["k"] /= 0; return m["k"]; }) + "|" +
+				t([]() { array<float> a = [3.0]; auto& e0 = a[0]; e0 /= 0.0; return a[0]; }) + "|" +
+				t([]() { var a = [3.0, 4]; a[0] /= 0; a[1] /= 0; return a; }) + "|" +
+				t([]() { return math::vec2(1, -1) / 0; }) + "|" + t([]() { math::vec2 v = math::vec2(4, 0); v /= math::vec2(0, 0); return v.x; }) + "|" +
+				t([]() { return math::is_inf(1.0 / 0.0) && math::is_nan(0.0 % 0.0); }) + "|" +
+				t([]() { int x = 5; x /= 0.0; return x; }) + "|" + t([]() { int z = 0; return 1 / z; }) + "|" + t([]() { int z = 0; return 1 % z; }) + "|" + loops();
+			)", "inf|-inf|nan|nan|inf|inf|nan|nan|inf|inf|float:inf|nan|inf,nan,nan|inf,nan|inf|inf|Division by zero|(inf, -inf)|inf|true|"
+			    "Cannot assign float to 'x' (declared int)|Division by zero|Modulo by zero|inf,nan;-inf,nan;nan,nan;inf,-inf,nan;inf;inf", warn_region);
 		});
 	}
 
@@ -4190,14 +4253,15 @@ private:
 				var G = a;
 				function t(function f) -> string { string r = ""; try { r = `${f()}`; } catch (e) { r = e; } return r; }
 				t([]() { var v = a; v.push("s"); return v.size(); }) + "|" +
-				t([]() { var v = a; v.push(2); v[0] = 2.9; return `${v.size()} ${a.size()} ${type_of(v[0])}:${v[0]}`; }) + "|" +
+				t([]() { var v = a; v.push(2); v[0] = true; return `${v.size()} ${a.size()} ${type_of(v[0])}:${v[0]}`; }) + "|" +
+				t([]() { var v = a; var f = 2.9; v[0] = f; return v[0]; }) + "|" +
 				t([]() { var v = a; v = "hello"; v = 5; return `${type_of(v)}:${v}`; }) + "|" +
 				t([]() { var v = 1; v = a; v.push("s"); return 1; }) + "|" +
 				t([]() { G.push("s"); return 1; }) + "|" +
 				t([]() { G = "g"; G = a; array<int> c = G; c.push(3); return `${c.size()} ${G.size()}`; }) + "|" +
 				t([]() { var e = []; e.push("x"); e.push(1); return e.size(); }) + "|" +
 				t([]() { var v = a; var& r = v; r = "via ref"; return r; });
-			)", "Cannot push 'string' to array<int>|2 1 int:2|int:5|Cannot push 'string' to array<int>|Cannot push 'string' to array<int>|2 1|2|via ref", warn_region);
+			)", "Cannot push 'string' to array<int>|2 1 int:1|Cannot assign 'float' to element of type 'int'|int:5|Cannot push 'string' to array<int>|Cannot push 'string' to array<int>|2 1|2|via ref", warn_region);
 		});
 	}
 
@@ -4261,11 +4325,12 @@ private:
 				var FLAG = true;
 				class C { auto n = 5; auto v = FLAG ? 1 : "s"; auto f = FLAG ? 1 : 2.5; }
 				function t(function f) -> string { string r = "none"; try { r = `${f()}`; } catch (e) { r = e; } return r; }
-				t([]() { C c; c.n = 2.9; return `${type_of(c.n)}:${c.n}`; }) + "|" +
+				t([]() { C c; c.n = true; return `${type_of(c.n)}:${c.n}`; }) + "|" +
+				t([]() { C c; var f = 2.9; c.n = f; return c.n; }) + "|" +
 				t([]() { C c; var s = "s"; c.n = s; return c.n; }) + "|" +
 				t([]() { C c; c.v = 2.5; c.v = "t"; return `${type_of(c.v)}:${c.v}`; }) + "|" +
 				t([]() { C c; return `${type_of(c.f)}:${c.f}`; });
-			)", "int:2|Cannot assign string to field 'n' of C (declared int)|string:t|float:1.0", warn_region);
+			)", "int:1|Cannot assign float to field 'n' of C (declared int)|Cannot assign string to field 'n' of C (declared int)|string:t|float:1.0", warn_region);
 		});
 	}
 
@@ -4308,18 +4373,19 @@ private:
 			expect("typed range-for", R"(
 				class A { int v = 1; } class B : A { }
 				function t(function f) -> string { string r = ""; try { r = `${f()}`; } catch (e) { r = e; } return r; }
+				t([]() { var a = [true, 2]; string s = ""; for (int v : a) { s += `${type_of(v)}:${v} `; } return s; }) + "|" +
 				t([]() { var a = [1.5, 2.5]; string s = ""; for (int v : a) { s += `${type_of(v)}:${v} `; } return s; }) + "|" +
 				t([]() { var a = [1, 2]; string s = ""; for (string v : a) { s += `${type_of(v)}:${v} `; } return s; }) + "|" +
 				t([]() { var a = ["x"]; string s = ""; for (int v : a) { s += type_of(v); } return s; }) + "|" +
 				t([]() { var a = [1, 2.5]; int n = 0; for (int& v : a) { v = v + 1; n += 1; } return n; }) + "|" +
 				t([]() { var a = [B(), A()]; int n = 0; for (A& r : a) { r.v = 7; n += r.v; } return n; }) + "|" +
 				t([]() { var a = [1, 2]; string s = ""; for (auto x : a) { x = "s"; s += x; } return s; }) + "|" +
-				t([]() { array<int> b = [1]; string s = ""; for (auto x : b) { x = 2.9; s += `${type_of(x)}:${x}`; } return s; });
-			)", "int:1 int:2 |Cannot initialize 'v' (declared string) with int|Cannot initialize 'v' (declared int) with string|Cannot initialize 'v' (declared int) with float|"
-			    "14|ss|int:2", warn_region);
-			every_config("checker", "1|0", [](engine& e) {
-				auto bad = e.check("array<float> a = [1.5]; for (int& v : a) { }");
-				auto ok = e.check("array<int> a = [1]; for (int& v : a) { } array<float> f = [1.5]; for (int v : f) { }");
+				t([]() { array<int> b = [1]; string s = ""; for (auto x : b) { x = true; s += `${type_of(x)}:${x}`; } return s; });
+			)", "int:1 int:2 |Cannot initialize 'v' (declared int) with float|Cannot initialize 'v' (declared string) with int|Cannot initialize 'v' (declared int) with string|Cannot initialize 'v' (declared int) with float|"
+			    "14|ss|int:1", warn_region);
+			every_config("checker", "2|0", [](engine& e) {
+				auto bad = e.check("array<float> a = [1.5]; for (int& v : a) { } for (int v : a) { }");
+				auto ok = e.check("array<int> a = [1]; for (int& v : a) { } for (float v : a) { }");
 				return std::to_string(bad.error_count()) + "|" + std::to_string(ok.error_count());
 			});
 		});
@@ -4332,10 +4398,11 @@ private:
 				function set37(int& a) { a = 3.7; }
 				t([]() { int x = 1; var& r = x; var s = "s"; r = s; return type_of(x); }) + "|" +
 				t([]() { int x = 1; var& r = x; r = 2.9; return `${type_of(x)}:${x}`; }) + "|" +
+				t([]() { int x = 2; var& r = x; r = true; return `${type_of(x)}:${x}`; }) + "|" +
 				t([]() { string x = "a"; var& r = x; r = 5; return `${type_of(x)}:${x}`; }) + "|" +
 				t([]() { var x = 1; var& r = x; r = "free"; return type_of(x); }) + "|" +
 				t([]() { int u = 1; set37(u); return `${type_of(u)}:${u}`; });
-			)", "Cannot assign string to 'r' (declared int&)|int:2|Cannot assign int to 'r' (declared string&)|string|int:3", warn_region);
+			)", "Cannot assign string to 'r' (declared int&)|Cannot assign float to 'r' (declared int&)|int:1|Cannot assign int to 'r' (declared string&)|string|Cannot assign float to 'a' (declared int&)", warn_region);
 		});
 		test("a_store_through_a_reference_copies_like_the_variables_own_store", [this]() {
 			// value semantics hold through the reference: the typed variable takes a copy, never the source's node
@@ -4520,7 +4587,7 @@ private:
 
 	void compound_operand_text() {
 		test("a_compound_operand_error_has_one_text_at_every_destination", [this]() {
-			// docs/site/reference/index.html "Run-time errors", compound assignment: Cannot apply 'op=' to <target> and <operand>, a variable, a field, a static,
+			// docs/site/reference/errors.html "Run-time errors", compound assignment: Cannot apply 'op=' to <target> and <operand>, a variable, a field, a static,
 			// an element and a map entry alike
 			expect("compound text", R"(
 				class F { int n = 5; static int s = 5; }

@@ -1,12 +1,27 @@
 #include <jaiscript/testing/foundry.hpp>
 #include <jaiscript/testing/timing.hpp>
 
+#include <stdexcept>
 #include <string>
 #include <thread>
 
 using namespace jai::foundry;
 
 namespace jai::foundry::tests {
+
+class suite_of_throwing_tests : public suite {
+public:
+    suite_of_throwing_tests() : suite("Throwing") {}
+    int post_tests_run = 0;
+
+    void post_test() override { ++post_tests_run; }
+
+    void forge_tests() override {
+        test("throws_an_int", []() { throw 7; });
+        test("throws_a_std_exception", []() { throw std::runtime_error("std text"); });
+        test("passes", []() {});
+    }
+};
 
 class timing_tests : public suite {
 public:
@@ -45,6 +60,16 @@ public:
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
             check_true(eager.stalled(3), "a reading that stood still past the guard");
+        });
+
+        test("a_test_that_throws_any_type_fails_alone", [this]() {
+            suite_of_throwing_tests throwing;
+            const suite_result result = throwing.quench();
+            check_eq(1, result.passed, "the test after the throws runs");
+            check_eq(2, result.failed);
+            check_eq(3, throwing.post_tests_run, "post_test follows every test");
+            check_eq(std::string("throws_an_int"), result.failures[0].test_name);
+            check_eq(std::string("std text"), result.failures[1].error_message);
         });
     }
 };

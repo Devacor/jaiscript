@@ -375,12 +375,12 @@ public:
 					float d = rowd[y];
 					float fx = px + rdx * d;
 					float fy = py + rdy * d;
-					int ix = fx;
-					int iy = fy;
-					int u = (fx - ix) * 16.0;
-					int v = (fy - iy) * 16.0;
-					int lx = fx * 4.0;
-					int ly = fy * 4.0;
+					int ix = cast<int>(fx);
+					int iy = cast<int>(fy);
+					int u = cast<int>((fx - ix) * 16.0);
+					int v = cast<int>((fy - iy) * 16.0);
+					int lx = cast<int>(fx * 4.0);
+					int ly = cast<int>(fy * 4.0);
 					int tone = ctex[rows_far[y] * 512 + cvar[iy * mw + ix] + v * 16 + u];
 					pix[gi] = ceilings[(lg[ly * gw + lx] * 16 + rows_shade[y]) * 8 + tone];
 					gi += vw;
@@ -390,14 +390,14 @@ public:
 				int shade = 15 - math::itrunc(dist * 1.55);
 				shade = shade < 0 ? 0 : (shade > 15 ? 15 : shade);
 				float back = dist - 0.03;
-				int wlx = (px + rdx * back) * 4.0;
-				int wly = (py + rdy * back) * 4.0;
+				int wlx = cast<int>((px + rdx * back) * 4.0);
+				int wly = cast<int>((py + rdy * back) * 4.0);
 				int light = lg[wly * gw + wlx];
 				int wbase = kind * WALL_TABLE_STRIDE + ((light * 2 + side) * 16 + shade) * 8;
 				int tbase = (dist > FAR_TEXTURE ? 9216 : 0) + kind * 1024 + tx;
 				float tscale = 65536.0 / (2.0 * half);
-				int tstep = tscale;
-				int tacc = (cy0 + 0.5 - ytop) * tscale;
+				int tstep = cast<int>(tscale);
+				int tacc = cast<int>((cy0 + 0.5 - ytop) * tscale);
 				gi = cy0 * vw + x;
 				for (int y = cy0; y < cy1; ++y) {
 					pix[gi] = walls[wbase + wtex[tbase + ((tacc >> 11) & 31) * 32]];
@@ -410,12 +410,12 @@ public:
 					float d = rowd[y];
 					float fx = px + rdx * d;
 					float fy = py + rdy * d;
-					int ix = fx;
-					int iy = fy;
-					int u = (fx - ix) * 16.0;
-					int v = (fy - iy) * 16.0;
-					int lx = fx * 4.0;
-					int ly = fy * 4.0;
+					int ix = cast<int>(fx);
+					int iy = cast<int>(fy);
+					int u = cast<int>((fx - ix) * 16.0);
+					int v = cast<int>((fy - iy) * 16.0);
+					int lx = cast<int>(fx * 4.0);
+					int ly = cast<int>(fy * 4.0);
 					int ti = iy * mw + ix;
 					int tone = stain[ti * 64 + (v >> 1) * 8 + (u >> 1)];
 					if (tone == 0) { tone = ftex[rows_far[y] * 1024 + fvar[ti] + v * 16 + u]; }
@@ -544,7 +544,7 @@ public:
 				int px0 = x * pxw;
 				zb[px0] = dist;
 				if (pxw == 2) { zb[px0 + 1] = dist; }
-				int lineh = 1.0 * vh / dist;
+				int lineh = cast<int>(1.0 * vh / dist);
 				lineh = lineh < 1 ? 1 : lineh;
 				int y0 = (vh - lineh) / 2;
 				int y1 = y0 + lineh;
@@ -759,7 +759,7 @@ private:
 		float depth = inv * (planex * ry - planey * rx);
 		if (depth < 0.18 || depth > 15.0) { return; }
 		float ttx = inv * (diry * rx - dirx * ry);
-		int scx = (view_w / 2.0) * (1.0 + ttx / depth);
+		int scx = cast<int>((view_w / 2.0) * (1.0 + ttx / depth));
 		if (scx < -view_w || scx > view_w * 2) { return; }
 		sprites.push(new Billboard(depth, scx, art, size, zlift, flash, wx, wy));
 	}
@@ -776,7 +776,7 @@ private:
 		int pw = imax(2, ph * aw * 2 * PIXW / (ah * PIXH));
 		int band = iclamp(math::itrunc(depth * 0.85) - (G.player.muzzle > 0 ? 1 : 0), 0, 7);
 		array<int> lut = sprite_lut(rec.art, band, rec.flash, SHOWCASE ? lights.at(rec.wx, rec.wy) : 0);
-		int bottom = horizon + span * 0.5 - rec.zlift * span;
+		int bottom = cast<int>(horizon + span * 0.5 - rec.zlift * span);
 		int top = bottom - ph;
 		int x0 = rec.scx - pw / 2;
 		int cx0 = imax(0, x0);
@@ -814,11 +814,11 @@ private:
 			float depth = inv * (planex * ry - planey * rx);
 			if (depth < 0.15 || depth > 14.0) { continue; }
 			float ttx = inv * (diry * rx - dirx * ry);
-			int scx = (vw / 2.0) * (1.0 + ttx / depth);
+			int scx = cast<int>((vw / 2.0) * (1.0 + ttx / depth));
 			if (scx < 0 || scx >= vw) { continue; }
 			if (depth >= zb[scx]) { continue; }
 			float span = 1.0 * vh / depth;
-			int top = half + span * 0.5 - p.z * span;
+			int top = cast<int>(half + span * 0.5 - p.z * span);
 			int phase = 3 - imin(3, p.life / 5);
 			int color = colors[kind * 4 + phase];
 			int psz = imin(3, math::itrunc(0.07 * span) + 1);

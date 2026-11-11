@@ -35,6 +35,32 @@ public:
             });
         });
 
+        test("a_for_loops_variable_is_its_own_each_iteration_for_a_reference_capture", [this]() {
+            // top level (environment storage) and a function (frame slots); the value is copied forward ahead of the update
+            const std::vector<std::pair<std::string, std::string>> cases = {
+                {"array<var> f = []; for (int i = 0; i < 3; ++i) { f.push(() => i); } print(f[0](), f[1](), f[2]());", "012"},
+                {"void run() { array<var> f = []; for (int i = 0; i < 3; ++i) { f.push(() => i); f.push([&]() { return i; }); f.push([&i]() { return i; }); "
+                 "f.push(function() { return i; }); } string r = \"\"; for (auto g : f) { r += to_string(g()); } print(r); } run();", "000011112222"},
+                {"array<var> f = []; for (int i = 0; i < 6; ++i) { f.push(() => i); auto bump = [&]() { i += 1; }; bump(); } print(f[0](), f[1](), f[2]());", "135"},
+                {"void run() { array<var> f = []; for (int i = 0; i < 6; ++i) { f.push(() => i); auto bump = [&]() { i += 1; }; bump(); } print(f[0](), f[1](), f[2]()); } run();", "135"},
+                {"void run() { array<var> f = []; for (int i = 0; i < 2; ++i) { f.push([&]() { i += 10; return i; }); } print(f[0](), \" \", f[0](), \" \", f[1]()); } run();", "10 20 11"},
+                {"void run() { array<var> f = []; for (int i = 0; i < 4; ++i) { f.push(() => i); if (i % 2 == 0) { continue; } } print(f[0](), f[1](), f[2](), f[3]()); } run();", "0123"},
+                {"void run() { array<var> f = []; for (int i = 0; i < 2; ++i) { for (int j = 0; j < 2; ++j) { f.push(() => i * 10 + j); } } "
+                 "print(f[0](), \" \", f[1](), \" \", f[2](), \" \", f[3]()); } run();", "0 1 10 11"},
+                {"void run() { array<var> f = []; for (int i = 0; i < 3; ++i) { f.push([i]() { return i; }); f.push([=]() { return i; }); } "
+                 "string r = \"\"; for (auto g : f) { r += to_string(g()); } print(r); } run();", "001122"},
+                // a loop inside a lambda the vm converts to capture slots
+                {"int t() { int base = 0; var mk = [=]() { array<var> f = []; for (int i = 0; i < 3; ++i) { f.push(() => i); } return f[0]() * 100 + f[1]() * 10 + f[2]() + base; }; return mk(); } print(t());", "12"},
+                // the copy runs only for an iteration whose variable a lambda still holds
+                {"int copies = 0; class C { int n = 0; C() {} C(const C& o) { n = o.n; copies += 1; } }\n"
+                 "array<var> f = []; for (C c = C(); c.n < 4; c.n += 1) { if (c.n == 1) { f.push(() => c.n); } } print(f[0](), \" \", copies);", "1 1"},
+                // a variable declared in a loop body is the iteration's
+                {"void run() { array<var> f = []; int n = 0; while (n < 3) { int k = n * 10; f.push([&]() { k += 1; return k; }); n += 1; } print(f[0](), \" \", f[1](), \" \", f[2]()); } run();", "1 11 21"},
+                {"int total = 0; for (int i = 0; i < 4; ++i) { auto add = [&]() { total += i; }; add(); } print(total);", "6"},
+            };
+            check_outputs(cases, {}, true);
+        });
+
         test("nested_lambda_reads_the_declaring_frame_not_the_creating_frame", [this]() {
             auto eng = make_engine();
             auto result = eng->execute(R"(
@@ -224,7 +250,7 @@ public:
                 "  int fexr() { auto l = [&g]() { g = g + 1; return g; }; int r = l(); return r * 100 + g; }\n"
                 "}\n";
             expect(cls + "to_string(C().fref()) + \"|\" + to_string(g)", "7171|500", "[&] cell-shares the field");
-            expect(cls + "to_string(C().fval()) + \"|\" + to_string(g)", "70|500", "[=] snapshots the field");
+            expect(cls + "to_string(C().fval()) + \"|\" + to_string(g)", "71|500", "[=] reads the live field");
             expect(cls + "string m = \"\"; try { C().fex(); } catch (e) { m = e; } m + \"|\" + to_string(g)",
                    "Cannot capture undefined variable 'g'|500", "[g] names a member: not capturable, global untouched");
             expect(cls + "string m = \"\"; try { C().fexr(); } catch (e) { m = e; } m + \"|\" + to_string(g)",
@@ -232,6 +258,95 @@ public:
             const std::string no_global = "[[warn_mode]];\nclass C { int g = 70; int fex() { auto l = [g]() { return g; }; return l(); } }\n";
             expect(no_global + "string m = \"\"; try { C().fex(); } catch (e) { m = e; } m",
                    "Cannot capture undefined variable 'g'", "[g] of a field without a global keeps its text");
+        });
+
+        test("default_capture_in_a_method_calls_a_bare_method", [expect]() {
+            // A default capture that names a method captures the instance, as naming this does; [] captures nothing
+            const std::string cls =
+                "int twice(int a_x) { return -1; }\n"
+                "class Base { int inherited(int a_x) { return a_x + 1000; } }\n"
+                "class C : Base {\n"
+                "  int bonus = 3;\n"
+                "  int twice(int a_x) { return a_x * 2 + bonus; }\n"
+                "  int arrow() { var f = x => x + twice(1); return f(10); }\n"
+                "  int byRef() { var f = [&](int x) { return x + twice(1); }; return f(10); }\n"
+                "  int byCopy() { var f = [=](int x) { return x + twice(1); }; return f(10); }\n"
+                "  int functionForm() { var f = function(x) { return x + twice(1); }; return f(10); }\n"
+                "  int snapshot() { var f = [=]() { return bonus * 100 + twice(0); }; bonus = 4; return f(); }\n"
+                "  int base() { var f = x => inherited(x); return f(1); }\n"
+                "  int hidden() { var f = x => secret(x); return f(1); }\n"
+                "  int local() { var twice = x => 7; var f = x => twice(x); return f(1); }\n"
+                "  var escaping() { return x => twice(x); }\n"
+                "private:\n"
+                "  int secret(int a_x) { return a_x + 50; }\n"
+                "}\n";
+            expect(cls + "C c; `${c.arrow()}|${c.byRef()}|${c.byCopy()}|${c.functionForm()}`", "15|15|15|15", "a bare method call in each default-capture form");
+            expect(cls + "C c; to_string(c.snapshot())", "404", "[=] reads the live field beside the method call");
+            expect(cls + "C c; `${c.base()}|${c.hidden()}|${c.local()}`", "1001|51|7", "inherited, private and a local of the method's name");
+            expect(cls + "var f = C().escaping(); to_string(f(2))", "7", "the lambda keeps the instance");
+            expect("[[warn_mode]];\n" + cls + "class D : C { int none() { var f = [](int x) { return x + twice(1); }; return f(10); } }\n"
+                   "string m = \"\"; try { D().none(); } catch (e) { m = e; } m",
+                   "Lambda capture list does not capture enclosing name 'twice'; name it, or use [this], [=] or [&]", "[] reaches no method");
+        });
+
+        test("a_lambda_captures_the_members_its_nested_lambdas_name", [expect]() {
+            const std::string cls =
+                "int bonus = -100;\n"
+                "int died = 0;\n"
+                "int twice(int a_x) { return -1; }\n"
+                "class Caller { int bonus = 500; int twice(int a_x) { return -7; } int run(var a_f) { return a_f(); } }\n"
+                "class C {\n"
+                "  int bonus = 3;\n"
+                "  int twice(int a_x) { return a_x * 2 + bonus; }\n"
+                "  int arrowField() { var f = () => { var g = x => bonus + x; return g(5); }; return f(); }\n"
+                "  int arrowMethod() { var f = () => { var g = x => twice(x); return g(5); }; return f(); }\n"
+                "  int refField() { var f = [&]() { var g = [&](int x) { return bonus + x; }; return g(5); }; return f(); }\n"
+                "  int refMethod() { var f = [&]() { var g = [&](int x) { return twice(x); }; return g(5); }; return f(); }\n"
+                "  int copyField() { var f = [=]() { var g = [=](int x) { return bonus + x; }; return g(5); }; return f(); }\n"
+                "  int copyMethod() { var f = [=]() { var g = [=](int x) { return twice(x); }; return g(5); }; return f(); }\n"
+                "  int threeDeep() { var f = () => { var g = () => { var h = x => bonus + twice(x); return h(5); }; return g(); }; return f(); }\n"
+                "  int write() { var f = [&]() { var g = [&]() { bonus = bonus + 1; }; g(); }; f(); return bonus; }\n"
+                "  int liveCopy() { var f = [=]() { var g = [=]() { return bonus; }; return g(); }; bonus = 9; return f(); }\n"
+                "  int liveInner() { var f = [&]() { var g = [=]() { return bonus; }; bonus = 5; return g(); }; bonus = 9; return f(); }\n"
+                "  int writeCopy() { var f = [=]() { var g = [&]() { bonus += 1; }; g(); return bonus; }; int r = f(); return r * 100 + bonus; }\n"
+                "  var fieldOnly() { return [&]() { return bonus; }; }\n"
+                "  ~C() { died += 1; }\n"
+                "  int ownLocal() { var f = () => { int bonus = 40; var g = x => bonus + x; return g(5); }; return f(); }\n"
+                "  var escaping() { return () => { var g = x => bonus + twice(x); return g(5); }; }\n"
+                "}\n";
+            expect(cls + "C c; `${c.arrowField()}|${c.arrowMethod()}|${c.refField()}|${c.refMethod()}|${c.copyField()}|${c.copyMethod()}`",
+                   "8|13|8|13|8|13", "a nested lambda's field and method in each default-capture form");
+            expect(cls + "C c; `${c.threeDeep()}|${c.write()}|${c.ownLocal()}`", "16|4|45", "three deep, a write through [&], the outer lambda's own local");
+            expect(cls + "`${C().liveCopy()}|${C().liveInner()}|${C().writeCopy()}`", "9|5|404", "[=] reads and writes the instance's field, as C++'s captured this does");
+            expect(cls + "string r = \"\"; void run() { var f; { C c; f = c.fieldOnly(); } r = `${died}`; f = null; r += `|${died}`; } run(); r", "0|1",
+                   "a lambda that names a field keeps its instance");
+            expect(cls + "to_string(Caller().run(C().escaping()))", "16", "called from another class's method");
+            expect("[[warn_mode]];\n" + cls + "class D : C { int none() { var f = []() { var g = [&](int x) { return bonus + x; }; return g(5); }; return f(); } }\n"
+                   "string m = \"\"; try { D().none(); } catch (e) { m = e; } m",
+                   "Lambda capture list does not capture enclosing name 'bonus'; name it, or use [this], [=] or [&]", "[] admits no member for a nested lambda");
+        });
+
+        test("weak_this_captures_the_instance_without_keeping_it", [expect]() {
+            const std::string cls =
+                "int died = 0;\n"
+                "class Timer {\n"
+                "  int ticks = 0;\n"
+                "  var callback;\n"
+                "  ~Timer() { died += 1; }\n"
+                "  var weak() { return [weak_this]() { if (weak_this.expired()) { return -1; } var self = weak_this.lock(); self.ticks += 1; return self.ticks; }; }\n"
+                "  var weakBesideDefault(int a_step) { return [=, weak_this]() { if (weak_this.expired()) { return -1; } return weak_this.lock().ticks + a_step; }; }\n"
+                "  var insideStrong() { return () => { var inner = [weak_this]() { return weak_this.expired(); }; return inner(); }; }\n"
+                "  var insideWeak() { return [weak_this]() { var inner = [weak_this]() { return weak_this.expired(); }; return inner(); }; }\n"
+                "  void tie() { callback = [weak_this]() { return weak_this.expired(); }; }\n"
+                "}\n";
+            expect(cls + "string r = \"\"; void run() { var f; var g; var n; { Timer t; f = t.weak(); g = t.weakBesideDefault(10); n = t.insideWeak(); "
+                   "r = `${f()}|${g()}|${n()}|${died}`; } r += `|${died}|${f()}|${g()}|${n()}`; } run(); r",
+                   "1|11|false|0|1|-1|-1|true", "the instance dies with its scope; the lambdas find it expired");
+            expect(cls + "string r = \"\"; void run() { var s; { Timer t; s = t.insideStrong(); } r = `${died}|${s()}`; s = null; r += `|${died}`; } run(); r",
+                   "0|false|1", "an enclosing default capture holds the instance a nested [weak_this] is made from");
+            expect(cls + "void run() { Timer t; t.tie(); } run(); to_string(died)", "1", "an instance that holds its own [weak_this] lambda is no cycle");
+            expect("[[warn_mode]];\nstring m = \"\"; try { var f = [weak_this]() { return 1; }; } catch (e) { m = e; } m",
+                   "Cannot capture undefined variable 'weak_this'", "no instance to capture");
         });
 
         test("mutation_through_ref_capture_visible_in_enclosing_scope_with_global", [expect, with_global, report]() {

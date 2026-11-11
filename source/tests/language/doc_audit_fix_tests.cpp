@@ -81,7 +81,7 @@ public:
 
 #if defined(_WIN32)
         // The vm's script calls are in-loop frames: its depth is its cap on any host stack. The interpreter recurses natively,
-        // so a small host stack ends its recursion first, with its own catchable text (a known divergence: docs/site/reference/index.html "Run-time errors")
+        // so a small host stack ends its recursion first, with its own catchable text (a known divergence: docs/site/reference/errors.html "Run-time errors")
         test("a_small_host_stack_bounds_the_interpreter_with_its_own_text", [this]() {
             struct probe_state {
                 std::string results[2];
@@ -202,7 +202,9 @@ public:
             // a program's free functions of one name are an overload set too
             expect("int f(int a) { return 1; } int f(bool b) { return 2; } var out = \"\"; try { f(\"s\"); } catch (e) { out += e; } out;",
                    "No overload of 'f' takes (string)", "free functions at run time", load::warn_region);
-            expect("void h(bool b) { } bool k = \"s\"; h(\"s\"); k;", "true", "a lone bool slot takes a string's truthiness", load::strict);
+            expect_load_error("void h(bool b) { } h(\"s\");", "argument 1 of 'h': cannot pass 'string' to 'b' declared 'bool': write !x.empty() or an explicit comparison",
+                              "a lone bool parameter at load");
+            expect("bool h(bool b) { return b; } var s = \"s\"; bool k = s; to_string(k) + to_string(h(s));", "truetrue", "a var's string keeps its truthiness in a lone bool slot", load::strict);
             expect("class M { int m(int a) { return 1; } int m(bool b) { return 2; } } to_string(M().m(true)) + to_string(M().m(3));", "21",
                    "exact overloads still pick", load::strict);
         });

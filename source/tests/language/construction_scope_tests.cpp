@@ -89,13 +89,14 @@ public:
 		});
 
 		test("a_field_initializer_hands_its_field_only_a_value_of_its_type", [this]() {
-			// null lands in a typed field as `T f = e;` would: an int refuses it, a bool reads it false, a class value or a handle holds it
+			// null lands in a typed field as `T f = e;` would: an int or a class value refuses it, a bool reads it false, a handle holds it
 			both("var n = null; class G { int x = 1; int y = n; } G().y;", "throw:Cannot assign null to field 'y' of G (declared int)", "an int field", true);
 			both("class G { int spd = get(); int slices = 4; var get() { return slices; } } G().spd;", "throw:Cannot assign null to field 'spd' of G (declared int)",
 			     "a method that reads a later field");
 			both("class G { string s = null; } G().s;", "throw:Cannot assign null to field 's' of G (declared string)", "a null literal", true);
-			both("var n = null; class F {} class G { bool b = n; bool c = null; shared_ptr<F> p = n; F f = null; var v = n; } G g; [g.b, g.c, g.p == null, g.f == null, g.v];",
-			     "[false, false, true, true, null]", "the slots that take null");
+			both("var n = null; class F {} class G { F f = n; } G g; 1;", "throw:Cannot assign null to field 'f' of G (declared F)", "a class value field");
+			both("var n = null; class F {} class G { bool b = n; bool c = null; shared_ptr<F> p = n; var v = n; } G g; [g.b, g.c, g.p == null, g.v];",
+			     "[false, false, true, null]", "the slots that take null");
 		});
 
 		test("a_lambda_in_a_field_initializer_captures_in_the_class", [this]() {

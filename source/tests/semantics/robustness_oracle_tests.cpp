@@ -121,9 +121,12 @@ private:
 					static int sf(int v) { return v + 100; }
 				}
 				int free_f(int v) { return v; }
-				C c;
-				`${c.f(true)},${c.h("5")},${c.g(true)},${c.b("x")},${c.b(0)},${C::sf(true)},${free_f(true)}`;
+				C c; var text = "x";
+				`${c.f(true)},${c.h("5")},${c.g(true)},${c.b(text)},${c.b(0)},${C::sf(true)},${free_f(true)}`;
 			)", "1,5,1.0,true,false,101,1");
+			const std::string verdict = strict_load_error("class C { bool b(bool x) { return x; } int f(int v) { return v; } } C c; c.b(\"x\"); c.f(2.5);");
+			check_true(verdict.find("argument 1 of 'b': cannot pass 'string' to 'x' declared 'bool': write !x.empty() or an explicit comparison") != std::string::npos, "strict rejects b(string): " + verdict);
+			check_true(verdict.find("argument 1 of 'f': cannot pass 'float' to 'v' declared 'int': cast<int>(x) truncates toward zero, math::ifloor(x) rounds down") != std::string::npos, "strict rejects f(float): " + verdict);
 		});
 		test("overloaded_methods_score_the_conversion_table", [this]() {
 			expect("method overload table", R"(
@@ -139,8 +142,17 @@ private:
 					string w(string s, int z) { return "s"; }
 				}
 				D d;
-				`${d.k(true)},${d.k(2.5)},${d.k("c")},${d.n(true)},${d.n(3)},${d.w(5)},${d.m(true)}`;
-			)", "int,int,string,float,float,P5,bool");
+				`${d.k(true)},${d.k("c")},${d.n(true)},${d.n(3)},${d.w(5)},${d.m(true)}`;
+			)", "int,string,float,float,P5,bool");
+			const std::string float_rivals = R"(
+				class D { string k(int v) { return "int"; } string k(string s) { return "string"; } }
+				D d; string out = "";
+				try { out = d.k(2.5); } catch (e) { out = e; }
+				out;
+			)";
+			expect("a float takes no int overload", float_rivals, "No overload of 'k' takes (float)", true);
+			const std::string verdict = strict_load_error(float_rivals);
+			check_true(verdict.find("no overload of 'k' matches this call") != std::string::npos, "strict rejects k(float): " + verdict);
 		});
 		test("a_string_never_makes_a_bool_parameter_viable_among_overloads", [this]() {
 			const std::string rivals = R"(
@@ -166,13 +178,22 @@ private:
 			check_true(verdict.find("no overload of 'm' matches this call") != std::string::npos, "strict rejects m(string): " + verdict);
 			check_true(verdict.find("no overload of 'E' matches this call") != std::string::npos, "strict rejects E(string): " + verdict);
 			check_true(verdict.find("cannot pass 'string' to 'v' declared 'int'") != std::string::npos, "strict rejects f(string): " + verdict);
-			// the one overload the argument count admits binds and converts, at load as at run time
+			// the one overload the argument count admits binds a var's string by truthiness; a string the checker sees is refused at load
 			expect("the arity's one overload converts", R"(
+				class D { string m(bool b) { return `bool:${b}`; } string m(int a, int b2) { return "pair"; } }
+				class E { bool v = false; E(bool b) { v = b; } E(int a, int b) { } }
+				var s = "s";
+				D d; E x = E(s);
+				`${d.m(s)},${x.v}`;
+			)", "bool:true,true");
+			const std::string lone_arity = strict_load_error(R"(
 				class D { string m(bool b) { return `bool:${b}`; } string m(int a, int b2) { return "pair"; } }
 				class E { bool v = false; E(bool b) { v = b; } E(int a, int b) { } }
 				D d; E x = E("s");
 				`${d.m("s")},${x.v}`;
-			)", "bool:true,true");
+			)");
+			check_true(lone_arity.find("no overload of 'm' matches this call") != std::string::npos, "strict rejects the lone arity's m(string): " + lone_arity);
+			check_true(lone_arity.find("no overload of 'E' matches this call") != std::string::npos, "strict rejects the lone arity's E(string): " + lone_arity);
 		});
 		test("a_cached_arity_answer_never_lets_a_string_reach_a_bool_overload", [this]() {
 			expect("arity cache", R"(
@@ -196,7 +217,7 @@ private:
 				}
 				C c;
 				c.p(5) + "," + c.p("a") + "," + c.p(2.5) + "," + c.p(true) + "," + c.p(W()) + "," + c.p([1]);
-			)", "int,string,int,int,var,var");
+			)", "int,string,var,int,var,var");
 		});
 	}
 

@@ -92,6 +92,15 @@ namespace jai {
         run_cancelled = 128,   // script_run::cancel: the suspended run's sleep raises it, terminal
     };
 
+    // The family of a run-time error: what a script reads as e.kind and compares with error_kind::<name>
+    enum class error_kind : unsigned char {
+        other, null_receiver, no_member, name, not_callable, arguments, type, arithmetic, bounds, key_not_found, container,
+        reference, limit, host
+    };
+    inline constexpr unsigned k_error_kind_count = 14;
+    error_kind error_kind_of(const std::error_code& ec) noexcept;
+    const char* error_kind_name(error_kind kind) noexcept;
+
     class runtime_error_category_impl : public std::error_category {
     public:
         const char* name() const noexcept override {

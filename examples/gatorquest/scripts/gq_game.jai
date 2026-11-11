@@ -306,12 +306,12 @@ int MAX_FRAMES;             // demo/test: stop after this many frames (0 = play 
 int TIMED_MS;               // a timed run's clock: 33 ms a frame, so the same run reaches the same tick every time
 
 // the loops' clock: the wall clock, or the timed run's own
-int loop_clock_ms() { return MAX_FRAMES > 0 ? TIMED_MS : time::now() * 1000; }
+int loop_clock_ms() { return cast<int>(MAX_FRAMES > 0 ? TIMED_MS : time::now() * 1000); }
 
 // a frame ends: a timed run's clock moves on, a played one sleeps out the rest of its 33 ms
 void loop_frame_end(int frame_start_ms) {
 	if (MAX_FRAMES > 0) { TIMED_MS = TIMED_MS + 33; }
-	int spent = time::now() * 1000 - frame_start_ms;
+	int spent = cast<int>(time::now() * 1000 - frame_start_ms);
 	if (spent < 33) { sleep((33 - spent) / 1000.0); }
 }
 int STAT_FRAMES;
@@ -420,7 +420,7 @@ void play_loop() {
 	QUIT = false;
 	while (!QUIT) {
 		if (MAX_FRAMES > 0 && STAT_FRAMES >= MAX_FRAMES) { QUIT = true; break; }
-		int frame_start = time::now() * 1000;
+		int frame_start = cast<int>(time::now() * 1000);
 		NOW_MS = loop_clock_ms();
 		int dt = NOW_MS - last;
 		last = NOW_MS;

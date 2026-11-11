@@ -134,6 +134,117 @@ public:
 	int get() const { return hidden; }
 };
 
+// The verdicts the archives build their compile errors from; tools/ci/must_not_compile.cpp holds the programs they reject
+class forgotten_friend_serialize {
+	int hidden = 0;
+	template<typename Archive>
+	void serialize(Archive& ar) { ar.serialize("hidden", hidden); }
+};
+
+class forgotten_friend_save_load {
+	int hidden = 0;
+	template<typename Archive>
+	void save(Archive& ar) const { ar.serialize("hidden", hidden); }
+	template<typename Archive>
+	void load(Archive& ar) { ar.serialize("hidden", hidden); }
+	template<typename Archive>
+	static void load_and_construct(Archive&, jai::serialization::construct<forgotten_friend_save_load>&) {}
+};
+
+struct inherits_forgotten_friend : forgotten_friend_serialize {};
+
+class constructs_through_access {
+	friend jai::access;
+	template<typename Archive>
+	static void load_and_construct(Archive&, jai::serialization::construct<constructs_through_access>&) {}
+};
+
+struct inherits_load_and_construct : constructs_through_access {};
+
+struct no_route_data {
+	int value = 0;
+};
+
+struct polymorphic_no_route {
+	virtual ~polymorphic_no_route() = default;
+};
+
+struct registered_no_route : polymorphic_no_route {
+	void save(const std::string&) const {}
+};
+
+// save and load members that are no archive functions, on a type whose route is its free serialize
+struct saves_to_a_path {
+	int value = 0;
+	void save(const std::string&) const {}
+	bool load() { return true; }
+};
+template<typename Archive>
+void serialize(Archive& ar, saves_to_a_path& a_value) { ar.serialize("value", a_value.value); }
+
+class final_private_serialize final {
+	friend jai::access;
+	int hidden = 0;
+	template<typename Archive>
+	void serialize(Archive& ar) { ar.serialize("hidden", hidden); }
+public:
+	void set(int v) { hidden = v; }
+	int get() const { return hidden; }
+};
+
+struct needs_an_argument {
+	explicit needs_an_argument(int a_value) : value(a_value) {}
+	int value;
+	template<typename Archive>
+	void serialize(Archive& ar) { ar.serialize("value", value); }
+};
+
+class private_properties_owner : public property_owner<private_properties_owner> {
+	JAI_PROPERTY((int), hidden, 0);
+	JAI_PROPERTY((saves_to_a_path), path);
+	JAI_TRANSIENT_PROPERTY((no_route_data), scratch);
+	JAI_TRANSIENT_PROPERTY((std::vector<forgotten_friend_serialize>), unreachable);
+public:
+	void set(int a_hidden, int a_path) { hidden = a_hidden; path->value = a_path; scratch->value = 99; }
+	int total() const { return hidden.get() + path->value; }
+	void save(const std::string&) const {}
+	bool load() { return true; }
+};
+
+struct unroutable_property_owner : public property_owner<unroutable_property_owner> {
+	JAI_PROPERTY((std::vector<no_route_data>), data);
+};
+
+namespace route_verdicts {
+	using jai::serialization_traits::member_name_verdict;
+	using namespace jai::serialization_traits;
+	using writer = jai::serialization::json_archive_writer;
+	using reader = jai::serialization::json_archive_reader;
+	using binary_writer = jai::serialization::binary_archive_writer;
+	using binary_reader = jai::serialization::binary_archive_reader;
+
+	static_assert(serialize_member_verdict_v<forgotten_friend_serialize> == member_name_verdict::unreachable);
+	static_assert(serialize_member_verdict_v<inherits_forgotten_friend> == member_name_verdict::unreachable, "a base's member counts");
+	static_assert(save_member_verdict_v<forgotten_friend_save_load> == member_name_verdict::unreachable);
+	static_assert(load_member_verdict_v<forgotten_friend_save_load> == member_name_verdict::unreachable);
+	static_assert(declares_load_and_construct_v<forgotten_friend_save_load> && !declares_load_and_construct_v<no_route_data>);
+	static_assert(load_and_construct_unreachable_v<forgotten_friend_save_load> && !load_and_construct_unreachable_v<no_route_data>);
+	static_assert(!load_and_construct_unreachable_v<constructs_through_access>);
+	static_assert(declares_load_and_construct_v<inherits_load_and_construct> && !load_and_construct_unreachable_v<inherits_load_and_construct>,
+		"a base's load_and_construct that jai::access reaches is no forgotten friend");
+	static_assert(save_member_verdict_v<saves_to_a_path> == member_name_verdict::not_an_archive_function);
+	static_assert(load_member_verdict_v<saves_to_a_path> == member_name_verdict::not_an_archive_function);
+	static_assert(serialize_member_verdict_v<saves_to_a_path> == member_name_verdict::absent);
+	static_assert(serialize_member_verdict_v<no_route_data> == member_name_verdict::absent);
+	static_assert(serialize_member_verdict_v<final_private_serialize> == member_name_verdict::absent, "a final class cannot be probed");
+	static_assert(serialize_member_verdict_v<int> == member_name_verdict::absent && save_member_verdict_v<std::vector<int>> == member_name_verdict::absent);
+
+	static_assert(writer::writes_member_record_v<private_serialize_friend_jai_access> && binary_reader::reads_member_record_v<final_private_serialize>);
+	static_assert(writer::writes_member_record_v<private_properties_owner> && reader::reads_member_record_v<private_properties_owner>);
+	static_assert(!writer::writes_member_record_v<forgotten_friend_serialize> && !reader::reads_member_record_v<forgotten_friend_save_load>);
+	static_assert(!binary_writer::writes_member_record_v<saves_to_a_path> && !reader::reads_member_record_v<no_route_data>);
+}
+
 struct catalog_like_root_obj {
 	std::vector<int64_t> data;
 	template<typename Archive>
@@ -232,6 +343,53 @@ public:
             reader("obj", loaded);
             reader.end_object();
             check_eq(42, loaded.get(), "friend jai::access grants the trait probes private access");
+            const std::string root = to_json(*eng, obj, 0);
+            check(root.find("\"hidden\"") != std::string::npos && root.find("value0") == std::string::npos, "a record with private members writes flat at the root: " + root);
+            check_eq(42, from_json<private_serialize_friend_jai_access>(*eng, root).get(), "and reads flat, JSON");
+            check_eq(42, from_binary<private_serialize_friend_jai_access>(*eng, to_binary(*eng, obj)).get(), "and binary");
+            check_eq(42, from_json<private_serialize_friend_jai_access>(*eng, "{\"hidden\": 42}").get(), "a hand-written flat root");
+        });
+
+        test("unrelated_save_and_load_members_leave_the_real_route_alone", [this]() {
+            auto eng = make_engine();
+            private_properties_owner owner;
+            owner.set(40, 2);
+            const std::string json = to_json(*eng, owner);
+            check(json.find("scratch") == std::string::npos && json.find("unreachable") == std::string::npos, "transient properties of types with no route are skipped: " + json);
+            check_eq(42, from_json<private_properties_owner>(*eng, json).total(), "private properties and a free serialize, JSON");
+            check_eq(42, from_binary<private_properties_owner>(*eng, to_binary(*eng, owner)).total(), "private properties and a free serialize, binary");
+            final_private_serialize sealed;
+            sealed.set(7);
+            check_eq(7, from_json<final_private_serialize>(*eng, to_json(*eng, sealed)).get(), "a final class with friend jai::access");
+        });
+
+        test("a_route_only_run_time_settles_throws_where_the_archive_reaches_it", [this]() {
+            auto eng = make_engine();
+            const auto failure = [](auto&& a_action) -> std::string {
+                try {
+                    a_action();
+                } catch (const serialization_error& e) {
+                    return e.what();
+                }
+                return "no error";
+            };
+            unroutable_property_owner unroutable;
+            const std::string empty = to_json(*eng, unroutable, 0);
+            check(empty.find("\"data\":[]") != std::string::npos || empty.find("\"data\": []") != std::string::npos, "an empty container of a type with no route saves: " + empty);
+            check_eq(std::string("no error"), failure([&]() { from_json<unroutable_property_owner>(*eng, empty); }), "and loads");
+            check_eq(std::string("no error"), failure([&]() { from_binary<unroutable_property_owner>(*eng, to_binary(*eng, unroutable)); }), "in binary too");
+            unroutable.data->push_back(no_route_data{});
+            const std::string unwritable = failure([&]() { to_json(*eng, unroutable); });
+            check(unwritable.find("is not serializable. Add save/load, serialize, property_owner, or ADL functions") != std::string::npos, "the save reaches an element with no route: " + unwritable);
+            const std::string unreadable = failure([&]() { from_json<unroutable_property_owner>(*eng, "{\"data\": [{}]}"); });
+            check(unreadable.find("is not deserializable.") != std::string::npos, "the load reaches one: " + unreadable);
+            const std::string sliced = failure([&]() { to_binary(*eng, std::make_shared<polymorphic_no_route>()); });
+            check(sliced.find("is not serializable.") != std::string::npos, "a pointer whose dynamic type has no route: " + sliced);
+            const std::string unbuilt = failure([&]() { from_json<std::shared_ptr<polymorphic_no_route>>(*eng, "{\"value0\": {\"$id\": 1, \"$val\": {}}}"); });
+            check(unbuilt.find("is not deserializable.") != std::string::npos, "the load of that pointer: " + unbuilt);
+            jai::serialization::try_auto_register<registered_no_route>("conv_registered_no_route");
+            const std::string registered = failure([&]() { to_json(*eng, std::shared_ptr<polymorphic_no_route>(std::make_shared<registered_no_route>())); });
+            check(registered.find("registered_no_route") != std::string::npos && registered.find("is not serializable.") != std::string::npos, "a type registered with no route: " + registered);
         });
 
         test("root_object_member_serialize_read", [this]() {

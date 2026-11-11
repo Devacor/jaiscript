@@ -3277,26 +3277,26 @@
     {
       "owner": "math",
       "name": "sqrt",
-      "signature": "sqrt(value: number or vector) -> float or vector",
+      "signature": "sqrt(value: number) -> float",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::sqrt(value: number or vector) -> float or vector"
+      "display": "math::sqrt(value: number) -> float"
     },
     {
       "owner": "math",
       "name": "pow",
-      "signature": "pow(base: number or vector, exponent: number or vector) -> float or vector",
+      "signature": "pow(base: number, exponent: number) -> float",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::pow(base: number or vector, exponent: number or vector) -> float or vector"
+      "display": "math::pow(base: number, exponent: number) -> float"
     },
     {
       "owner": "math",
@@ -3349,110 +3349,110 @@
     {
       "owner": "math",
       "name": "sin",
-      "signature": "sin(angle: number or vector) -> float or vector",
+      "signature": "sin(angle: number) -> float",
       "provider": "core",
       "effect": "observe",
       "notes": "Radians.",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::sin(angle: number or vector) -> float or vector"
+      "display": "math::sin(angle: number) -> float"
     },
     {
       "owner": "math",
       "name": "cos",
-      "signature": "cos(angle: number or vector) -> float or vector",
+      "signature": "cos(angle: number) -> float",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::cos(angle: number or vector) -> float or vector"
+      "display": "math::cos(angle: number) -> float"
     },
     {
       "owner": "math",
       "name": "tan",
-      "signature": "tan(angle: number or vector) -> float or vector",
+      "signature": "tan(angle: number) -> float",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::tan(angle: number or vector) -> float or vector"
+      "display": "math::tan(angle: number) -> float"
     },
     {
       "owner": "math",
       "name": "atan2",
-      "signature": "atan2(y: number or vector, x: number or vector) -> float or vector",
+      "signature": "atan2(y: number, x: number) -> float",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::atan2(y: number or vector, x: number or vector) -> float or vector"
+      "display": "math::atan2(y: number, x: number) -> float"
     },
     {
       "owner": "math",
       "name": "radians_to_degrees",
-      "signature": "radians_to_degrees(angle: number or vector) -> float or vector",
+      "signature": "radians_to_degrees(angle: number) -> float",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::radians_to_degrees(angle: number or vector) -> float or vector"
+      "display": "math::radians_to_degrees(angle: number) -> float"
     },
     {
       "owner": "math",
       "name": "degrees_to_radians",
-      "signature": "degrees_to_radians(angle: number or vector) -> float or vector",
+      "signature": "degrees_to_radians(angle: number) -> float",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::degrees_to_radians(angle: number or vector) -> float or vector"
+      "display": "math::degrees_to_radians(angle: number) -> float"
     },
     {
       "owner": "math",
       "name": "lerp",
-      "signature": "lerp(start: number or vector or color, end: same_shape, percent: number) -> same_shape",
+      "signature": "lerp(start: number or vector or color, end: same_shape, percent: number or same_shape) -> same_shape",
       "provider": "core",
       "effect": "observe",
       "notes": "Color interpolation uses OKLab.",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::lerp(start: number or vector or color, end: same_shape, percent: number) -> same_shape"
+      "display": "math::lerp(start: number or vector or color, end: same_shape, percent: number or same_shape) -> same_shape"
     },
     {
       "owner": "math",
       "name": "mix",
-      "signature": "mix(start: number or vector or color, end: same_shape, percent: number) -> same_shape",
+      "signature": "mix(start: number or vector or color, end: same_shape, percent: number or same_shape) -> same_shape",
       "provider": "core",
       "effect": "observe",
       "notes": "Alias of lerp.",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::mix(start: number or vector or color, end: same_shape, percent: number) -> same_shape"
+      "display": "math::mix(start: number or vector or color, end: same_shape, percent: number or same_shape) -> same_shape"
     },
     {
       "owner": "math",
       "name": "unmix",
-      "signature": "unmix(start: number or vector, end: same_shape, value: same_shape) -> number or vector",
+      "signature": "unmix(start: number or vector or color, end: same_shape, value: number or same_shape) -> number or vector",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::unmix(start: number or vector, end: same_shape, value: same_shape) -> number or vector"
+      "display": "math::unmix(start: number or vector or color, end: same_shape, value: number or same_shape) -> number or vector"
     },
     {
       "owner": "math",
@@ -3648,6 +3648,54 @@
     },
     {
       "owner": "math",
+      "name": "rotate_around",
+      "signature": "rotate_around(point: vector2, pivot: vector2, angle: number) -> vector2",
+      "provider": "core",
+      "effect": "observe",
+      "notes": "Radians.",
+      "source": "include/jaiscript/detail/math_intrinsics.hpp",
+      "form": "function",
+      "availability": "Every engine",
+      "display": "math::rotate_around(point: vector2, pivot: vector2, angle: number) -> vector2"
+    },
+    {
+      "owner": "math",
+      "name": "angle",
+      "signature": "angle(vector: vector2) -> float",
+      "provider": "core",
+      "effect": "observe",
+      "notes": "Radians, atan2(y, x) in (-pi, pi]; 0 for the zero vector.",
+      "source": "include/jaiscript/detail/math_intrinsics.hpp",
+      "form": "function",
+      "availability": "Every engine",
+      "display": "math::angle(vector: vector2) -> float"
+    },
+    {
+      "owner": "math",
+      "name": "from_angle",
+      "signature": "from_angle(angle: number) -> vector2",
+      "provider": "core",
+      "effect": "observe",
+      "notes": "Radians; the unit vector (cos, sin).",
+      "source": "include/jaiscript/detail/math_intrinsics.hpp",
+      "form": "function",
+      "availability": "Every engine",
+      "display": "math::from_angle(angle: number) -> vector2"
+    },
+    {
+      "owner": "math",
+      "name": "from_angle",
+      "signature": "from_angle(angle: number, length: number) -> vector2",
+      "provider": "core",
+      "effect": "observe",
+      "notes": "Radians.",
+      "source": "include/jaiscript/detail/math_intrinsics.hpp",
+      "form": "function",
+      "availability": "Every engine",
+      "display": "math::from_angle(angle: number, length: number) -> vector2"
+    },
+    {
+      "owner": "math",
       "name": "mix_rgb",
       "signature": "mix_rgb(start: color, end: color, percent: number) -> color",
       "provider": "core",
@@ -3685,98 +3733,98 @@
     {
       "owner": "math",
       "name": "mix_in",
-      "signature": "mix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape",
+      "signature": "mix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::mix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape"
+      "display": "math::mix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape"
     },
     {
       "owner": "math",
       "name": "mix_out",
-      "signature": "mix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape",
+      "signature": "mix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::mix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape"
+      "display": "math::mix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape"
     },
     {
       "owner": "math",
       "name": "mix_in_out",
-      "signature": "mix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape",
+      "signature": "mix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::mix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape"
+      "display": "math::mix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape"
     },
     {
       "owner": "math",
       "name": "mix_out_in",
-      "signature": "mix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape",
+      "signature": "mix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::mix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape"
+      "display": "math::mix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape"
     },
     {
       "owner": "math",
       "name": "unmix_in",
-      "signature": "unmix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape",
+      "signature": "unmix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::unmix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape"
+      "display": "math::unmix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape"
     },
     {
       "owner": "math",
       "name": "unmix_out",
-      "signature": "unmix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape",
+      "signature": "unmix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::unmix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape"
+      "display": "math::unmix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape"
     },
     {
       "owner": "math",
       "name": "unmix_in_out",
-      "signature": "unmix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape",
+      "signature": "unmix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::unmix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape"
+      "display": "math::unmix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape"
     },
     {
       "owner": "math",
       "name": "unmix_out_in",
-      "signature": "unmix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape",
+      "signature": "unmix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape",
       "provider": "core",
       "effect": "observe",
       "notes": "",
       "source": "include/jaiscript/detail/math_intrinsics.hpp",
       "form": "function",
       "availability": "Every engine",
-      "display": "math::unmix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -> same_shape"
+      "display": "math::unmix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -> same_shape"
     },
     {
       "owner": "math",
@@ -3897,6 +3945,30 @@
       "form": "method",
       "availability": "Every engine",
       "display": "math::vec2.rotated(angle: number) -> vector2"
+    },
+    {
+      "owner": "math::vec2",
+      "name": "rotated_around",
+      "signature": "rotated_around(pivot: vector2, angle: number) -> vector2",
+      "provider": "core",
+      "effect": "copy",
+      "notes": "",
+      "source": "include/jaiscript/detail/math_intrinsics.hpp",
+      "form": "method",
+      "availability": "Every engine",
+      "display": "math::vec2.rotated_around(pivot: vector2, angle: number) -> vector2"
+    },
+    {
+      "owner": "math::vec2",
+      "name": "angle",
+      "signature": "angle() -> float",
+      "provider": "core",
+      "effect": "observe",
+      "notes": "",
+      "source": "include/jaiscript/detail/math_intrinsics.hpp",
+      "form": "method",
+      "availability": "Every engine",
+      "display": "math::vec2.angle() -> float"
     },
     {
       "owner": "math",
@@ -4233,6 +4305,30 @@
       "form": "method",
       "availability": "Every engine",
       "display": "math::ivec2.rotated(angle: number) -> vector2"
+    },
+    {
+      "owner": "math::ivec2",
+      "name": "rotated_around",
+      "signature": "rotated_around(pivot: vector2, angle: number) -> vector2",
+      "provider": "core",
+      "effect": "copy",
+      "notes": "",
+      "source": "include/jaiscript/detail/math_intrinsics.hpp",
+      "form": "method",
+      "availability": "Every engine",
+      "display": "math::ivec2.rotated_around(pivot: vector2, angle: number) -> vector2"
+    },
+    {
+      "owner": "math::ivec2",
+      "name": "angle",
+      "signature": "angle() -> float",
+      "provider": "core",
+      "effect": "observe",
+      "notes": "",
+      "source": "include/jaiscript/detail/math_intrinsics.hpp",
+      "form": "method",
+      "availability": "Every engine",
+      "display": "math::ivec2.angle() -> float"
     },
     {
       "owner": "math",
@@ -4837,6 +4933,18 @@
       "form": "function",
       "availability": "register_all() or area registration",
       "display": "reflect::bases(object_or_class: var) -> array<string>"
+    },
+    {
+      "owner": "reflect",
+      "name": "is_a",
+      "signature": "is_a(value: var, class_name: string) -> bool",
+      "provider": "stdlib",
+      "effect": "observe",
+      "notes": "instanceof for a class named at run time: true for an object of the class or of one derived from it, false for any other value. An unknown class name raises.",
+      "source": "include/jaiscript/stdlib/reflection.hpp",
+      "form": "function",
+      "availability": "register_all() or area registration",
+      "display": "reflect::is_a(value: var, class_name: string) -> bool"
     },
     {
       "owner": "reflect",

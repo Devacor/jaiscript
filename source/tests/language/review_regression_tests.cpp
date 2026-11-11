@@ -1086,29 +1086,6 @@ public:
                 "cfor -= overflow names the compound step (got: " + msg[0] + ")");
         });
 
-        // ---- fuzz FZ-FLOAT-DIVZERO-TEXT (seed 201): float zero-divisor on the
-        // literal/identifier shapes fell to the interpreter's generic handler (bare
-        // "Division by zero") while the vm's fused op raised the informative text ----
-        test("fuzz_float_divzero_text_parity", [this]() {
-            auto expect_both = [&](const char* src, const std::string& needle, const std::string& what) {
-                std::string msg[2];
-                int idx = 0;
-                for (bool use_vm : {false, true}) {
-                    auto e = jai::foundry::make_default_engine();
-                    e->set_backend(use_vm ? jai::backend_type::vm : jai::backend_type::interpreter);
-                    try { e->execute(src); }
-                    catch (const std::exception& ex) { msg[idx] = ex.what(); }
-                    ++idx;
-                }
-                check_eq(msg[0], msg[1], what + " error text is byte-identical across backends");
-                check_true(msg[0].find(needle) != std::string::npos,
-                    what + " keeps the informative text (got: " + msg[0] + ")");
-            };
-            expect_both("var z = 0.0; 0.5 / z;", "Division by zero", "literal/var float divide");
-            expect_both("var z = 0.0; 0.5 % z;", "Modulo by zero", "literal/var float modulo");
-            expect_both("var z = 0.5; z % 0.0;", "Modulo by zero", "var/literal float modulo");
-        });
-
         // ---- fuzz FZ-RECURSION-MSG-TEXT (seed 137): interp hit the native-stack guard
         // ("Native stack exhausted...") while the vm hit the depth cap, whose "{0}" was
         // passed the depth as a SYMBOL id and printed an empty "()" ----
@@ -1290,11 +1267,11 @@ public:
                 check_eq(expected, v_out, std::string("vm: ") + what);
             };
             expect_both("function f() {} string r = \"\"; try { f.x = 1; } catch (e) { r = type_of(e) + \":\" + to_string(e); } r",
-                "string:Cannot assign to member of non-object type", "store on a function");
+                "error:Cannot assign to member of non-object type", "store on a function");
             expect_both("var n = 5; string r = \"\"; try { n.x = 1; } catch (e) { r = type_of(e) + \":\" + to_string(e); } r",
-                "string:Cannot assign to member of non-object type", "store on an int");
+                "error:Cannot assign to member of non-object type", "store on an int");
             expect_both("class C { static int s = 0; } string r = \"\"; try { C.s = 8; } catch (e) { r = type_of(e) + \":\" + to_string(e); } r",
-                "string:'C' is a class; use C::s", "dot store on a class name");
+                "error:'C' is a class; use C::s", "dot store on a class name");
         });
         // ---- returnattr: a failed typed-return conversion raises at the `return` with the
         // returning frame on top (the vm captures before the callee frame pops, the
@@ -1555,7 +1532,7 @@ public:
         // must keep falling through to the full path. ----
         test("decl_fast_typed_conversion_still_applies", [this]() {
             auto e = make_engine();
-            check_eq((int64_t)4, e->execute("auto f() { int d = 4.7; return d; } f();").as_int());
+            check_eq((int64_t)1, e->execute("auto f() { int d = true; return d; } f();").as_int());
             check_near(5.0, e->execute("auto g() { float x = 5; return x; } g();").as_float(), 1e-9);
         });
         test("the_decl_fast_path_keeps_conversions_copies_and_boxing", [this]() {
@@ -1991,7 +1968,7 @@ public:
             }
         });
         test("compound_assignment_mismatch_names_the_operator_and_both_types", [this]() {
-            // docs/site/reference/index.html "Run-time errors": every compound site raises the same catchable text on both backends (the runtime text is under
+            // docs/site/reference/errors.html "Run-time errors": every compound site raises the same catchable text on both backends (the runtime text is under
             // test, so the checker is off); a float target with a non-numeric operand used to escape the try as a C++ exception
             for (bool proofs : {true, false}) {
                 auto e = make_engine();
@@ -2444,7 +2421,7 @@ public:
                         function grab() -> int& { return value; }
                         function grab_this() -> int& { return this.value; }
                     }
-                    W w = W(); w.value = 1;
+                    var w = W(); w.value = 1;
                     auto& r = w.grab(); r = 9;
                     auto& r2 = w.grab_this(); r2 += 1;
                 )");
@@ -2772,7 +2749,7 @@ public:
                 auto e = propref_engine(use_vm);
                 e->execute(R"([[warn_mode]]; 
                     void by_ref(int& p) { p = 1; }
-                    HybridProbe n = null;
+                    var n = null;
                 )");
                 arg_msg[idx] = caught(*e, "[[warn_mode]]; by_ref(n.value);");
                 decl_msg[idx] = caught(*e, "[[warn_mode]]; auto& r = n.value;");
@@ -2799,7 +2776,7 @@ public:
                 check_eq((int64_t)101, e->execute("w.live()").as_int(), "[&] sees the C++-side change");
                 e->execute("w.write();");
                 check_eq((int64_t)10, cpp->value, "[&] writes land in the member");
-                check_eq((int64_t)10, e->execute("w.snap()").as_int(), "[=] still snapshots");
+                check_eq((int64_t)110, e->execute("w.snap()").as_int(), "[=] reads the live property");
                 check_eq((int64_t)110, cpp->value);
             }
         });
@@ -3359,13 +3336,13 @@ public:
             )", int64_t{4207}},
                 {"typed_ref_decl_of_local_converts_through", R"(
                 function f() -> int {
-                    int x = 1;
+                    int x = 5;
                     auto& r = x;
-                    r = 6.9;         // store through the alias into an int-declared cell
+                    r = true;        // store through the alias into an int-declared cell
                     return x;
                 }
                 f();
-            )", int64_t{6}},
+            )", int64_t{1}},
                 {"by_value_capture_still_copies", "function f() -> int { int x = 1; auto g = [=]() { x = 42; }; g(); return x; } f();", int64_t{1}},
                 {"by_value_capture_still_copies", "function f2() -> int { int x = 1; auto g = [x]() { x = 42; }; g(); return x; } f2();", int64_t{1}},
             };
@@ -3394,7 +3371,7 @@ public:
             )", std::string("570|true|15")},
                 {"scalar_return_of_element", R"(
                 array<int> a = [10, 20, 30];
-                var f = [1.75, "s"];
+                var f = [true, "s"];
                 var nested = [[1, 2]];
                 int at(int i) { return a[i]; }
                 int floor_at(int i) { return f[i]; }
@@ -3428,7 +3405,7 @@ public:
             )", std::string("20200|100|100")},
                 {"fused_store_semantics", R"(
                 array<int> ints = [1, 2, 3];
-                ints[0] = 4.7;                 // typed element: converts like assignment
+                ints[0] = true;                // typed element: converts like assignment
                 ints[1] += 2;
                 ints[2] *= 3;
                 var strs = ["a", "b"];
@@ -3440,7 +3417,7 @@ public:
                 grid[1][0] = grid[0][1] + 40;  // nested chain target + elided RHS
                 to_string(ints[0]) + "|" + to_string(ints[1]) + "|" + to_string(ints[2]) + "|" +
                     strs[0] + "|" + to_string(m["k"]) + "|" + to_string(m.size()) + "|" + to_string(grid[1][0]);
-            )", std::string("4|4|9|ax|15|2|42")},
+            )", std::string("1|4|9|ax|15|2|42")},
                 {"fused_subscript_operand_semantics", R"(
                 array<int> a = [10, 20, 30, 40];
                 var f = [0.5, 2.5];
@@ -4101,11 +4078,12 @@ public:
                 auto f() -> auto {
                     int x = 0;
                     x = 5;
-                    x = 4.7;
-                    return x;
+                    var fl = 4.7;
+                    try { x = fl; } catch (e) { return `${e}|${x}`; }
+                    return "stored";
                 }
                 f();
-            )", int64_t{4}},
+            )", std::string("Cannot assign float to 'x' (declared int)|5")},
                 {"provable_int_loop_correct", R"(
                 auto f() -> auto {
                     int total = 0;
@@ -4114,10 +4092,10 @@ public:
                 }
                 f();
             )", int64_t{4950}},
-                {"unprovable_mixed_rhs_converts_each_store", R"(
+                {"mixed_rhs_casts_each_store", R"(
                 auto f() -> auto {
                     int x = 0;
-                    for (int i = 0; i < 10; i = i + 1) { x = x + 1.5; }
+                    for (int i = 0; i < 10; i = i + 1) { x = cast<int>(x + 1.5); }
                     return x;
                 }
                 f();
@@ -4131,13 +4109,14 @@ public:
                 f();
             )", std::string("s")},
                 {"auto_stays_locked_after_int_store", R"(
-                auto f() -> auto { auto a = 1; a = 2; a = 3.9; return a; }
+                auto f() -> auto { auto a = 1; a = 2; var fl = 3.9; try { a = fl; } catch (e) { return `${e}|${a}`; } return "stored"; }
                 f();
-            )", int64_t{3}},
+            )", std::string("Cannot assign float to 'a' (declared int)|2")},
                 {"ref_alias_and_cell_stores_unaffected", R"(
                 function poke(int& t) -> int {
                     t = 5;
-                    t = 6.9;
+                    var fl = 6.9;
+                    try { t = fl; } catch (e) { t = t + 1; }
                     return t;
                 }
                 auto f() -> auto {
@@ -4148,10 +4127,10 @@ public:
                 }
                 f();
             )", int64_t{642}},
-                {"compound_store_conversion_unaffected", R"(
-                auto f() -> auto { int x = 1; x += 2.5; return x; }
+                {"compound_store_refusal_unaffected", R"(
+                auto f() -> auto { int x = 1; var d = 2.5; try { x += d; } catch (e) { return `${e}|${x}`; } return "stored"; }
                 f();
-            )", int64_t{3}},
+            )", std::string("Cannot assign float to 'x' (declared int)|1")},
             };
             check_values(cases);
         });
@@ -4696,13 +4675,13 @@ public:
         });
 
         test("a_class_holding_itself_by_value_is_an_error", [this]() {
-            // `Node next;` would build a Node inside every Node; `Node next = null;` is a link
+            // `Node next;` would build a Node inside every Node; a `shared_ptr<Node>` is a link
             auto e = make_engine();
             jai::stdlib::register_all(e);
             std::string err;
             try { e->execute("class Node { int v = 0; Node next; }"); } catch (const std::exception& ex) { err = ex.what(); }
-            check_true(err.find("would build a Node inside every Node") != std::string::npos, err);
-            check_eq((int64_t)2, e->execute("class Link { int v = 0; Link next = null; Link(int x) { v = x; } } Link a = Link(1); a.next = Link(2); a.next.v").as_int());
+            check_true(err.find("class 'Node' holds itself by value (Node.next): a class value is never null; make one link a 'shared_ptr<Node>' (an array or a map of them starts empty)") != std::string::npos, err);
+            check_eq((int64_t)2, e->execute("class Link { int v = 0; shared_ptr<Link> next = null; Link(int x) { v = x; } } Link a = Link(1); a.next = Link(2); a.next.v").as_int());
         });
         test("ctor_throw_leaks_no_instance", [this]() {
             // A throw propagates, the target keeps its value, and the half-built instance runs no destructor

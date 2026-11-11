@@ -117,6 +117,9 @@ namespace jai {
         // (bare-identifier ref argument / ref-decl source), so value binding boxes its
         // storage into a cell (see reference_holder cell mode)
         bool ref_escaping = false;
+        // a checker stamp: the body stores a float through this reference parameter, which an int variable bound to it
+        // refuses under the parameter's name (the vm binds such a call instead of grafting it)
+        bool ref_store_unproven = false;
         // Parser escape analysis for a `T& p` parameter: its reference reaches another binding (a call argument), so the call
         // marks it with T (detail::ref_declare) for the bindings that cannot see the name
         bool declared_ref_escapes = false;
@@ -295,6 +298,8 @@ namespace jai {
         // In an assignment target (`(a = b) = c`, `++x = v`) the parser makes the inner assignment yield the reference it
         // stored through (its target is then an implicit cast<&>), the C++ lvalue an assignment is
         bool yields_reference = false;
+        // a plain `=` that is the whole condition of an if, while, do-while or for, with no parentheses of its own
+        bool bare_condition = false;
         mutable const_site const_check;
 
         assignment_expr(const source_location& loc, expression_ptr t, const token& o, expression_ptr v)
@@ -343,10 +348,10 @@ namespace jai {
             : expression(loc, node_type::call_expr), callee(c), arguments(std::move(args)) {}
         ~call_expr() override { detail::release_operands({&callee}, &arguments); }
 
-        // print(...) or format(...) by name whose first argument is a string literal, with values after it: the literal is its
-        // format string (C++20's constant format string), so both backends run the builtin's literal entry while the name binds it
+        // print(...) or format(...) by name whose first argument is a string literal: the literal is its format string (C++20's
+        // constant format string), so both backends run the builtin's literal entry while the name binds it
         bool literal_format_call() const {
-            if (arguments.size() < 2 || callee->get_type() != node_type::identifier_expr || arguments[0]->get_type() != node_type::literal_expr) {
+            if (arguments.empty() || callee->get_type() != node_type::identifier_expr || arguments[0]->get_type() != node_type::literal_expr) {
                 return false;
             }
             const std::string_view name = static_cast<const identifier_expr*>(callee.get())->name;
@@ -381,6 +386,9 @@ namespace jai {
         mutable uint64_t setter_id = UINT64_MAX;  // "_set_" + member, cached like getter_id
         // A structured range-for binding's read of its entry (detail::stamp_map_entry_bindings): 1 the key, 2 the value
         uint8_t entry_half = 0;
+        // the object names a handler's catch variable: a thrown value with no member of its own answers .value and .message
+        // (set by the escape-mark pass; engine::caught_error_member)
+        bool on_caught = false;
         // a reference bind's verdict for one script class (detail::ref_plain_script_field): the member is a plain script field of it
         // (no C++ property, no user accessor, public chain) while both epochs hold; ref_field_declared is its declared type, ref_field_slot
         // the slot the class assigned it
@@ -589,6 +597,8 @@ namespace jai {
         bool binding_ref = false;
         // a parallel body's rewritten `return e;` (parallel_transform.cpp): e converts as that function's return does, with its text
         std::string_view return_of;
+        // `e instanceof T`: no conversion, the bool answer to whether e holds an object of class T or of a class derived from it
+        bool instance_test = false;
         expression_ptr operand;
         mutable const_site const_check;   // cast<T&>(c) / cast<shared_ptr<T>>(c) of a const
 
@@ -657,6 +667,9 @@ namespace jai {
         expression_ptr condition;  // Can be null
         expression_ptr update;     // Can be null
         statement_ptr body;
+        // a lambda in the loop captures the initializer's variable by reference: each iteration has its own, the value copied
+        // forward ahead of the update (set by the escape-mark pass)
+        bool fresh_binding = false;
 
         for_stmt(const source_location& loc, declaration_ptr i, expression_ptr c, expression_ptr u, statement_ptr b)
             : statement(loc, node_type::for_stmt), initializer(i), condition(c), update(u), body(b) { mark_result_discarded(update.get()); }    };
@@ -778,6 +791,9 @@ namespace jai {
         uint64_t catch_var_id = UINT64_MAX;    // Interned catch variable (UINT64_MAX = unnamed catch)
         size_t catch_slot_index = SIZE_MAX;    // Frame slot of the catch variable (SIZE_MAX = scope env)
         statement_ptr catch_block;
+        // typed clauses with none that takes everything: the types the handler takes (engine::catch_admits). An error none of
+        // them takes passes the try as if it had no handler
+        std::vector<std::string> clause_types;
 
         try_stmt(const source_location& loc, statement_ptr try_blk, statement_ptr catch_blk, const std::string& var = "")
             : statement(loc, node_type::try_stmt), try_block(try_blk), catch_var(var), catch_block(catch_blk) {}    };

@@ -351,6 +351,21 @@ public:
     decltype(auto) dispatch(Fn&& fn);
 };
 
+// How a bound property of a class with no route of its own reaches the archives (the class's binding record): one static
+// function per bound member type, over the binding's own state. Null for a property the archives skip.
+struct property_archive_route {
+    void (*save)(const void* state, const char* name, const void* object, any_archive_writer& ar) = nullptr;
+    void (*load)(const void* state, void* object, any_archive_reader& ar) = nullptr;
+    std::shared_ptr<const void> state;
+};
+
+// A base level of a binding record (dynamic_binder::base_class): the base's binding in the archive's engine, written into
+// the same object
+struct base_archive_route {
+    std::type_index type;
+    void* (*upcast)(void* object);
+};
+
 // Serialization metadata for properties
 struct property_metadata {
     std::string name;
@@ -369,12 +384,7 @@ struct property_metadata {
     };
     uint32_t network_flags = network_flags::none;
 
-    // Direct serialization lambdas for runtime fallback (dynamic_binder-registered types)
-    // These work with raw void* pointers to avoid needing script_value wrappers
-    // save: (const void* cpp_object, any_archive_writer&) -> saves the property value
-    // load: (void* cpp_object, any_archive_reader&) -> loads the property value
-    std::function<void(const void*, any_archive_writer&)> save;
-    std::function<void(void*, any_archive_reader&)> load;
+    property_archive_route archive;
 };
 
 // Class serialization metadata
@@ -382,6 +392,7 @@ struct class_metadata {
     std::string class_name;
     uint32_t current_version = 1;
     std::vector<property_metadata> properties;
+    std::vector<base_archive_route> bases;
 
     std::function<void(any_archive_writer&, const script_value&, uint32_t)> custom_save;
     std::function<script_value(any_archive_reader&, uint32_t)> custom_construct;

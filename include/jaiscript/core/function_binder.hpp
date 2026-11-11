@@ -16,6 +16,7 @@
 #include <functional>
 #include <optional>
 #include <set>
+#include <span>
 #include <unordered_map>
 #include <unordered_set>
 #include <tuple>
@@ -1138,6 +1139,42 @@ class engine;
         
     };
     
+    namespace detail {
+        template<typename Func>
+        concept engine_first_variadic = std::is_invocable_v<const std::decay_t<Func>&, engine&, std::span<const script_value>>;
+
+        // A variadic callable's arguments by value: an element reference an argument site minted (`f(a[i])`) reaches it as the
+        // element's value
+        checked_result<script_value> call_variadic_by_value(const std::vector<script_value>& args,
+                                                            checked_result<script_value> (*invoke)(const void*, const script_value*, size_t), const void* self);
+
+        // An engine-first variadic binding; invoke is the same call on the arguments where they are, the VM's direct entry
+        template<typename Func>
+        struct engine_variadic_call {
+            using result_type = std::invoke_result_t<const Func&, engine&, std::span<const script_value>>;
+            Func func;
+            engine* eng;
+            checked_result<script_value> operator()(const std::vector<script_value>& args) const { return call_variadic_by_value(args, &invoke, this); }
+            checked_result<script_value> call(const script_value* args, size_t argc) const {
+                using D = std::remove_cvref_t<result_type>;
+                const std::span<const script_value> arguments{args, argc};
+                if constexpr (std::is_void_v<result_type>) {
+                    func(*eng, arguments);
+                    return script_value(std::monostate{}, eng);
+                } else if constexpr (std::is_same_v<D, script_value> || std::is_same_v<D, checked_result<script_value>>) {
+                    return func(*eng, arguments);
+                } else {
+                    decltype(auto) result = func(*eng, arguments);
+                    return value_converter<result_type>::to(result, eng);
+                }
+            }
+            static checked_result<script_value> invoke(const void* self, const script_value* args, size_t argc) {
+                return static_cast<const engine_variadic_call*>(self)->call(args, argc);
+            }
+            static const void* locate(const script_function& f) { return f.template target<engine_variadic_call>(); }
+        };
+    }
+
     // Helper function to create a binder
     // The binding owns a copy of the callable: an lvalue argument is copied, never referenced
     template<typename Func>

@@ -106,6 +106,9 @@ namespace jai {
     class alignas(k_value_tag_alignment) type_info {
     public:
         script_value_type base_type;
+        // An enum's types, set when its declaration runs (engine::note_enum): the interned object spelling of its name, which a
+        // slot declares, and the int type its values are stamped with (a stamp of the first lands as the second: set_type_info)
+        bool is_enum = false;
         std::string type_name;  // For Object<T>, this would be the class name
         uint64_t id = 0;        // Interned canonical name for O(1) type comparison
 
@@ -142,6 +145,14 @@ namespace jai {
         // equals(). Written only outside parallel regions (workers read prewarmed values).
         type_info* cached_reference_type = nullptr;
         type_info* cached_declared_reference_type = nullptr;   // the declared_reference twin, the same way
+
+        // enum_value_type on both of an enum's types; enum_numbers in declaration order. Excluded from equals().
+        type_info* enum_value_type = nullptr;
+        std::vector<int64_t> enum_numbers;
+        bool enum_holds(int64_t number) const {
+            for (int64_t held : enum_numbers) { if (held == number) { return true; } }
+            return false;
+        }
 
         // Constructors
         type_info(script_value_type type) : base_type(type) {}

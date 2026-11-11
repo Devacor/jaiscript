@@ -89,7 +89,7 @@ inline const char* host_receiver_object(const class_instance* inst, const host_r
 // A member's lane for this receiver when it may replace the bound accessors: a bound C++ class's wrapper, or a layer (an
 // extended object, a constructed hybrid) whose script chain does not answer the name itself, on an all-public chain, whose
 // member has a lane the receiver's object reaches. KEEP BYTE-PARALLEL: both backends fill through here and read through
-// host_member_address.
+// host_member_hit_address.
 inline bool host_member_fill(class_definition* cd, const class_instance* inst, uint64_t member_id,
                              const script_value& receiver, engine* eng, host_member_hit& out) {
 	out = host_member_hit{};
@@ -118,7 +118,7 @@ inline bool host_member_fill(class_definition* cd, const class_instance* inst, u
 }
 
 // The member's address when the receiver's object still has the layout the hit was measured under, else null
-inline void* host_member_address(const class_instance* inst, const host_member_hit& hit) {
+inline void* host_member_hit_address(const class_instance* inst, const host_member_hit& hit) {
 	const char* object = host_receiver_object(inst, hit.layout);
 	return object ? const_cast<char*>(object) + hit.delta : nullptr;
 }

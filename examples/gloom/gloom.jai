@@ -116,6 +116,7 @@ float SHIM_FPS = 30.0;
 int SHIM_DUMP = -1;
 bool SHIM_MUTE = false;
 bool SHIM_RELOAD_TEST = false;
+bool SHIM_RESPAWN_TEST = false;
 
 // reference/README.md section 3.5 checkpoints and the 100- and 600-tick rows, keyed seed/god/ticks
 var SMOKE_REF = {
@@ -149,6 +150,7 @@ function shim_usage() -> void {
 	print("  --mute          no sound effects");
 	print("  --dev           reload the showcase look's scripts (tune.jai and friends) when they change");
 	print("  --reload-test   headless hot-reload self-test: edits scripts/tune.jai, so run it in a copy");
+	print("  --respawn-test  headless self-test: a death on the last floor keeps the arsenal you brought");
 	print("keys: w/s move  a/d strafe  left/right turn  space/ctrl fire  e use");
 	print("      shift run  1/2/3 weapons  m automap  esc quit");
 }
@@ -187,6 +189,7 @@ function shim_parse_args() -> int {
 		else if (a == "--mute") { SHIM_MUTE = true; }
 		else if (a == "--dev") { HOST_DEV = true; }
 		else if (a == "--reload-test") { SHIM_RELOAD_TEST = true; }
+		else if (a == "--respawn-test") { SHIM_RESPAWN_TEST = true; }
 		else if (a == "--look") {
 			i = i + 1;
 			HOST_LOOK = ARGS[i];
@@ -212,7 +215,7 @@ function shim_parse_args() -> int {
 	}
 	HOST_SMOKE = SHIM_SMOKE;
 	if (HOST_LOOK == "") { HOST_LOOK = HOST_SMOKE ? "reference" : "showcase"; }
-	if (!SHIM_SMOKE && !SHIM_RELOAD_TEST && SHIM_BENCH == 0 && !SHIM_MUTE) { HOST_SOUND_DIR = app_cache_dir("gloom") + "/sfx"; }
+	if (!SHIM_SMOKE && !SHIM_RELOAD_TEST && !SHIM_RESPAWN_TEST && SHIM_BENCH == 0 && !SHIM_MUTE) { HOST_SOUND_DIR = app_cache_dir("gloom") + "/sfx"; }
 	return -1;   // keep going
 }
 
@@ -231,7 +234,7 @@ function shim_run_smoke() -> int {
 		if (i == SHIM_DUMP) { write_file("gloom_frame_shim.txt", text); }
 		frames_hash = text_hash(frames_hash, crypto::sha256(text));
 	}
-	int total = run.elapsed() * 1000;
+	int total = cast<int>(run.elapsed() * 1000);
 	float per_tick = 1.0 * total / HOST_TICKS;
 	int hash = gloom_state_hash();
 	print(`total ${total} ms | ${per_tick:.3f} ms/tick | frames ${frames_hash} | STATE_HASH: ${hash}`);
@@ -330,6 +333,10 @@ function shim_main() -> int {
 		gloom_force_autopilot();
 		gloom_boot(100, 40);
 		return dev_reload_test();
+	}
+	if (SHIM_RESPAWN_TEST) {
+		gloom_boot(100, 40);
+		return gloom_respawn_test();
 	}
 	if (SHIM_SMOKE) { return shim_run_smoke(); }
 	return shim_run_live(SHIM_BENCH);

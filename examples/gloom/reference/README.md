@@ -24,12 +24,17 @@ script disagree, the script wins. Conformance is defined operationally:
 `mode`: 0 title, 1 play, 2 tally, 3 dead, 4 victory. `mode_t` counts ticks in
 mode. Transitions (all trigger on the `start` input):
 
-- title → play: `start && mode_t > 8` → `start_episode()` (map 0, fresh player).
+- title → play: `start && mode_t > 8` → `start_episode()` (map 0, fresh player),
+  and the loadout is remembered: `have`, `ammo`, `armor` and `weapon` as they
+  stand when the map loads.
 - tally → next: `start && mode_t > 25` → `finish_map()`: fold map tallies into
-  episode tallies, `map_i++`; past the last map → mode 4 (victory), else load.
-- dead → play: `start && mode_t > 25` → `deaths++`, fresh player,
-  **same map reloaded and repopulated** (enemies/items reset; RNG stream
-  continues — no reseed).
+  episode tallies, `map_i++`; past the last map → mode 4 (victory), else
+  remember the loadout and load.
+- dead → play: `start && mode_t > 25` → `deaths++`, fresh player (hp 100,
+  cooldown 0, bob 0) holding the remembered loadout: its `have`, `armor` and
+  `weapon`, and its `ammo` with every owned pool raised to at least
+  48 / 16 / 40 (bullets / shells / cells); **same map reloaded and
+  repopulated** (enemies/items reset; RNG stream continues — no reseed).
 - victory: terminal (renders forever).
 
 Non-play modes still run `accumulate_hash()` every tick.

@@ -207,7 +207,7 @@ namespace jai::detail {
 	// A subscript store whose operator[] (the class's or the global one) returned a value, not a T&: raised once the call ran
 	inline constexpr std::string_view by_value_subscript_store_text = "Cannot assign to a call result: 'operator[]' returns by value";
 
-	// The text an assignment to an expression that names no storage raises (docs/site/reference/index.html "Run-time errors"); the
+	// The text an assignment to an expression that names no storage raises (docs/site/reference/errors.html "Run-time errors"); the
 	// checker reports it at load with a lowercase first letter
 	inline std::string non_lvalue_target_text(const expression* t) {
 		switch (t->get_type()) {

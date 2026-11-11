@@ -39,14 +39,39 @@ namespace doc_quickstart_run {
 // [sample quickstart-run]
 int main() {
     auto eng = jai::engine::make();                    // an engine is an object: make as many as you like
-    jai::stdlib::register_all(eng);                    // formatted print, to_string, math, containers, JSON
+    jai::stdlib::register_all(eng);                    // formatted print, to_string, JSON, random, time
 
     eng->execute(R"(print("hello from {}", "JaiScript");)");
 
-    jai::script_value r = eng->execute("6 * 7");       // the value of the last expression
+    jai::held_value r = eng->execute("6 * 7");         // the value of the last expression
     std::cout << "6 * 7 = " << r.as_int() << "\n";
     std::cout << eng->execute(R"("jai" + "script")").as<std::string>() << "\n";
     std::cout << std::boolalpha << eng->execute("2.5 * 2 > 4").as<bool>() << "\n";
+    return 0;
+}
+// [/sample]
+}
+
+// [sample vs-first-main]
+#include <jaiscript/core/engine.hpp>
+#include <jaiscript/stdlib/stdlib.hpp>
+#include <iostream>
+// [/sample]
+
+namespace doc_vs_first_main {
+// [sample vs-first-main]
+int main() {
+    auto eng = jai::engine::make();
+    jai::stdlib::register_all(eng);     // print, strings, JSON, time and more
+
+    std::cout << "2 + 2 = " << eng->execute<int>("2 + 2") << "\n";
+    eng->execute(R"(print("hello from {}", "JaiScript");)");
+
+    try {
+        eng->execute(R"(int x = "not a number";)");
+    } catch (const std::exception& e) {
+        std::cout << "caught: " << e.what() << "\n";
+    }
     return 0;
 }
 // [/sample]
@@ -128,7 +153,7 @@ int64_t total_ammo(const Turret& a, const Turret& b) { return a.ammo + b.ammo; }
 
 int main() {
     auto eng = jai::engine::make();
-    jai::stdlib::register_all(*eng);
+    jai::stdlib::register_all(eng);
 
     jai::dynamic_binder<Turret>(*eng, "Turret")   // 2. bind it under a script name
         .constructor<>()
@@ -136,8 +161,7 @@ int main() {
         .property("name", &Turret::name)
         .property("ammo", &Turret::ammo)
         .method("fire", &Turret::fire)
-        .method("range", &Turret::range)
-        .build();
+        .method("range", &Turret::range);
     eng->add_function("total_ammo", &total_ammo);  // 3. functions that take it
 
     eng->execute(R"(                                // 4. scripts construct and call it
@@ -247,15 +271,14 @@ public:
 // [/sample]
 }
 
-namespace doc_values_turret {
-// [sample values-turret-host]
-struct Turret {
-    std::string name = "turret";
-    int64_t ammo = 0;
+namespace doc_binder_archer {
+// [sample binder-binding-record]
+struct Actor {
+    virtual ~Actor() = default;
+    std::string name;
 };
-struct Tower {
-    Turret turret;
-    Turret& child() { return turret; }
+struct Archer : Actor {
+    int arrows = 12;
 };
 // [/sample]
 }
@@ -333,6 +356,14 @@ struct SaveGame {
     }
 };
 // [/sample]
+// [sample serialization-binding-record]
+// a third-party header: no serialize, save, load or property_owner
+struct Enemy {
+    std::string name = "rat";
+    int hp = 10;
+    std::vector<std::string> loot;
+};
+// [/sample]
 // [sample serialization-link]
 struct Node {
     int64_t v = 1;
@@ -343,6 +374,17 @@ struct Link {
     std::weak_ptr<Node> w;
     template<class Archive> void serialize(Archive& ar) { ar("a", a); ar("b", b); ar("w", w); }
 };
+// [/sample]
+}
+
+namespace doc_host_direct {
+// [sample host-api-direct-entry]
+// one body for both: the function and its direct entry
+static jai::checked_result<jai::script_value> label_of(const void* target, const jai::script_value* args, size_t count) {
+    auto* eng = static_cast<jai::engine*>(const_cast<void*>(target));
+    if (count != 1) return jai::script_value(std::string("?"), eng);
+    return jai::script_value(std::string(args[0].is_int() ? "int" : args[0].is_float() ? "float" : "other"), eng);
+}
 // [/sample]
 }
 
@@ -615,6 +657,10 @@ public:
 			expect_cpp("embedding/01-embedding-quickstart.html", "quickstart-run", [] { doc_quickstart_run::main(); });
 		});
 
+		test("vs_first_main", [this]() {
+			expect_cpp("embedding/21-visual-studio.html", "vs-first-main", [] { doc_vs_first_main::main(); });
+		});
+
 		test("quickstart_bind", [this]() {
 			expect_cpp("embedding/01-embedding-quickstart.html", "quickstart-bind", [] {
 				using doc_quickstart_bind::Player;
@@ -626,8 +672,7 @@ public:
 				    .constructor<std::string>()
 				    .property("name", &Player::name)
 				    .property("hp", &Player::hp)
-				    .method("hit", &Player::hit)
-				    .build();
+				    .method("hit", &Player::hit);
 				eng->add_function("roll", [](int64_t sides) { return sides / 2 + 1; });   // any C++ callable
 
 				auto hero = std::make_shared<Player>("Ada");     // a live C++ object the script shares
@@ -650,7 +695,7 @@ public:
 				// [sample quickstart-call]
 				eng->execute("int damage_for(int level) { return level * 3; }");
 
-				jai::script_value fn = eng->get_variable("damage_for");
+				jai::held_value fn = eng->get_variable("damage_for");   // held: safe to keep and call later
 				jai::checked_result<jai::script_value> r = fn.as_function()({eng->make_value(int64_t{4})});
 				if (r) { std::cout << "damage_for(4) = " << r.value().as_int() << "\n"; }
 
@@ -675,13 +720,77 @@ public:
 
 				eng->import_recheck_interval(0);                  // see a save at once (the default looks every 0.2 s)
 				eng->execute_file((dir / "game.jai").string());
-				jai::script_value tick = eng->get_variable("tick");
+				jai::held_value tick = eng->get_variable("tick");   // kept across frames
 				for (int64_t frame = 1; frame <= 4; ++frame) {
 				    if (frame == 3) { save("rules.jai", "int damage_for(int frame) { return frame * 100; }"); }   // an edit lands
 				    auto r = tick.as_function()({eng->make_value(frame)});
 				    if (!r) { std::cout << "frame " << frame << ": " << eng->format_error(r) << "\n"; continue; }
 				    std::cout << "frame " << frame << ": " << r.value().as_int() << "\n";
 				}
+				// [/sample]
+			});
+		});
+
+		test("guide_variadic_sum", [this]() {
+			expect_cpp("guide/06-functions.html", "guide-variadic-sum", [] {
+				auto eng = jai::engine::make();
+				jai::stdlib::register_all(eng);
+				// [sample guide-variadic-sum]
+				eng->add_variadic_function("sum_all", [](jai::engine&, std::span<const jai::script_value> args) {
+				    jai::script_int total = 0;
+				    for (const auto& a : args) total += a.as_int();
+				    return total;
+				});
+				eng->execute("print(sum_all(1, 2, 3, 4));");
+				// [/sample]
+			});
+		});
+
+		test("host_api_register", [this]() {
+			expect_cpp("embedding/17-host-api.html", "host-api-register", [] {
+				auto eng = jai::engine::make();
+				jai::stdlib::register_all(eng);
+				// [sample host-api-register]
+				// Typed: the signature drives conversion and overload resolution
+				eng->add_function("square", [](jai::script_int n) { return n * n; });
+				std::cout << eng->execute("square(12)").as_int() << "\n";
+
+				// Variadic: the engine and every argument of the call
+				eng->add_variadic_function("sum_all", [](jai::engine&, std::span<const jai::script_value> args) {
+				    jai::script_int total = 0;
+				    for (const auto& a : args) total += a.as_int();
+				    return total;
+				});
+				std::cout << eng->execute("sum_all(1, 2, 3, 4)").as_int() << "\n";
+				// [/sample]
+			});
+		});
+
+		test("host_api_direct_variadic", [this]() {
+			expect_cpp("embedding/17-host-api.html", "host-api-direct-variadic", [] {
+				auto eng = jai::engine::make();
+				jai::stdlib::register_all(eng);
+				// [sample host-api-direct-variadic]
+				eng->add_variadic_function("label", [](jai::engine&, std::span<const jai::script_value> args) -> std::string {
+				    if (args.size() != 1) return "?";
+				    return args[0].is_int() ? "int" : args[0].is_float() ? "float" : "other";
+				});
+				std::cout << eng->execute("label(2.5)").as_string() << "\n";
+				// [/sample]
+			});
+		});
+
+		test("host_api_direct_entry", [this]() {
+			expect_cpp("embedding/17-host-api.html", "host-api-direct-entry", [] {
+				using doc_host_direct::label_of;
+				auto eng = jai::engine::make();
+				jai::stdlib::register_all(eng);
+				// [sample host-api-direct-entry]
+				eng->add_variadic_function("label", [e = eng.get()](const std::vector<jai::script_value>& args) {
+				    return label_of(e, args.data(), args.size());
+				});
+				eng->add_host_direct("label", 1, &label_of, eng.get());   // after the function: it keys on the function "label" binds now
+				std::cout << eng->execute("label(2.5)").as_string() << "\n";
 				// [/sample]
 			});
 		});
@@ -812,7 +921,7 @@ public:
 			cpp_sample engine_block(*this, page, "binder-spawner-engine");
 			// [sample binder-spawner-engine]
 			auto eng = jai::engine::make();
-			jai::stdlib::register_all(*eng);   // formatted print, containers, math, json
+			jai::stdlib::register_all(eng);   // formatted print, containers, math, json
 			jai::bind_registrar(*eng);         // every jai::registrar in the binary, one call
 			// [/sample]
 			engine_block.finish();
@@ -880,9 +989,32 @@ public:
 			// [/sample]
 			to_binary_block.finish();
 
+			Spawner byValue = jai::from_json<Spawner>(*eng, jai::to_json(*eng, *gate));
+			check_eq((int64_t)7, byValue.level.get(), "the page's by-value load");
+			check_eq(std::string("east-gate"), byValue.id.get());
+
 			expect_script(page, "binder-smart", eng);
 			expect_script(page, "binder-smart-reload", eng);
 			expect_script(page, "binder-connect", eng);
+		});
+
+		test("binder_binding_record", [this]() {
+			using doc_binder_archer::Actor;
+			using doc_binder_archer::Archer;
+			auto eng = make_engine();
+			cpp_sample block(*this, "embedding/02-dynamic-binder.html", "binder-binding-record");
+			// [sample binder-binding-record]
+			jai::dynamic_binder<Actor>(*eng, "Actor").property("name", &Actor::name);
+			jai::dynamic_binder<Archer>(*eng, "Archer").base_class<Actor>().property("arrows", &Archer::arrows);
+
+			std::shared_ptr<Actor> hero = std::make_shared<Archer>();
+			hero->name = "robin";
+			std::string json = jai::to_json(*eng, hero, 0);
+			auto back = jai::from_json<std::shared_ptr<Actor>>(*eng, json);
+			std::cout << json << "\n";
+			std::cout << back->name << " has " << std::dynamic_pointer_cast<Archer>(back)->arrows << " arrows\n";
+			// [/sample]
+			block.finish();
 		});
 
 		test("binder_vec2", [this]() {
@@ -902,8 +1034,7 @@ public:
 			    .static_method("axes", []() { return 2; })
 			    .static_method("dot", [](const Vec2& a, const Vec2& b) { return a.x * b.x + a.y * b.y; })
 			    .property("x", &Vec2::x)
-			    .property("y", &Vec2::y)
-			    .build();
+			    .property("y", &Vec2::y);
 			// [/sample]
 			host.finish();
 			expect_script("embedding/02-dynamic-binder.html", "binder-vec2", eng);
@@ -918,8 +1049,7 @@ public:
 			jai::dynamic_binder<Sprite>(*eng, "Sprite")
 			    .constructor<>()
 			    .serial_only_constructor()
-			    .property("alpha", &Sprite::alpha)
-			    .build();
+			    .property("alpha", &Sprite::alpha);
 			// [/sample]
 			host.finish();
 			expect_script("embedding/02-dynamic-binder.html", "binder-sprite", eng);
@@ -933,7 +1063,7 @@ public:
 				auto front = jai::engine::make();
 				auto back = jai::engine::make();
 				for (jai::engine* eng : {front.get(), back.get()}) {
-				    jai::stdlib::register_all(*eng);
+				    jai::stdlib::register_all(eng);
 				    jai::stdlib::register_atomics(*eng);
 				    eng->add_global_ref("page_views", page_views);    // a reference: no engine copies it
 				}
@@ -957,12 +1087,9 @@ public:
 			    .constructor<>()
 			    .method("add", &Meter::add)
 			    .method("reading", &Meter::reading)
-			    .method("publish", &Meter::publish)
-			    .serial_method("publish", jai::serial_overloads::every)   // const, but it reaches a shared manager
-			    .build();
+			    .method("publish", &Meter::publish, jai::serial);  // const, but it reaches a shared manager
 			eng->add_function("master", []() { return master_meter; });        // the program's one Meter (level 100)
-			eng->add_function("log_line", [](const std::string& line) { logger().write(line); });
-			eng->serial_function("log_line");
+			eng->add_function("log_line", [](const std::string& line) { logger().write(line); }, jai::serial);
 			// [/sample]
 			host.finish();
 			expect_script("embedding/02-dynamic-binder.html", "binder-meter", eng);
@@ -980,11 +1107,9 @@ public:
 			// not at all: a derived registration materializes an unregistered property_owner base.
 			jai::dynamic_binder<Pickup>(*eng, "Pickup")
 			    .auto_bind()
-			    .method("kind", [](Pickup& p) { return std::string("pickup:") + p.name.get(); })
-			    .build();
+			    .method("kind", [](Pickup& p) { return std::string("pickup:") + p.name.get(); });
 			jai::dynamic_binder<HealthPickup>(*eng, "HealthPickup")
-			    .auto_bind()      // derives the Pickup base edge from property_owner<HealthPickup, Pickup>
-			    .build();         // healing AND the inherited name both bind — no re-exposure needed
+			    .auto_bind();     // derives the Pickup base edge: healing and the inherited name both bind
 			// [/sample]
 			host.finish();
 			cpp_sample json_block(*this, page, "binder-pickup-json");
@@ -1005,41 +1130,6 @@ public:
 			// [/sample]
 			describe_block.finish();
 			expect_script(page, "binder-pickup", eng);
-		});
-
-		test("values_bound_turret", [this]() {
-			using doc_values_turret::Turret;
-			using doc_values_turret::Tower;
-			auto eng = make_engine();
-			jai::stdlib::register_all(eng);
-			cpp_sample host(*this, "guide/03-value-semantics.html", "values-turret-host");
-			// [sample values-turret-host]
-			jai::dynamic_binder<Turret>(*eng, "Turret")
-			    .property("name", &Turret::name)
-			    .property("ammo", &Turret::ammo)
-			    .method("=", [](Turret& self, const Turret& other) -> Turret& { return self = other; })
-			    .build();
-			jai::dynamic_binder<Tower>(*eng, "Tower")
-			    .method("child", &Tower::child)
-			    .build();
-			// [/sample]
-			host.finish();
-			expect_script("guide/03-value-semantics.html", "values-turret", eng);
-		});
-
-		test("values_atomics", [this]() {
-			// [sample values-atomics-host]
-			std::atomic<int64_t> page_views{0};          // the host's: it outlives the engine
-			// [/sample]
-			auto eng = make_engine();
-			jai::stdlib::register_all(eng);
-			cpp_sample host(*this, "guide/03-value-semantics.html", "values-atomics-host");
-			// [sample values-atomics-host]
-			jai::stdlib::register_atomics(eng);
-			eng->add_global_ref("page_views", page_views);
-			// [/sample]
-			host.finish();
-			expect_script("guide/03-value-semantics.html", "values-atomics", eng);
 		});
 
 		test("signals_door_and_observable", [this]() {
@@ -1080,8 +1170,7 @@ public:
 			jai::dynamic_binder<Door>(*eng, "Door")
 			    .constructor<>()
 			    .method("open", &Door::open)
-			    .property("onOpen", &Door::onOpen)     // the whole script exposure
-			    .build();
+			    .property("onOpen", &Door::onOpen);    // the whole script exposure
 			// [/sample]
 			binder_block.finish();
 			expect_script(page, "signals-door-script", eng);
@@ -1089,7 +1178,7 @@ public:
 
 		test("signals_spawner", [this]() {
 			auto eng = make_engine();
-			jai::stdlib::register_all(*eng);
+			jai::stdlib::register_all(eng);
 			jai::bind_registrar(*eng);
 			expect_script("embedding/10-signals-properties.html", "signals-spawner", eng);
 		});
@@ -1125,15 +1214,14 @@ public:
 			    .property("pos", &Body::pos)
 			    .property("tint", &Body::tint)
 			    .property("path", &Body::path)
-			    .method("moved", &Body::moved)
-			    .build();
+			    .method("moved", &Body::moved);
 			// [/sample]
 			host.finish();
 			expect_script(page, "math-functions", eng);
 			expect_script(page, "math-body-script", eng);
 			cpp_sample marker_block(*this, page, "math-marker");
 			// [sample math-marker]
-			jai::dynamic_binder<Marker>(*eng, "Marker").auto_bind().build();
+			jai::dynamic_binder<Marker>(*eng, "Marker").auto_bind();
 
 			auto marker = std::make_shared<Marker>();
 			int changes = 0;
@@ -1230,8 +1318,7 @@ public:
 			// [sample chai-monster-binding]
 			jai::dynamic_binder<Entity>(*eng, "Entity")
 			    .property("name", &Entity::name)
-			    .method("describe", &Entity::describe)
-			    .build();
+			    .method("describe", &Entity::describe);
 
 			jai::dynamic_binder<Monster>(*eng, "Monster")
 			    .base_class<Entity>()
@@ -1242,8 +1329,7 @@ public:
 			    .method("alive", &Monster::alive)
 			    .method("==", &Monster::operator==)
 			    .property("hp", &Monster::health, &Monster::setHealth)
-			    .property("maxHp", [](const Monster&) { return int64_t{100}; }, nullptr)
-			    .build();
+			    .property("maxHp", [](const Monster&) { return int64_t{100}; }, nullptr);
 
 			eng->add_function("describe", [](std::shared_ptr<Entity> e) { return e->describe(); });
 			// [/sample]
@@ -1283,6 +1369,21 @@ public:
 			std::cout << jai::to_json(*eng, link, 0) << "\n";
 			// [/sample]
 			link_block.finish();
+			using doc_serialization::Enemy;
+			cpp_sample enemy_block(*this, page, "serialization-binding-record");
+			// [sample serialization-binding-record]
+			jai::dynamic_binder<Enemy>(*eng, "Enemy")
+			    .property("name", &Enemy::name)
+			    .property("hp", &Enemy::hp)
+			    .property("loot", &Enemy::loot);
+
+			Enemy boss{"troll", 40, {"club", "tooth"}};
+			std::string record = jai::to_json(*eng, boss, 0);
+			Enemy back = jai::from_json<Enemy>(*eng, record);
+			std::cout << record << "\n";
+			std::cout << "loaded: " << back.name << " hp=" << back.hp << " loot=" << back.loot.size() << "\n";
+			// [/sample]
+			enemy_block.finish();
 		});
 
 		test("coroutine_driving", [this]() {
@@ -1330,7 +1431,7 @@ public:
 			} catch (const std::exception& e) {
 			    std::cout << e.what() << "\n";          // the script's catch never saw it
 			}
-			std::cout << eng->execute("2 + 2").as_int() << "\n";   // the engine survives; each execute gets a fresh deadline
+			std::cout << eng->execute<int>("2 + 2") << "\n";   // the engine survives; each execute gets a fresh deadline
 			// [/sample]
 			wall_clock.finish();
 			eng->execution_budget(5.0);

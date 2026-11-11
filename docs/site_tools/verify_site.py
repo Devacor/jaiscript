@@ -4,7 +4,8 @@
     python site_tools/verify_site.py [--no-samples] [--runner PATH]
 
 Order: script syntax (node --check), links and anchors, HTML structure, internal leakage and stale facts, retired error
-texts, search index freshness, chrome freshness, then (unless --no-samples) every jaiscript
+texts, search index freshness, the search queries (node), chrome freshness, sitemap and robots.txt freshness,
+runnable-sample marks, then (unless --no-samples) every jaiscript
 sample on both backends under strict, with its expected output, and the host samples: the C++ samples and the
 host-dependent script samples a page marks data-sample, which the "Doc Samples" suite of jaiscript_tests (beside the
 runner) compiles from its own copy of their code, checks against the page and runs, on both backends. Exit code 1 if any
@@ -24,7 +25,10 @@ STEPS = [
     ("leakage / stale facts", ["check_leakage.py"]),
     ("retired error texts", ["check_old_texts.py"]),
     ("search index", ["build_search_index.py", "--check"]),
+    ("search queries", ["test_search.js"]),
     ("chrome", ["apply_chrome.py", "--check"]),
+    ("sitemap", ["build_sitemap.py", "--check"]),
+    ("runnable marks", ["mark_runnable.py", "--check"]),
     ("api catalog", ["check_api_catalog.py"]),
     ("samples", ["run_samples.py"]),
 ]
@@ -40,7 +44,8 @@ def main():
     print("== scripts")
     node = shutil.which("node")
     if node:
-        bad = [js.name for js in sorted((HERE.parent / "site" / "assets").glob("*.js"))
+        site = HERE.parent / "site"
+        bad = [js.name for js in sorted(site.glob("assets/*.js")) + sorted(site.glob("play/*.js"))
                if subprocess.call([node, "--check", str(js)]) != 0]
         print("-- scripts: %s" % ("FAILED (%s)" % ", ".join(bad) if bad else "ok"))
         if bad:
@@ -53,7 +58,11 @@ def main():
         print("=" * 72)
         print("== " + name)
         extra = runner if name == "samples" else []
-        rc = subprocess.call([sys.executable, str(HERE / cmd[0])] + cmd[1:] + extra, cwd=str(HERE.parent / "site"))
+        program = node if cmd[0].endswith(".js") else sys.executable
+        if program is None:
+            print("-- %s: skipped (node not on PATH)" % name)
+            continue
+        rc = subprocess.call([program, str(HERE / cmd[0])] + cmd[1:] + extra, cwd=str(HERE.parent / "site"))
         print("-- %s: %s" % (name, "ok" if rc == 0 else "FAILED (exit %d)" % rc))
         if rc:
             failed.append(name)

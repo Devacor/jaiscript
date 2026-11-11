@@ -4,6 +4,7 @@
 #include <jaiscript/stdlib/stdlib.hpp>
 #include "../case_table.hpp"
 
+#include <sstream>
 #include <string>
 
 using namespace jai::foundry;
@@ -552,6 +553,42 @@ public:
                 )");
             }
             check_eq(std::string("2sn1"), log, "a host object's C++ destructor runs in reverse construction order without any script destructor");
+        });
+
+        test("a_destructor_at_teardown_sees_the_functions_a_run_sees", [this]() {
+            // every destructor the engine's own destruction runs (a global, a namespace member, a static, a suspended run's local)
+            // calls what a destructor mid-run calls: the formatted print, format, the stdlib namespaces, a host function
+            auto out = std::make_shared<std::ostringstream>();
+            std::string noted;
+            {
+                auto eng = make_engine();
+                jai::stdlib::register_all(*eng);
+                eng->set_output_stream(out);
+                eng->add_function("note", [&noted](std::string s) { noted += s + "|"; });
+                eng->execute(R"(
+                    class Res {
+                        string name = "a";
+                        ~Res() {
+                            print("out {}", name);
+                            print(`tmpl ${name}`);
+                            print(format("f {:>3}", name), " ", string::to_upper(name), " ", math::sqrt(16.0), " ", to_string(3));
+                            note(format("{}!", name));
+                        }
+                    }
+                    Res g;
+                    namespace ns { Res inner; }
+                    class Holder { static Res kept; }
+                    void f() { Res local; local.name = "local"; }
+                    ns::inner.name = "n";
+                    Holder::kept.name = "s";
+                    f();
+                    print("end of script");
+                )");
+            }
+            const auto lines = [](const std::string& n) { return "out " + n + "\ntmpl " + n + "\nf " + std::string(3 - std::min<size_t>(3, n.size()), ' ') + n + " " +
+                                                                 (n == "local" ? std::string("LOCAL") : n == "a" ? std::string("A") : n == "n" ? std::string("N") : std::string("S")) + " 4.0 3\n"; };
+            check_eq(lines("local") + "end of script\n" + lines("s") + lines("n") + lines("a"), out->str());
+            check_eq(std::string("local!|s!|n!|a!|"), noted);
         });
 
         test("a_destructor_error_at_teardown_is_reported", [this]() {

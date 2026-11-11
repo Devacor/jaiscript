@@ -7,7 +7,7 @@
 
 namespace jai::detail {
 
-    // The texts of sleep and the suspendable runs (docs/site/reference/index.html: the run-time errors, the host errors and the
+    // The texts of sleep and the suspendable runs (docs/site/reference/errors.html: the run-time errors, the host errors and the
     // static listing)
     inline constexpr std::string_view k_sleep_expects_number = "sleep expects a number of seconds";
     inline constexpr std::string_view k_run_cancelled = "Run cancelled";

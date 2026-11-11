@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foundry: Testing a Host — JaiScript Embedding</title>
+<meta name="description" content="Foundry is the test framework JaiScript's own suite is written in, one header and one runner source file: suites, checks, the runner's flags, and a test executable for a project of your own.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Foundry: Testing a Host — JaiScript Embedding">
+<meta property="og:description" content="Foundry is the test framework JaiScript's own suite is written in, one header and one runner source file: suites, checks, the runner's flags, and a test executable for a project of your own.">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/embedding/20-foundry.html">
+<meta property="og:url" content="https://jaiscript.com/embedding/20-foundry.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding<span class="sidebar-current">Foundry: Testing a Host</span></summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li><li class="current"><a href="../embedding/20-foundry.html" aria-current="page">Foundry: Testing a Host</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/21-visual-studio.html">Visual Studio, Step by Step</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>20</nav>
+<article class="chapter"><h1 id="foundry">Foundry: Testing a Host<a class="hlink" href="#foundry" aria-label="link">&#8203;</a></h1>
+<p>Foundry is the test framework JaiScript's own suite is written in, and it works the same for a project built on
+JaiScript. It is one header, <code>&lt;jaiscript/testing/foundry.hpp&gt;</code>, and one runner source file,
+<code>source/tests/main_test_runner.cpp</code>, which holds <code>main</code>. It needs nothing beyond the library. A
+test is a C++ lambda, so it covers plain host code as readily as script run through an engine.</p>
+<p>The header is part of the library's <code>include/</code> folder. The runner is a source file in the
+<a href="https://github.com/Devacor/jaiscript/blob/main/source/tests/main_test_runner.cpp">repository</a>, compiled into
+your test program; a project that uses an <a href="18-build-integration.html#installed-package">installed package</a>
+copies that one file beside its tests.</p>
+<h2 id="a-suite">A suite<a class="hlink" href="#a-suite" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-cpp"><span class="cb-label">inventory_tests.cpp</span><pre><code class="lang-cpp">#include &lt;jaiscript/testing/foundry.hpp&gt;
+#include &lt;jaiscript/core/engine.hpp&gt;
+
+using namespace jai::foundry;
+
+int stack_limit(int item_weight) {            // the host code under test
+    return item_weight &gt; 10 ? 1 : 20;
+}
+
+class inventory_tests : public suite {
+public:
+    inventory_tests() : suite(&quot;Inventory&quot;) {}
+
+    void forge_tests() override {
+        test(&quot;heavy items do not stack&quot;, []() {
+            check_eq(1, stack_limit(50));         // check_eq(expected, actual)
+            check_eq(20, stack_limit(2));
+        });
+        test(&quot;a script totals the bag&quot;, []() {
+            auto eng = make_engine();
+            auto total = eng-&gt;execute(&quot;int total = 0; for (int w : [3, 4, 5]) { total += w; } total&quot;);
+            check_eq(int64_t(12), total.as_int());
+        });
+        test(&quot;a script error reaches the host&quot;, []() {
+            auto eng = make_engine();
+            check_throws([&amp;]() { eng-&gt;execute(&quot;throw \&quot;bag is full\&quot;;&quot;); });
+        });
+    }
+};
+FOUNDRY_REGISTER(inventory_tests)</code></pre></div>
+<ul>
+<li><strong>A suite</strong> derives <code>jai::foundry::suite</code>, passes its name to the base, and adds its tests in
+<code>forge_tests()</code> with <code>test(name, function)</code>.</li>
+<li><strong>A failed check throws,</strong> which ends that test and records the message. Anything else a test throws
+fails it the same way (a <code>std::exception</code> with its <code>what()</code>, any other type as an unknown
+exception), and the remaining tests still run.</li>
+<li><strong><code>FOUNDRY_REGISTER</code></strong> hands the suite to the runner; no list of suites is kept by hand. A
+class inside a namespace registers under its qualified name: <code>FOUNDRY_REGISTER(my_game::inventory_tests)</code>.</li>
+<li><strong><code>make_engine()</code></strong> returns a <code>jai::engine</code> for a test: the runner's backend choice,
+a 120-second execution budget so a runaway script fails instead of hanging the run, and imports that are rechecked on
+every use. Register your own bindings on it as your host does.</li>
+</ul>
+<h2 id="build-and-run">Build and run<a class="hlink" href="#build-and-run" aria-label="link">&#8203;</a></h2>
+<p>A test program is an executable made of your test files and the runner source, linked to the library like any other
+host (<a href="18-build-integration.html">Building JaiScript into a Host</a>):</p>
+<div class="codeblock cb-plain"><span class="cb-label">CMakeLists.txt</span><pre><code class="lang-plain">add_subdirectory(JaiScript)
+add_executable(my_game_tests
+    inventory_tests.cpp
+    JaiScript/source/tests/main_test_runner.cpp)
+target_link_libraries(my_game_tests PRIVATE JaiScript::jaiscript)</code></pre></div>
+<div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain">cmake --build build --target my_game_tests
+build/my_game_tests</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">/*----------------------------*\
+| JaiScript Foundry Test Suite |
+\*----------------------------*/
+Backend: vm
+Performing Tests, One Moment ...
+-----------------------------------------
+&lt;3 :D All tests passed! (1 suites, 3 tests, 0.003s)
+-----------------------------------------</code></pre></div>
+<p>The exit code is <code>0</code> when every test passed and <code>1</code> when one failed or a filter matched nothing,
+so the program is a build or CI step as it stands. A failure names its suite, its test and what the check saw. With a fourth test, <code>light items stack to 99</code>, holding <code>check_eq(99, stack_limit(2))</code>:</p>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Failed tests:
+  x Inventory :: light items stack to 99
+      Expected: 99, Actual: 20
+
+-----------------------------------------
+x 1 of 4 test(s) failed (0.002s)
+-----------------------------------------</code></pre></div>
+<p>What the tests print to <code>std::cout</code> and <code>std::cerr</code> is hidden unless the run is
+<code>--verbose</code>.</p>
+<h2 id="checks">Checks<a class="hlink" href="#checks" aria-label="link">&#8203;</a></h2>
+<div class="tablewrap"><table><thead><tr><th>Check</th><th>Passes when</th></tr></thead><tbody>
+<tr><td><code>check(condition)</code>, <code>check_true(condition)</code>, <code>check_false(condition)</code></td><td>the condition is true (false for <code>check_false</code>)</td></tr>
+<tr><td><code>check_eq(expected, actual)</code>, <code>check_ne(a, b)</code></td><td><code>expected == actual</code>; <code>!(a == b)</code>. A failed <code>check_eq</code> prints both values.</td></tr>
+<tr><td><code>check_gt(value, bound)</code>, <code>check_ge</code>, <code>check_lt</code>, <code>check_le</code></td><td><code>value &gt; bound</code>, <code>&gt;=</code>, <code>&lt;</code>, <code>&lt;=</code></td></tr>
+<tr><td><code>check_near(expected, actual, tolerance)</code></td><td>the two differ by no more than the tolerance</td></tr>
+<tr><td><code>check_null(pointer)</code>, <code>check_not_null(pointer)</code></td><td>the pointer compares equal (unequal) to <code>nullptr</code></td></tr>
+<tr><td><code>check_throws(function)</code></td><td>the function throws anything</td></tr>
+<tr><td><code>check_throws&lt;E&gt;(function)</code></td><td>the function throws an <code>E</code>; another type fails</td></tr>
+</tbody></table></div>
+<p>Every check but <code>check_near</code> takes a message as an optional last argument, shown when it fails.</p>
+<h2 id="the-runner">The runner's arguments<a class="hlink" href="#the-runner" aria-label="link">&#8203;</a></h2>
+<div class="tablewrap"><table><thead><tr><th>Argument</th><th>Effect</th></tr></thead><tbody>
+<tr><td><code>--verbose</code>, <code>-v</code></td><td>prints each suite and test as it runs, with its time and its own output; the way to find a test that hangs</td></tr>
+<tr><td><code>Inventory</code></td><td>a bare pattern runs every suite whose name contains it, plus any test elsewhere whose name contains it</td></tr>
+<tr><td><code>&quot;Inventory.heavy&quot;</code></td><td>the dotted form runs the matching tests of the matching suites only</td></tr>
+<tr><td><code>--filter=PATTERN</code></td><td>the same patterns as a named argument (<code>--gtest_filter=</code> is accepted too); <code>*</code> matches any run of characters</td></tr>
+<tr><td><code>--backend=vm</code>, <code>--backend=interpreter</code></td><td>the <a href="03-backends.html">backend</a> of the engines <code>make_engine()</code> returns. A host has the VM alone, and it is the default there; the interpreter needs <a href="18-build-integration.html#the-interpreter"><code>jaiscript_interpreter</code></a>.</td></tr>
+<tr><td><code>--shard=I/N</code></td><td>runs every N-th suite starting at suite I (from 0), so N processes cover the suites once between them</td></tr>
+<tr><td><code>--progress</code></td><td>a line per suite and a dot per test, for a watchdog that needs to see a long run move</td></tr>
+</tbody></table></div>
+<p>A crash prints the suite and test that were running to <code>stderr</code>. On Windows, setting the environment
+variable <code>JAI_CRASH_DUMP_DIR</code> to a folder also writes a minidump there.</p>
+<h2 id="setup-and-benchmarks">Setup, teardown and benchmarks<a class="hlink" href="#setup-and-benchmarks" aria-label="link">&#8203;</a></h2>
+<ul>
+<li>A suite may override <code>pre_test()</code> and <code>post_test()</code>; they run around every test, and
+<code>post_test()</code> runs after a failed one too.</li>
+<li><code>benchmark(name, function, iterations)</code>, called in <code>forge_tests()</code> beside <code>test</code>,
+times the function over that many calls (1000 unless given) and prints the microseconds per call. Benchmarks run only
+under <code>--verbose</code> with no filter, and never fail a run.</li>
+</ul>
+<h2 id="other-build-systems">Other build systems<a class="hlink" href="#other-build-systems" aria-label="link">&#8203;</a></h2>
+<ul>
+<li>Compile <code>source/tests/main_test_runner.cpp</code> and your test files into one executable with the settings
+the library was built with, and link the library. On Windows the runner also uses <code>dbghelp</code>, which MSVC picks
+up from the source and a GNU linker needs named.</li>
+<li>Put test files in the executable itself. A suite registers through a static object, and a linker drops an unused
+object file out of a static library, taking its suites with it.</li>
+<li>A test program has one <code>main</code>, the runner's. Code the tests need from your application comes in as a
+library or as source files, without the application's own <code>main</code>.</li>
+</ul><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/19-jai-spider.html"><span>&larr; previous</span>jai_spider: a Web Application Host</a><a class="next" rel="next" href="../embedding/21-visual-studio.html"><span>next &rarr;</span>Visual Studio, Step by Step</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

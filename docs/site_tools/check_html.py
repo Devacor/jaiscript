@@ -37,6 +37,8 @@ CHROME = [
     ("assets/site.js", "site script"),
     ("assets/style.css", "stylesheet"),
     ("assets/favicon.svg", "favicon"),
+    ("favicon.ico", "favicon fallback"),
+    ('<meta property="og:image"', "og:image"),
     ('<meta name="viewport"', "viewport meta"),
     ('<meta name="description"', "description meta"),
     ('<meta property="og:title"', "og:title"),

@@ -21,7 +21,7 @@ uint64_t type_name_id(string_symbolizer& symbolizer, const std::string& name) {
 // a type without type parameters
 std::string leaf_canonical_name(const type_info& t) {
     switch (t.base_type) {
-        case script_value_type::jai_int_type: return t.is_byte_element() ? t.type_name : "int";
+        case script_value_type::jai_int_type: return t.is_byte_element() || t.is_enum ? t.type_name : "int";
         case script_value_type::jai_float_type: return "float";
         case script_value_type::jai_string_type: return "string";
         case script_value_type::jai_utf8_string_type: return "utf8_string";

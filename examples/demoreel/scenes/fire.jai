@@ -125,7 +125,7 @@ class Fire : Scene {
 	}
 
 	int bank() {
-		return rainbow_on == 1 ? levels + (itrunc(hue_t * 4.0) % phases) * levels : 0;
+		return rainbow_on == 1 ? levels + (math::itrunc(hue_t * 4.0) % phases) * levels : 0;
 	}
 
 	void render(var& grid) override {
@@ -143,10 +143,10 @@ class Fire : Scene {
 		for (int s = 0; s < nsparks; ++s) {
 			float life = slife[s];
 			if (life <= 0.0) { continue; }
-			int x = itrunc(spx[s]);
-			int y = itrunc(spy[s]);
+			int x = math::itrunc(spx[s]);
+			int y = math::itrunc(spy[s]);
 			if (x < 0 || x >= w || y < 0 || y >= h) { continue; }
-			int lv = 40 + itrunc(life * 30.0) + ((fr + s) & 3) * 3;
+			int lv = 40 + math::itrunc(life * 30.0) + ((fr + s) & 3) * 3;
 			grid[y * w + x] = (lv > 72 ? 72 : lv) + b;
 		}
 	}

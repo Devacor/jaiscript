@@ -79,8 +79,12 @@ rather than throw, so "deep nesting does not crash" is tested as "execute return
   `BIN=build/bin bash tools/ci/gates.sh all` (or name gates: `tests-vm gloom crawler demoreel gatorquest lsp`).
 - A library or header change: `bash tools/ci/gates.sh android` cross-compiles the library and the suites with the
   Android NDK (libc++, the standard library Apple platforms use, and 32-bit armeabi-v7a); it skips when no NDK is
-  installed, and targeted.sh picks it. `bash tools/ci/gates.sh headers` compiles every public header alone and
-  `tools/ci/host_warnings.cpp` under `-Wall -Wextra -Werror` with each g++ and clang++ it finds; targeted.sh picks it for
+  installed, and targeted.sh picks it.
+- `bash tools/ci/gates.sh wasm` builds the engine with Emscripten (`tools/jaiscript_web`, a 32-bit libc++ target that runs) and
+  plays the GLOOM, crawler and demoreel shims under Node to the native gates' hashes; it skips when no Emscripten SDK
+  is found, and targeted.sh picks it wherever it picks android. `bash tools/ci/gates.sh headers` compiles every public header alone and
+  `tools/ci/host_warnings.cpp` under `-Wall -Wextra -Werror` with each g++ and clang++ it finds, and wants each case of
+  `tools/ci/must_not_compile.cpp` (a program the headers reject) to fail with its message; targeted.sh picks it for
   any `include/jaiscript` change.
 - A compiler change: dump `jaiscript --manifest=<file> <script>` before and after over the affected programs; the
   manifests (every chunk field, exact constant bits) change only where the change intends.

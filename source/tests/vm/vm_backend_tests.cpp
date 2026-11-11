@@ -101,7 +101,7 @@ public:
 		test("division_by_zero", [this]() {
 			auto e = vm_engine();
 			check_throws([&]() { e->execute("5 / 0"); }, "integer division by zero throws");
-			check_throws([&]() { e->execute("5.0 / 0.0"); }, "float division by zero throws");
+			check_true(std::isinf(e->execute("5.0 / 0.0").as_float()), "float division by zero is IEEE");
 			check_throws([&]() { e->execute("var a = 5; var b = 0; a / b"); }, "variable division by zero throws");
 		});
 
@@ -1408,7 +1408,7 @@ public:
 			const std::tuple<const char*, const char*, int64_t> cases[] = {
 				// The headline: recursive insert through field refs, no return-reassign
 				{"tier1_bst_insert_by_ref", R"(
-				class TreeNode { int value = 0; TreeNode left = null; TreeNode right = null; TreeNode(int val) { value = val; } }
+				class TreeNode { int value = 0; shared_ptr<TreeNode> left = null; shared_ptr<TreeNode> right = null; TreeNode(int val) { value = val; } }
 				function insertNode(var& node, int val) {
 					if (node == null) { node = TreeNode(val); return; }
 					if (val < node.value) { insertNode(node.left, val); } else { insertNode(node.right, val); }
@@ -1437,7 +1437,7 @@ public:
 				// a.b.c, arr[i].field, obj.arr[j] chains all resolve to the innermost node
 				{"tier1_chain_and_mixed_lvalue_args", R"(
 				class Inner { int val = 1; }
-				class Outer { Inner inner = null; var arr = [0, 0]; Outer() { inner = Inner(); } }
+				class Outer { Inner inner = Inner(); var arr = [0, 0]; }
 				function bump(int& x) { x = x + 10; }
 				var o = Outer();
 				bump(o.inner.val);
@@ -1490,7 +1490,7 @@ public:
 				// arg that swaps the chain spine changes what binds (identifier precedent)
 				{"tier1_bind_time_ordering_pinned", R"(
 				class B { int v = 1; }
-				class A { B b = null; A() { b = B(); } }
+				class A { B b = B(); }
 				var a = A();
 				var keep = a.b;
 				function swapB() -> int { a.b = B(); return 0; }
@@ -1515,7 +1515,7 @@ public:
 				function f3(int& x) { x = x + 3; }
 				function f4(P& p) { p = P(); p.v = 99; }
 				function f5(array<int>& a) { a[0] = 9; }
-				class H { int n = 10; P p = null; var arr = null; H() { p = P(); arr = [0]; } }
+				class H { int n = 10; P p = P(); var arr = null; H() { arr = [0]; } }
 				var h = H();
 				f1(h.n);
 				f2(h.n);
@@ -1595,17 +1595,20 @@ public:
 			}
 		});
 
-		test("tier1_typed_field_numeric_conversion_and_null", [this]() {
-			// float converts into an int field and null stores a typed null in a class field, as the direct field
-			// store does (the `TreeNode left = null` idiom; the field's own table)
+		test("tier1_typed_field_reference_runs_the_fields_table", [this]() {
+			// a float into an int field and null into a class value field raise the field's texts through the
+			// reference, as the direct field store does; a bool converts and a shared_ptr field takes null
 			const char* src = R"(
-				class Node { int num = 1; Node next = null; }
+				class Leaf { int id = 7; }
+				class Node { int num = 1; Leaf next = Leaf(); shared_ptr<Leaf> link = new Leaf(); }
 				function put(var& x, var val) { x = val; }
 				var n = Node();
-				put(n.num, 2.7);
-				n.next = Node();
-				put(n.next, null);
-				to_string(n.num) + "|" + type_of(n.next);
+				string out = "";
+				try { put(n.num, 2.7); } catch (e) { out = out + e + "|"; }
+				try { put(n.next, null); } catch (e) { out = out + e + "|"; }
+				put(n.num, true);
+				put(n.link, null);
+				out + to_string(n.num) + "|" + to_string(n.next.id) + "|" + to_string(n.link == null);
 			)";
 			std::string first;
 			for (bool use_vm : {false, true}) {
@@ -1613,7 +1616,7 @@ public:
 				e->set_backend(use_vm ? jai::backend_type::vm : jai::backend_type::interpreter);
 				jai::stdlib::register_all(e);
 				auto got = e->execute(src).as<std::string>();
-				check_eq(std::string("2|object"), got);
+				check_eq(std::string("Cannot assign float to field 'num' of Node (declared int)|Cannot assign null to field 'next' of Node (declared Leaf)|1|7|true"), got);
 				if (!use_vm) { first = got; } else { check_eq(first, got); }
 			}
 		});
@@ -2469,7 +2472,7 @@ public:
 				// Worst-case (right-spine) ref-BST: 200 sequential inserts = ~20k calls with a
 				// Tier-1 lvalue arg per hop; superlinear per-call cost turns this into minutes
 				{"deep_tier1_bst_sequential", R"(
-				class TreeNode { int value = 0; TreeNode left = null; TreeNode right = null; TreeNode(int v) { value = v; } }
+				class TreeNode { int value = 0; shared_ptr<TreeNode> left = null; shared_ptr<TreeNode> right = null; TreeNode(int v) { value = v; } }
 				function insertNode(var& node, int val) {
 					if (node == null) { node = TreeNode(val); return; }
 					if (val < node.value) { insertNode(node.left, val); } else { insertNode(node.right, val); }
@@ -2487,7 +2490,7 @@ public:
 				{"tier1_field_ref_accepts_subtype", R"(
 				class Animal { int id = 0; }
 				class Dog : Animal { int extra = 1; }
-				class Holder { Animal pet = null; Holder() { pet = Animal(); } }
+				class Holder { Animal pet = Animal(); }
 				function put(var& x, var val) { x = val; }
 				var h = Holder();
 				var d = Dog();
@@ -2500,7 +2503,7 @@ public:
 				// class instead of rejecting on the declaration tag
 				{"tier1_field_ref_accepts_var_held_instance", R"(
 				class Node { int v = 1; }
-				class Holder { Node n = null; Holder() { n = Node(); } }
+				class Holder { Node n = Node(); }
 				function put(var& x, var val) { x = val; }
 				var h = Holder();
 				var src = Node();
@@ -2648,7 +2651,8 @@ public:
 			const char* type_error = R"(
 				array<int> arr = [1, 2, 3];
 				function f(int& x) {
-					try { x = "nope"; } catch (e) { return "inner:" + e; }
+					var text = "nope";
+					try { x = text; } catch (e) { return "inner:" + e; }
 					return "no-error";
 				}
 				var out = "";
@@ -2667,7 +2671,7 @@ public:
 			const char* src = R"(
 				class Node { int v = 1; }
 				class Stranger { int s = 2; }
-				class Holder { Node n = null; Holder() { n = Node(); } }
+				class Holder { Node n = Node(); }
 				function put(var& x, var val) { x = val; }
 				var h = Holder();
 				var wrong = Stranger();
@@ -2754,7 +2758,7 @@ public:
 			const char* src = R"(
 				class S { int x = 1; }
 				class T : S { int t = 2; }
-				class H { S p = null; }
+				class H { S p = S(); }
 				function put(var& x, var val) { x = val; }
 				var h1 = H(); h1.p = shared_ptr<S>();
 				var s2 = S(); s2.x = 9;
@@ -2890,13 +2894,15 @@ public:
 				}
 				var a = 5;
 				var r1 = take(a);
-				var r2 = take(2.9);
-				`${r1}|${r2}|${a}`;
+				var r2 = take(true);
+				var f = 2.9;
+				var r3 = "";
+				try { take(f); } catch (e) { r3 = e; }
+				`${r1}|${r2}|${r3}|${a}`;
 			)";
 			auto [i_out, v_out] = run_both_backends_stdlib(src);
 			check_eq(i_out, v_out, "int-param bind parity");
-			check_true(i_out.find("|5") == i_out.size() - 2, std::string("caller local isolated, got: ") + i_out);
-			check_true(i_out.find("int:6|") == 0, std::string("int arg binds unconverted, got: ") + i_out);
+			check_eq(std::string("int:6|int:2|Cannot pass float to parameter 'x' of 'take' (declared int)|5"), i_out, "an int binds unconverted, a bool converts, a float is refused, the caller's local is isolated");
 		});
 
 		// Tier 3(b): the exact-class-match conversion skip must keep value semantics -
@@ -3031,17 +3037,18 @@ public:
 				for (auto i = 0; i < 100; ++i) { sum += i + j; }
 				sum;
 			)", "5650"},
-				// int target, float ident rhs: the int-only fast path must bail and the pair's
-				// typed store-back converts each iteration (0+2.5->2, 2+2.5->4, 4+2.5->6, 6+2.5->8)
+				// int target, var ident rhs that turns float: the int-only fast path must bail and the
+				// pair's typed store-back refuses the float, the earlier sums kept
 				{"compound_fused_bare_mixed_type_bails", R"(
 				function h() -> string {
 					int x = 0;
-					float f = 2.5;
-					for (int i = 0; i < 4; ++i) { x += f; }
-					return `${x}`;
+					var f = 2;
+					string caught = "";
+					try { for (int i = 0; i < 4; ++i) { x += f; if (i == 1) { f = 2.5; } } } catch (e) { caught = e; }
+					return `${x}|${caught}`;
 				}
 				h();
-			)", "8"},
+			)", "4|Cannot assign float to 'x' (declared int)"},
 				// current_catch_var_id_ bails the fast path; the pair's exec_load resolves the
 				// catch variable from the active exception
 				{"compound_fused_bare_catch_var_rhs", R"(
@@ -3251,14 +3258,14 @@ public:
 		test("stage1_typed_return_classification_routes", [this, run_both_backends]() {
 			// Every return_conv class: matching primitive pass-through keeps value AND
 			// type tagging (the typed stores below enforce it); mismatched primitive
-			// converts (float->int truncates); ref params flatten on value returns;
+			// converts (bool->int); ref params flatten on value returns;
 			// auto stays deref-only
 			auto [i1, v1] = run_both_backends(R"(
 				function fi() -> int { return 5; }
 				function ff() -> float { return 1.5; }
 				function fs() -> string { return "ok"; }
 				function fb() -> bool { return true; }
-				function ftrunc() -> int { return 2.7; }
+				function fconv() -> int { return true; }
 				function fauto(auto n) -> auto { return n; }
 				function fref(int& r) -> int { return r; }
 				var q = 9;
@@ -3266,11 +3273,11 @@ public:
 				float tf = ff();
 				string ts = fs();
 				bool tb = fb();
-				`${ti}:${tf}:${ts}:${tb}:${ftrunc()}:${fauto(4)}:${fref(q)}`;
+				`${ti}:${tf}:${ts}:${tb}:${fconv()}:${fauto(4)}:${fref(q)}`;
 			)");
 			check_eq(i1, v1, "typed-return route parity");
 			check(i1.rfind("5:", 0) == 0, "int return value: " + i1);
-			check(i1.find(":2:") != std::string::npos, "float->int return truncates (pinned): " + i1);
+			check_eq(std::string("5:1.5:ok:true:1:4:9"), i1, "bool->int return converts");
 		});
 
 		test("stage1_typed_return_mismatch_error_parity", [this, run_both_backends]() {
@@ -3758,8 +3765,9 @@ public:
 		});
 		test("a_host_direct_entry_runs_for_its_function_and_arity_only", [this]() {
 			// the embedding guide's add_host_direct sample: one body behind the variadic function and its direct entry; another
-			// argument count, a reference argument and a script rebinding call the function
-			auto run = [](bool use_vm, const char* program) -> std::string {
+			// argument count, a reference argument and a script rebinding call the function. An engine-first variadic function
+			// carries its own entry, alone under its name and unguarded, and returns what a typed binding returns
+			auto run = [this](bool use_vm, const char* program) -> std::string {
 				auto e = jai::foundry::make_default_engine();
 				e->set_backend(use_vm ? jai::backend_type::vm : jai::backend_type::interpreter);
 				e->execution_budget(0);
@@ -3773,14 +3781,48 @@ public:
 					return label_of(eng, args.data(), args.size());
 				});
 				e->add_host_direct("label", 1, label_of, e.get());
-				try { return e->execute(program).to_string(); } catch (const std::exception& ex) { return std::string("ERROR: ") + ex.what(); }
+				e->add_variadic_function("sum_all", [](jai::engine&, std::span<const jai::script_value> args) {
+					jai::script_int total = 0;
+					for (const auto& a : args) { total += a.as_int(); }
+					return total;
+				});
+				e->add_variadic_function("kind_of", [](jai::engine& eng, std::span<const jai::script_value> args) {
+					return jai::script_value(std::string(args.empty() ? "none" : args[0].is_int() ? "int" : args[0].is_string() ? "string" : "other"), &eng);
+				});
+				e->add_variadic_function("first_of", [](jai::engine&, std::span<const jai::script_value> args) -> jai::checked_result<jai::script_value> {
+					if (args.empty()) { return jai::checked_result<jai::script_value>(make_error_code(runtime_error_code::argument_count_mismatch), "first_of needs an argument"); }
+					return args[0];
+				});
+				e->add_variadic_function("try_count", [](jai::engine&, std::span<const jai::script_value> args) { return !args.empty(); }, jai::nodiscard);
+				e->add_variadic_function("io_count", [](jai::engine&, std::span<const jai::script_value> args) { return static_cast<jai::script_int>(args.size()); }, jai::filesystem);
+				e->register_privilege("app.count");
+				e->add_variadic_function("app_count", [](jai::engine&, std::span<const jai::script_value> args) { return static_cast<jai::script_int>(args.size()); }, "app.count");
+				e->add_variadic_function("both_count", [](jai::engine&, std::span<const jai::script_value> args) { return static_cast<jai::script_int>(args.size()); }, {"filesystem", "app.count"});
+				auto row_of = [&](const char* name) {
+					const jai::script_value fn = detail::engine_access::get_variable_unheld(*e, name);
+					return detail::engine_access::host_direct_for(*e, &fn.unchecked_as_function()) != nullptr;
+				};
+				check_true(row_of("sum_all") && row_of("kind_of") && row_of("try_count"), "an unguarded engine-first function has its direct entry");
+				check_false(row_of("io_count") || row_of("app_count") || row_of("both_count"), "a guarded one runs its guard on every call");
+				check_true(e->is_nodiscard_function("try_count") && !e->is_nodiscard_function("sum_all"));
+				const auto dropped = e->check("try_count(1);\nprint(1);");
+				check_true(dropped.format().find("the result of 'try_count' is discarded") != std::string::npos, dropped.format());
+				std::string denied;
+				try { e->execute("app_count(1);"); } catch (const std::exception& ex) { denied = ex.what(); }
+				e->enable(std::string_view("app.count"));
+				try { return denied + "|" + e->execute(program).to_string(); } catch (const std::exception& ex) { return std::string("ERROR: ") + ex.what(); }
 			};
 			const char* program =
 				"string out = \"\"; float f = 2.5;\n"
 				"for (int i = 0; i < 3; ++i) { out += label(i) + label(f) + label(\"s\") + label() + label(1, 2) + \" \"; }\n"
 				"array<float> fs = [1.5]; for (auto& r : fs) { out += label(r); }\n"
+				"int total = 0; for (int i = 0; i < 3; ++i) { total += sum_all() + sum_all(i) + sum_all(1, 2, 3) + sum_all(1, 2, 3, 4, 5, 6, 7, 8, 9); }\n"
+				"array<int> xs = [40]; for (auto& x : xs) { total += sum_all(x, 2); }\n"
+				"out += ` ${total} ${kind_of()}${kind_of(1)}${kind_of(\"s\")}${kind_of(1.5)} ${first_of(7, 8)}`;\n"
+				"try { first_of(); } catch (e) { out += ` ${e}`; }\n"
+				"bool any = try_count(); out += ` ${any} ${io_count(1, 2)} ${app_count(1, 2, 3)} ${both_count()}`;\n"
 				"out;";
-			check_eq(std::string("intfloatother?? intfloatother?? intfloatother?? float"), run(false, program), "interpreter");
+			check_eq(std::string("Insufficient privilege: app.count.|intfloatother?? intfloatother?? intfloatother?? float 198 noneintstringother 7 first_of needs an argument false 2 3 0"), run(false, program), "interpreter");
 			check_eq(run(false, program), run(true, program), "parity");
 		});
 		test("map_stores_borrow_their_key_and_element_reads_write_back_only_through_mutators", [this]() {
@@ -4540,7 +4582,7 @@ public:
 			ref_off->type_proofs(false);
 			auto ref_on = vm_engine();
 			const char* defs = "int f(int n) { int m = n * 2; return m; }\nint g(int a, int b) { return a + b; }\nint x = 0; float y = 1.5;";
-			const char* use = "x = f(3); x = g(x, 4); x = x + 1; y = y * 2.0; x = 2.5; to_string(x) + \":\" + type_of(x) + \":\" + to_string(y)";
+			const char* use = "x = f(3); x = g(x, 4); x = x + 1; y = y * 2.0; x = true; to_string(x) + \":\" + type_of(x) + \":\" + to_string(y)";
 			const char* retype = "string f(int n) { return \"s\"; }";
 			for (auto* e : {off_then_on.get(), on_then_off.get(), ref_off.get(), ref_on.get()}) {
 				jai::stdlib::register_all(*e);
@@ -4688,7 +4730,7 @@ public:
 				run("var<-hetero", function() -> string { var r = []; int i = 0; r.push(th[i]); i = 2; r.push(th[i]); i = 3; r.push(th[i]); return to_string(r[0]) + r[1] + to_string(r[2]); });
 				run("var<-hetero-array", function() -> int { var r = []; int i = 4; r.push(th[i]); return r[0][0]; });
 				run("int<-int", function() -> int { array<int> r = []; int i = 2; r.push(ti[i]); return r[0]; });
-				run("int<-float", function() -> int { array<int> r = []; int i = 0; r.push(tf[i]); return r[0]; });
+				run("int<-float", function() -> int { array<int> r = []; int i = 0; [[warn_mode]] r.push(tf[i]); return r[0]; });
 				run("int<-str", function() -> int { array<int> r = []; int i = 0; [[warn_mode]] r.push(ts[i]); return r[0]; });
 				run("float<-int", function() -> float { array<float> r = []; int i = 2; r.push(ti[i]); return r[0]; });
 				run("float<-float", function() -> float { array<float> r = []; int i = 1; r.push(tf[i]); return r[0]; });
@@ -4711,6 +4753,7 @@ public:
 			check_eq(a.size(), b.size());
 			for (size_t i = 0; i < a.size() && i < b.size(); ++i) { check_eq(a[i].as_string(), b[i].as_string(), "row " + std::to_string(i)); }
 			check_eq(std::string("var<-int:203"), a[0].as_string());
+			check_eq(std::string("int<-float!Cannot push 'float' to array<int>"), a[6].as_string());
 			check_eq(std::string("oob!Array index 9 out of bounds for array of size 3"), a[12].as_string());
 		});
 
@@ -5036,7 +5079,7 @@ public:
 			check_true(listing_of("var a = []; var t = [[1]]; var f = function() { a.push(t[0][0]); }; var z = 0;").find("PUSH_FUSED") == std::string::npos, "a two-level subscript keeps the general call");
 
 			const char* cases[] = {
-				"array<int> a = []; a.push(1); a.push(2.9); int v = 7; a.push(v); return to_string(a[0]) + \",\" + to_string(a[1]) + \",\" + to_string(a[2]);",
+				"array<int> a = []; string m = \"ok\"; a.push(1); try { a.push(2.9); } catch (e) { m = e; } int v = 7; a.push(v); return m + \"|\" + to_string(a[0]) + \",\" + to_string(a[1]) + \",\" + to_string(a.size());",
 				"array<int> a = []; string m = \"ok\"; try { a.push(\"x\"); } catch (e) { m = e; } return m + \"|\" + to_string(a.size());",
 				"array<int> a = []; var big = 1e100; string m = \"ok\"; try { a.push(big); } catch (e) { m = e; } return m;",
 				"var a = []; a.push(1); a.push(\"s\"); a.push(2.5); return to_string(a.size()) + \":\" + to_string(a[1]) + type_of(a[2]);",
@@ -5066,7 +5109,7 @@ public:
 				"var a = []; string s = \"lit\"; a.push(s); s += \"!\"; a[0] += \"?\"; return s + a[0];",
 				"var a = []; a.push(\"k\"); a[0] += \"1\"; a.push(\"k\"); return a[0] + a[1] + \"k\";",
 				"array<float> fs = []; int i = 3; fs.push(i); fs.push(2.5); float x = 1.25; fs.push(x); return type_of(fs[0]) + to_string(fs[0] + fs[1] + fs[2]);",
-				"array<int> a = []; float f = 2.9; a.push(f); a.push(-0.5); return to_string(a[0]) + \",\" + to_string(a[1]);",
+				"array<int> a = []; float f = 2.9; string m = \"\"; try { a.push(f); } catch (e) { m = e; } try { a.push(-0.5); } catch (e) { m = m + \"/\" + e; } a.push(cast<int>(f)); return m + \"|\" + to_string(a[0]) + \",\" + to_string(a.size());",
 				"array<int> a = []; bool b = true; a.push(b); return to_string(a[0]) + type_of(a[0]);",
 				"array<string> ss = []; string k = \"x\"; ss.push(k); k += \"y\"; ss[0] += \"z\"; return k + ss[0] + to_string(ss.size());",
 				"array<string> ss = []; string m = \"ok\"; try { ss.push(5); } catch (e) { m = e; } return m + to_string(ss.size());",
@@ -5105,7 +5148,8 @@ public:
 			auto vmx = vm_engine();
 			jai::stdlib::register_all(*vmx);
 			check_eq(std::string("Cannot push 'string' to array<int>|0"), vmx->execute("[[warn_mode]] string run() { array<int> a = []; string m = \"ok\"; try { a.push(\"x\"); } catch (e) { m = e; } return m + \"|\" + to_string(a.size()); } run();").as_string());
-			check_eq(std::string("Cannot convert float to integer: non-finite or out of range"), vmx->execute("string run() { array<int> a = []; var big = 1e100; string m = \"ok\"; try { a.push(big); } catch (e) { m = e; } return m; } run();").as_string());
+			check_eq(std::string("Cannot push 'float' to array<int>"), vmx->execute("string run() { array<int> a = []; var big = 1e100; string m = \"ok\"; try { a.push(big); } catch (e) { m = e; } return m; } run();").as_string());
+			check_eq(std::string("Cannot push 'float' to array<int>|1,7,2"), vmx->execute("[[warn_mode]] string run() { array<int> a = []; string m = \"ok\"; a.push(1); try { a.push(2.9); } catch (e) { m = e; } int v = 7; a.push(v); return m + \"|\" + to_string(a[0]) + \",\" + to_string(a[1]) + \",\" + to_string(a.size()); } run();").as_string());
 		});
 	}
 };

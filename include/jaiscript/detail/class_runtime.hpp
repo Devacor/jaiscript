@@ -2063,14 +2063,26 @@ inline checked_result<slot_conversion> convert_for_typed_slot_core(const script_
         return slot_conversion::converted_to(std::move(*outcome.value));
     };
 
+    if (target_type->is_enum) [[unlikely]] {
+        // an enum slot holds its own enum's values: one stamped with it stays, an unstamped int that is one of them takes
+        // the stamp (a var or a host hands those over), another enum's value and any other int are refused
+        if (ri != script_value::TYPEID_INT) return slot_conversion::of(verdict::reject);
+        const type_info* tag = v.type_info_raw();
+        if (tag == target_type->enum_value_type) return slot_conversion::of(verdict::identity);
+        if ((tag && tag->is_enum) || !target_type->enum_holds(v.unchecked_as_int())) return slot_conversion::of(verdict::reject);
+        script_value stamped(v.unchecked_as_int(), eng);
+        stamped.set_type_info(target_type->enum_value_type);
+        return slot_conversion::converted_to(std::move(stamped));
+    }
     switch (target) {
         case script_value_type::jai_int_type:
-            if (src == script_value_type::jai_int_type && primitive_src) return slot_conversion::of(verdict::identity);
-			if (src == script_value_type::jai_float_type && primitive_src) {
-				auto result = checked_float_to_integer(v.unchecked_as_float());
-				if (!result) { return result.error_value(); }
-				return slot_conversion::converted_to(script_value(result.value(), eng));
-			}
+            if (src == script_value_type::jai_int_type && primitive_src) {
+                // an enum's value stores as the plain int it is
+                if (const type_info* tag = v.type_info_raw(); ri == script_value::TYPEID_INT && tag && tag->is_enum) [[unlikely]] {
+                    return slot_conversion::converted_to(script_value(v.unchecked_as_int(), eng));
+                }
+                return slot_conversion::of(verdict::identity);
+            }
             if (src == script_value_type::jai_bool_type && primitive_src) return slot_conversion::converted_to(script_value(static_cast<script_int>(v.unchecked_as_bool() ? 1 : 0), eng));
             if (object_src) return slot_conversion::of(verdict::needs_to_x);
             return slot_conversion::of(verdict::reject);
@@ -2117,7 +2129,6 @@ inline checked_result<slot_conversion> convert_for_typed_slot_core(const script_
             if (ri == script_value::TYPEID_MAP) return boundary();
             return slot_conversion::of(verdict::reject);
         case script_value_type::jai_object_type: {
-            if (ri == script_value::TYPEID_NULL) return typed_null();
             if (object_src) {
                 const type_info* tag = v.get_type_info().get();
                 if (tag && !tag->type_name.empty() && !target_type->type_name.empty() && tag->type_name == target_type->type_name) {
@@ -2146,11 +2157,11 @@ inline checked_result<slot_conversion> convert_for_typed_slot_core(const script_
         case script_value_type::jai_color_type:
         case script_value_type::jai_ivec2_type:
         case script_value_type::jai_ivec3_type: {
-            // the same kind; the other precision of the same dimensions converts (int32 to binary32 in one rounding, binary32
-            // to int32 through the checked kernel); anything else rejects with the site's text
+            // the same kind; an ivec widens into the vec of its dimensions (int32 to binary32 in one rounding); anything else,
+            // a vec into an ivec too (cast<math::ivecN> truncates), rejects with the site's text
             const script_value_type have = detail::math::kind_of(v);
             if (have == target) return slot_conversion::of(verdict::identity);
-            if (!detail::math::converts(have, target)) return slot_conversion::of(verdict::reject);
+            if (!detail::math::converts(have, target) || detail::math::narrows(have, target)) return slot_conversion::of(verdict::reject);
             auto converted = detail::math::convert(v, target, eng);
             if (!converted) { return converted.error_value(); }
             return slot_conversion::converted_to(std::move(converted.value()));
@@ -2356,6 +2367,7 @@ inline std::string slot_source_type_name(const script_value& value_in, engine* e
     const bool named_tag = tag && tag->base_type != script_value_type::jai_any_type && !tag->type_name.empty();
     switch (v.raw_storage_index()) {
         case script_value::TYPEID_NULL: return "null";
+        case script_value::TYPEID_INT: return tag && tag->is_enum ? tag->type_name : std::string("int");
         case script_value::TYPEID_OBJECT:
         case script_value::TYPEID_CPP_BOUND: {
             if (v.raw_storage_index() == script_value::TYPEID_CPP_BOUND && v.current_type() != script_value_type::jai_null_type) {
@@ -2638,7 +2650,7 @@ inline checked_result<script_value> typed_store_convert(const script_value& valu
             case script_value_type::jai_char_type: want = script_value::TYPEID_CHAR; break;
             default: break;
         }
-        if (want != script_value::TYPEID_INVALID && v.raw_storage_index() == want) {
+        if (want != script_value::TYPEID_INVALID && v.raw_storage_index() == want && !(declared->is_enum || (v.type_info_raw() && v.type_info_raw()->is_enum))) {
             script_value stored = v;
             stored.set_type_info(declared);
             return stored;
@@ -2673,9 +2685,19 @@ inline checked_result<script_value> field_store_convert(const script_value& valu
     });
 }
 
-// The no-script table (set_field, hot-reload migration): nullopt where a conversion would
-// have to run script or does not exist.
+// The no-script table (set_field, hot-reload migration, a load): nullopt where a conversion would
+// have to run script or does not exist. A float into an int field truncates as cast<int> does (no script store is there to spell it).
 inline std::optional<script_value> field_store_convert_no_script(const script_value& value, const type_info_ptr& declared, engine* eng) {
+	if (declared && declared->base_type == script_value_type::jai_int_type && value.deref().raw_storage_index() == script_value::TYPEID_FLOAT) {
+		auto truncated = checked_float_to_integer(value.deref().unchecked_as_float());
+		if (!truncated) { return std::nullopt; }
+		return script_value(truncated.value(), eng);
+	}
+	if (const script_value& held = value.deref(); declared && detail::math::is_kind(held.raw_storage_index()) && detail::math::narrows(detail::math::kind_of(held), declared->base_type)) {
+		auto truncated = detail::math::convert(held, declared->base_type, eng);
+		if (!truncated) { return std::nullopt; }
+		return std::move(truncated.value());
+	}
 	auto result = convert_for_typed_slot_core(value, declared, eng);
 	if (!result) { return std::nullopt; }
 	return field_store_value(result.value(), value, declared, eng);

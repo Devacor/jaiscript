@@ -692,14 +692,14 @@ private:
 					const vk kind = cands_[static_cast<size_t>(cand)].kind;
 					const math_fn fn = vec_method_fn(kind, m->member);
 					switch (fn) {
-						case math_fn::length_: case math_fn::distance: return c_float;
+						case math_fn::length_: case math_fn::distance: case math_fn::angle_: return c_float;
 						case math_fn::length_squared_: case math_fn::dot_: return math::integral(kind) ? c_unknown : c_float;
 						default: return c_unknown;
 					}
 				}
 				switch (math_intrinsic_for_call(m)) {
 					case math_fn::sqrt_: case math_fn::sin_: case math_fn::cos_: case math_fn::tan_: case math_fn::pow_: case math_fn::atan2_:
-					case math_fn::radians_to_degrees: case math_fn::degrees_to_radians: case math_fn::f32_: return c_float;
+					case math_fn::radians_to_degrees: case math_fn::degrees_to_radians: case math_fn::f32_: case math_fn::angle_: return c_float;
 					case math_fn::itrunc: case math_fn::ifloor: case math_fn::i32_:
 					case math_fn::i32_add_: case math_fn::i32_sub_: case math_fn::i32_mul_: case math_fn::i32_div_: case math_fn::i32_neg_: return c_int;
 					default: return c_unknown;
@@ -758,7 +758,7 @@ private:
 				if (m->is_static) {
 					const math_fn fn = math_intrinsic_for_call(m);
 					if (fn == math_fn::none) return false;
-				} else if (cand_of(m->object.get()) < 0 || vec_method_fn(vk::jai_vec3_type, m->member) == math_fn::none) {
+				} else if (const int cand = cand_of(m->object.get()); cand < 0 || vec_method_fn(cands_[static_cast<size_t>(cand)].kind, m->member) == math_fn::none) {
 					return false;
 				}
 				for (const auto& a : c->arguments) if (!pure_statement(a.get())) return false;
@@ -909,7 +909,20 @@ private:
 			case math_fn::mix_out_: case math_fn::mix_in_out_: case math_fn::mix_out_in_: case math_fn::unmix_in_: case math_fn::unmix_out_:
 			case math_fn::unmix_in_out_: case math_fn::unmix_out_in_:
 				return vec_family(fn, c, f, ctx);
-			case math_fn::normalize_: case math_fn::cross_: case math_fn::perpendicular_: case math_fn::reflect_: case math_fn::project_: case math_fn::rotate_: {
+			case math_fn::from_angle_: {
+				// (cos, sin), each times the length when one is given: the angle and the length are pure, read once per component
+				uint8_t cls = c_unknown;
+				expression_ptr angle, length;
+				if (!row_scalar(c->arguments[0], cls, angle) || (cls != c_int && cls != c_float)) return false;
+				if (c->arguments.size() == 2 && (!row_scalar(c->arguments[1], cls, length) || (cls != c_int && cls != c_float))) return false;
+				f = vform{}; f.kind = vk::jai_vec2_type; f.n = 2;
+				expression_ptr cs = math_call("cos", {angle}, loc), sn = math_call("sin", {angle}, loc);
+				f.c[0] = f32(length ? bin(cs, token_type::star, length, loc) : cs, loc);
+				f.c[1] = f32(length ? bin(sn, token_type::star, length, loc) : sn, loc);
+				return true;
+			}
+			case math_fn::normalize_: case math_fn::cross_: case math_fn::perpendicular_: case math_fn::reflect_: case math_fn::project_: case math_fn::rotate_:
+			case math_fn::rotate_around_: {
 				if (c->arguments.empty()) return false;
 				vform first;
 				if (!vec_of(c->arguments[0], first, ctx)) return false;
@@ -966,8 +979,12 @@ private:
 		return true;
 	}
 
-	// v's components as kind `to` (the typed-slot row): the same kind passes, an ivec widens through f32$, a vec narrows
-	// through i32$ (the checked float-to-int kernel, which may raise)
+	// v's components as kind `to`: the same kind passes, an ivec widens through f32$, and the constructor's vector argument
+	// narrows through i32$ (the checked float-to-int kernel, which may raise); a slot takes no narrowing, so its store stays boxed
+	// and raises the slot's text
+	bool slot_convert_into(const vform& v, vk to, const source_location& loc, vform& f) {
+		return !math::narrows(v.kind, to) && convert_into(v, to, loc, f);
+	}
 	bool convert_into(const vform& v, vk to, const source_location& loc, vform& f) {
 		if (!math::converts(v.kind, to)) return false;
 		f.kind = to; f.n = v.n;
@@ -1116,6 +1133,26 @@ private:
 				}
 				return true;
 			}
+			case math_fn::rotate_around_: {
+				// d = v - pivot; pivot + (d.x cos - d.y sin, d.x sin + d.y cos)
+				if (!ctx.prelude || first.sensitive != 0 || first.n != 2 || args.size() != from + 2) return false;
+				vform pivot;
+				if (!vec_of(args[from], pivot, ctx) || pivot.n != 2 || math::is_color(pivot.kind) || pivot.sensitive != 0) return false;
+				uint8_t cls = c_unknown;
+				expression_ptr angle;
+				if (!row_scalar(args[from + 1], cls, angle) || (cls != c_int && cls != c_float)) return false;
+				widen(first); widen(pivot);
+				if (!materialize(first, *ctx.prelude, loc) || !materialize(pivot, *ctx.prelude, loc)) return false;
+				f.merge(first); f.merge(pivot);
+				f.kind = family(first.kind); f.n = 2;
+				expression_ptr cs = temp(false, math_call("cos", {angle}, loc), *ctx.prelude, loc);
+				expression_ptr sn = temp(false, math_call("sin", {angle}, loc), *ctx.prelude, loc);
+				expression_ptr dx = temp(false, bin(first.c[0], token_type::minus, pivot.c[0], loc), *ctx.prelude, loc);
+				expression_ptr dy = temp(false, bin(first.c[1], token_type::minus, pivot.c[1], loc), *ctx.prelude, loc);
+				f.c[0] = f32(bin(pivot.c[0], token_type::plus, bin(bin(dx, token_type::star, cs, loc), token_type::minus, bin(dy, token_type::star, sn, loc), loc), loc), loc);
+				f.c[1] = f32(bin(pivot.c[1], token_type::plus, bin(bin(dx, token_type::star, sn, loc), token_type::plus, bin(dy, token_type::star, cs, loc), loc), loc), loc);
+				return true;
+			}
 			case math_fn::cross_: {
 				if (args.size() != from + 1) return false;
 				vform second;
@@ -1172,7 +1209,7 @@ private:
 		return s;
 	}
 
-	// ---- scalar geometry: dot, length, length_squared, distance, distance_squared, the 2D cross ----
+	// ---- scalar geometry: dot, length, length_squared, distance, distance_squared, the 2D cross, angle_between, angle ----
 	expression_ptr geometry_scalar(const call_expr* c, stmt_ctx& ctx) {
 		if (!c->callee || c->callee->get_type() != node_type::member_expr) return nullptr;
 		auto* m = static_cast<const member_expr*>(c->callee.get());
@@ -1184,7 +1221,7 @@ private:
 			fn = math_intrinsic_for_call(m);
 			const size_t argc = c->arguments.size();
 			const bool two = fn == math_fn::dot_ || fn == math_fn::distance || fn == math_fn::distance_squared || fn == math_fn::cross_ || fn == math_fn::angle_between_;
-			const bool one = fn == math_fn::length_ || fn == math_fn::length_squared_;
+			const bool one = fn == math_fn::length_ || fn == math_fn::length_squared_ || fn == math_fn::angle_;
 			if (!(two && argc == 2) && !(one && argc == 1)) return nullptr;
 			if (!vec_of(c->arguments[0], a, ctx)) return nullptr;
 			if (two) { if (!vec_of(c->arguments[1], b, ctx)) return nullptr; have_b = true; }
@@ -1195,18 +1232,18 @@ private:
 			if (fn == math_fn::dot_ || fn == math_fn::distance || fn == math_fn::cross_) {
 				if (!vec_of(c->arguments[0], b, ctx)) return nullptr;
 				have_b = true;
-			} else if (fn != math_fn::length_ && fn != math_fn::length_squared_) {
+			} else if (fn != math_fn::length_ && fn != math_fn::length_squared_ && fn != math_fn::angle_) {
 				return nullptr;
 			}
 		}
 		if (math::is_color(a.kind) || (have_b && (math::is_color(b.kind) || b.n != a.n))) return nullptr;
-		if (fn == math_fn::cross_ && a.n != 2) return nullptr;
-		const bool exact = math::integral(a.kind) && (!have_b || math::integral(b.kind)) && fn != math_fn::length_ && fn != math_fn::distance && fn != math_fn::angle_between_;
+		if ((fn == math_fn::cross_ || fn == math_fn::angle_) && a.n != 2) return nullptr;
+		const bool exact = math::integral(a.kind) && (!have_b || math::integral(b.kind)) && fn != math_fn::length_ && fn != math_fn::distance && fn != math_fn::angle_between_ && fn != math_fn::angle_;
 		if (!exact) { widen(a); if (have_b) widen(b); }
 		const int operand_sensitive = a.sensitive + (have_b ? b.sensitive : 0);
 		if (operand_sensitive > (exact ? 0 : 1)) return nullptr;
 		// a component read twice must be a slot or a literal, or land in a temporary first
-		const bool twice = fn == math_fn::length_ || fn == math_fn::length_squared_ || fn == math_fn::distance || fn == math_fn::distance_squared || fn == math_fn::cross_;
+		const bool twice = fn == math_fn::length_ || fn == math_fn::length_squared_ || fn == math_fn::distance || fn == math_fn::distance_squared || fn == math_fn::cross_ || fn == math_fn::angle_;
 		if (twice && (!simple_form(a) || (have_b && !simple_form(b)))) {
 			if (!ctx.prelude || operand_sensitive != 0) return nullptr;
 			if (!materialize(a, *ctx.prelude, loc) || (have_b && !materialize(b, *ctx.prelude, loc))) return nullptr;
@@ -1220,6 +1257,12 @@ private:
 			auto zero = bin(bin(la, token_type::equal_equal, lit_float(0.0, loc), loc), token_type::pipe_pipe, bin(lb, token_type::equal_equal, lit_float(0.0, loc), loc), loc);
 			auto cosine = bin(dot_expr(a, b, loc), token_type::slash, bin(la, token_type::star, lb, loc), loc);
 			return std::make_shared<ternary_expr>(loc, zero, lit_float(0.0, loc), math_call("acos$", {cosine}, loc));
+		}
+		if (fn == math_fn::angle_) {
+			// atan2(y, x) with a zero y read as +0, and 0 for the zero vector (the kernel's geometry::direction)
+			auto is_zero = [&](const expression_ptr& comp) { return bin(comp, token_type::equal_equal, lit_float(0.0, loc), loc); };
+			expression_ptr y = std::make_shared<ternary_expr>(loc, is_zero(a.c[1]), lit_float(0.0, loc), a.c[1]);
+			return std::make_shared<ternary_expr>(loc, bin(is_zero(a.c[0]), token_type::ampersand_ampersand, is_zero(a.c[1]), loc), lit_float(0.0, loc), math_call("atan2", {y, a.c[0]}, loc));
 		}
 		switch (fn) {
 			case math_fn::dot_: return dot_expr(a, b, loc);
@@ -1711,7 +1754,7 @@ private:
 		vform f;
 		if (v->initializer && vec_of(v->initializer, f, ctx)) {
 			vform conv;
-			if (convert_into(f, c.kind, loc, conv)) {
+			if (slot_convert_into(f, c.kind, loc, conv)) {
 				conv.sensitive += f.sensitive;
 				if (conv.sensitive <= 1) {
 					for (auto& p : prelude) out.push_back(std::move(p));
@@ -1869,7 +1912,7 @@ private:
 			f = rhs;
 		}
 		vform conv;
-		if (!convert_into(f, self.kind, loc, conv)) return false;
+		if (!slot_convert_into(f, self.kind, loc, conv)) return false;
 		conv.sensitive += f.sensitive;
 		if (conv.sensitive > 1) return false;   // the element read and one raising row at most, as a local's store takes
 		for (auto& p : prelude) out.push_back(std::move(p));
@@ -1910,7 +1953,7 @@ private:
 				hazard = ok && cross_reads(f, c);   // p *= p.x reads the stored x in y's product
 			}
 			vform conv;
-			if (ok && convert_into(f, c.kind, loc, conv)) {
+			if (ok && slot_convert_into(f, c.kind, loc, conv)) {
 				conv.sensitive += f.sensitive;
 				if (conv.sensitive <= 1) {
 					for (auto& p : prelude) out.push_back(std::move(p));

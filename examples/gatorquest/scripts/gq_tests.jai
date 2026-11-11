@@ -24,9 +24,9 @@ bool save_roundtrip(string dir) {
 	time::stopwatch lap;
 	lap.start();
 	string msg = save_world_and_chars();
-	int save_ms = lap.delta() * 1000;
+	int save_ms = cast<int>(lap.delta() * 1000);
 	string back = load_world_and_chars();
-	int load_ms = lap.delta() * 1000;
+	int load_ms = cast<int>(lap.delta() * 1000);
 	int after = state_hash();
 	print(`  save: ${msg} (${save_ms} ms, ${read_file(world_path()).size()} bytes)  load: ${back} (${load_ms} ms)  hash ${before} -> ${after}`);
 	return before == after;
@@ -462,11 +462,11 @@ int run_nettest(string base_dir, int port) {
 	lap.start();
 	int bytes0 = NET_BYTES_OUT;
 	nt_rounds(20);
-	int per_tick_us = lap.delta() * 1000000 / 20;
+	int per_tick_us = cast<int>(lap.delta() * 1000000 / 20);
 	int per_tick_bytes = (NET_BYTES_OUT - bytes0) / 20;
 	lap.start();
 	for (int i = 0; i < 20; ++i) { host_after_tick(); }
-	int snap_us = lap.delta() * 1000000 / 20;
+	int snap_us = cast<int>(lap.delta() * 1000000 / 20);
 	for (int i = 0; i < 20; ++i) {
 		for (int s = 0; s < NCS_CH.size(); ++s) { net_session_pump(s); }
 	}

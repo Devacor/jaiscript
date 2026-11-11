@@ -42,6 +42,9 @@
 #include <deque>
 #include <mutex>
 #endif
+#if defined(__GNUC__)
+#include <cxxabi.h>
+#endif
 #include <charconv>
 #include <iostream>
 #include <fstream>
@@ -153,34 +156,6 @@ checked_result<script_value> script_callable_thunk::call(const std::vector<scrip
         auto* cc = static_cast<call*>(ctx);
         return be.execute_callable(cc->payload, cc->args);
     }, &c, host_call);
-}
-
-checked_result<script_value> engine::checked_host_entry(host_entry_body run, void* context, bool host_call) {
-    execution_backend* backend = calling_backend();
-    if (!backend) {
-        return checked_result<script_value>(make_error_code(runtime_error_code::engine_destroyed), "Engine backend unavailable");
-    }
-    // Mid-script host callbacks keep the latched unwinding flag: the calling script's catch must still see the thrown VALUE
-    if (backend->is_executing() || backend->is_unwinding()) {
-        run_pin pin(host_call ? this : nullptr);
-        return run(*backend, context);
-    }
-    note_host_entry();
-    debug_execution_scope executing(*this);
-    backend->begin_host_call();
-    const auto failure = [&](const char* text) {
-        backend->prepare_for_execution();
-        return checked_result<script_value>(make_error_code(runtime_error_code::evaluation_failed), "{0}", park_error_text(text));
-    };
-    try {
-        auto result = run(*backend, context);
-        if (result.has_value() && backend->is_unwinding()) [[unlikely]] {   // an uncaught script throw: its text, as execute() throws it
-            return failure(without_category_suffix(backend->get_current_exception()).what());
-        }
-        return result;
-    } catch (const std::exception& e) {   // a nested run's failure (an import that is missing or fails its check) leaves as an exception
-        return failure(e.what());
-    }
 }
 
 namespace {
@@ -801,6 +776,7 @@ struct engine::implementation {
     type_info* type_info_void_ = nullptr;
     type_info* type_info_invalid_ = nullptr;
     type_info* type_info_any_ = nullptr;
+    type_info* type_info_error_[k_error_kind_count] = {};   // the dynamic type a caught run-time error carries, one per kind
     type_info* type_info_reference_null_ = nullptr;   // interned "null&" twin (get_type_info_reference fast path)
     type_info* type_info_untyped_function_ = nullptr;
 
@@ -814,6 +790,21 @@ struct engine::implementation {
     execution_backend_ptr backend;   // constructed lazily via engine::backend()
     backend_type current_backend_type = backend_type::vm;
     bool has_executed_ = false; // Once true, set_backend is forbidden (defined callables capture the backend)
+
+    struct unresolved_binding_type {
+        std::string class_name;
+        std::string member;
+        std::type_index type;
+    };
+    std::vector<unresolved_binding_type> unresolved_binding_types_;
+    std::vector<std::string> binding_commit_failures_;
+    detail::pending_binder* first_pending_binder_ = nullptr;
+    detail::pending_binder* last_pending_binder_ = nullptr;
+    bool bindings_unsettled_ = false;   // a live binder, an unresolved type or a recorded commit failure
+    size_t binding_settle_count_ = 0;
+    void binding_gate(engine& self) {
+        if (bindings_unsettled_) [[unlikely]] { self.settle_bindings(); }
+    }
     bool tearing_down = false;  // engine dtor: backend() must not reconstruct for late thunks
     bool custom_numeric_ops_flag_ = false; // sticky signal from add_function; applied at wiring
     // Sticky: ANY binary-operator / "[]" symbol registered as a global function. While set,
@@ -920,10 +911,14 @@ struct engine::implementation {
     uint64_t source_reads_ = 0;
     uint64_t check_walks_ = 0;
     std::string cwd_;   // the working directory resolution keys use, refreshed when a check pass opens
-    // caught errors (engine::make_caught_error): the catch variable is its message as a string whose node keys the error's
-    // place, stack and thrown value; an entry goes when nothing but this table holds the string
+    // caught values (engine::make_caught_error), keyed by the catch variable's node: a string's entry goes when nothing but
+    // this table holds the string; an instance's, an array's or a map's (text null) goes when its handlers are done
     struct caught_error {
         script_value text;
+        std::string message;     // a thrown instance's, array's or map's display text
+        size_t handlers = 1;     // the handlers that hold a node-keyed value
+        bool runtime = false;    // a run-time error, of `kind`
+        error_kind kind = error_kind::other;
         bool has_site = false;   // a throw's own place; else the innermost frame's statement, read from the trace
         std::string site_file;
         size_t site_line = 0;
@@ -1590,6 +1585,7 @@ struct engine::implementation {
     script_value execute_cache_hit(engine& self, const std::shared_ptr<script_cache_entry>& held,
                                    const instance_variables& instanceVars, std::string_view source) {
         script_cache_entry& entry = *held;
+        binding_gate(self);
         has_executed_ = true;
         load_scope loading(*this);
         self.backend()->prepare_for_execution();
@@ -1900,6 +1896,11 @@ struct engine::implementation {
             case script_callable::kind_type::method:
             case script_callable::kind_type::static_method: return p.ast() ? mix_key(result, ran_unit_key(p.ast()->unit.id)) : result;
             case script_callable::kind_type::constructor: return p.cls() ? mix_key(result, ran_unit_key(p.cls()->unit().id)) : result;
+            case script_callable::kind_type::overload_set: {
+                uint64_t members = 0;
+                if (p.overloads()) { for (const auto& m : p.overloads()->members) { members += mix_key(0xF5, m ? ran_unit_key(m->unit.id) : 0); } }
+                return mix_key(result, members);
+            }
             default: return result;
         }
     }
@@ -2540,6 +2541,9 @@ engine::implementation::implementation()
         type_info math_info = type_info::make_math(string_symbolizer_, math_kinds[k]);
         type_info_math_[k] = intern_type(type_key{math_kinds[k], 0, 0}, math_info);
     }
+    for (unsigned k = 0; k < k_error_kind_count; ++k) {
+        type_info_error_[k] = intern_type(type_key{script_value_type::jai_any_type, k + 1, 0}, any_info);
+    }
 
     // Register standard C++ implicit conversions
     // NOTE: These conversions can't use engine reference yet because the engine isn't fully constructed
@@ -2863,6 +2867,16 @@ void engine::release_program_scope_in_reverse() noexcept {
 // and fail soft instead of re-entering a half-destroyed backend.
 engine::~engine() {
     if (impl) {
+        // A binder that outlives the engine commits nothing and never reaches it
+        for (detail::pending_binder* binder = impl->first_pending_binder_; binder;) {
+            detail::pending_binder* next = binder->next_;
+            binder->owner_ = nullptr;
+            binder->previous_ = nullptr;
+            binder->next_ = nullptr;
+            binder = next;
+        }
+        impl->first_pending_binder_ = nullptr;
+        impl->last_pending_binder_ = nullptr;
         // Tear the transport down first (join its thread, detach the controller) so no
         // parked script thread stays blocked in the hook once anything it touches dies.
         if (impl->debug_transport_) {
@@ -2876,12 +2890,12 @@ engine::~engine() {
         impl->runs.release_pools();
         impl->runs.sleep_function = script_value(std::monostate{}, nullptr);
         impl->runs.sleep_identity = nullptr;
-        impl->format_literal_rows_.clear();
         // Program-scope variables die in reverse construction order while the engine still runs their destructors;
         // a destructor's error is reported through the script error handler, never propagated
         if (impl->backend && impl->global_environment_) {
             release_program_scope_in_reverse();
         }
+        impl->format_literal_rows_.clear();
         impl->tearing_down = true;
         impl->backend.reset();
         // Definitions a host or a captured environment keeps alive past this point must not
@@ -3235,6 +3249,16 @@ void engine::initialize_engine_reference() {
         return script_value::make_cell_reference(std::move(extended.value()), engine_weak);
     });
 
+    // a typed catch clause's test and its variable's value (the parser's lowering, parser::try_statement)
+    add_function("catch_takes#", [this](const script_value& caught, const std::string& type_name) -> bool {
+        return catch_clause_takes(caught, type_name);
+    });
+    add_function("catch_value#", [](const script_value& caught) -> script_value { return script_value(caught.deref()); });
+    for (unsigned kind = 0; kind < k_error_kind_count; ++kind) {
+        const char* name = error_kind_name(static_cast<error_kind>(kind));
+        add_global(std::string("error_kind::") + name, std::string(name), false);
+    }
+
     // Parallel builtins (parallel_transform v0). thread_count()
     // reports the worker count a region uses without constructing the pool.
     add_function("thread_count", [this]() -> script_int {
@@ -3554,6 +3578,7 @@ script_value engine::execute_unheld(script_source source) {
 }
 
 script_value engine::execute_source(const std::string& scriptContent, const instance_variables& instanceVars, const std::string& sourcePath, bool textual, std::string_view include_scope) {
+    impl->binding_gate(*this);
     impl->has_executed_ = true;
     implementation::load_scope loading(*impl);
     impl->note_root_source(sourcePath);
@@ -3662,6 +3687,7 @@ script_value engine::execute_parsed(const std::vector<declaration_ptr>& declarat
 }
 
 jai::jaibite engine::jaibite(const std::string& scriptContent) {
+    impl->binding_gate(*this);
     lexer lexer(scriptContent, &impl->string_symbolizer_);
     auto tokens = lexer.tokenize();
     parser parser(tokens, &impl->string_symbolizer_, this, impl->registeredTemplateTypes);
@@ -3740,6 +3766,7 @@ void engine::check_bite(jai::jaibite& bite, const std::string* source) {
 held_value engine::execute(jai::jaibite& bite) { return hold(execute_unheld(bite)); }
 
 script_value engine::execute_unheld(jai::jaibite& bite) {
+    impl->binding_gate(*this);
     impl->has_executed_ = true;
     check_bite(bite, nullptr);   // diagnostics once; proofs re-stamp on surface moves
     backend()->prepare_for_execution();
@@ -3796,6 +3823,7 @@ jai::jaibite engine::jaibite_load(const std::string& path) {
 }
 
 jai::jaibite engine::jaibite_load_bytes(const uint8_t* data, size_t size, const std::string& own_path) {
+    impl->binding_gate(*this);
     uint64_t saved_fingerprint = 0;
     uint32_t flags = 0;
     detail::jaibite_context context;
@@ -3991,6 +4019,7 @@ const check_report& engine::last_check_diagnostics() const {
 }
 
 check_report engine::check(const std::string& scriptContent) {
+    impl->binding_gate(*this);
     auto cached = impl->find_cached_script("<script>", scriptContent);
     if (!cached) {
         lexer lexer(scriptContent, &impl->string_symbolizer_);
@@ -4245,37 +4274,60 @@ void engine::publish_namespace_entry(const std::string& name) {
 
 // A variadic callable takes its arguments by value: an element reference an argument site minted (`f(a[i])`) reaches it
 // as the element's value, as a typed parameter's conversion already reads it
+static checked_result<void> variadic_values(const std::vector<script_value>& args, std::vector<script_value>& values) {
+    values.reserve(args.size());
+    for (const script_value& arg : args) {
+        if (!arg.is_reference()) { values.push_back(arg); continue; }
+        auto value = detail::ref_checked_deref(arg);
+        if (!value) { return value.error_value(); }
+        values.push_back(std::move(value.value()));
+    }
+    return {};
+}
+
+static bool holds_reference(const std::vector<script_value>& args) {
+    return std::any_of(args.begin(), args.end(), [](const script_value& arg) { return arg.is_reference(); });
+}
+
+checked_result<script_value> detail::call_variadic_by_value(const std::vector<script_value>& args,
+                                                            checked_result<script_value> (*invoke)(const void*, const script_value*, size_t), const void* self) {
+    if (!holds_reference(args)) [[likely]] { return invoke(self, args.data(), args.size()); }
+    std::vector<script_value> values;
+    if (auto read = variadic_values(args, values); !read) { return read.error_value(); }
+    return invoke(self, values.data(), values.size());
+}
+
 static script_function variadic_by_value(script_function func) {
     return [inner = std::move(func)](const std::vector<script_value>& args) -> checked_result<script_value> {
-        for (size_t i = 0; i < args.size(); ++i) {
-            if (args[i].is_reference()) [[unlikely]] {
-                std::vector<script_value> values;
-                values.reserve(args.size());
-                for (const script_value& arg : args) {
-                    if (!arg.is_reference()) { values.push_back(arg); continue; }
-                    auto value = detail::ref_checked_deref(arg);
-                    if (!value) { return value.error_value(); }
-                    values.push_back(std::move(value.value()));
-                }
-                return inner(values);
-            }
-        }
-        return inner(args);
+        if (!holds_reference(args)) [[likely]] { return inner(args); }
+        std::vector<script_value> values;
+        if (auto read = variadic_values(args, values); !read) { return read.error_value(); }
+        return inner(values);
     };
 }
 
-void engine::add_variadic_function(const std::string& name, script_function func, privilege required) {
-    func = variadic_by_value(guard_function(std::move(func), required));
-    // Variadic function registration - handles any number of arguments
-    // Register with SIZE_MAX to indicate it's a wildcard function
-    constexpr size_t VARIADIC = SIZE_MAX;
-    if (has_function(name)) {
-        // Add as overload with SIZE_MAX (wildcard - accepts any number of args)
-        add_overloaded_function(name, VARIADIC, func);
+// Registered with SIZE_MAX, the arity that accepts any count: an overload beside a function the name already binds
+static void register_variadic(engine& eng, const std::string& name, script_function func) {
+    if (eng.has_function(name)) {
+        eng.add_overloaded_function(name, SIZE_MAX, std::move(func));
     } else {
-        // Register with SIZE_MAX to mark it as variadic
-        add_function_with_arity(name, func, VARIADIC);
+        eng.add_function_with_arity(name, std::move(func), SIZE_MAX);
     }
+}
+
+void engine::add_variadic_function(const std::string& name, script_function func, privilege required) {
+    register_variadic(*this, name, variadic_by_value(guard_function(std::move(func), required)));
+}
+
+// The engine-first callable reads its arguments by value itself; a guard around it takes them by value first, as the vector
+// form's does, and leaves the name no direct entry
+void engine::add_engine_variadic_function(const std::string& name, script_function func, host_direct_entry direct, script_value_type result) {
+    if (!direct.locate(func)) { func = variadic_by_value(std::move(func)); }
+    stage_host_result(result);
+    register_variadic(*this, name, std::move(func));
+    const script_value* bound = impl->global_environment_->get_value_ptr(impl->string_symbolizer_.intern(name));
+    if (!bound || bound->raw_storage_index() != script_value::TYPEID_FUNCTION) { return; }
+    if (const void* target = direct.locate(bound->unchecked_as_function())) { add_host_direct(*bound, host_direct_any_arity, direct.invoke, target); }
 }
 
 // One overloaded-function registration algorithm shared by every entry point. State:
@@ -4715,8 +4767,22 @@ std::unordered_map<uint64_t, std::shared_ptr<script_namespace_data>>& engine::sc
     return impl->script_namespaces_;
 }
 
-void engine::note_enum_name(uint64_t name_id) {
+type_info* engine::note_enum(uint64_t name_id, std::string_view name, const std::vector<int64_t>& numbers) {
     impl->enum_names_.insert(name_id);
+    type_info* slot = get_type_info_object(std::string(name));
+    const implementation::type_key key{script_value_type::jai_int_type, slot->id, 0};
+    type_info* value = impl->find_type(key);
+    if (!value) {
+        type_info made(script_value_type::jai_int_type, name);
+        made.id = slot->id;
+        value = impl->intern_type(key, made);
+    }
+    for (type_info* type : {slot, value}) {
+        type->is_enum = true;
+        type->enum_value_type = value;
+        type->enum_numbers = numbers;
+    }
+    return value;
 }
 
 bool engine::is_enum_name(uint64_t name_id) const {
@@ -4736,6 +4802,142 @@ void engine::register_class_by_type(std::type_index type, std::shared_ptr<class_
             }
         }
     }
+}
+
+namespace detail {
+
+// The spelling a host writes: MSVC names carry class keys, the Itanium ABI names are mangled
+std::string readable_cpp_type_name(const std::type_index& type) {
+    std::string result;
+#if defined(__GNUC__)
+    int status = 0;
+    char* demangled = abi::__cxa_demangle(type.name(), nullptr, nullptr, &status);
+    result = status == 0 && demangled ? demangled : type.name();
+    std::free(demangled);
+#else
+    result = type.name();
+#endif
+    for (std::string_view noise : {"struct ", "class ", "union ", "enum ", "`anonymous namespace'::", "`anonymous-namespace'::", "(anonymous namespace)::"}) {
+        for (size_t at = result.find(noise); at != std::string::npos; at = result.find(noise, at)) {
+            const bool starts_a_name = at == 0 || !(std::isalnum(static_cast<unsigned char>(result[at - 1])) || result[at - 1] == '_');
+            if (starts_a_name) { result.erase(at, noise.size()); } else { at += noise.size(); }
+        }
+    }
+    return result;
+}
+
+}
+
+namespace {
+
+std::string unqualified_cpp_type_name(const std::string& readable) {
+    const size_t arguments = readable.find('<');
+    const size_t scope = readable.rfind("::", arguments);
+    const size_t start = scope == std::string::npos ? 0 : scope + 2;
+    return readable.substr(start, arguments == std::string::npos ? std::string::npos : arguments - start);
+}
+
+}
+
+void engine::require_bound_type(const std::string& class_name, const std::string& member, const std::type_info& type) {
+    const std::type_index index(type);
+    if (impl->classesByType.count(index) != 0) { return; }
+    impl->unresolved_binding_types_.push_back({class_name, member, index});
+    impl->bindings_unsettled_ = true;
+}
+
+size_t engine::binding_settle_count() const {
+    return impl->binding_settle_count_;
+}
+
+void engine::settle_bindings() {
+    ++impl->binding_settle_count_;
+    while (detail::pending_binder* binder = impl->first_pending_binder_) {
+        binder->commit_or_record();
+    }
+    std::erase_if(impl->unresolved_binding_types_, [this](const implementation::unresolved_binding_type& unresolved) {
+        return impl->classesByType.count(unresolved.type) != 0;
+    });
+    impl->bindings_unsettled_ = !impl->unresolved_binding_types_.empty();
+    if (impl->unresolved_binding_types_.empty() && impl->binding_commit_failures_.empty()) { return; }
+
+    std::string message = "Bindings are incomplete:";
+    for (const auto& unresolved : impl->unresolved_binding_types_) {
+        const std::string type_name = detail::readable_cpp_type_name(unresolved.type);
+        message += "\n  '" + unresolved.class_name + "." + unresolved.member + "' uses the C++ type '" + type_name +
+                   "', which is not registered. Register it: jai::dynamic_binder<" + type_name + ">(engine, \"" + unqualified_cpp_type_name(type_name) + "\");";
+    }
+    for (const std::string& failure : impl->binding_commit_failures_) {
+        message += "\n  " + failure;
+    }
+    impl->binding_commit_failures_.clear();
+    throw runtime_error(message);
+}
+
+namespace detail {
+
+pending_binder::pending_binder(engine& owner, const std::string& class_name, commit_function commit) :
+    class_name_(class_name),
+    owner_(&owner),
+    previous_(owner.impl->last_pending_binder_),
+    commit_(commit) {
+
+    (previous_ ? previous_->next_ : owner.impl->first_pending_binder_) = this;
+    owner.impl->last_pending_binder_ = this;
+    owner.impl->bindings_unsettled_ = true;
+}
+
+pending_binder::pending_binder(pending_binder&& other) noexcept :
+    class_name_(std::move(other.class_name_)),
+    owner_(other.owner_),
+    previous_(other.previous_),
+    next_(other.next_),
+    commit_(other.commit_) {
+
+    if (owner_) {
+        (previous_ ? previous_->next_ : owner_->impl->first_pending_binder_) = this;
+        (next_ ? next_->previous_ : owner_->impl->last_pending_binder_) = this;
+    }
+    other.owner_ = nullptr;
+    other.previous_ = nullptr;
+    other.next_ = nullptr;
+}
+
+pending_binder::~pending_binder() {
+    leave();
+}
+
+void pending_binder::leave() noexcept {
+    if (!owner_) { return; }
+    (previous_ ? previous_->next_ : owner_->impl->first_pending_binder_) = next_;
+    (next_ ? next_->previous_ : owner_->impl->last_pending_binder_) = previous_;
+    auto& state = *owner_->impl;
+    state.bindings_unsettled_ = state.first_pending_binder_ || !state.unresolved_binding_types_.empty() || !state.binding_commit_failures_.empty();
+    owner_ = nullptr;
+    previous_ = nullptr;
+    next_ = nullptr;
+}
+
+void pending_binder::commit_or_record() noexcept {
+    engine* owner = owner_;
+    if (!owner) { return; }
+    const char* failure = nullptr;
+    std::string text;
+    try {
+        commit_(*this);
+    } catch (const std::exception& e) {
+        text = e.what();
+        failure = text.c_str();
+    } catch (...) {
+        failure = "unknown exception";
+    }
+    leave();
+    if (failure) {
+        owner->impl->binding_commit_failures_.push_back("class '" + class_name_ + "' failed to register: " + failure);
+        owner->impl->bindings_unsettled_ = true;
+    }
+}
+
 }
 
 void engine::defer_base_link(std::type_index base, std::shared_ptr<class_definition> derived) {
@@ -5874,6 +6076,41 @@ bool engine::unit_rerun(unit_stamp unit) const {
     return it != impl->unit_first_run_.end() && it->second != unit.seq;
 }
 
+checked_result<script_value> engine::checked_host_entry(host_entry_body run, void* context, bool host_call) {
+    execution_backend* backend = calling_backend();
+    if (!backend) {
+        return checked_result<script_value>(make_error_code(runtime_error_code::engine_destroyed), "Engine backend unavailable");
+    }
+    // Mid-script host callbacks keep the latched unwinding flag: the calling script's catch must still see the thrown VALUE
+    if (backend->is_executing() || backend->is_unwinding()) {
+        run_pin pin(host_call ? this : nullptr);
+        return run(*backend, context);
+    }
+    if (impl->bindings_unsettled_) [[unlikely]] {
+        try {
+            settle_bindings();
+        } catch (const std::exception& e) {
+            return checked_result<script_value>(make_error_code(runtime_error_code::evaluation_failed), "{0}", park_error_text(e.what()));
+        }
+    }
+    note_host_entry();
+    debug_execution_scope executing(*this);
+    backend->begin_host_call();
+    const auto failure = [&](const char* text) {
+        backend->prepare_for_execution();
+        return checked_result<script_value>(make_error_code(runtime_error_code::evaluation_failed), "{0}", park_error_text(text));
+    };
+    try {
+        auto result = run(*backend, context);
+        if (result.has_value() && backend->is_unwinding()) [[unlikely]] {   // an uncaught script throw: its text, as execute() throws it
+            return failure(without_category_suffix(backend->get_current_exception()).what());
+        }
+        return result;
+    } catch (const std::exception& e) {   // a nested run's failure (an import that is missing or fails its check) leaves as an exception
+        return failure(e.what());
+    }
+}
+
 void engine::note_host_entry() {
     impl->entry_generation = ++impl->entry_generations_issued;
     if (impl->entry_stamps) {
@@ -6260,25 +6497,54 @@ uint64_t engine::clock_sample_count() const noexcept {
 }
 
 script_value engine::make_caught_error(const script_value& thrown_in, bool by_throw, const source_location* throw_site,
-                                       const std::vector<stack_frame>& trace, const char* thrown_text) {
-    return make_caught_error(thrown_in, by_throw, throw_site, std::vector<stack_frame>(trace), thrown_text);
+                                       const std::vector<stack_frame>& trace, const char* thrown_text, error_kind kind) {
+    return make_caught_error(thrown_in, by_throw, throw_site, std::vector<stack_frame>(trace), thrown_text, kind);
+}
+
+namespace {
+    // the node a caught value's place and stack are keyed on (null: a value with none, which carries no place)
+    const void* caught_node(const script_value& v) noexcept {
+        switch (v.raw_storage_index()) {
+            case script_value::TYPEID_STRING: return &v.unchecked_as_string();
+            case script_value::TYPEID_ARRAY: return v.unchecked_get_array_storage().get();
+            case script_value::TYPEID_MAP: return v.unchecked_get_map_storage().get();
+            case script_value::TYPEID_OBJECT: {
+                const auto* holder = v.peek_object_holder();
+                return holder && holder->is_instance() ? static_cast<const void*>(&*holder->unchecked_instance()) : nullptr;
+            }
+            default: return nullptr;
+        }
+    }
 }
 
 script_value engine::make_caught_error(const script_value& thrown_in, bool by_throw, const source_location* throw_site,
-                                       std::vector<stack_frame>&& trace, const char* thrown_text) {
+                                       std::vector<stack_frame>&& trace, const char* thrown_text, error_kind kind) {
     const script_value& thrown = thrown_in.deref();
-    const std::string* text = thrown.text_bytes();
-    script_value caught(text ? *text : thrown_text ? std::string(thrown_text) : thrown.to_string(), this);
-    caught.set_type_info(type_info_ptr{get_type_info_any()});   // the catch variable stays a dynamic local
+    const bool text = !by_throw || thrown.raw_storage_index() == script_value::TYPEID_STRING;
+    // a throw binds the thrown value; a string and a run-time error bind a string of their own, the node the entry keys on
+    script_value caught = text ? script_value(thrown.raw_storage_index() == script_value::TYPEID_STRING ? thrown.unchecked_as_string()
+                                                  : thrown_text ? std::string(thrown_text) : thrown.to_string(), this)
+                               : script_value(thrown);
+    const size_t held = caught.raw_storage_index();
+    if (!by_throw) {
+        caught.set_type_info(type_info_ptr{impl->type_info_error_[static_cast<unsigned>(kind)]});   // dynamic, and an error of its kind
+    } else if (text || held == script_value::TYPEID_NULL || held == script_value::TYPEID_INT || held == script_value::TYPEID_FLOAT ||
+               held == script_value::TYPEID_BOOL || held == script_value::TYPEID_CHAR) {
+        // the catch variable is a dynamic local; an enum's value stays its enum's, which a typed clause tests
+        if (const type_info* tag = caught.type_info_raw(); !(held == script_value::TYPEID_INT && tag && tag->is_enum)) { caught.set_type_info(type_info_ptr{get_type_info_any()}); }
+    }
     if (parallel_region_active()) { return caught; }
+    const void* node = caught_node(caught);
+    if (!node) { return caught; }
     auto& table = impl->caught_errors_;
     if (table.size() >= impl->caught_errors_sweep_at_) {
         for (auto it = table.begin(); it != table.end();) {
-            it = it->second.text.unchecked_string_handle().unique() ? table.erase(it) : std::next(it);
+            it = !it->second.text.is_null() && it->second.text.unchecked_string_handle().unique() ? table.erase(it) : std::next(it);
         }
         impl->caught_errors_sweep_at_ = std::max<size_t>(32, table.size() * 2);
     }
-    implementation::caught_error info{caught, false, {}, 0, 0, std::move(trace), script_value(std::monostate{}, this)};
+    implementation::caught_error info{text ? caught : script_value(std::monostate{}, this), {}, 1, !by_throw, kind, false, {}, 0, 0, std::move(trace),
+                                      script_value(std::monostate{}, this)};
     if (throw_site && throw_site->line > 0) {
         info.has_site = true;
         info.site_file = throw_site->filename;
@@ -6286,18 +6552,27 @@ script_value engine::make_caught_error(const script_value& thrown_in, bool by_th
         info.site_column = throw_site->column;
     }
     if (by_throw) { info.value = thrown; }
-    table.erase(&caught.unchecked_as_string());
-    table.emplace(&caught.unchecked_as_string(), std::move(info));
+    if (!text) {
+        info.message = thrown_text ? std::string(thrown_text) : thrown.to_string();
+        if (auto held = table.find(node); held != table.end()) { info.handlers = held->second.handlers + 1; }
+    }
+    table.erase(node);
+    table.emplace(node, std::move(info));
     return caught;
 }
 
 void engine::end_caught_error(const script_value& caught) noexcept {
     try {
-        if (caught.raw_storage_index() != script_value::TYPEID_STRING) { return; }
         auto& table = impl->caught_errors_;
-        auto it = table.find(&caught.unchecked_as_string());
+        if (table.empty()) { return; }
+        const void* node = caught_node(caught);
+        auto it = node ? table.find(node) : table.end();
         if (it == table.end()) { return; }
-        if (it->second.text.unchecked_string_handle().use_count() > 2) { return; }   // a copy outlives the handler: it keeps the value
+        if (it->second.text.is_null()) {
+            if (it->second.handlers > 1) { --it->second.handlers; return; }
+        } else if (it->second.text.unchecked_string_handle().use_count() > 2) {
+            return;   // a copy outlives the handler: it keeps the value
+        }
         script_value dying = std::move(it->second.value);
         table.erase(it);
     } catch (...) {}
@@ -6306,20 +6581,95 @@ void engine::end_caught_error(const script_value& caught) noexcept {
 void engine::release_suspended_values(script_value* values, size_t count) noexcept {
     for (size_t i = count; i-- > 0;) {
         script_value dying = std::move(values[i]);
-        if (dying.raw_storage_index() == script_value::TYPEID_STRING && !impl->caught_errors_.empty()) { end_caught_error(dying); }
+        if (!impl->caught_errors_.empty()) { end_caught_error(dying); }
     }
 }
 
-std::optional<script_value> engine::caught_error_member(const script_value& receiver, uint64_t member_id) {
+// the kind a caught run-time error's own type names (-1: the value carries none)
+int engine::caught_error_tag(const script_value& v) const noexcept {
+    const type_info* declared = v.get_type_info().get();
+    for (unsigned k = 0; k < k_error_kind_count; ++k) {
+        if (declared == impl->type_info_error_[k]) { return static_cast<int>(k); }
+    }
+    return -1;
+}
+
+bool engine::is_caught_runtime_error(const script_value& value) const noexcept {
+    const script_value& v = value.deref();
+    if (v.raw_storage_index() != script_value::TYPEID_STRING) { return false; }
+    if (caught_error_tag(v) >= 0) { return true; }
+    // a copy in another dynamic variable is the error still; in a string variable it is its message
+    const auto declared = v.get_type_info();
+    if (impl->caught_errors_.empty() || (declared && declared->base_type != script_value_type::jai_any_type)) { return false; }
+    auto it = impl->caught_errors_.find(&v.unchecked_as_string());
+    return it != impl->caught_errors_.end() && it->second.runtime;
+}
+
+bool engine::catch_admits(const std::vector<std::string>& clause_types, const script_value* thrown) const {
+    for (const std::string& type_name : clause_types) {
+        if (thrown ? clause_takes_thrown(thrown->deref(), type_name) : type_name == "error") { return true; }
+    }
+    return false;
+}
+
+bool engine::catch_clause_takes(const script_value& value, const std::string& type_name) const {
+    const script_value& v = value.deref();
+    const bool runtime = is_caught_runtime_error(v);
+    return type_name == "error" ? runtime : !runtime && clause_takes_thrown(v, type_name);
+}
+
+// a clause's type against a value a script threw
+bool engine::clause_takes_thrown(const script_value& v, const std::string& type_name) const {
+    const auto container = [&](std::string_view kind) {
+        return type_name.size() >= kind.size() && type_name.compare(0, kind.size(), kind) == 0 &&
+               (type_name.size() == kind.size() || type_name[kind.size()] == '<');
+    };
+    switch (v.type()) {
+        case script_value_type::jai_null_type: return type_name == "null";
+        case script_value_type::jai_bool_type: return type_name == "bool";
+        case script_value_type::jai_int_type: {
+            const type_info* tag = v.type_info_raw();   // an enum's value is caught as its enum, as C++ catches by exact type
+            return tag && tag->is_enum ? type_name == tag->type_name : type_name == "int";
+        }
+        case script_value_type::jai_float_type: return type_name == "float";
+        case script_value_type::jai_char_type: return type_name == "char";
+        case script_value_type::jai_string_type: return type_name == "string";
+        case script_value_type::jai_utf8_string_type: return type_name == "utf8_string";
+        case script_value_type::jai_array_type: return container("array");
+        case script_value_type::jai_map_type: return container("map");
+        case script_value_type::jai_function_type: return type_name == "function";
+        case script_value_type::jai_object_type:
+        case script_value_type::jai_shared_ptr_type: {
+            const auto* holder = v.raw_storage_index() == script_value::TYPEID_OBJECT ? v.peek_object_holder() : nullptr;
+            if (!holder || !holder->is_instance()) { return false; }
+            const auto held = holder->unchecked_instance()->get_class_definition();
+            const auto wanted = get_class_definition(type_name);
+            return held && wanted && held->derives_from(wanted.get());
+        }
+        default: return false;
+    }
+}
+
+std::optional<script_value> engine::caught_error_member(const script_value& receiver, uint64_t member_id, bool catch_variable) {
     const script_value& r = receiver.deref();
-    if (impl->caught_errors_.empty() || r.raw_storage_index() != script_value::TYPEID_STRING) { return std::nullopt; }
-    auto it = impl->caught_errors_.find(&r.unchecked_as_string());
-    if (it == impl->caught_errors_.end()) { return std::nullopt; }
-    const implementation::caught_error& info = it->second;
+    const void* node = impl->caught_errors_.empty() ? nullptr : caught_node(r);
+    auto it = node ? impl->caught_errors_.find(node) : impl->caught_errors_.end();
     const std::string_view name = get_symbolizer()->get_string(member_id);
+    if (it == impl->caught_errors_.end()) {
+        // an error caught in a parallel body has no entry: its own type holds its kind
+        const int kind = r.raw_storage_index() == script_value::TYPEID_STRING ? caught_error_tag(r) : -1;
+        if (kind >= 0 && name == "kind") { return script_value(std::string(error_kind_name(static_cast<error_kind>(kind))), this); }
+        if (kind >= 0 && name == "message") { return script_value(r.unchecked_as_string(), this); }
+        // a thrown value with no node (a number, a bool, null), or one caught in a parallel body
+        if (catch_variable && kind < 0 && name == "value") { return script_value(r); }
+        if (catch_variable && kind < 0 && name == "message") { return script_value(r.to_string(), this); }
+        return std::nullopt;
+    }
+    const implementation::caught_error& info = it->second;
     const auto spell = [](const std::string& file) { return file.empty() ? std::string("<script>") : file; };
     const stack_frame* innermost = info.trace.empty() ? nullptr : &info.trace.front();
-    if (name == "message") { return script_value(r.unchecked_as_string(), this); }
+    if (name == "message") { return info.text.is_null() ? script_value(info.message, this) : script_value(r.unchecked_as_string(), this); }
+    if (name == "kind" && info.runtime) { return script_value(std::string(error_kind_name(info.kind)), this); }
     if (name == "file") {
         return script_value(info.has_site ? spell(info.site_file) : innermost ? spell(innermost->file) : std::string(), this);
     }
@@ -6337,15 +6687,6 @@ std::optional<script_value> engine::caught_error_member(const script_value& rece
                 frame.elided ? elided_frames_text(frame.elided) : spell(frame.file) + ":" + std::to_string(frame.line), this));
         }
         return frames;
-    }
-    // a thrown object or map answers its own fields through the error (catch (e) { e.code })
-    script_value v = info.value.deref();
-    if (auto instance = v.is_object() ? v.get_class_instance() : nullptr) {
-        if (const script_value* field = instance->find_field_value(member_id)) { return script_value(field->deref()); }
-    } else if (v.is_map()) {
-        const auto& map = v.as_map();
-        auto found = map.find(script_value(std::string(name), this));
-        if (found != map.end()) { return script_value(found->second.deref()); }
     }
     return std::nullopt;
 }

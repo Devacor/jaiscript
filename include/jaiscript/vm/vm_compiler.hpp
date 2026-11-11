@@ -451,7 +451,7 @@ namespace jai::vm {
         bool compile_counted_for(for_stmt* stmt);
         void compile_range_for(range_for_stmt* stmt);
         bool compile_entry_half(const expression_ptr& init);
-        void compile_try(try_stmt* stmt);
+        void compile_try(try_stmt* stmt, const statement_ptr& node);
         void compile_switch(switch_stmt* stmt);
         bool compile_switch_branches(switch_stmt* stmt);
         void compile_case_body(const std::vector<statement_ptr>& body);

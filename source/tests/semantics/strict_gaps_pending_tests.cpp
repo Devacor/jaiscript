@@ -38,7 +38,7 @@ private:
 	void rules_456_and_controls() {
 		test("typed_slot_controls_reject_known_mismatches_and_leave_dynamic_values_alone", [this]() {
 			const std::pair<const char*, bool> cases[] = {
-				{R"jai(bool b = [1]; b;)jai", false},
+				{R"jai(bool b = [1]; b;)jai", true},
 				{R"jai(string s = 42; s;)jai", true},
 				{R"jai(shared_ptr<int> p = "bad"; p;)jai", true},
 				{R"jai(weak_ptr<int> p = "bad"; p;)jai", true},
@@ -53,7 +53,7 @@ private:
 				{R"jai(class C {} class D {} C c = D(); c;)jai", true},
 				{R"jai(auto x = 1; x = "bad"; x;)jai", true},
 				{R"jai(array<int> a = 1; a;)jai", true},
-				{R"jai(array<int> a = [3.9]; a[0];)jai", false},
+				{R"jai(array<int> a = [3.9]; a[0];)jai", true},
 				{R"jai(function f = 42; f;)jai", true},
 				{R"jai(string s = "bad"; int& r = s; r = 1; s;)jai", true},
 				{R"jai(array<int> a = [1]; var v = a; v[0] = "bad"; a[0];)jai", false},
@@ -168,14 +168,14 @@ private:
 
 		test("rules_456_member_assignment_result_types", [this]() {
 			for (const char* source : {
-				"class C { int n = 0; } C c = C(); auto x = (c.n = 3.9); int& r = x; r == 3;",
-				"class C { int n = 1; } C c = C(); auto x = (c.n += 2.9); int& r = x; r == 3;",
-				"class C { static int n = 1; } auto x = (C::n += 2.9); int& r = x; r == 3;",
-				"class C { static int n = 0; } auto x = (C::n = 3.9); int& r = x; r == 3;",
-				"int n = 0; auto x = (n = 3.9); int& r = x; r == 3;",
-				"int n = 1; auto x = (n += 2.9); int& r = x; r == 3;",
-				"class C { int n = 1; bool test() { auto x = (n += 2.9); int& r = x; return r == 3; } } C c = C(); c.test();",
-				"class C { int n = 1; int _get_x() { return n; } void _set_x(int v) { n = v; } } C c = C(); auto x = (c.x += 2.9); int& r = x; r == 3;",
+				"class C { int n = 0; } C c = C(); auto x = (c.n = true); int& r = x; r == 1;",
+				"class C { float n = 1.0; } C c = C(); auto x = (c.n += 2); float& r = x; r == 3.0;",
+				"class C { static float n = 1.0; } auto x = (C::n += 2); float& r = x; r == 3.0;",
+				"class C { static int n = 0; } auto x = (C::n = true); int& r = x; r == 1;",
+				"int n = 0; auto x = (n = true); int& r = x; r == 1;",
+				"float n = 1.0; auto x = (n += 2); float& r = x; r == 3.0;",
+				"class C { float n = 1.0; bool test() { auto x = (n += 2); float& r = x; return r == 3.0; } } C c = C(); c.test();",
+				"class C { float n = 1.0; float _get_x() { return n; } void _set_x(float v) { n = v; } } C c = C(); auto x = (c.x += 2); float& r = x; r == 3.0;",
 				"class C { string s = \"\"; } C c = C(); map<string,int> m = {{\"a\",1}}; for (auto kv : m) { auto x = (c.s = kv.first); string& r = x; r = \"b\"; return kv.first == \"a\" && r == \"b\"; } false;"
 			}) {
 				auto eng = make_engine();
@@ -265,7 +265,7 @@ private:
 			});
 		});
 
-		test("rules_123_floats_beyond_int_range_reject_before_execution", [this]() {
+		test("rules_123_floats_into_int_slots_reject_before_execution", [this]() {
 			const char* const sources[] = {
 				{R"jai(int x = 1e30;)jai"},
 				{R"jai(int x = -1e30;)jai"},
@@ -279,6 +279,20 @@ private:
 				{R"jai(array<int> a = [1]; a[0] = 1e30;)jai"},
 				{R"jai(array<array<int>> a = [[1e30]];)jai"},
 				{R"jai(map<int,string> m = {{1e30,"ok"}};)jai"},
+				{R"jai(int x = 3.9;)jai"},
+				{R"jai(int x = 9.223372036854775e18;)jai"},
+				{R"jai(array<int> a = [3.9];)jai"},
+				{R"jai(array<array<int>> a = [[1, 3.9]];)jai"},
+				{R"jai(map<string,array<int>> m = {{"a",[1,3.9]}};)jai"},
+				{R"jai(float x = 1e30; int y = x;)jai"},
+				{R"jai(float big() { return 1e30; } int x = big();)jai"},
+				{R"jai(float huge = 1.5; array<int> a = [huge];)jai"},
+				{R"jai(float huge = 1.5; array<int> a = [1]; a.push(huge);)jai"},
+				{R"jai(auto huge = 1e30; int x = huge;)jai"},
+				{R"jai(array<int> a = [0]; a[0] = 3.9;)jai"},
+				{R"jai(map<string,int> m = {{"a",0}}; m["a"] = 3.9;)jai"},
+				{R"jai(int n = 1; n += 2.9;)jai"},
+				{R"jai(class C { int n = 1; int _get_x() { return n; } void _set_x(int v) { n = v; } } C c = C(); c.x = 2.9;)jai"},
 			};
 			check_each(sources, [&](const auto& c) {
 				const std::string source = c;
@@ -302,25 +316,23 @@ private:
 				{R"jai(var x = "bad"; array<int> a = [1]; a[0] = x;)jai"},
 				{R"jai(array<string> a = ["ok"]; string x = a[0];)jai"},
 				{R"jai(array<int> a = [1]; float x = a[0]; bool b = a[0];)jai"},
-				{R"jai(array<int> a = [3.9]; array<float> b = [1];)jai"},
-				{R"jai(array<array<int>> a = [[1, 3.9]];)jai"},
-				{R"jai(map<string,array<int>> m = {{"a",[1,3.9]}};)jai"},
+				{R"jai(array<int> a = [cast<int>(3.9)]; array<float> b = [1];)jai"},
+				{R"jai(array<array<float>> a = [[1, 3.9]];)jai"},
+				{R"jai(map<string,array<float>> m = {{"a",[1,3.9]}};)jai"},
 				{R"jai(array<var> a = [1,"s",true];)jai"},
 				{R"jai(array<int> a = []; map<string,int> m = {};)jai"},
-				{R"jai(float x = 1e30; int y = x;)jai"},
-				{R"jai(float big() { return 1e30; } int x = big();)jai"},
-				{R"jai(float huge = 1e30; array<int> a = [huge];)jai"},
-				{R"jai(float huge = 1e30; array<int> a = [1]; a.push(huge);)jai"},
-				{R"jai(int x = -9.223372036854776e18;)jai"},
-				{R"jai(int x = 9.223372036854775e18;)jai"},
-				{R"jai(int x = 3.9;)jai"},
+				{R"jai(float x = 1e30; int y = cast<int>(x);)jai"},
+				{R"jai(var big() { return 1e30; } int x = big();)jai"},
+				{R"jai(var huge = 1e30; array<int> a = [huge];)jai"},
+				{R"jai(var huge = 1e30; array<int> a = [1]; a.push(huge);)jai"},
+				{R"jai(int x = math::ifloor(3.9); int y = math::itrunc(-3.9);)jai"},
 				{R"jai(int x = cast<int>("3");)jai"},
 				{R"jai(class A {} class B : A {} array<A> a = [B()];)jai"},
 				{R"jai(class A {} class B : A {} array<A> a = [new B()];)jai"},
-				{R"jai(array<int> a = [0]; auto x = (a[0] = 3.9); int& r = x;)jai"},
-				{R"jai(map<string,int> m = {{"a",0}}; auto x = (m["a"] = 3.9); int& r = x;)jai"},
+				{R"jai(array<int> a = [0]; auto x = (a[0] = true); int& r = x;)jai"},
+				{R"jai(map<string,int> m = {{"a",0}}; auto x = (m["a"] = true); int& r = x;)jai"},
 				{R"jai(array<string> a = ["x"]; auto x = (a[0] += 1); string& r = x;)jai"},
-				{R"jai(auto huge = 1e30; int x = huge;)jai"},
+				{R"jai(var huge = 1e30; int x = huge;)jai"},
 			};
 			check_each(sources, [&](const auto& c) {
 				const std::string source = c;
@@ -380,10 +392,10 @@ private:
 
 		test("rules_123_assignment_expression_results", [this]() {
 			for (const char* source : {
-				"array<int> a = [0]; auto x = (a[0] = 3.9); int& r = x; r == 3;",
-				"map<string,int> m = {{\"a\",0}}; auto x = (m[\"a\"] = 3.9); int& r = x; r == 3;",
+				"array<int> a = [0]; auto x = (a[0] = true); int& r = x; r == 1;",
+				"map<string,int> m = {{\"a\",0}}; auto x = (m[\"a\"] = true); int& r = x; r == 1;",
 				"array<string> a = [\"x\"]; auto x = (a[0] += \"1\"); string& r = x; r == \"x1\";",
-				"int x = -9.223372036854776e18; x == (-9223372036854775807 - 1);"
+				"int x = cast<int>(-9.223372036854776e18); x == (-9223372036854775807 - 1);"
 			}) {
 				auto eng = make_engine();
 				const auto report = eng->check(source);

@@ -29,8 +29,8 @@ function gloom_ray_chunk_step(var& t) -> void {
 		float camx = x * xstep - 1.0;
 		float rdx = dirx + planex * camx;
 		float rdy = diry + planey * camx;
-		int mx = posx;
-		int my = posy;
+		int mx = cast<int>(posx);
+		int my = cast<int>(posy);
 		float adx = rdx < 0.0 ? -rdx : rdx;
 		float ady = rdy < 0.0 ? -rdy : rdy;
 		float ddx = adx < 0.00000001 ? 100000000.0 : 1.0 / adx;
@@ -59,7 +59,7 @@ function gloom_ray_chunk_step(var& t) -> void {
 		pdist = pdist < 0.02 ? 0.02 : pdist;
 		float wallx = side == 0 ? posy + pdist * rdy : posx + pdist * rdx;
 		wallx = wallx - math::floor(wallx);
-		int texcol = wallx * 64.0;
+		int texcol = cast<int>(wallx * 64.0);
 		t.odist[oi] = pdist;
 		t.oside[oi] = side;
 		t.okind[oi] = kind;
@@ -77,8 +77,8 @@ function gloom_ray(var t) -> var {
 	float rdx = t[2];
 	float rdy = t[3];
 	int mw = t[4];
-	int mx = posx;                    // typed-local truncation; coords stay positive
-	int my = posy;
+	int mx = cast<int>(posx);                    // typed-local truncation; coords stay positive
+	int my = cast<int>(posy);
 	float adx = rdx < 0.0 ? -rdx : rdx;
 	float ady = rdy < 0.0 ? -rdy : rdy;
 	float ddx = adx < 0.00000001 ? 100000000.0 : 1.0 / adx;
@@ -107,7 +107,7 @@ function gloom_ray(var t) -> var {
 	pdist = pdist < 0.02 ? 0.02 : pdist;
 	float wallx = side == 0 ? posy + pdist * rdy : posx + pdist * rdx;
 	wallx = wallx - math::floor(wallx);
-	int texcol = wallx * 64.0;
+	int texcol = cast<int>(wallx * 64.0);
 	return [pdist, side, kind, texcol];
 }
 

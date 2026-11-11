@@ -3,6 +3,7 @@
 #include <jaiscript/core/value.hpp>
 #include <jaiscript/core/dynamic_binder.hpp>
 #include <jaiscript/detail/format_spec.hpp>
+#include <jaiscript/detail/format_text.hpp>
 #include <jaiscript/detail/value_text.hpp>
 #include <optional>
 #include <iostream>
@@ -13,47 +14,32 @@
 #include <charconv>
 
 namespace jai {
+namespace detail {
+
+    bool format_positional_index(std::string_view spec, size_t& out) {
+        if (!spec.empty() && spec.size() <= 18 && format_all_digits(spec)) {
+            size_t v = 0;
+            for (char c : spec) { v = v * 10 + static_cast<size_t>(c - '0'); }
+            out = v;
+            return true;
+        }
+        try {
+            out = static_cast<size_t>(std::stoull(std::string(spec)));
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    std::string format_text_mismatch(const format_text_use& use, size_t count) {
+        const std::string arguments = std::to_string(count) + " argument(s)";
+        if (use.positional_past != format_text_use::none) { return "names {" + std::to_string(use.positional_past) + "}, past its " + arguments; }
+        if (use.sequential > count || !use.positional) { return "has " + std::to_string(use.sequential) + " placeholder(s) for " + arguments; }
+        return "never uses argument " + std::to_string(use.first_unused(count)) + " of its " + arguments;
+    }
+
+}
 namespace stdlib {
-
-    inline bool is_all_digits(std::string_view s) {
-        for (char c : s) {
-            if (c < '0' || c > '9') return false;
-        }
-        return !s.empty();
-    }
-
-    // A placeholder is {}, {n}, {:spec}, or {n:spec} — spec is the shared subset
-    // in detail/format_spec.hpp (same mini-language as template-string `${x:spec}`).
-    // A {n:...} whose spec the subset does not have is a placeholder too: its
-    // substitution raises, naming the spec, instead of printing the braces.
-    inline bool has_format_placeholders(std::string_view str) {
-        size_t pos = 0;
-        while (pos < str.length()) {
-            size_t brace = str.find('{', pos);
-            if (brace == std::string_view::npos) break;
-
-            if (brace + 1 < str.length() && str[brace + 1] == '{') {
-                pos = brace + 2;
-                continue;
-            }
-
-            size_t close = str.find('}', brace);
-            if (close != std::string_view::npos) {
-                std::string_view content = str.substr(brace + 1, close - brace - 1);
-                if (content.empty()) {
-                    return true;
-                }
-                size_t colon = content.find(':');
-                std::string_view index_part = content.substr(0, colon == std::string_view::npos ? content.size() : colon);
-                if ((index_part.empty() || is_all_digits(index_part)) && (colon != std::string_view::npos || !index_part.empty())) {
-                    return true;
-                }
-            }
-
-            pos = brace + 1;
-        }
-        return false;
-    }
 
     // An argument's text as {} writes it: a string's bytes and an int's digits straight into the
     // result, every other value through to_string
@@ -71,125 +57,35 @@ namespace stdlib {
         }
     }
 
-    // {n}'s index as std::stoull reads it (leading space, a sign, a digit prefix); false where
-    // stoull throws, which leaves the placeholder literal
-    inline bool positional_index(std::string_view spec, size_t& out) {
-        if (!spec.empty() && spec.size() <= 18 && is_all_digits(spec)) {
-            size_t v = 0;
-            for (char c : spec) { v = v * 10 + static_cast<size_t>(c - '0'); }
-            out = v;
-            return true;
-        }
-        try {
-            out = static_cast<size_t>(std::stoull(std::string(spec)));
-            return true;
-        } catch (...) {
-            return false;
-        }
-    }
-
     [[noreturn]] JAI_NOINLINE inline void unsupported_format_spec(std::string_view spec) {
         throw runtime_error("Unsupported format spec ':" + std::string(spec) + "' in format string");
     }
+    [[noreturn]] JAI_NOINLINE inline void format_arguments_mismatch(const detail::format_text_use& use, size_t count) {
+        throw runtime_error("Format text " + detail::format_text_mismatch(use, count));
+    }
 
-    // The format string's substitution into `result`: args[0] is the format string itself, the
-    // values start at args[1] (so {0} names the first value)
+    // The format string's substitution into `result`: args[0] is the format string itself, the values start at args[1] (so
+    // {0} names the first value); placeholders and values that do not pair up raise.
     // shown: each value's display text (the value itself where it is a scalar); a spec that asks for a number reads the
     // argument itself, so its mismatch names the argument's own type
+    struct format_text_writer {
+        std::string& result;
+        const script_value* const* shown;
+        const script_value* const* args;
+        void text(std::string_view a_text) { result.append(a_text); }
+        void value(size_t a_index) { append_format_argument(result, *shown[a_index + 1]); }
+        void value_spec(size_t a_index, const detail::format_spec& a_parsed, std::string_view a_spec) {
+            result += detail::format_value_with_spec(detail::format_spec_needs_number(a_parsed) ? *args[a_index + 1] : *shown[a_index + 1], a_parsed, a_spec);
+        }
+        void bad_spec(std::string_view a_spec) { unsupported_format_spec(a_spec); }
+    };
     inline void process_format_string(std::string& result, std::string_view format_str, const script_value* const* shown,
                                       const script_value* const* args, size_t arg_count) {
-        constexpr size_t arg_offset = 1;
-        size_t pos = 0;
-        size_t next_arg = arg_offset;
         result.reserve(result.size() + format_str.size() + 8 * arg_count);
-
-        while (pos < format_str.length()) {
-            // Look for both { and } to handle escaping
-            size_t next_open = format_str.find('{', pos);
-            size_t next_close = format_str.find('}', pos);
-
-            // }} -> }, a lone } stays
-            if (next_close != std::string_view::npos &&
-                (next_open == std::string_view::npos || next_close < next_open)) {
-                result.append(format_str.substr(pos, next_close - pos));
-                result += '}';
-                pos = next_close + 1 < format_str.length() && format_str[next_close + 1] == '}' ? next_close + 2 : next_close + 1;
-                continue;
-            }
-
-            if (next_open == std::string_view::npos) {
-                result.append(format_str.substr(pos));
-                break;
-            }
-
-            result.append(format_str.substr(pos, next_open - pos));
-
-            if (next_open + 1 < format_str.length() && format_str[next_open + 1] == '{') {
-                result += '{';
-                pos = next_open + 2;
-                continue;
-            }
-
-            size_t close_brace = format_str.find('}', next_open);
-            if (close_brace == std::string_view::npos) {
-                // Invalid format string, append rest as-is
-                result.append(format_str.substr(next_open));
-                break;
-            }
-
-            std::string_view spec = format_str.substr(next_open + 1, close_brace - next_open - 1);
-
-            if (spec.empty()) {
-                // {} - use next argument
-                if (next_arg < arg_count) {
-                    append_format_argument(result, *shown[next_arg]);
-                    next_arg++;
-                }
-            } else if (size_t colon = spec.find(':'); colon != std::string_view::npos) {
-                // {:spec} / {n:spec} - format through the shared spec formatter
-                // (identical to template-string `${x:spec}`); a spec outside the subset
-                // raises, naming it; a type-vs-spec mismatch throws (catchable, both backends).
-                std::string_view index_part = spec.substr(0, colon);
-                std::string_view fmt_part = spec.substr(colon + 1);
-                if (index_part.empty() || is_all_digits(index_part)) {
-                    detail::format_spec parsed;
-                    if (!detail::parse_format_spec(fmt_part, parsed)) { unsupported_format_spec(fmt_part); }
-                    size_t arg_index = next_arg;
-                    if (index_part.empty()) {
-                        next_arg++;
-                    } else if (!positional_index(index_part, arg_index)) {
-                        arg_index = arg_count;
-                    } else {
-                        arg_index += arg_offset;
-                    }
-                    if (arg_index < arg_count) {
-                        result += detail::format_value_with_spec(detail::format_spec_needs_number(parsed) ? *args[arg_index] : *shown[arg_index], parsed, fmt_part);
-                    }
-                } else {
-                    result += '{';
-                    result.append(spec);
-                    result += '}';
-                }
-            } else {
-                // {n} - use positional argument
-                size_t arg_index = 0;
-                if (positional_index(spec, arg_index)) {
-                    arg_index += arg_offset;
-                    if (arg_index < arg_count) {
-                        append_format_argument(result, *shown[arg_index]);
-                    }
-                } else {
-                    // Invalid index, ignore
-                    result += '{';
-                    result.append(spec);
-                    result += '}';
-                }
-            }
-
-            pos = close_brace + 1;
-        }
+        const detail::format_text_use use = detail::walk_format_text(format_str, arg_count - 1, format_text_writer{result, shown, args});
+        if (!use.agrees(arg_count - 1)) [[unlikely]] { format_arguments_mismatch(use, arg_count - 1); }
     }
-    
+
     inline bool is_print_control(const script_value& v) {
         auto control = v.get_type_info();
         return control && (control->type_name == "skip_newline_t" || control->type_name == "skip_flush_t");
@@ -247,6 +143,12 @@ namespace stdlib {
         }
 
         if (count == 1) {
+            // a format text alone: a placeholder in it has no value to take
+            if (literal && detail::plain_text_value(*kept[0]) && shown[0]->deref().raw_storage_index() == script_value::TYPEID_STRING &&
+                detail::has_format_placeholders(shown[0]->deref().unchecked_as_string())) [[unlikely]] {
+                std::string unused;
+                process_format_string(unused, shown[0]->deref().unchecked_as_string(), shown, kept, count);
+            }
             return script_value(shown[0]->to_string(), eng);
         }
 
@@ -261,7 +163,7 @@ namespace stdlib {
                 first_text = first.to_string();
                 first_str = first_text;
             }
-            if (has_format_placeholders(first_str)) {
+            if (detail::has_format_placeholders(first_str)) {
                 process_format_string(result, first_str, shown, kept, count);
                 return script_value(std::move(result), eng);
             }
@@ -314,7 +216,13 @@ namespace stdlib {
         if (effective_args == 1) {
             // Single-arg print is VERBATIM passthrough by design:
             // {{ }} escapes only apply when format substitution runs — no reason to
-            // alter the string when there is nothing to substitute
+            // alter the string when there is nothing to substitute; a placeholder in a format text has no value to take
+            if (literal && !first_was_shown && args[0].deref().raw_storage_index() == script_value::TYPEID_STRING &&
+                detail::has_format_placeholders(args[0].deref().unchecked_as_string())) [[unlikely]] {
+                const script_value* only[2] = {&args[0], &raw_args[0]};
+                std::string unused;
+                process_format_string(unused, args[0].deref().unchecked_as_string(), only, only + 1, 1);
+            }
             out << args[0].to_string();
             if (should_newline) {
                 out << std::endl;
@@ -325,7 +233,7 @@ namespace stdlib {
         }
 
         std::string first_str = literal && !first_was_shown ? args[0].to_string() : std::string();
-        bool has_format_specs = literal && !first_was_shown && has_format_placeholders(first_str);
+        bool has_format_specs = literal && !first_was_shown && detail::has_format_placeholders(first_str);
 
         if (!has_format_specs) {
             for (size_t i = 0; i < effective_args; ++i) {
@@ -467,14 +375,17 @@ namespace stdlib {
             return script_value::make_utf8(v.is_text() ? v.unchecked_text() : v.to_string(), eng);
         });
 
-        eng_ref.add_function("type_of", [](const script_value& val) -> std::string {
+        eng_ref.add_function("type_of", [eng = &eng_ref](const script_value& val) -> std::string {
             switch (val.type()) {
                 case script_value_type::jai_null_type: return "null";
                 case script_value_type::jai_bool_type: return "bool";
-                case script_value_type::jai_int_type: return "int";
+                case script_value_type::jai_int_type: {
+                    const type_info* tag = val.deref().type_info_raw();
+                    return tag && tag->is_enum ? tag->type_name : std::string("int");
+                }
                 case script_value_type::jai_float_type: return "float";
                 case script_value_type::jai_char_type: return "char";
-                case script_value_type::jai_string_type: return "string";
+                case script_value_type::jai_string_type: return detail::engine_access::is_caught_runtime_error(*eng, val) ? "error" : "string";
                 case script_value_type::jai_utf8_string_type: return "utf8_string";
                 case script_value_type::jai_array_type: return "array";
                 case script_value_type::jai_map_type: return "map";

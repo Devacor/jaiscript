@@ -4,7 +4,7 @@
 // racing out over a starfield of blue and rose stars that starts to warp on the kick,
 // a violet glow breathing behind the letters, and the tagline types itself; the logo
 // glitches on the hats, then on the second impact bursts into sparks of its own
-// colours that stream into the warp until the screen whites out into DONUT. It has no
+// colours that stream into the warp until the screen whites out into EIGHT. It has no
 // title card and plays once, when the reel starts.
 
 array<int> INTRO_DITHER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
@@ -43,6 +43,7 @@ class Intro : Scene {
 	void build() override {
 		name = "JAISCRIPT";
 		handle = "";
+		titled = false;
 		replay = 8.0;
 		gray = pal.ramp(16, 0.0, 0.0, 0.0, 255.0, 255.0, 255.0);
 		red = pal.ramp(8, 30.0, 0.0, 10.0, 255.0, 40.0, 70.0);
@@ -77,7 +78,7 @@ class Intro : Scene {
 			for (int x = 0; x < w; ++x) {
 				float ex = (x - gcx) / grx;
 				float f = 1.0 - ex * ex - ey * ey;
-				glow.push(f > 0.0 ? itrunc(f * f * 255.0) : 0);
+				glow.push(f > 0.0 ? math::itrunc(f * f * 255.0) : 0);
 			}
 		}
 		for (int c = 0; c < pal.size(); ++c) {
@@ -111,7 +112,7 @@ class Intro : Scene {
 				float dy = py - h * 0.5;
 				float l = math::sqrt(dx * dx + dy * dy) + 1.0;
 				float speed = 40.0 + rng.next(100) * 1.2;
-				int lv = itrunc((py - logo_y) * 8 / logo_h);
+				int lv = math::itrunc((py - logo_y) * 8 / logo_h);
 				spark_ink.push(logo_ink + (lv < 0 ? 0 : (lv > 7 ? 7 : lv)));
 				spark_x.push(px);
 				spark_y.push(py);
@@ -135,9 +136,9 @@ class Intro : Scene {
 		// before the slam: static that thickens over the riser, then the CRT line
 		if (t < slam_t) {
 			float rise = t / slam_t;
-			int seed_frame = itrunc(t * 30.0);
-			int density = itrunc(rise * rise * 90.0);
-			int band = itrunc(math::fmod(t * 0.9, 1.0) * (h + h / 3)) - h / 6;
+			int seed_frame = math::itrunc(t * 30.0);
+			int density = math::itrunc(rise * rise * 90.0);
+			int band = math::itrunc(math::fmod(t * 0.9, 1.0) * (h + h / 3)) - h / 6;
 			for (int y = 0; y < h; ++y) {
 				int dy = y - band;
 				int roll = dy >= 0 && dy < h / 6 ? 3 : 0;
@@ -150,7 +151,7 @@ class Intro : Scene {
 			}
 			if (t > slam_t * 0.72) {
 				float open = (t - slam_t * 0.72) / (slam_t * 0.28);
-				int half = itrunc(open * open * w * 0.5);
+				int half = math::itrunc(open * open * w * 0.5);
 				int y = h / 2;
 				for (int x = w / 2 - half; x < w / 2 + half; ++x) {
 					if (x >= 0 && x < w) {
@@ -163,7 +164,7 @@ class Intro : Scene {
 		}
 		float since = t - slam_t;
 		float halo = (since < 0.33 ? since * 3.0 : 1.0) * (0.6 + 0.4 * kick) * (t > burst_t ? math::max(0.0, 1.0 - (t - burst_t) * 1.4) : 1.0);
-		int halo_k = itrunc(halo * 8.0 * 256.0);
+		int halo_k = math::itrunc(halo * 8.0 * 256.0);
 		for (int i = 0; i < n; ++i) {
 			int lv = (glow[i] * halo_k + INTRO_DITHER[(i / w & 3) * 4 + (i % w & 3)] * 4096) >> 16;
 			grid[i] = lv > 0 ? neb + (lv > 7 ? 7 : lv) : gray;
@@ -177,7 +178,7 @@ class Intro : Scene {
 			float z2 = z + speed * 0.06 + 0.01;
 			float tx = w * 0.5 + star_x[s] / z2 * w * 0.35;
 			float ty = h * 0.5 + star_y[s] / z2 * h * 0.35;
-			int lv = itrunc((1.0 - z) * 15.0);
+			int lv = math::itrunc((1.0 - z) * 15.0);
 			lv = lv < 2 ? 2 : (lv > 15 ? 15 : lv);
 			streak(grid, tx, ty, sx, sy, s % 3 == 0 ? star_warm : star_cold, lv);
 		}
@@ -192,12 +193,12 @@ class Intro : Scene {
 		if (t < burst_t) {
 			// the logo: red and cyan ghosts split apart on the slam and on every hat, white on top
 			float split = (since < 0.5 ? (0.5 - since) * 2.0 : 0.0) * scale * 3.0 + hat * scale * 0.8;
-			int off = itrunc(split);
+			int off = math::itrunc(split);
 			draw_logo(grid, -off, 0, red + 7);
 			draw_logo(grid, off, 0, cyan + 7);
 			if (since < 0.12) { draw_logo(grid, 0, 0, gray + 15); }
 			else { draw_logo_gradient(grid, kick); }
-			if (cue != null && hat > 0.6 && t > slam_t + 1.0) { glitch(grid, itrunc(t / MUSIC_STEP)); }
+			if (cue != null && hat > 0.6 && t > slam_t + 1.0) { glitch(grid, math::itrunc(t / MUSIC_STEP)); }
 		}
 		tagline();
 		// the burst
@@ -210,7 +211,7 @@ class Intro : Scene {
 		// the white-out into the first scene
 		float white = (t - (burst_t + MUSIC_BAR * 0.75)) / (MUSIC_BAR * 0.25);
 		if (white > 0.0) {
-			int lv2 = itrunc((white > 1.0 ? 1.0 : white) * 15.0);
+			int lv2 = math::itrunc((white > 1.0 ? 1.0 : white) * 15.0);
 			for (int i4 = 0; i4 < n; ++i4) {
 				if (lum[grid[i4]] < lv2) { grid[i4] = gray + lv2; }
 			}
@@ -219,10 +220,10 @@ class Intro : Scene {
 
 	void tagline() {
 		if (tt < slam_t + 0.35 || tt > burst_t) { return; }
-		string a = "a demoreel written in a scripting language";
+		string a = "a scripting language for c++";
 		string b = "every pixel . every note . script";
-		int shown_a = itrunc((tt - slam_t - 0.35) * 34.0);
-		int shown_b = itrunc((tt - slam_t - 1.4) * 30.0);
+		int shown_a = math::itrunc((tt - slam_t - 0.35) * 34.0);
+		int shown_b = math::itrunc((tt - slam_t - 1.4) * 30.0);
 		int row = cell_row(logo_y + logo_h) + 2;
 		if (shown_a > 0) { txt_put((HB_COLS - a.size()) / 2, row, a.substr(0, shown_a > a.size() ? a.size() : shown_a), rgb(214, 208, 255)); }
 		if (shown_b > 0 && row + 2 < HB_ROWS) { txt_put((HB_COLS - b.size()) / 2, row + 2, b.substr(0, shown_b > b.size() ? b.size() : shown_b), rgb(255, 206, 110)); }
@@ -230,7 +231,7 @@ class Intro : Scene {
 
 	// the letters shaded top to bottom, the kick lifting them toward white
 	void draw_logo_gradient(var& grid, float kick) {
-		int lift = itrunc(kick * 3.0);
+		int lift = math::itrunc(kick * 3.0);
 		for (int k = 0; k < logo_at.size(); ++k) {
 			int i = logo_at[k];
 			int lv = (i / w - logo_y) * 8 / logo_h - lift;
@@ -278,11 +279,11 @@ class Intro : Scene {
 		float dy = y1 - y0;
 		float adx = dx < 0.0 ? -dx : dx;
 		float ady = dy < 0.0 ? -dy : dy;
-		int steps = itrunc((adx > ady ? adx : ady) + 1.0);
+		int steps = math::itrunc((adx > ady ? adx : ady) + 1.0);
 		steps = steps > 60 ? 60 : steps;
 		for (int s = 0; s <= steps; ++s) {
-			int x = itrunc(x0 + dx * s / steps);
-			int y = itrunc(y0 + dy * s / steps);
+			int x = math::itrunc(x0 + dx * s / steps);
+			int y = math::itrunc(y0 + dy * s / steps);
 			if (x >= 0 && x < w && y >= 0 && y < h) { grid[y * w + x] = ramp + lv / 3 + (lv - lv / 3) * s / steps; }
 		}
 	}
@@ -292,19 +293,19 @@ class Intro : Scene {
 		float dy = y1 - y0;
 		float adx = dx < 0.0 ? -dx : dx;
 		float ady = dy < 0.0 ? -dy : dy;
-		int steps = itrunc((adx > ady ? adx : ady) + 1.0);
+		int steps = math::itrunc((adx > ady ? adx : ady) + 1.0);
 		steps = steps > 30 ? 30 : steps;
 		for (int s = 0; s <= steps; ++s) {
-			int x = itrunc(x0 + dx * s / steps);
-			int y = itrunc(y0 + dy * s / steps);
+			int x = math::itrunc(x0 + dx * s / steps);
+			int y = math::itrunc(y0 + dy * s / steps);
 			if (x >= 0 && x < w && y >= 0 && y < h) { grid[y * w + x] = ink; }
 		}
 	}
 
 	// a ring split like a lens: the outer third in one ink, the core in another, the inner third in a third
 	void ring(var& grid, float cx, float cy, float r, float width, int outer, int core, int inner) {
-		int y0 = itrunc(cy - r - width) - 1;
-		int y1 = itrunc(cy + r + width) + 1;
+		int y0 = math::itrunc(cy - r - width) - 1;
+		int y1 = math::itrunc(cy + r + width) + 1;
 		y0 = y0 < 0 ? 0 : y0;
 		y1 = y1 > h - 1 ? h - 1 : y1;
 		for (int y = y0; y <= y1; ++y) {

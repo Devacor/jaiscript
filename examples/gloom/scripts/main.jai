@@ -68,6 +68,32 @@ function gloom_frame(float dt, string key, float fps, float ms_sim, float ms_dra
 
 function gloom_state_hash() -> int { return G.hash; }
 
+// --respawn-test, headless: carry both big guns, low on ammo, onto the throne
+// floor, die there, and rise with full health, the guns, the armor and every
+// owned pool at its floor; the throne's first room holds a hexcaster
+function gloom_respawn_test() -> int {
+	for (int i = 0; i < 12; ++i) { gloom_frame(TICK, " ", 0.0, 0.0, 0.0); }
+	G.player.have = [1, 1, 1];
+	G.player.ammo = [30, 5, 3];
+	G.player.armor = 40;
+	G.player.weapon = 2;
+	G.map_i = MAPS.size() - 2;
+	G.finish_map();
+	int hexcasters = 0;
+	for (auto& it : G.items) {
+		if (it.kind == 9 && dist2(it.x, it.y, G.player.px, G.player.py) < 16.0) { hexcasters = hexcasters + 1; }
+	}
+	G.player.ammo = [2, 0, 0];
+	G.player.damage(999, "the test");
+	for (int i = 0; i < 40; ++i) { gloom_frame(TICK, i > 30 ? " " : "", 0.0, 0.0, 0.0); }
+	auto& p = G.player;
+	string got = `${G.world.map_name} deaths ${G.deaths} hp ${p.hp} armor ${p.armor} have ${p.have[0]}${p.have[1]}${p.have[2]} weapon ${p.weapon} ammo ${p.ammo[0]}/${p.ammo[1]}/${p.ammo[2]} hexcasters ${hexcasters}`;
+	bool ok = G.mode == 1 && G.map_i == MAPS.size() - 1 && G.deaths == 1 && p.hp == 100 && p.armor == 40 && p.have[1] == 1
+		&& p.have[2] == 1 && p.weapon == 2 && p.ammo[0] == 48 && p.ammo[1] == 16 && p.ammo[2] == 40 && hexcasters == 1;
+	host_log(`RESPAWN TEST: ${ok ? "PASS" : "FAIL"} (${got})`);
+	return ok ? 0 : 1;
+}
+
 function gloom_wants_quit() -> bool { return G.quit; }
 
 function gloom_summary() -> void {

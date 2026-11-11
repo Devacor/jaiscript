@@ -246,7 +246,7 @@ public:
         const type_info_ptr declared = get_field_declared_type(field_id);
         if (!declared) { return true; }
         switch (declared->base_type) {
-            case script_value_type::jai_any_type: case script_value_type::jai_object_type: case script_value_type::jai_shared_ptr_type:
+            case script_value_type::jai_any_type: case script_value_type::jai_shared_ptr_type:
             case script_value_type::jai_weak_ptr_type: case script_value_type::jai_function_type: return true;
             default: return false;
         }

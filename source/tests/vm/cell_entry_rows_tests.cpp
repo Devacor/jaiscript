@@ -206,21 +206,25 @@ to_string(sum(3)) + " " + to_string(sum(3));
 		});
 
 		test("a_debugger_set_variable_on_a_captured_cell_between_entries", [this]() {
-			// the debugger's setVariable writes the program global a lambda names through its cell: an int, then a float the int converts
+			// the debugger's setVariable writes the program global a lambda names through its cell: an int, then a float the int refuses (the cell keeps its value), then an int
 			both_steps({ R"JAI(
 int G = 3;
 var reads = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { if (i < G) { acc = acc + 1; } } return acc; };
 function nreads(int n) -> int { int acc = 0; for (int i = 0; i < n; ++i) { if (i < G) { acc = acc + 1; } } return acc; }
 to_string(reads(8)) + " " + to_string(reads(8)) + " " + to_string(nreads(8)) + " " + to_string(nreads(8));
 )JAI", "dbg_set(1); to_string(reads(8)) + \" \" + to_string(nreads(8)) + \" \" + to_string(reads(8));",
-				"dbg_set(2); to_string(reads(8)) + \" \" + to_string(nreads(8)) + \" \" + type_of(G);",
-				"dbg_set(3); to_string(reads(8)) + \" \" + to_string(nreads(8));" }, { "3 3 3 3", "5 5 5", "6 6 int", "1 1" }, true, "debugger writes",
+				"to_string(dbg_set(2)) + \" \" + to_string(reads(8)) + \" \" + to_string(nreads(8)) + \" \" + type_of(G);",
+				"dbg_set(3); to_string(reads(8)) + \" \" + to_string(nreads(8));" }, { "3 3 3 3", "5 5 5", "false 5 5 int", "1 1" }, true, "debugger writes",
 				[](engine& e) {
 					engine* raw = &e;
-					e.add_function("dbg_set", [raw](int how) {
+					e.add_function("dbg_set", [raw](int how) -> bool {
 						if (how == 1) { raw->debugger().set_variable("G", script_value(script_int{5}, raw)); }
-						else if (how == 2) { raw->debugger().set_variable("G", script_value(script_float{6.5}, raw)); }
+						else if (how == 2) {
+							try { raw->debugger().set_variable("G", script_value(script_float{6.5}, raw)); }
+							catch (const std::exception&) { return false; }
+						}
 						else { raw->debugger().set_variable("G", script_value(script_int{1}, raw)); }
+						return true;
 					});
 				});
 		});

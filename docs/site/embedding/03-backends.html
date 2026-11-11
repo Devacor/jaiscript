@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="Backends: Interpreter vs VM — JaiScript Embedding">
 <meta property="og:description" content="One parser, one AST, two interchangeable execution backends. What each is good at, and how to choose per engine.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/embedding/03-backends.html">
+<meta property="og:url" content="https://jaiscript.com/embedding/03-backends.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,87 +33,70 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding</summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li class="current"><a href="../embedding/03-backends.html" aria-current="page">Backends: Interpreter vs VM</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding<span class="sidebar-current">Backends: Interpreter vs VM</span></summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li class="current"><a href="../embedding/03-backends.html" aria-current="page">Backends: Interpreter vs VM</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li><li><a href="../embedding/20-foundry.html">Foundry: Testing a Host</a></li><li><a href="../embedding/21-visual-studio.html">Visual Studio, Step by Step</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>03</nav>
 <article class="chapter"><h1 id="backends-interpreter-vs-vm">Backends: Interpreter vs VM<a class="hlink" href="#backends-interpreter-vs-vm" aria-label="link">&#8203;</a></h1>
-<p>Every engine runs your script through one parser and one AST, then hands it to one of <strong>two interchangeable execution backends</strong> (<code>include/jaiscript/core/execution_backend.hpp</code>). The choice is made once per engine, and it is A/B-able the moment behavior or speed raises an eyebrow:</p>
-<ul><li><code>backend_type::vm</code>: the bytecode VM (<code>include/jaiscript/vm/</code>): compiles the AST to chunks, slot frames windowed onto the value stack, fused superinstructions, counted-loop opcodes, fiber-based coroutines. The default.</li><li><code>backend_type::interpreter</code>: the tree-walking interpreter, the reference implementation the VM is checked against. Only the programs that check the backends against each other compile it: they link <code>jaiscript_interpreter</code> instead of <code>jaiscript</code> (<a href="18-build-integration.html#the-interpreter">The interpreter, for checking parity</a>).</li></ul>
+<p>An engine parses a script once and runs it on one of two backends that are held to identical behavior. The rules:</p>
+<ul>
+<li><strong><code>backend_type::vm</code> is the default</strong> and the one a shipped host runs: a bytecode VM. <code>backend_type::auto_select</code> names the default and selects it. The engine never switches backends on its own.</li>
+<li><strong><code>backend_type::interpreter</code> is the reference</strong>: a tree-walking interpreter the VM is checked against. Only a program that links <code>jaiscript_interpreter</code> instead of <code>jaiscript</code> carries it (<a href="18-build-integration.html#the-interpreter">The interpreter, for checking parity</a>).</li>
+<li><strong>The choice is made per engine, before its first execute.</strong></li>
+<li><strong>Same values, same printed output, same error text</strong> on both, with one exception: recursion depth.</li>
+</ul>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">std::string script = &quot;int s = 0; for (int i = 1; i &lt;= 100; ++i) { s += i; } s&quot;;
 auto oracle = jai::engine::make();
 oracle-&gt;set_backend(jai::backend_type::interpreter);   // BEFORE the first execute
 oracle-&gt;execute(script).as_int();                       // 5050 — same answer as the VM</code></pre></div>
 <h2 id="set-backend-must-happen-before-the-first-execute"><code>set_backend</code> must happen before the first execute<a class="hlink" href="#set-backend-must-happen-before-the-first-execute" aria-label="link">&#8203;</a></h2>
-<p>Once any script has run, defined functions and classes have captured the executing backend, so switching is refused with a thrown <code>jai::runtime_error</code>:</p>
-<div class="codeblock cb-plain"><pre><code class="lang-plain">set_backend after execute() is unsupported: defined functions and classes capture the executing backend</code></pre></div>
-<p>A host built without the interpreter (one that links <code>jaiscript</code>) refuses it the same way, whenever it is asked:</p>
-<div class="codeblock cb-plain"><pre><code class="lang-plain">set_backend(interpreter) is unsupported: this build has no interpreter (link jaiscript_interpreter)</code></pre></div>
-<p><code>backend_type::auto_select</code> names the default and selects the VM. The engine never switches backends implicitly.</p>
-<div class="callout"><p><strong>From the command line, the backend is a flag.</strong> The standalone runner starts on the <em>VM</em>, as an engine does:</p>
+<p>Functions and classes capture the backend that defined them, so <code>set_backend</code> throws <code>jai::runtime_error</code> once a script has run. A build without the interpreter refuses it whenever it is asked:</p>
+<div class="codeblock cb-plain"><pre><code class="lang-plain">set_backend after execute() is unsupported: defined functions and classes capture the executing backend
+set_backend(interpreter) is unsupported: this build has no interpreter (link jaiscript_interpreter)</code></pre></div>
+<p>The backend is built lazily: making an engine or choosing a type costs nothing until a script runs.</p>
+<p>The standalone runner takes the backend as a flag and, unlike an engine, starts with no execution budget:</p>
 <div class="codeblock cb-plain"><pre><code class="lang-plain">--backend=vm|interp|vm-reference   execution backend (default vm; interp = tree-walking interpreter; vm-reference =
                         the vm with every optimization off, engine::vm_reference_mode)
 --budget=N            execution budget in seconds per execute (default 0 = unlimited)</code></pre></div>
-<p>Static checking is strict in both places (see <a href="06-static-checking.html">Static Checking</a>) and the backend is the VM in both. So a script that behaves one way under <code>jaiscript file.jai</code> and another inside your host differs in what the host registers or sets. <code>--backend=interp</code> runs it on the interpreter to compare against the reference. The runner also lifts the engine&#x27;s 5&nbsp;second execution budget to unlimited; pass <code>--budget=N</code> to put one back.</p></div>
-<p>Backend construction is lazy. Creating an engine or setting the type costs nothing until a script actually runs.</p>
+<p>Checking is strict and the default backend is the VM in both the runner and a host, so a script that behaves differently under <code>jaiscript file.jai</code> than inside your host differs in what the host registers or sets.</p>
 <h2 id="the-parity-contract">The parity contract<a class="hlink" href="#the-parity-contract" aria-label="link">&#8203;</a></h2>
-<p>The two backends are held to <strong>byte-for-byte behavioral parity, including error text</strong>. This is not aspirational; it is machinery:</p>
-<ul><li>The full test suite (<strong>more than 4,700 tests</strong>) runs against both (<code>jaiscript_tests</code> and <code>jaiscript_tests --backend=vm</code>), and both must stay green on every commit.</li><li>A <strong>differential fuzzer</strong> (<code>source/tests/fuzz/</code>) generates random programs and fails on any output or error-text divergence between the backends; a divergence it finds is fixed and pinned by a regression test.</li><li>Many individual suites additionally run their assertions in an explicit both-backends matrix on top of the global flag.</li><li>The VM is also held to its own <a href="#the-vm-reference-mode">reference mode</a>. The suite runs in it (<code>jaiscript_tests --backend=vm-reference</code>) and the fuzzer runs every program on the optimized VM and on the reference VM (<code>jaiscript_fuzz --vm-reference</code>). So an optimized lane that drifts from the VM&#x27;s general path fails on the first program that reaches it.</li></ul>
-<p>The contract has exactly <strong>one documented, deliberate exception, with two faces: recursion depth</strong>. Everything else, including error text, is byte-identical.</p>
-<ul>
-<li><strong>The call-depth caps differ:</strong> 256 active calls on the interpreter and 250,000 on the VM by default (<code>engine::max_call_depth(backend, depth)</code> sets either). On the interpreter a native-stack headroom check can fire before its cap (about 150 to 200 levels on a 1 MB thread such as the standalone runner's). Recursion deeper than the interpreter allows still runs on the VM.
-<ul>
-<li>Past its cap each backend raises the same catchable text, <code>Maximum recursion depth exceeded - possible infinite recursion</code>.</li>
-<li>The interpreter's stack guard raises <code>Native stack exhausted before the call-depth cap: the host thread's stack bounds this recursion</code>.</li>
-</ul></li>
-<li><strong>A bare self tail call</strong> (<code>return f(args)</code> outside any <code>try</code>) reuses its frame on the VM. Tail recursion runs to <em>any</em> depth there, while the interpreter keeps the depth cap for every shape. A runaway tail loop is stopped by the execution budget on the VM, exactly like <code>while (true)</code>; see <a href="05-safety-rails.html">Safety Rails</a>.</li>
-</ul>
-<p>Script callables execute through <code>execution_backend::execute_callable</code>, and thunks capture <code>engine*</code> + payload (never a backend pointer), so values, signals and callbacks work identically under both backends.</p>
+<p>The library&#x27;s test suite runs on both backends, and a differential fuzzer fails on any difference in output or error text between them. Values, signals and callbacks do not depend on the backend. The one exception is recursion depth:</p>
+<div class="tablewrap"><table><thead><tr><th></th><th>Interpreter</th><th>VM</th></tr></thead><tbody>
+<tr><td>Default call-depth cap (<code>engine::max_call_depth(backend, depth)</code> sets either)</td><td>256 active calls</td><td>250,000</td></tr>
+<tr><td>Past the cap</td><td colspan="2">catchable <code>Maximum recursion depth exceeded - possible infinite recursion</code></td></tr>
+<tr><td>Native stack</td><td>a headroom check can fire before the cap (about 150 to 200 levels on a 1 MB thread): <code>Native stack exhausted before the call-depth cap: the host thread's stack bounds this recursion</code></td><td>&mdash;</td></tr>
+<tr><td>A bare self tail call (<code>return f(args)</code> outside any <code>try</code>)</td><td>counts toward the cap</td><td>reuses its frame and runs to any depth; the <a href="05-safety-rails.html">execution budget</a> stops a runaway one, like <code>while (true)</code></td></tr>
+</tbody></table></div>
 <h2 id="the-vm-reference-mode">The VM reference mode<a class="hlink" href="#the-vm-reference-mode" aria-label="link">&#8203;</a></h2>
-<p><code>engine::vm_reference_mode(true)</code> runs the VM on its plain general path, with every optimization off:</p>
-<ul>
-<li>The compiler emits no superinstruction (no fused binary, compound store, compare-and-jump, subscript, push or member store), no typed or dynamic slot row, no closed region, no graft of a called function, no counted-loop opcode, no return fusion and no tail call. It records no compile-time builtin dispatch index.</li>
-<li>At run time the VM fills no inline cache (member reads, call sites, method dispatch, the environment lookup&#x27;s fast heads) and folds no scoped const.</li>
-<li>The engine switches the optimized VM consults (<code>type_proofs</code>, <code>ir_passes</code>, <code>parameter_alias</code>, <code>local_alias</code>, <code>aggregate_lowering</code>) answer off while it is on, whatever they were set to.</li>
-</ul>
-<p>Like the backend, it is chosen before the first execute. Afterwards the call throws <code>vm_reference_mode after execute() is unsupported: defined functions and classes capture the executing backend</code>.</p>
+<p><code>engine::vm_reference_mode(true)</code> runs the VM on its plain general path with every optimization off. It is a correctness tool: every program gives the optimized VM&#x27;s values, output and error text, so a disagreement between the two is a bug in an optimized path.</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">auto reference = jai::engine::make();
 reference-&gt;vm_reference_mode(true);                    // BEFORE the first execute
 reference-&gt;execute(script).as_int();                    // 5050 — the optimized VM&#x27;s answer</code></pre></div>
-<p>It is a correctness tool, and its speed is beside the point. Every program gives the optimized VM&#x27;s values, printed output and error text. So a disagreement between the two is a bug of whichever optimized lane the program reached. That makes the reference mode the VM&#x27;s everyday differential partner, with the interpreter as the language&#x27;s validator behind both.</p>
-<p>The two may differ only where the specification leaves the outcome open and in the recursion exception above. The reference mode makes no tail call, so a deep bare self tail call raises the depth error there where the optimized VM reuses its frame.</p>
-<p>Every choice the mode makes is taken when a chunk compiles or the backend is built, so an engine without it runs exactly the code it would run if the mode did not exist. From the command line it is <code>--backend=vm-reference</code>.</p>
-<h2 id="seeing-what-the-vm-compiled">Seeing what the VM compiled<a class="hlink" href="#seeing-what-the-vm-compiled" aria-label="link">&#8203;</a></h2>
-<p><code>engine::disassembly_sink(fn)</code> hands every chunk the VM compiles from then on (a program, a function at its definition, a standalone expression or declaration) to <code>fn(listing, manifest)</code> in compile order. Those are the readable listing with each region&#x27;s canonical operations, and the chunk&#x27;s semantic manifest (every field, exact constant bits). The bytecode is the same with or without a sink. The runner&#x27;s <code>--disasm=FILE</code> and <code>--manifest=FILE</code> write the two.</p>
-<p><code>engine::cells_miss_every(n)</code> is a testing lever for a build configured with <code>JAISCRIPT_MISS_INJECTION</code>. Every nth cell instruction whose own miss re-runs its original instruction misses before it runs, as a failed guard would. So the flush and the continuation run at every such position against the interpreter (<code>jaiscript_fuzz --miss-every n</code>, the runner&#x27;s <code>--miss-every=N</code>). 0, the default, is off. <code>engine::miss_injection_available()</code> says whether the build carries the lever. A build without it throws <code>std::logic_error</code> on a nonzero <code>n</code>, so a gate never runs without the misses it asked for.</p>
-<h2 id="numbers-what-the-choice-actually-costs">What the choice actually costs<a class="hlink" href="#numbers-what-the-choice-actually-costs" aria-label="link">&#8203;</a></h2>
-<p>The shape of it:</p>
 <ul>
-<li>Engine creation and cold one-shots are effectively identical on both backends.</li>
-<li>The moment a script <em>repeats</em> (a cached string, a jaibite, anything per-frame), the VM pulls
-decisively ahead. That is because its one-time compile is small (about a third of the parse both backends
-already pay) and cached, so it amortizes within the first few executions.</li>
-<li>The interpreter&#x27;s only
-durable win is genuinely unique, never-repeated small strings on a warm engine, and even that vanishes
-as scripts grow.</li>
-<li>Class-heavy scripts run close to even warm: per-execute class redefinition/hot-reload
-machinery costs the same on both.</li>
+<li><strong>Compile time:</strong> no superinstructions, no typed or dynamic slot rows, no closed regions, no grafted callee, no counted-loop opcodes, no return fusion, no tail call, and no compile-time builtin dispatch index.</li>
+<li><strong>Run time:</strong> no inline caches and no scoped-const folding. The engine switches <code>type_proofs</code>, <code>ir_passes</code>, <code>parameter_alias</code>, <code>local_alias</code> and <code>aggregate_lowering</code> answer off while it is on.</li>
+<li><strong>Chosen before the first execute</strong>, like the backend. Afterwards the call throws <code>vm_reference_mode after execute() is unsupported: defined functions and classes capture the executing backend</code>.</li>
+<li><strong>Allowed differences:</strong> where the specification leaves an outcome open, and recursion. With no tail call, a deep bare self tail call raises the depth error here.</li>
+<li>An engine without the mode runs exactly the code it would run if the mode did not exist. The runner spells it <code>--backend=vm-reference</code>.</li>
 </ul>
-<p>The full regime-by-regime table (creation, cold and warm dispatch,
-jaibite rows, crossover points) is quantified in
-<a href="11-performance.html#embedding-costs">Performance</a>.</p>
-<h2 id="recommendation">Recommendation<a class="hlink" href="#recommendation" aria-label="link">&#8203;</a></h2>
-<ul><li><strong>Run the VM.</strong> It is the default: at parity or ahead on cold one-shots, well ahead on warm repeated scripts, and cumulatively ahead within the first few executions everywhere scripts repeat, which is what game scripts do.</li><li><strong>Keep the interpreter as the oracle backend.</strong> Select it with <code>set_backend(jai::backend_type::interpreter)</code> in a program that links <code>jaiscript_interpreter</code>, as the test suite, the fuzzer, the runner and <code>jai_spider</code> do. The host you ship links <code>jaiscript</code> and carries none of it. Its value is not speed: reference-semantics simplicity, and being the second implementation that keeps the VM honest. It is also the marginal winner if your workload is truly unique-string one-offs.</li><li><strong>There is deliberately no tiered/auto-promotion mode.</strong> The compile premium is a fraction of the parse both modes already pay, so promotion bookkeeping would buy nothing and cost a third semantic path. The 64-entry source LRU + jaibite already capture &quot;hot script&quot; with zero policy machinery.</li></ul>
-<p>Practical pattern: keep the backend a flag of a verification build (the runner&#x27;s <code>--backend=interp</code> is one) so any behavioral suspicion can be A/B&#x27;d against the other backend instantly.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/02-dynamic-binder.html"><span>&larr; previous</span>dynamic_binder: Binding C++ Classes</a><a class="next" rel="next" href="../embedding/04-jaibite.html"><span>next &rarr;</span>jaibite: Parse Once, Ship Precompiled</a></nav></article>
+<h2 id="seeing-what-the-vm-compiled">Seeing what the VM compiled<a class="hlink" href="#seeing-what-the-vm-compiled" aria-label="link">&#8203;</a></h2>
+<p><code>engine::disassembly_sink(fn)</code> hands every chunk the VM compiles from then on (a program, a function at its definition, a standalone expression or declaration) to <code>fn(listing, manifest)</code> in compile order: the readable listing, and the chunk&#x27;s manifest with every field and exact constant bits. The bytecode is the same with or without a sink. The runner&#x27;s <code>--disasm=FILE</code> and <code>--manifest=FILE</code> write the two.</p>
+<p><code>engine::cells_miss_every(n)</code> is a testing lever for a build configured with <code>JAISCRIPT_MISS_INJECTION</code>: every nth guarded cell instruction misses before it runs, as a failed guard would, so the fallback path runs at every such position (the runner&#x27;s <code>--miss-every=N</code>). 0, the default, is off. <code>engine::miss_injection_available()</code> reports whether the build carries it; without it a nonzero <code>n</code> throws <code>std::logic_error</code>.</p>
+<h2 id="recommendation">Which to run<a class="hlink" href="#recommendation" aria-label="link">&#8203;</a></h2>
+<p id="numbers-what-the-choice-actually-costs">Run the VM. Keep the interpreter as a flag of a verification build (the runner&#x27;s <code>--backend=interp</code> is one), so a suspected behavior difference can be compared against the reference at once. There is no tiered or automatic promotion between the two: the engine&#x27;s 64-entry source cache and <a href="04-jaibite.html">jaibites</a> already make repeated scripts cheap. <a href="11-performance.html#embedding-costs">Performance</a> has the measured cost of each backend.</p>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/02-dynamic-binder.html"><span>&larr; previous</span>dynamic_binder: Binding C++ Classes</a><a class="next" rel="next" href="../embedding/04-jaibite.html"><span>next &rarr;</span>jaibite: Parse Once, Ship Precompiled</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

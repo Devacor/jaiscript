@@ -352,11 +352,14 @@ public:
                 var out = ""; var out2 = "";
                 try { ns::y = s(true); out = "stored"; } catch (e) { out = e; }
                 try { y = s(true); out2 = "stored"; } catch (e) { out2 = e; }
-                var fv = 7.9;
-                ns::y = fv; y = fv;
-                (out == out2 && out != "stored" && to_string(ns::y) == to_string(y))
+                var fv = 7.9; var out3 = ""; var out4 = "";
+                try { ns::y = fv; out3 = "stored"; } catch (e) { out3 = e; }
+                try { y = fv; out4 = "stored"; } catch (e) { out4 = e; }
+                var bv = true;
+                ns::y = bv; y = bv;
+                (out == out2 && out != "stored" && out3 == out4 && out3 != "stored" && to_string(ns::y) == "1" && to_string(y) == "1")
                     ? "same"
-                    : (out + " | " + out2 + " | " + to_string(ns::y) + " | " + to_string(y))
+                    : (out + " | " + out2 + " | " + out3 + " | " + out4 + " | " + to_string(ns::y) + " | " + to_string(y))
             )", "same"},
             });
         });

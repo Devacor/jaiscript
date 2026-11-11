@@ -19,6 +19,11 @@ public:
 	int gun_kick = 0;
 	string death_cause = "the gloom";
 
+	array<int> entry_have = [1, 0, 0];
+	array<int> entry_ammo = [48, 0, 0];
+	int entry_armor = 0;
+	int entry_weapon = 0;
+
 	// feedback timers (the HUD face + the red screen border)
 	int face_pain = 0;
 	int face_grin = 0;
@@ -39,6 +44,26 @@ public:
 		weapon = 0;
 		cooldown = 0;
 		bob = 0.0;
+	}
+
+	// what you walked onto the floor with, which a death on it gives back
+	void remember_loadout() {
+		entry_have = have;
+		entry_ammo = ammo;
+		entry_armor = armor;
+		entry_weapon = weapon;
+	}
+
+	// a death restarts the floor with full health and the arsenal you brought in, every gun at least half stocked
+	void respawn() {
+		reset_vitals();
+		have = entry_have;
+		armor = entry_armor;
+		weapon = entry_weapon;
+		array<int> least = [48, 16, 40];
+		for (int t = 0; t < 3; ++t) {
+			ammo[t] = have[t] == 1 ? imax(entry_ammo[t], least[t]) : entry_ammo[t];
+		}
 	}
 
 	void move(shared_ptr<Input> input) {

@@ -158,6 +158,7 @@ jaiscript.exe gloom.jai -- --bench 300           # autopilot + sim/draw split
 jaiscript.exe gloom.jai -- --256color            # force xterm-256 (the shim guesses as the exe does)
 jaiscript.exe gloom.jai -- --dev                 # play, reloading tune.jai and the look as you save them
 jaiscript.exe gloom.jai -- --reload-test         # the hot-reload self-test (in a scratch copy: it edits tune.jai)
+jaiscript.exe gloom.jai -- --respawn-test        # a death on the last floor keeps the arsenal you brought
 ```
 
 `--smoke` exits 0 only when `STATE_HASH` matches the reference checkpoint
@@ -168,8 +169,11 @@ table.
 Four maps: **DIMLIT ANTECHAMBER** (grunts, and a wall that isn't), **COOLANT
 WARRENS** (spitters behind coolant vats, a red lock), **THE HEX FOUNDRY** (the
 hexcaster lives here, behind the blue lock the turrets watch), **GLOOM'S THRONE**
-(him). Kills / secrets / par-time tally after each floor; health, armor, three
-ammo pools, keycards; a face that grins when you pick up a new gun.
+(him, and a hexcaster waiting in the first room). Kills / secrets / par-time
+tally after each floor; health, armor, three ammo pools, keycards; a face that
+grins when you pick up a new gun. Die and the floor restarts, repopulated, with
+full health and the arsenal you carried onto it, every gun you own at least
+half stocked.
 
 Enemies (each brain is a `coroutine` **method** whose handle lives in a field on
 the enemy itself — phase state is coroutine-frame locals, pain interrupts by

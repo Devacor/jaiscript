@@ -195,9 +195,9 @@ public:
                 a.label("x").label("tag");
                 string t = a.tagged(true) + a.tagged(false) + a.pick(1) + a.pick("q") + to_string(a.guarded());
                 string errs = "";
-                try { a.add("seven"); } catch (e) { errs = errs + "|" + e; }
+                [[warn_mode]] try { a.add("seven"); } catch (e) { errs = errs + "|" + e; }
                 try { a.narrow(1 << 40); } catch (e) { errs = errs + "|" + e; }
-                try { a.add(1, 2); } catch (e) { errs = errs + "|" + e; }
+                [[warn_mode]] try { a.add(1, 2); } catch (e) { errs = errs + "|" + e; }
                 try { a.boom(5); } catch (e) { errs = errs + "|" + e; }
                 a.reset();
                 int chained = Acc().bump().bump().add(3) + a.bump().bump().get_total();

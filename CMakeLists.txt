@@ -9,7 +9,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND NOT CMAKE_BUILD_TYPE A
 endif()
 
 project(JaiScript
-    VERSION 0.5.2
+    VERSION 0.5.3
     DESCRIPTION "High-performance scripting language with C++ syntax for game engines"
     LANGUAGES CXX
 )
@@ -49,6 +49,16 @@ option(JAISCRIPT_INSTALL "Generate the install rules and the JaiScript CMake pac
 option(JAISCRIPT_LTCG "Whole-program optimization for MSVC Release builds (/GL, /LTCG)" ${JAISCRIPT_IS_TOP_LEVEL})
 option(JAISCRIPT_ENABLE_BENCHMARKS "Enable performance benchmark tests" OFF)
 option(JAISCRIPT_NATIVE_ARCH "Tune Release builds for this machine's CPU (-march=native; non-portable binaries)" OFF)
+option(JAISCRIPT_WASM_THREADS "Emscripten: build everything with -pthread, so parallel_for and parallel_transform run on WebAssembly threads (needs a cross-origin isolated page)" OFF)
+# the library catches what it throws (to_int's fallback, a script's catch around a failing builtin): every unit needs it
+if(EMSCRIPTEN)
+    add_compile_options(-fwasm-exceptions)
+    add_link_options(-fwasm-exceptions)
+endif()
+if(EMSCRIPTEN AND JAISCRIPT_WASM_THREADS)
+    add_compile_options(-pthread)
+    add_link_options(-pthread)
+endif()
 option(JAISCRIPT_ENABLE_LTO "Enable link-time optimization for GCC/Clang Release builds" OFF)
 option(JAISCRIPT_VM_COVERAGE "Diagnostic build: the vm counts every instruction where it runs and why (engine::vm_coverage_report, jaiscript --coverage)" OFF)
 if(JAISCRIPT_VM_COVERAGE)
@@ -181,6 +191,12 @@ if(JAISCRIPT_BUILD_LSP)
     add_subdirectory(tools/lsp)
 endif()
 # --- end jaiscript_lsp ---
+
+# --- jaiscript_web (tools/jaiscript_web): the engine and the console builtins as WebAssembly, for the site's Play page and landing page ---
+if(EMSCRIPTEN)
+    add_subdirectory(tools/jaiscript_web)
+endif()
+# --- end jaiscript_web ---
 
 # --- jai_gate_run (tools/ci): the watchdog tools/ci/ci_lib.sh runs every gate under; it links nothing of the library ---
 if(JAISCRIPT_IS_TOP_LEVEL)

@@ -4,7 +4,7 @@ JaiScript is an embedded scripting language for C++ engines: C++-flavored syntax
 classes with hot reload, coroutines, a three-rung type ladder (`int` / `auto` / `var`) with a
 static checker that is strict by default, value semantics with references by declaration, and
 two interchangeable backends — a tree-walking interpreter and a bytecode VM — kept at
-byte-for-byte parity by 4,700+ tests and a differential fuzzer. It has no dependencies and
+byte-for-byte parity by 3,900+ tests and a differential fuzzer. It has no dependencies and
 builds as a static library plus headers.
 
 ## Get JaiScript
@@ -31,7 +31,7 @@ git clone --depth 1 https://github.com/Devacor/jaiscript.git && cmake -P jaiscri
 `CMakePresets.json` names a preset per toolchain (`windows-msvc`, `windows-clang`, `macos`, `macos-xcode`,
 `linux-gcc`, `linux-clang`); [docs/BUILD.md](docs/BUILD.md) has them and everything else.
 
-The documentation — an 18-chapter language guide, a 19-chapter embedding guide, language bridges
+The documentation — a 20-chapter language guide, a 21-chapter embedding guide, language bridges
 and code migrations, the examples and a reference — is a static site in [`docs/site/`](docs/site/), published at
 [jaiscript.com](https://jaiscript.com). Open `docs/site/index.html` in a browser; a clone is all you need.
 
@@ -109,7 +109,7 @@ jai::dynamic_binder<Vec2>(*e, "Vec2")
     .method("length", &Vec2::length)
     .build();
 
-double len = e->execute("Vec2(3, 4).length()").as_float();   // 5.0
+double len = e->execute<double>("Vec2(3, 4).length()");      // 5.0
 ```
 
 One knob is worth knowing on day one:
@@ -169,8 +169,23 @@ cmake --build build --target jaiscript_tests jaiscript_runner
 Binaries land in `build/bin/`. With the Visual Studio generator, drop `-G Ninja` and pass
 `--config Release` to the build step; the binaries land in `build/bin/` too.
 
-Debug links in seconds; Release links with LTCG and takes minutes. Iterate in Debug, then do a
-Release pass.
+Debug links in seconds. On MSVC a top-level Release build links with LTCG and takes minutes. Iterate
+in Debug, then do a Release pass.
+
+### Fast builds in your own project
+
+Whole-program optimization is what makes a Release link slow: the linker generates code again for
+every object compiled with `/GL`, on every link. It speeds the VM up a few percent, so keep JaiScript
+out of it while you develop and turn it on for the build you ship.
+
+- **CMake.** `add_subdirectory(JaiScript)` already does this: `JAISCRIPT_LTCG` is OFF in a
+  subproject, the library is a static library of plain objects, and your Release link stays
+  incremental. A top-level or installed build takes `-DJAISCRIPT_LTCG=OFF`.
+- **A Visual Studio project.** Build JaiScript as a static library project of its own with
+  Whole Program Optimization set to No, and reference it from your program. With `jaiscript.cpp`
+  compiled inside your own project instead, set that one property to No on the file. Either way
+  a one-line edit to your code links in seconds, where a whole-program link takes a minute or more.
+  [Visual Studio, Step by Step](docs/site/embedding/21-visual-studio.html) walks through both setups.
 
 | Option | Default | What it does |
 |---|---|---|
@@ -263,11 +278,13 @@ It is a fan project, not affiliated with or endorsed by id Software.
 - [`docs/site/bridges/index.html`](docs/site/bridges/index.html) — language bridges from
   JavaScript, C++ and C#, and code migrations from Cereal, Boost.Serialization, Boost.Signals2,
   ChaiScript, sol2, Squirrel, pybind11, nlohmann::json, Qt properties and coroutine schedulers.
-- [`docs/site/reference/index.html`](docs/site/reference/index.html) — operators, conversions,
-  builtin methods, the engine API, and every run-time error text (byte-identical on both
-  backends).
+- [`docs/site/reference/`](docs/site/reference/index.html) — the lookup pages: language rules
+  (operators, conversions), the library, the engine API, and every error text in
+  [`errors.html`](docs/site/reference/errors.html) (byte-identical on both backends).
 - [`docs/site/embedding/06-static-checking.html`](docs/site/embedding/06-static-checking.html) —
   the checker's contract: modes, the conversion table, escape hatches.
+- [`docs/site/embedding/21-visual-studio.html`](docs/site/embedding/21-visual-studio.html) —
+  Visual Studio, step by step: from a fresh install to a C++ program that runs a script.
 - [`tools/vscode-jaiscript/`](tools/vscode-jaiscript/) — syntax highlighting and the debugger
   client for VS Code.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to build, test, and land a change.
@@ -276,8 +293,8 @@ Bugs and questions: [github.com/Devacor/jaiscript/issues](https://github.com/Dev
 
 ## Status
 
-JaiScript 0.5 beta, released 9 November 2026. The language, both backends, the embedding API and
-the `.jaibite` format are complete and covered by 4,700+ tests run on both backends and a
+JaiScript 0.5 beta, released 11 November 2026. The language, both backends, the embedding API and
+the `.jaibite` format are complete and covered by 3,900+ tests run on both backends and a
 differential fuzzer. Beta means the C++ API may still change between minor versions;
 [`docs/site/stability.html`](docs/site/stability.html) lists what is settled and what may change
 before 1.0.

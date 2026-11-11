@@ -1,6 +1,7 @@
 #include <jaiscript/stdlib/reflection.hpp>
 #include <jaiscript/core/engine.hpp>
 #include <jaiscript/detail/class_runtime.hpp>
+#include <jaiscript/detail/cast_kernel.hpp>
 #include <jaiscript/core/script_namespace.hpp>
 #include <jaiscript/core/execution_backend.hpp>
 #include <jaiscript/detail/environment.hpp>
@@ -512,6 +513,15 @@ void register_reflection_functions(engine& eng_ref) {
             }
         }
         return arr;
+    });
+
+    // is_a(x, "Class"): instanceof for a class named at run time
+    add("is_a", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
+        reflect_detail::expect_args(args, 2, "is_a");
+        const script_value& named = args[1].is_reference() ? args[1].deref() : args[1];
+        if (!named.is_string()) { throw runtime_error("reflect::is_a expects a value and a class name"); }
+        const class_definition* cls = reflect_detail::resolve_class(eng, named, "is_a");
+        return script_value(cls && detail::instance_of_class(args[0], cls->get_name(), eng), eng);
     });
 
     add("generation", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {

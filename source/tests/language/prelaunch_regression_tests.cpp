@@ -81,22 +81,26 @@ public:
 		});
 
 		test("numeric_float_to_int_errors_are_catchable", [this]() {
-			const std::string expected = "Cannot convert float to integer: non-finite or out of range";
+			// an explicit conversion checks the range; an int slot takes no float at all
+			const std::string out_of_range = "Cannot convert float to integer: non-finite or out of range";
+			const std::pair<std::string, std::string> actions[] = {
+				{"math::itrunc(source);", out_of_range}, {"math::ifloor(source);", out_of_range}, {"cast<int>(source);", out_of_range},
+				{"int target = cast<int>(source);", out_of_range},
+				{"class Number { var value = 0; int to_int() { return cast<int>(value); } } auto n = Number(); n.value = source; int target = n;", out_of_range},
+				{"int target = source;", "Cannot initialize 'target' (declared int) with float"},
+				{"int target = 7; target = source;", "Cannot assign float to 'target' (declared int)"},
+				{"int accept(int x) { return x; } accept(source);", "Cannot pass float to parameter 'x' of 'accept' (declared int)"},
+				{"int convert(var x) { return x; } convert(source);", "Cannot return float from 'convert' (declared -> int)"},
+				{"class Box { int value = 7; } auto box = Box(); box.value = source;", "Cannot assign float to field 'value' of Box (declared int)"}};
 			for (double input : {0x1p63, std::nextafter(-0x1p63, -INFINITY), 1e100, -1e100,
 				std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity(),
 				std::numeric_limits<double>::quiet_NaN()}) {
-				for (const std::string action : {
-					"math::itrunc(source);", "math::ifloor(source);", "cast<int>(source);",
-					"int target = source;", "int target = 7; target = source;",
-					"int accept(int x) { return x; } accept(source);",
-					"int convert(var x) { return x; } convert(source);",
-					"class Box { int value = 7; } auto box = Box(); box.value = source;",
-					"class Number { var value = 0; float to_int() { return value; } } auto n = Number(); n.value = source; int target = n;"}) {
+				for (const auto& [action, expected] : actions) {
 					auto eng = make_engine();
 					eng->add_global("input", script_value(input, eng.get()));
 					auto result = eng->execute("var source = input; string message = \"\"; try { " + action +
 						" } catch (e) { message = e; } message;");
-					check_eq(expected, result.as_string());
+					check_eq(expected, result.as_string(), action);
 					check_eq(script_int{42}, eng->execute("40 + 2;").as_int());
 				}
 			}
@@ -104,29 +108,32 @@ public:
 
 		test("numeric_float_to_int_is_checked_at_container_boundaries", [this]() {
 			// Review finding: the scalar slot rejected 1e100 while array<int> / map<string,int>
-			// elements took it through an unchecked cast (INT64_MIN). One kernel now.
-			const std::string expected = "Cannot convert float to integer: non-finite or out of range";
-			for (double input : {0x1p63, 1e100, -1e100, std::numeric_limits<double>::infinity(),
+			// elements took it through an unchecked cast (INT64_MIN). An int element takes no float, in range or out, through any lane.
+			const std::string element = "Cannot assign 'float' to element of type 'int'";
+			const std::string into_array = "Cannot store float in array<int>";
+			const std::string into_map = "Cannot store float in map<string,int>";
+			const std::pair<std::string, std::string> actions[] = {
+				{"array<int> a = [source];", into_array},
+				{"array<int> a = [1, source, 3];", into_array},
+				{"map<string, int> m = {\"x\": source};", into_map},
+				{"array<int> a = []; a.push(source);", "Cannot push 'float' to array<int>"},
+				{"array<int> a = [1]; a[0] = source;", element},
+				{"array<int> a = [1]; a[0] += source;", element},
+				{"var loose = [source]; array<int> a = loose;", into_array},
+				{"var loose = {\"k\": source}; map<string, int> m = loose;", into_map},
+				{"auto box = EmptyBox(); box.items = [source];", "Cannot assign array to field 'items' of EmptyBox (declared array<int>)"},
+				{"array<int> take(array<int> xs) { return xs; } take([source]);", into_array},
+				{"array<int> a = [1]; a[0] *= source;", element},
+				{"array<int> a = [1]; var& r = a[0]; r = source;", element},
+				{"array<int> a = [1]; var& r = a[0]; r += source;", element},
+				{"array<int> a = [1]; for (auto& x : a) { x = source; }", element},
+				{"array<array<int>> aa = [[1]]; aa[0][0] = source;", element},
+				{"map<string, int> m = {\"x\": 1}; m[\"x\"] = source;", element},
+				{"map<string, int> m = {\"x\": 1}; m[\"x\"] += source;", element},
+				{"auto box = OneBox(); box.items[0] = source;", element}};
+			for (double input : {1.5, 0x1p63, 1e100, -1e100, std::numeric_limits<double>::infinity(),
 				std::numeric_limits<double>::quiet_NaN()}) {
-				for (const std::string action : {
-					"array<int> a = [source];",
-					"array<int> a = [1, source, 3];",
-					"map<string, int> m = {\"x\": source};",
-					"array<int> a = []; a.push(source);",
-					"array<int> a = [1]; a[0] = source;",
-					"array<int> a = [1]; a[0] += source;",
-					"var loose = [source]; array<int> a = loose;",
-					"var loose = {\"k\": source}; map<string, int> m = loose;",
-					"auto box = EmptyBox(); box.items = [source];",
-					"array<int> take(array<int> xs) { return xs; } take([source]);",
-					"array<int> a = [1]; a[0] *= source;",
-					"array<int> a = [1]; var& r = a[0]; r = source;",
-					"array<int> a = [1]; var& r = a[0]; r += source;",
-					"array<int> a = [1]; for (auto& x : a) { x = source; }",
-					"array<array<int>> aa = [[1]]; aa[0][0] = source;",
-					"map<string, int> m = {\"x\": 1}; m[\"x\"] = source;",
-					"map<string, int> m = {\"x\": 1}; m[\"x\"] += source;",
-					"auto box = OneBox(); box.items[0] = source;"}) {
+				for (const auto& [action, expected] : actions) {
 					// once at top level (environment slots) and once inside a function (frame slots,
 					// the reference-lvalue kernel): the lanes differ, the verdict may not
 					for (const std::string wrap : {"{0}", "void run() { {0} } run();"}) {
@@ -142,17 +149,17 @@ public:
 					}
 				}
 			}
-			// in-range floats still truncate into int elements, ints still widen into float elements
+			// a cast float is an int element, ints still widen into float elements
 			auto eng = make_engine();
-			check_eq(script_int{-2}, eng->execute("array<int> a = [1.9, -3.9]; a[0] + a[1];").as_int());
-			check_eq(script_int{-29}, eng->execute("array<int> a = [1.9, -3.9]; a[0] * 10 + a[1] * 13;").as_int());
+			check_eq(script_int{-2}, eng->execute("array<int> a = [cast<int>(1.9), cast<int>(-3.9)]; a[0] + a[1];").as_int());
+			check_eq(script_int{-29}, eng->execute("array<int> a = [cast<int>(1.9), cast<int>(-3.9)]; a[0] * 10 + a[1] * 13;").as_int());
 			check_near(3.0, eng->execute("array<float> f = [1, 2]; f[0] + f[1];").as_float(), 1e-12);
 			check_eq(script_int{9223372036854775807LL}, eng->execute("array<int> a = [9223372036854775807]; a[0];").as_int());
 		});
 
 		test("nested_container_element_types_are_enforced", [this]() {
 			// array<array<int>> used to type only the outer level: the inner arrays stayed
-			// untagged, so a string or an out-of-range float went in silently. The boundary
+			// untagged, so a string or a float went in silently. The boundary
 			// now recurses: inner nodes get their tag (typed buffers), so every store through
 			// them runs the same rows as a flat array<int>.
 			auto eng = make_engine();
@@ -168,8 +175,10 @@ public:
 			check_eq(flat_store, msg("array<array<int>> aa = [[1]]; aa[0][0] = \"x\";"));
 			check_eq(std::string("Cannot store string in array<int>"), msg("array<array<int>> aa = [[1]]; aa.push([\"x\"]);"));
 			check_eq(std::string("Cannot store string in array<int>"), msg("array<array<int>> aa = [[1]]; aa[0] = [\"x\"];"));
-			check_eq(std::string("Cannot convert float to integer: non-finite or out of range"), msg("array<array<int>> aa = [[1]]; aa[0][0] = 1e100;"));
-			check_eq(std::string("Cannot convert float to integer: non-finite or out of range"), msg("array<array<int>> aa = [[1e100]];"));
+			const std::string flat_float_store = msg("array<int> a = [1]; a[0] = 1e100;");
+			check_eq(std::string("Cannot assign 'float' to element of type 'int'"), flat_float_store);
+			check_eq(flat_float_store, msg("array<array<int>> aa = [[1]]; aa[0][0] = 1e100;"));
+			check_eq(std::string("Cannot store float in array<int>"), msg("array<array<int>> aa = [[1e100]];"));
 			check_eq(std::string("Cannot store string in array<int>"), msg("map<string, array<int>> m = {\"k\": [\"x\"]};"));
 			check_eq(flat_store, msg("map<string, array<int>> m = {\"k\": [1]}; m[\"k\"][0] = \"x\";"));
 			check_eq(std::string("Cannot store string in map<string,int>"), msg("array<map<string, int>> am = [{\"k\": \"x\"}];"));
@@ -180,7 +189,7 @@ public:
 			check_eq(std::string(""), msg("array<array<int>> aa = [[1, 2], [3]]; aa[0][0] = 7; aa.push([4, 5]); aa[1][0] += 1;"));
 			check_eq(script_int{22}, eng->execute("array<array<int>> aa = [[1, 2], [3]]; aa[0][0] = 7; aa.push([4, 5]); aa[1][0] += 1; aa[0][0] + aa[0][1] + aa[1][0] + aa[2][0] + aa[2][1];").as_int());
 			check_eq(std::string("Cannot assign 'string' to element of type 'int'"), msg("array<array<int>> aa = [[1]]; auto inner = aa[0]; inner[0] = \"x\";"));   // an inferred copy keeps the inner tag (a var slot is the dynamic hatch)
-			check_eq(script_int{3}, eng->execute("map<string, array<int>> m = {\"k\": [1, 2.9]}; m[\"k\"][0] + m[\"k\"][1];").as_int());
+			check_eq(script_int{3}, eng->execute("map<string, array<int>> m = {\"k\": [1, true, 1]}; m[\"k\"][0] + m[\"k\"][1] + m[\"k\"][2];").as_int());
 		});
 
 		test("aggregate_copies_share_explicit_handles", [this]() {

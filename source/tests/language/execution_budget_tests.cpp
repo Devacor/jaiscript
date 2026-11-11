@@ -26,6 +26,8 @@ public:
 				// fuzz seed 33294: the counting loop's fall-through, taken once a reference binding boxes the counter, had no back-edge check
 				"function bump(int& x) { x += 1; } for (int i = 0; i < 4; i++) { if (i != 0) { i = i - 1; } else { bump(i); i = 0; } }",
 				"for (int i = 0; i < 4; i++) { if (i == 0) { auto f = [&]() { i = 0; }; f(); } i = i - 1; }",
+				// no catch clause takes the budget's error
+				"try { while (true) { } } catch (error e) { } catch (e) { }",
 			};
 			check_each(loops, [&](const char* loop) {
 				auto e = make_engine();

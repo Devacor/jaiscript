@@ -286,7 +286,7 @@ function draw_beam(int tx, int ty, int tier, int rgb, float height) -> void {
 	int top = at.bot - at.hgt - at.hgt * (1 + tier);
 	int c = pal(rgb);
 	int dim = pal(scale_rgb(rgb, 0.55));
-	int x = at.sx;
+	int x = cast<int>(at.sx);
 	int spark = top + ((G.turn * 3 + tx) % imax(1, at.bot - at.hgt - top));
 	for (int y = imax(0, top); y < at.bot - at.hgt; ++y) {
 		if ((y + G.turn) % 2 == 0) { fx_plot(x, y, y == spark ? pal(0xFFFFFF) : dim, at.depth); }
@@ -413,8 +413,8 @@ function project(float x, float y, float height, float lift) -> Projected {
 	float depth = CAM_INVDET * (0.0 - CAM_PY * rx + CAM_PX * ry);
 	if (depth < 0.15 || depth > SPRITE_RANGE) { return Projected{0.0, 0.0, 0, 0}; }
 	float ttx = CAM_INVDET * (CAM_DY * rx - CAM_DX * ry);
-	int bot = PH * 0.5 + WALL_KPX * (0.5 - lift) / depth;
-	return Projected{depth, (PW / 2.0) * (1.0 + ttx / depth), bot, iclamp(WALL_KPX * height / depth, 1, PH + 12)};
+	int bot = cast<int>(PH * 0.5 + WALL_KPX * (0.5 - lift) / depth);
+	return Projected{depth, (PW / 2.0) * (1.0 + ttx / depth), bot, iclamp(cast<int>(WALL_KPX * height / depth), 1, PH + 12)};
 }
 
 function fx_draw_number(Fx f) -> void {
@@ -422,10 +422,10 @@ function fx_draw_number(Fx f) -> void {
 	if (at.depth <= 0.0) { return; }
 	int scale = at.hgt >= 34 || f.value == 2 ? 2 : 1;
 	int w = tiny_width(f.text, scale);
-	int rise = 2 + FX_PHASE * 7 * scale;
+	int rise = cast<int>(2 + FX_PHASE * 7 * scale);
 	int y = at.bot - at.hgt - 5 * scale - rise;
 	if (y < 1) { y = 1; }
-	pane_text(f.text, math::floor(at.sx - w * 0.5), y, scale, pal(f.rgb), pal(0x140A0A), true, at.depth);
+	pane_text(f.text, cast<int>(math::floor(at.sx - w * 0.5)), y, scale, pal(f.rgb), pal(0x140A0A), true, at.depth);
 }
 
 function fx_draw_slash(Fx f) -> void {
@@ -436,11 +436,11 @@ function fx_draw_slash(Fx f) -> void {
 	int core = pal(FX_PHASE >= 1.0 ? mix_rgb(f.rgb, 0xC80A14, 0.6) : 0xFFFFFF);
 	int edge = pal(f.rgb);
 	int half = at.hgt / 2;
-	int cx = at.sx;
+	int cx = cast<int>(at.sx);
 	int cy = at.bot - half;
 	int dir = f.value == 0 ? 1 : -1;
 	for (int stroke = -1; stroke <= 1; ++stroke) {
-		int len = half * (stroke == 0 ? 1.0 : 0.7) * reach;
+		int len = cast<int>(half * (stroke == 0 ? 1.0 : 0.7) * reach);
 		for (int t = -half; t < -half + 2 * len; ++t) {
 			int x = cx + dir * t + stroke * 3;
 			int y = cy + t;
@@ -460,9 +460,9 @@ function fx_draw_alert(Fx f) -> void {
 	Projected at = project(f.x, f.y, 1.15 * f.size, f.lift);
 	if (at.depth <= 0.0) { return; }
 	int scale = at.hgt >= 30 ? 2 : 1;
-	int bob = (1.0 - FX_PHASE) * 4;
+	int bob = cast<int>((1.0 - FX_PHASE) * 4);
 	int w = tiny_width(f.text, scale);
-	pane_text(f.text, math::floor(at.sx - w * 0.5), at.bot - at.hgt - 7 * scale - bob, scale, pal(f.rgb), pal(0x3A1000), true, at.depth);
+	pane_text(f.text, cast<int>(math::floor(at.sx - w * 0.5)), at.bot - at.hgt - 7 * scale - bob, scale, pal(f.rgb), pal(0x3A1000), true, at.depth);
 }
 
 // the blast where a bolt lands: a ring of its colour opening out, white at the heart
@@ -474,7 +474,7 @@ function fx_draw_burst(Fx f) -> void {
 	Projected at = project(f.tx, f.ty, 0.9, 0.0);
 	if (at.depth <= 0.0) { return; }
 	int cy = at.bot - at.hgt / 2;
-	int radius = 2 + at.hgt * (0.15 + 0.35 * open);
+	int radius = cast<int>(2 + at.hgt * (0.15 + 0.35 * open));
 	int ring = pal(f.rgb);
 	int heart = pal(mix_rgb(f.rgb, 0xFFFFFF, 0.7));
 	int spokes = 14;
@@ -483,12 +483,12 @@ function fx_draw_burst(Fx f) -> void {
 		float ca = math::cos(a);
 		float sa = math::sin(a);
 		for (int r = radius / 2; r <= radius; ++r) {
-			fx_plot(at.sx + ca * r, cy + sa * r * 0.8, r > radius * 3 / 4 ? ring : heart, at.depth);
+			fx_plot(cast<int>(at.sx + ca * r), cast<int>(cy + sa * r * 0.8), r > radius * 3 / 4 ? ring : heart, at.depth);
 		}
 	}
 	if (FX_PHASE >= 1.0) { return; }
 	for (int y = -1; y <= 1; ++y) {
-		for (int x = -1; x <= 1; ++x) { fx_plot(at.sx + x, cy + y, pal(0xFFFFFF), at.depth); }
+		for (int x = -1; x <= 1; ++x) { fx_plot(cast<int>(at.sx + x), cy + y, pal(0xFFFFFF), at.depth); }
 	}
 }
 
@@ -508,8 +508,8 @@ function fx_draw_sparks(Fx f) -> void {
 		float x = at.sx + math::cos(a) * speed * t;
 		float y = cy - math::sin(a) * speed * t * 0.7 + at.hgt * 0.9 * t * t;
 		int c = t < 0.35 ? hot : (t < 0.75 ? warm : cool);
-		fx_plot(x, y, c, at.depth);
-		if (at.hgt >= 24) { fx_plot(x + 1, y, c, at.depth); }
+		fx_plot(cast<int>(x), cast<int>(y), c, at.depth);
+		if (at.hgt >= 24) { fx_plot(cast<int>(x + 1), cast<int>(y), c, at.depth); }
 	}
 }
 
@@ -535,7 +535,7 @@ function fx_screen_overlays() -> void {
 function fx_draw_screen(Fx f) -> void {
 	int scale = PH >= 56 ? 3 : 2;
 	int w = tiny_width(f.text, scale);
-	int rise = FX_PHASE * 6;
+	int rise = cast<int>(FX_PHASE * 6);
 	int y = PH * 7 / 10 - rise - f.value * 6 * scale;
 	pane_text(f.text, (PW - w) / 2, y, scale, pal(f.rgb), pal(0x0A0408), true, 0.0);
 }
@@ -661,7 +661,7 @@ function reload_failed(string error) -> void {
 function fx_reload_sweep() -> void {
 	if (RELOAD_SWEEP < 0.0) { return; }
 	int band = imax(3, PH / 8);
-	int y = RELOAD_SWEEP * (PH + band) - band;
+	int y = cast<int>(RELOAD_SWEEP * (PH + band) - band);
 	int glow = theme_of(G.floor).glow;
 	pane_tint(0, y - band * 2, PW, y, glow, 0.18, 1.1);
 	pane_tint(0, y, PW, y + band, mix_rgb(glow, 0xFFFFFF, 0.5), 0.55, 1.25);

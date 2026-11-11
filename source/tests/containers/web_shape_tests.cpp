@@ -43,7 +43,7 @@ out += " " + to_string(x) + " " + to_string(y) + " " + to_string(z) + " " + to_s
 map<string, int> d = {"k": 7};
 try { d["k"] /= 0; } catch (e) { out += " div:" + e.message; }
 try { d["k"] %= 0; } catch (e) { out += " mod:" + e.message; }
-d["k"] += 2.9;
+d["k"] += cast<int>(2.9);
 out += " " + to_string(d["k"]);
 var vm = {};
 vm["n"] = 1; vm["n"] += 2.5;

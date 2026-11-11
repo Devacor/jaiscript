@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="Building JaiScript into a Host — JaiScript Embedding">
 <meta property="og:description" content="Every way into a project in full: CMake, Visual Studio and MSBuild, Xcode and an installed package, with the sources, flags and defines each needs, one file or per file, and Debug and Release notes.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/embedding/18-build-integration.html">
+<meta property="og:url" content="https://jaiscript.com/embedding/18-build-integration.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,62 +33,108 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding</summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li class="current"><a href="../embedding/18-build-integration.html" aria-current="page">Building JaiScript into a Host</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding<span class="sidebar-current">Building JaiScript into a Host</span></summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li class="current"><a href="../embedding/18-build-integration.html" aria-current="page">Building JaiScript into a Host</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li><li><a href="../embedding/20-foundry.html">Foundry: Testing a Host</a></li><li><a href="../embedding/21-visual-studio.html">Visual Studio, Step by Step</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>18</nav>
 <article class="chapter"><h1 id="build-integration">Building JaiScript into a Host<a class="hlink" href="#build-integration" aria-label="link">&#8203;</a></h1>
-<p>JaiScript has no dependencies and builds with any C++20 compiler; MSVC 19.51 (Visual Studio 18), Clang 20 and GCC 16 are the verified ones. This page gives each way into a project in full: CMake, Visual Studio&#x27;s MSBuild, Xcode, and an installed package. The <a href="01-embedding-quickstart.html#add-jaiscript-to-your-build">quickstart</a> has the short version of each.</p>
+<p>JaiScript has no dependencies and compiles with your program: add its sources, its include folder and a few compiler
+settings. This page gives each route in full: CMake, Visual Studio's MSBuild, Xcode and an installed package. The
+<a href="01-embedding-quickstart.html#add-jaiscript-to-your-build">quickstart</a> has the short version.</p>
 <h2 id="what-every-build-needs">What every build needs<a class="hlink" href="#what-every-build-needs" aria-label="link">&#8203;</a></h2>
 <div class="tablewrap"><table><thead><tr><th>Setting</th><th>Value</th><th>Why</th></tr></thead><tbody>
-<tr><td>Sources</td><td><code>source/jaiscript.cpp</code>, or every <code>.cpp</code> under <code>source/implementation/</code> (never both)</td><td>The library is compiled with your program; see <a href="#one-file-or-per-file">One file or per file</a>.</td></tr>
-<tr><td>Include path</td><td><code>include/</code></td><td>Every header is included as <code>&lt;jaiscript/...&gt;</code>.</td></tr>
-<tr><td>Language standard</td><td>C++20</td><td>The headers are written in C++20.</td></tr>
-<tr><td>Exceptions and RTTI</td><td>on (every compiler&#x27;s default)</td><td>Errors reach the host as exceptions, and bound classes are matched by type.</td></tr>
-<tr><td>MSVC</td><td><code>/bigobj</code>; <code>/EHsc</code> and <code>/permissive-</code> (the defaults of a new Visual Studio project)</td><td>The binder&#x27;s templates overflow the default object-file section limit, in your files as well as the library&#x27;s.</td></tr>
-<tr><td>GCC and Clang</td><td><code>-ffp-contract=off</code></td><td>Keeps the compiler from fusing <code>a*b+c</code> into one instruction, so floating-point results match on every platform and both backends.</td></tr>
-<tr><td>MinGW GCC</td><td><code>-Wa,-mbig-obj</code></td><td>The COFF counterpart of <code>/bigobj</code>.</td></tr>
-<tr><td>Windows libraries</td><td><code>ws2_32</code> and <code>bcrypt</code></td><td>The debugger&#x27;s socket transport, and the system random source behind <code>crypto::</code>. MSVC and clang targeting MSVC pick them up from the source; a GNU linker needs them named.</td></tr>
-<tr><td>Optional define</td><td><code>JAISCRIPT_ENABLE_DEBUGGER</code></td><td>Compiles in the debugger&#x27;s socket transport for VS Code attach (<a href="12-debugging.html">Debugging</a>). Leave it out for shipping and mobile builds. Define it for every file or for none.</td></tr>
-<tr><td>Optional define</td><td><code>JAISCRIPT_INTERPRETER</code></td><td>Adds the tree-walking interpreter, which only a program that checks the backends against each other needs (<a href="#the-interpreter">The interpreter</a>). Define it for every file or for none.</td></tr>
+<tr><td>Sources</td><td><code>source/jaiscript.cpp</code>, or every <code>.cpp</code> under <code>source/implementation/</code> (never both)</td><td><a href="#one-file-or-per-file">One file or per file</a></td></tr>
+<tr><td>Include path</td><td><code>include/</code></td><td>headers are included as <code>&lt;jaiscript/...&gt;</code></td></tr>
+<tr><td>Language standard</td><td>C++20</td><td></td></tr>
+<tr><td>Exceptions and RTTI</td><td><strong>required</strong>, in the library and in every file that includes its headers. Both are every compiler's default; a project built with <code>-fno-exceptions</code>, <code>-fno-rtti</code> or <code>/GR-</code> cannot host JaiScript.</td><td>errors reach the host as exceptions, and bound classes are matched by type</td></tr>
+<tr><td>MSVC</td><td><code>/bigobj</code>, in your files that bind classes as well as the library's; <code>/EHsc</code> and <code>/permissive-</code> (a new project's defaults)</td><td>the binder's templates overflow the default object-file section limit</td></tr>
+<tr><td>MinGW GCC</td><td><code>-Wa,-mbig-obj</code></td><td>the COFF counterpart of <code>/bigobj</code></td></tr>
+<tr><td>GCC and Clang</td><td><code>-ffp-contract=off</code></td><td>stops <code>a*b+c</code> fusing into one instruction, so floating-point results match on every platform</td></tr>
+<tr><td>Windows libraries</td><td><code>ws2_32</code> and <code>bcrypt</code></td><td>the debugger's sockets and the random source behind <code>crypto::</code>. MSVC and clang-cl pick them up from the source; a GNU linker needs them named.</td></tr>
+<tr><td>Define <code>JAISCRIPT_ENABLE_DEBUGGER</code></td><td>optional; for every file or none</td><td>compiles in the debugger's socket transport (<a href="#the-debugger-define">below</a>)</td></tr>
+<tr><td>Define <code>JAISCRIPT_INTERPRETER</code></td><td>optional; for every file or none</td><td>adds the tree-walking interpreter (<a href="#the-interpreter">below</a>)</td></tr>
 </tbody></table></div>
-<p>Compile JaiScript&#x27;s files with the same settings as yours: the same runtime library, the same <code>NDEBUG</code> and the same defines. Setting them once at the project level does that. <code>NDEBUG</code> and the diagnostic builds (<code>JAISCRIPT_DIAG_ATOMIC_RC</code>, <code>JAISCRIPT_DIAG_XTHREAD_RC</code>, <code>JAISCRIPT_VM_COVERAGE</code>) change class layouts, so a mismatch in any of them fails to link: MSVC reports <code>LNK2038: mismatch detected for &#x27;jaiscript_build_config&#x27;</code>, and GCC and Clang an undefined <code>jai::detail::build_config_debug1_atomic_rc0_xthread_rc0_coverage0</code> (or the like) naming the configuration the library was not built with.</p>
+<p><strong>Compile JaiScript's files with the same settings as yours:</strong> the same runtime library, the same
+<code>NDEBUG</code>, the same defines. <code>NDEBUG</code> and the diagnostic builds
+(<code>JAISCRIPT_DIAG_ATOMIC_RC</code>, <code>JAISCRIPT_DIAG_XTHREAD_RC</code>, <code>JAISCRIPT_VM_COVERAGE</code>) change
+class layouts, so a mismatch fails to link: MSVC reports <code>LNK2038: mismatch detected for
+&#x27;jaiscript_build_config&#x27;</code>, and GCC and Clang an undefined
+<code>jai::detail::build_config_debug1_atomic_rc0_xthread_rc0_coverage0</code> (or the like) naming the configuration
+the library was not built with.</p>
+<h3 id="the-debugger-define">The debugger define<a class="hlink" href="#the-debugger-define" aria-label="link">&#8203;</a></h3>
+<p><code>JAISCRIPT_ENABLE_DEBUGGER</code> compiles the <a href="12-debugging.html">debugger</a>'s TCP listener. Compiled
+in, it still opens no socket until the host calls <code>jai::debug::listen</code>.</p>
+<div class="tablewrap"><table><thead><tr><th>Build</th><th>Default</th><th>To change it</th></tr></thead><tbody>
+<tr><td>CMake</td><td><strong>on</strong>: the option <code>JAISCRIPT_ENABLE_DEBUGGER</code> defaults to <code>ON</code> and defines the macro for the library and for every target that links it</td><td><code>-DJAISCRIPT_ENABLE_DEBUGGER=OFF</code> for shipping and mobile builds: no socket code is compiled, and constructing a connector is a link error</td></tr>
+<tr><td>MSBuild, Xcode, your own build</td><td><strong>off</strong>: nothing defines it</td><td>add the define to every file, in development configurations only</td></tr>
+</tbody></table></div>
+<h3 id="platforms">Platforms<a class="hlink" href="#platforms" aria-label="link">&#8203;</a></h3>
+<p>The library is verified with MSVC 19.51 (Visual Studio 18), Clang 20 and GCC 16. Its continuous integration builds
+and runs the full test suite, the differential fuzzer and the example hash gates, in Debug and Release, on:</p>
+<div class="tablewrap"><table><thead><tr><th>Platform</th><th>Compiler</th></tr></thead><tbody>
+<tr><td>Windows x64 (Visual Studio 2026 image)</td><td>MSVC, and clang-cl against the MSVC standard library</td></tr>
+<tr><td>Linux x64 (Ubuntu 24.04)</td><td>GCC 14, and Clang (also under ASan and UBSan)</td></tr>
+<tr><td>macOS 15, Apple silicon</td><td>AppleClang; a second job builds with the Xcode generator and runs the VM suite</td></tr>
+</tbody></table></div>
+<p>Two more targets are checked by gates in <code>tools/ci/gates.sh</code> that run where their SDK is installed, not in
+CI: <code>android</code> cross-compiles the library and its suites with the NDK for arm64-v8a and 32-bit armeabi-v7a
+(libc++), and <code>wasm</code> builds the engine with Emscripten (a 32-bit target) and runs the example games under
+Node to the native builds' hashes.</p>
 <h2 id="one-file-or-per-file">One file or per file<a class="hlink" href="#one-file-or-per-file" aria-label="link">&#8203;</a></h2>
-<p><code>source/jaiscript.cpp</code> includes every implementation file, so adding that one file adds the whole library. It is the simplest route and the right default when you use JaiScript without changing it: the library compiles as one unit, once, and stays built.</p>
-<p>The files under <code>source/implementation/</code> are the same library split into about forty units. Add them all instead (a wildcard does it) when you work on JaiScript itself or want the library to compile in parallel: an edit to one implementation file rebuilds only that file. Turn on parallel compilation (MSBuild&#x27;s <code>/MP</code>, Ninja and Xcode by default) to get the benefit. Adding both sets defines everything twice.</p>
+<ul>
+<li><code>source/jaiscript.cpp</code> includes every implementation file: one file adds the whole library, which compiles
+once and stays built. The default when you use JaiScript unchanged.</li>
+<li><code>source/implementation/**/*.cpp</code> is the same library as about fifty units. Use it, with parallel
+compilation on (MSBuild's <code>/MP</code>; Ninja and Xcode by default), when you work on JaiScript itself: an edit
+rebuilds one file.</li>
+</ul>
 <h2 id="cmake">CMake<a class="hlink" href="#cmake" aria-label="link">&#8203;</a></h2>
-<p>The library is one CMake target, <code>JaiScript::jaiscript</code>. Linking it brings everything in the table above. <code>JaiScript::jaiscript_interpreter</code> is the same library with the interpreter added (<a href="#the-interpreter">The interpreter</a>).</p>
-<p><strong>As a subproject.</strong> Put the JaiScript folder (the one holding its top-level <code>CMakeLists.txt</code>) inside your project; a copy elsewhere takes a binary directory as well, <code>add_subdirectory(path/to/JaiScript jaiscript)</code>. As a subproject only the library builds (the runner, tests, examples and language server stay off) and its MSVC runtime follows yours. A complete host:</p>
+<p>The library is the target <code>JaiScript::jaiscript</code>; linking it brings every setting above. Put the JaiScript
+folder inside your project (a copy elsewhere takes a binary directory too:
+<code>add_subdirectory(path/to/JaiScript jaiscript)</code>). As a subproject only the library builds, and its MSVC
+runtime follows yours.</p>
 <div class="codeblock cb-plain"><span class="cb-label">CMakeLists.txt</span><pre><code class="lang-plain">cmake_minimum_required(VERSION 3.20)
 project(my_game CXX)
 add_subdirectory(JaiScript)
 add_executable(my_game main.cpp)
 target_link_libraries(my_game PRIVATE JaiScript::jaiscript)</code></pre></div>
-<div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain">cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-build/my_game</code></pre></div>
-<p><strong>With <code>FetchContent</code>.</strong> The same target, fetched at configure time instead of copied in:</p>
+<p>Or fetch it at configure time:</p>
 <div class="codeblock cb-plain"><span class="cb-label">CMakeLists.txt</span><pre><code class="lang-plain">include(FetchContent)
-FetchContent_Declare(jaiscript GIT_REPOSITORY https://github.com/Devacor/jaiscript.git GIT_TAG v0.5.2)
+FetchContent_Declare(jaiscript GIT_REPOSITORY https://github.com/Devacor/jaiscript.git GIT_TAG v0.5.3)
 FetchContent_MakeAvailable(jaiscript)
 target_link_libraries(my_game PRIVATE JaiScript::jaiscript)</code></pre></div>
-<p>Options set before the <code>add_subdirectory</code> or <code>FetchContent_MakeAvailable</code> (or with <code>-D</code>) turn the tools back on: <code>JAISCRIPT_BUILD_RUNNER</code>, <code>JAISCRIPT_BUILD_TESTS</code>, <code>JAISCRIPT_BUILD_EXAMPLES</code>, <code>JAISCRIPT_BUILD_LSP</code>, and <code>JAISCRIPT_INTERPRETER</code> for the <code>jaiscript_interpreter</code> target. <code>JAISCRIPT_ENABLE_DEBUGGER=OFF</code> compiles the debugger&#x27;s socket code out.</p>
+<p>Options, set before <code>add_subdirectory</code> or <code>FetchContent_MakeAvailable</code>, or with <code>-D</code>:</p>
+<div class="tablewrap"><table><thead><tr><th>Option</th><th>Standalone / subproject</th><th>Builds</th></tr></thead><tbody>
+<tr><td><code>JAISCRIPT_BUILD_RUNNER</code>, <code>JAISCRIPT_BUILD_TESTS</code>, <code>JAISCRIPT_BUILD_EXAMPLES</code>, <code>JAISCRIPT_BUILD_LSP</code>, <code>JAISCRIPT_BUILD_SPIDER</code></td><td>on / off</td><td>the runner, the test suite, the examples, the language server, jai_spider</td></tr>
+<tr><td><code>JAISCRIPT_INTERPRETER</code></td><td>on / off</td><td>the <code>jaiscript_interpreter</code> target</td></tr>
+<tr><td><code>JAISCRIPT_INSTALL</code></td><td>on / off</td><td>the install rules and the CMake package</td></tr>
+<tr><td><code>JAISCRIPT_LTCG</code></td><td>on / off</td><td>MSVC whole-program optimization for Release (<code>/GL</code>, <code>/LTCG</code>)</td></tr>
+<tr><td><code>JAISCRIPT_ENABLE_DEBUGGER</code></td><td>on / on</td><td>the debugger's socket transport</td></tr>
+</tbody></table></div>
 <h2 id="visual-studio">Visual Studio (MSBuild)<a class="hlink" href="#visual-studio" aria-label="link">&#8203;</a></h2>
-<p><strong>In the IDE.</strong> Add <code>JaiScript\source\jaiscript.cpp</code> to the project (Add &rarr; Existing Item). Then open the project&#x27;s Properties, choose All Configurations and your platform, and under C/C++:</p>
-<ul>
-<li><strong>General &rarr; Additional Include Directories</strong>: add the <code>JaiScript\include</code> folder, for example <code>$(SolutionDir)JaiScript\include</code>.</li>
-<li><strong>Language &rarr; C++ Language Standard</strong>: ISO C++20 Standard (<code>/std:c++20</code>). Leave Conformance mode at Yes (<code>/permissive-</code>).</li>
-<li><strong>Command Line &rarr; Additional Options</strong>: <code>/bigobj</code>.</li>
-<li><strong>Code Generation &rarr; Enable C++ Exceptions</strong>: Yes (<code>/EHsc</code>), the default.</li>
-<li><strong>Preprocessor &rarr; Preprocessor Definitions</strong>: add <code>JAISCRIPT_ENABLE_DEBUGGER</code> if you want VS Code attach.</li>
-</ul>
-<p>For the per-file route, add the <code>.cpp</code> files under <code>JaiScript\source\implementation</code> instead of <code>jaiscript.cpp</code>, and set <strong>General &rarr; Multi-processor Compilation</strong> to Yes.</p>
-<p><strong>In a property sheet.</strong> The same settings fit in one file a project imports, which keeps them in source control and out of the project file. Save this beside your project as <code>jaiscript.props</code>:</p>
+<p>New to Visual Studio? <a href="21-visual-studio.html">Visual Studio, Step by Step</a> goes from a fresh install to a
+running program, with the errors a missed step gives.</p>
+<p><strong>In the IDE.</strong> Add <code>JaiScript\source\jaiscript.cpp</code> to the project. In its Properties, for All
+Configurations, under C/C++:</p>
+<div class="tablewrap"><table><thead><tr><th>Property</th><th>Value</th></tr></thead><tbody>
+<tr><td>General &rarr; Additional Include Directories</td><td><code>$(SolutionDir)JaiScript\include</code></td></tr>
+<tr><td>Language &rarr; C++ Language Standard</td><td>ISO C++20 (<code>/std:c++20</code>); Conformance mode Yes (<code>/permissive-</code>)</td></tr>
+<tr><td>Command Line &rarr; Additional Options</td><td><code>/bigobj</code></td></tr>
+<tr><td>Code Generation &rarr; Enable C++ Exceptions</td><td>Yes (<code>/EHsc</code>), the default</td></tr>
+<tr><td>Preprocessor &rarr; Preprocessor Definitions</td><td><code>JAISCRIPT_ENABLE_DEBUGGER</code>, for VS&nbsp;Code attach</td></tr>
+</tbody></table></div>
+<p>For the per-file route add the <code>.cpp</code> files under <code>JaiScript\source\implementation</code> instead and
+set General &rarr; Multi-processor Compilation to Yes.</p>
+<p><strong>In a property sheet.</strong> The same settings in one file a project imports. Save it beside your project as
+<code>jaiscript.props</code>:</p>
 <div class="codeblock cb-plain"><span class="cb-label">jaiscript.props</span><pre><code class="lang-plain">&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;
 &lt;Project xmlns=&quot;http://schemas.microsoft.com/developer/msbuild/2003&quot;&gt;
   &lt;PropertyGroup&gt;
@@ -104,31 +158,41 @@ target_link_libraries(my_game PRIVATE JaiScript::jaiscript)</code></pre></div>
     &lt;ClCompile Include=&quot;$(JaiScriptDir)source\implementation\**\*.cpp&quot; /&gt;
   &lt;/ItemGroup&gt;
 &lt;/Project&gt;</code></pre></div>
-<p>Import it in the <code>.vcxproj</code> after <code>Microsoft.Cpp.props</code>:</p>
+<p>This sheet defines <code>JAISCRIPT_ENABLE_DEBUGGER</code> in every configuration; remove that line, or put a
+configuration condition on it, for a shipping build. Import the sheet in the <code>.vcxproj</code> after
+<code>Microsoft.Cpp.props</code>:</p>
 <div class="codeblock cb-plain"><span class="cb-label">my_game.vcxproj (excerpt)</span><pre><code class="lang-plain">&lt;Import Project=&quot;$(VCTargetsPath)\Microsoft.Cpp.props&quot; /&gt;
 &lt;Import Project=&quot;jaiscript.props&quot; /&gt;</code></pre></div>
-<p>A <code>Directory.Build.props</code> can carry the <code>ItemDefinitionGroup</code> for every project in a folder; keep the <code>ClCompile</code> items in the one project that should compile the library. <code>msbuild my_game.vcxproj /p:Configuration=Release /p:Platform=x64</code> builds it from a developer prompt, and <code>/p:JaiScriptPerFile=true /p:MultiProcessorCompilation=true</code> selects the per-file route.</p>
+<p>A <code>Directory.Build.props</code> can carry the <code>ItemDefinitionGroup</code> for every project in a folder;
+keep the <code>ClCompile</code> items in the one project that compiles the library.
+<code>/p:JaiScriptPerFile=true /p:MultiProcessorCompilation=true</code> on the <code>msbuild</code> command line selects
+the per-file route.</p>
 <h2 id="xcode">Xcode<a class="hlink" href="#xcode" aria-label="link">&#8203;</a></h2>
-<p>Add <code>JaiScript/source/jaiscript.cpp</code> to your target (it appears under Build Phases &rarr; Compile Sources), or the files under <code>source/implementation/</code> for the per-file route. Then set, in the target&#x27;s Build Settings (the setting name in parentheses is what an <code>.xcconfig</code> uses):</p>
-<div class="tablewrap"><table><thead><tr><th>Build setting</th><th>Value</th></tr></thead><tbody>
+<p>Add <code>JaiScript/source/jaiscript.cpp</code> to your target (or the files under
+<code>source/implementation/</code>), then set in its Build Settings:</p>
+<div class="tablewrap"><table><thead><tr><th>Build setting (<code>.xcconfig</code> name)</th><th>Value</th></tr></thead><tbody>
 <tr><td>Header Search Paths (<code>HEADER_SEARCH_PATHS</code>)</td><td><code>$(SRCROOT)/JaiScript/include</code></td></tr>
 <tr><td>C++ Language Dialect (<code>CLANG_CXX_LANGUAGE_STANDARD</code>)</td><td>C++20 (<code>c++20</code>)</td></tr>
 <tr><td>C++ Standard Library (<code>CLANG_CXX_LIBRARY</code>)</td><td>libc++ (the default)</td></tr>
 <tr><td>Enable C++ Exceptions (<code>GCC_ENABLE_CPP_EXCEPTIONS</code>)</td><td>Yes (the default)</td></tr>
 <tr><td>Enable C++ Runtime Types (<code>GCC_ENABLE_CPP_RTTI</code>)</td><td>Yes (the default)</td></tr>
 <tr><td>Other C++ Flags (<code>OTHER_CPLUSPLUSFLAGS</code>)</td><td><code>$(inherited) -ffp-contract=off</code></td></tr>
-<tr><td>Preprocessor Macros (<code>GCC_PREPROCESSOR_DEFINITIONS</code>)</td><td>Release: <code>NDEBUG=1</code>. Add <code>JAISCRIPT_ENABLE_DEBUGGER=1</code> to a desktop development build for VS Code attach; leave it out on iOS.</td></tr>
+<tr><td>Preprocessor Macros (<code>GCC_PREPROCESSOR_DEFINITIONS</code>)</td><td>Release: <code>NDEBUG=1</code>. Add <code>JAISCRIPT_ENABLE_DEBUGGER=1</code> to a desktop development build only.</td></tr>
 </tbody></table></div>
-<p>Xcode&#x27;s Release configuration does not define <code>NDEBUG</code> by itself. Add it to every target that compiles JaiScript or includes its headers: left out of all of them, the library&#x27;s internal assertions stay on and cost speed; left out of some, the link fails with the configuration mismatch above.</p>
+<p><strong>Xcode's Release configuration does not define <code>NDEBUG</code>.</strong> Add it to every target that
+compiles JaiScript or includes its headers. Left out of all of them, the library's assertions stay on and cost speed;
+left out of some, the link fails with the configuration mismatch above.</p>
 <h2 id="debug-and-release">Debug and Release<a class="hlink" href="#debug-and-release" aria-label="link">&#8203;</a></h2>
 <ul>
-<li>A Debug build checks the library&#x27;s internal invariants with assertions and runs a few times slower than Release. Profile and measure Release builds.</li>
-<li>Release defines <code>NDEBUG</code>. In CMake and in Visual Studio&#x27;s Release configuration that is automatic; in Xcode add it (above).</li>
-<li>MSVC whole-program optimization (<code>/GL</code> with <code>/LTCG</code>) applies to JaiScript like any other code: it speeds the VM up a few percent and makes every Release link much slower. A CMake build of the library alone turns it off with <code>JAISCRIPT_LTCG=OFF</code>.</li>
-<li>Deeply recursive scripts need native stack. A host thread that runs scripts with deep recursion wants a larger stack than the platform default (the library&#x27;s own test runner links 128 MB on Windows); the engine raises a catchable error instead of crashing when the stack runs low.</li>
+<li>A Debug build checks the library's invariants with assertions and runs script many times slower. Measure Release
+builds, which define <code>NDEBUG</code> (automatic in CMake and Visual Studio).</li>
+<li>MSVC whole-program optimization speeds the VM up a few percent and makes every Release link much slower.</li>
+<li>Deeply recursive scripts need native stack. The engine raises a catchable error instead of crashing when the stack
+runs low; a host thread that runs such scripts wants a larger stack than the platform default.</li>
 </ul>
 <h2 id="installed-package">An installed package<a class="hlink" href="#installed-package" aria-label="link">&#8203;</a></h2>
-<p>Build and install the library once per configuration (Debug and Release share a prefix; the Debug library is <code>jaiscriptd</code>), then find it from CMake:</p>
+<p>Build and install once per configuration (Debug and Release share a prefix; the Debug library is
+<code>jaiscriptd</code>):</p>
 <div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain">cmake -S JaiScript -B build-jai -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/jaiscript -DJAISCRIPT_LTCG=OFF -DJAISCRIPT_BUILD_TESTS=OFF -DJAISCRIPT_BUILD_EXAMPLES=OFF -DJAISCRIPT_BUILD_RUNNER=OFF -DJAISCRIPT_BUILD_SPIDER=OFF -DJAISCRIPT_BUILD_LSP=OFF
 cmake --build build-jai
 cmake --install build-jai</code></pre></div>
@@ -138,20 +202,36 @@ find_package(JaiScript 0.5 CONFIG REQUIRED)        # configure with -DCMAKE_PREF
 add_executable(my_game main.cpp)
 target_link_libraries(my_game PRIVATE JaiScript::jaiscript)
 set_property(TARGET my_game PROPERTY MSVC_RUNTIME_LIBRARY &quot;${JaiScript_MSVC_RUNTIME_LIBRARY}&quot;)</code></pre></div>
-<p>The last line matters on MSVC. A standalone JaiScript build uses the static runtime (<code>/MT</code>, <code>/MTd</code>) unless you pass <code>CMAKE_MSVC_RUNTIME_LIBRARY</code>, while a CMake project defaults to the DLL runtime; the package records the runtime its library was built with in <code>JaiScript_MSVC_RUNTIME_LIBRARY</code>, and without the line the link fails with <code>LNK2038: mismatch detected for 'RuntimeLibrary'</code>. Linking a prebuilt library from another build system, compile your files with the definitions it was built with: its runtime, <code>NDEBUG</code> for a Release library, and <code>JAISCRIPT_ENABLE_DEBUGGER</code> unless it was configured off.</p>
-<h2 id="the-interpreter">The interpreter, for checking parity<a class="hlink" href="#the-interpreter" aria-label="link">&#8203;</a></h2>
-<p>The tree-walking interpreter (<a href="03-backends.html">Backends</a>) is the reference the VM is checked against, and nothing a host runs needs it, so the library leaves it out: <code>source/implementation/</code> and <code>source/jaiscript.cpp</code> compile the VM alone, and in such a build <code>set_backend(jai::backend_type::interpreter)</code> throws <code>set_backend(interpreter) is unsupported: this build has no interpreter (link jaiscript_interpreter)</code>. A program that compares the backends adds it:</p>
 <ul>
-<li><strong>CMake</strong>: link <code>JaiScript::jaiscript_interpreter</code> instead of <code>JaiScript::jaiscript</code>. The option <code>JAISCRIPT_INTERPRETER</code> defines the target; it is on in a standalone build, whose test suite, fuzzer, runner and <code>jai_spider</code> link it, and off in a subproject. The two libraries share every compiled file but the interpreter&#x27;s.</li>
-<li><strong>Other build systems</strong>: define <code>JAISCRIPT_INTERPRETER</code> and add the files under <code>source/interpreter/</code> beside the per-file route&#x27;s, or define it for <code>source/jaiscript.cpp</code>, which then includes them.</li>
+<li><strong>The last line matters on MSVC.</strong> A standalone JaiScript build uses the static runtime
+(<code>/MT</code>, <code>/MTd</code>) unless you pass <code>CMAKE_MSVC_RUNTIME_LIBRARY</code>, and a CMake project
+defaults to the DLL runtime. The package records its runtime in <code>JaiScript_MSVC_RUNTIME_LIBRARY</code>; without the
+line the link fails with <code>LNK2038: mismatch detected for 'RuntimeLibrary'</code>.</li>
+<li><strong>The version must share its minor.</strong> <code>find_package(JaiScript 0.5)</code> accepts any installed
+0.5.z and refuses 0.6 (<a href="../stability.html#versions">Stability</a>).</li>
+<li><strong>From another build system,</strong> compile your files with the definitions the library was built with: its
+runtime, <code>NDEBUG</code> for a Release library, and <code>JAISCRIPT_ENABLE_DEBUGGER</code> unless it was configured
+off.</li>
+</ul>
+<h2 id="the-interpreter">The interpreter, for checking parity<a class="hlink" href="#the-interpreter" aria-label="link">&#8203;</a></h2>
+<p>The tree-walking interpreter (<a href="03-backends.html">Backends</a>) is the reference the VM is checked against.
+Nothing a host runs needs it, so the library compiles the VM alone, and
+<code>set_backend(jai::backend_type::interpreter)</code> throws <code>set_backend(interpreter) is unsupported: this
+build has no interpreter (link jaiscript_interpreter)</code>. A program that compares the backends adds it:</p>
+<ul>
+<li><strong>CMake</strong>: link <code>JaiScript::jaiscript_interpreter</code> instead of
+<code>JaiScript::jaiscript</code>. A standalone build's test suite, fuzzer, runner and <code>jai_spider</code> link
+it.</li>
+<li><strong>Other build systems</strong>: define <code>JAISCRIPT_INTERPRETER</code> and add the files under
+<code>source/interpreter/</code>, or define it for <code>source/jaiscript.cpp</code>, which then includes them.</li>
 </ul>
 <h2 id="the-runner">The runner, for trying scripts<a class="hlink" href="#the-runner" aria-label="link">&#8203;</a></h2>
-<p>A standalone build of JaiScript builds the command-line runner as the target <code>jaiscript_runner</code>; its binary is <code>jaiscript</code>:</p>
 <div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain">cmake -S JaiScript -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target jaiscript_runner
 build/bin/jaiscript hello.jai                   # run a file; no argument starts a REPL
 build/bin/jaiscript --backend=interp --warnings hello.jai</code></pre></div>
-<p>The runner registers the whole standard library plus file and console functions, runs on the VM like every engine (the interpreter is one <a href="03-backends.html">call</a> away), and lifts the execution budget (<code>--budget=N</code> puts one back).</p>
+<p>The runner registers the standard library plus file and console functions, runs on the VM, and lifts the execution
+budget (<code>--budget=N</code> puts one back).</p>
 <h2 id="headers">The headers a host includes<a class="hlink" href="#headers" aria-label="link">&#8203;</a></h2>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/core/engine.hpp&gt;              // engine, script_value, the error types
 #include &lt;jaiscript/core/dynamic_binder.hpp&gt;      // dynamic_binder, convert_script_function
@@ -159,12 +239,12 @@ build/bin/jaiscript --backend=interp --warnings hello.jai</code></pre></div>
 #include &lt;jaiscript/serialization/convenience.hpp&gt; // jai::to_json / from_json / to_binary / from_binary
 #include &lt;jaiscript/core/engine_time.hpp&gt;         // eng-&gt;time(): the clock scripts read
 #include &lt;jaiscript/debug/connector.hpp&gt;          // jai::debug::listen (VS Code attach)</code></pre></div>
-<p><code>&lt;jaiscript/jaiscript.hpp&gt;</code> pulls the core, the binder and the archives in one include (not the standard library).</p>
-<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/17-host-api.html"><span>&larr; previous</span>Host API in Depth</a><a class="next" rel="next" href="../embedding/19-jai-spider.html"><span>next &rarr;</span>jai_spider: a Web Application Host</a></nav></article>
+<p><code>&lt;jaiscript/jaiscript.hpp&gt;</code> pulls the core, the binder and the archives in one include (not the
+standard library).</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/17-host-api.html"><span>&larr; previous</span>Host API in Depth</a><a class="next" rel="next" href="../embedding/19-jai-spider.html"><span>next &rarr;</span>jai_spider: a Web Application Host</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

@@ -242,9 +242,9 @@ public:
 			// callee's unit ahead of the binding and the binding resolves under the caller's (the sol2 precompiled BST benchmark's
 			// abort: a literal and a jaibite of the same text both declaring ref_root)
 			every_backend("ref args", "2 1 11 1", [](engine& e) {
-				e.execute("class T { int v = 0; T left = null; T right = null; T(int x) { v = x; } }"
-				          " function ins(T& n, int v) { if (n == null) { n = T(v); return; } if (v < n.v) { ins(n.left, v); } else { ins(n.right, v); } }"
-				          " function cnt(T& n) -> int { if (n == null) { return 0; } return 1 + cnt(n.left) + cnt(n.right); }"
+				e.execute("class T { int v = 0; shared_ptr<T> left = null; shared_ptr<T> right = null; T(int x) { v = x; } }"
+				          " function ins(shared_ptr<T>& n, int v) { if (n == null) { n = new T(v); return; } if (v < n.v) { ins(n.left, v); } else { ins(n.right, v); } }"
+				          " function cnt(shared_ptr<T>& n) -> int { if (n == null) { return 0; } return 1 + cnt(n.left) + cnt(n.right); }"
 				          " function bump(int& x) { x += 1; }"
 				          " var root = null; ins(root, 8); ins(root, 4); var g = 1;"
 				          " function a_cnt() { return cnt(root); } function a_g() { return g; }");
@@ -254,9 +254,9 @@ public:
 		});
 		test("a_jaibite_of_the_same_text_is_another_unit_for_reference_arguments", [this]() {
 			every_backend("jaibite refs", "2 2 2 2", [](engine& e) {
-				e.execute("class T { int v = 0; T left = null; T right = null; T(int x) { v = x; } }"
-				          " function ins(T& n, int v) { if (n == null) { n = T(v); return; } if (v < n.v) { ins(n.left, v); } else { ins(n.right, v); } }"
-				          " function cnt(T& n) -> int { if (n == null) { return 0; } return 1 + cnt(n.left) + cnt(n.right); }");
+				e.execute("class T { int v = 0; shared_ptr<T> left = null; shared_ptr<T> right = null; T(int x) { v = x; } }"
+				          " function ins(shared_ptr<T>& n, int v) { if (n == null) { n = new T(v); return; } if (v < n.v) { ins(n.left, v); } else { ins(n.right, v); } }"
+				          " function cnt(shared_ptr<T>& n) -> int { if (n == null) { return 0; } return 1 + cnt(n.left) + cnt(n.right); }");
 				const char* text = "var root = null; ins(root, 8); ins(root, 4); cnt(root);";
 				const auto lit = e.execute(text).as_int();
 				auto bite = e.jaibite(text);

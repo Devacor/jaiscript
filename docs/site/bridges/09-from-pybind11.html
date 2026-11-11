@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="From pybind11 and Boost.Python — JaiScript Code Migrations">
 <meta property="og:description" content="Moving class_ bindings from pybind11 or Boost.Python to dynamic_binder: constructors, methods, fields, properties, overloads, operators, holders, exceptions and calls into script, with what has no counterpart (keyword arguments, trampolines, the GIL).">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/bridges/09-from-pybind11.html">
+<meta property="og:url" content="https://jaiscript.com/bridges/09-from-pybind11.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,31 +33,34 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li class="current"><a href="../bridges/09-from-pybind11.html" aria-current="page">From pybind11 and Boost.Python</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li><a href="../bridges/01-from-javascript.html">From JavaScript</a></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations<span class="sidebar-current">From pybind11 and Boost.Python</span></summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li class="current"><a href="../bridges/09-from-pybind11.html" aria-current="page">From pybind11 and Boost.Python</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>09</nav>
 <article class="chapter"><h1 id="from-pybind11">From pybind11 and Boost.Python<a class="hlink" href="#from-pybind11" aria-label="link">&#8203;</a></h1>
-<p class="lead">pybind11 and its ancestor Boost.Python describe a C++ class to Python with one <code>class_</code> declaration: constructors, methods, fields, properties, bases, operators, chained off one object. <code>jai::dynamic_binder</code> is the same shape, and most of a binding converts line for line.</p>
+<p class="lead">pybind11 and its ancestor Boost.Python describe a C++ class to Python with one <code>class_</code> declaration: constructors, methods, fields, properties, bases and operators chained off one object. <code>jai::dynamic_binder</code> is the same shape, and most of a binding converts line for line.</p>
 <p>What differs sits around the declaration:</p>
 <ul>
-<li>There is no holder to choose (every bound object lives in a <code>std::shared_ptr</code>).</li>
-<li>There is no return value policy, no interpreter lock, and no keyword arguments.</li>
+<li>No holder to choose: every bound object lives in a <code>std::shared_ptr</code>.</li>
+<li>No return value policy, no interpreter lock, no keyword arguments.</li>
 <li>A script override does not reach a C++ virtual call, so there are no trampoline classes.</li>
-<li>The host can run many engines, one per thread at a time.</li>
+<li>A host can run many engines, one per thread at a time.</li>
 </ul>
-<p>This page maps both libraries, converts a class binding, and then lists the Python habits that get a different answer in the script. The binding API is documented in full in <a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a> and <a href="../embedding/02-dynamic-binder.html">dynamic_binder</a>.</p>
+<p>The binding API is documented in <a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a> and <a href="../embedding/02-dynamic-binder.html">dynamic_binder</a>.</p>
 
 <h2 id="the-concept-map">The concept map<a class="hlink" href="#the-concept-map" aria-label="link">&#8203;</a></h2>
 <p>Headers: <code>&lt;jaiscript/jaiscript.hpp&gt;</code> for the engine, values and binders, <code>&lt;jaiscript/stdlib/stdlib.hpp&gt;</code> for the standard library, and <code>&lt;jaiscript/core/registrar.hpp&gt;</code> for registrars.</p>
 <h3 id="modules-and-the-interpreter">Modules and the interpreter<a class="hlink" href="#modules-and-the-interpreter" aria-label="link">&#8203;</a></h3>
 <div class="tablewrap"><table><thead><tr><th>pybind11 / Boost.Python</th><th>JaiScript</th></tr></thead><tbody>
-<tr><td><code>PYBIND11_MODULE(game, m)</code>, <code>PYBIND11_EMBEDDED_MODULE(game, m)</code>, <code>BOOST_PYTHON_MODULE(game)</code></td><td>bindings run against an engine: binder chains and <code>add_function</code> calls in a function the host calls per engine, or a <code>static jai::registrar&lt;T, void&gt;</code> per class applied with <code>jai::bind_registrar(eng)</code></td></tr>
+<tr><td><code>PYBIND11_MODULE(game, m)</code>, <code>PYBIND11_EMBEDDED_MODULE(game, m)</code>, <code>BOOST_PYTHON_MODULE(game)</code></td><td>bindings run against an engine: binder chains and <code>add_function</code> calls in a function the host calls per engine, or a <code>static jai::registrar&lt;T, void&gt;</code> per class applied with <code>jai::bind_registrar(eng)</code>. Script sees the names without an import</td></tr>
 <tr><td><code>py::scoped_interpreter guard{};</code>, <code>Py_Initialize()</code></td><td><code>auto eng = jai::engine::make();</code>; engines share nothing, so a program runs as many as it needs</td></tr>
 <tr><td>the GIL, <code>py::gil_scoped_release</code> / <code>gil_scoped_acquire</code></td><td>no lock: an engine serves one thread at a time, and another thread makes its own engine</td></tr>
 <tr><td><code>py::exec(code)</code>, <code>py::eval_file(path)</code>, <code>bp::exec</code></td><td><code>eng-&gt;execute(code)</code>, <code>eng-&gt;execute_file(path)</code></td></tr>
@@ -59,18 +70,18 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <h3 id="functions">Functions<a class="hlink" href="#functions" aria-label="link">&#8203;</a></h3>
 <div class="tablewrap"><table><thead><tr><th>pybind11 / Boost.Python</th><th>JaiScript</th></tr></thead><tbody>
 <tr><td><code>m.def("load_level", &amp;load_level);</code>, <code>bp::def(...)</code></td><td><code>eng-&gt;add_function("load_level", &amp;load_level);</code></td></tr>
-<tr><td>two <code>m.def</code> of one name with <code>py::overload_cast&lt;int64_t&gt;(&amp;f)</code></td><td>two <code>add_function</code> of one name, with <code>static_cast</code> for an overloaded C++ name; the call resolves by argument types</td></tr>
+<tr><td>two <code>m.def</code> of one name with <code>py::overload_cast&lt;int64_t&gt;(&amp;f)</code> (a <code>static_cast</code> in Boost.Python)</td><td>two <code>add_function</code> of one name, with <code>static_cast</code> for an overloaded C++ name; the call resolves by argument types</td></tr>
 <tr><td><code>py::arg("speed") = 1.0</code>, keyword arguments</td><td>none: script calls are positional, as in C++. A parameter with a default becomes an overload without it</td></tr>
-<tr><td><code>py::args</code>, <code>py::kwargs</code></td><td><code>eng-&gt;add_variadic_function("f", fn)</code>, whose <code>fn</code> receives a <code>const std::vector&lt;jai::script_value&gt;&amp;</code></td></tr>
+<tr><td><code>py::args</code>, <code>py::kwargs</code></td><td><code>eng-&gt;add_variadic_function("f", fn)</code>, whose <code>fn</code> takes <code>(jai::engine&amp;, std::span&lt;const jai::script_value&gt;)</code></td></tr>
 <tr><td><code>std::function</code> parameters through <code>pybind11/functional.h</code></td><td>a <code>std::function</code> parameter takes a script function or lambda as is</td></tr>
 </tbody></table></div>
 <h3 id="classes">Classes<a class="hlink" href="#classes" aria-label="link">&#8203;</a></h3>
 <div class="tablewrap"><table><thead><tr><th>pybind11 / Boost.Python</th><th>JaiScript</th></tr></thead><tbody>
-<tr><td><code>py::class_&lt;Monster, Entity, std::shared_ptr&lt;Monster&gt;&gt;(m, "Monster")</code>, <code>bp::class_&lt;Monster, bp::bases&lt;Entity&gt;, std::shared_ptr&lt;Monster&gt;&gt;("Monster")</code></td><td><code>jai::dynamic_binder&lt;Monster&gt;(*eng, "Monster").base_class&lt;Entity&gt;() ... .build();</code></td></tr>
+<tr><td><code>py::class_&lt;Monster, Entity, std::shared_ptr&lt;Monster&gt;&gt;(m, "Monster")</code>, <code>bp::class_&lt;Monster, bp::bases&lt;Entity&gt;, std::shared_ptr&lt;Monster&gt;&gt;("Monster")</code></td><td><code>jai::dynamic_binder&lt;Monster&gt;(*eng, "Monster").base_class&lt;Entity&gt;() ...;</code></td></tr>
 <tr><td><code>.def(py::init&lt;std::string, int64_t&gt;())</code>, <code>bp::init&lt;...&gt;()</code></td><td><code>.constructor&lt;std::string, int64_t&gt;()</code>; script <code>Monster(...)</code> makes a value and <code>new Monster(...)</code> a <code>shared_ptr</code></td></tr>
 <tr><td><code>.def("alive", &amp;Monster::alive)</code></td><td><code>.method("alive", &amp;Monster::alive)</code></td></tr>
 <tr><td><code>.def_readwrite("name", &amp;Entity::name)</code></td><td><code>.property("name", &amp;Entity::name)</code></td></tr>
-<tr><td><code>.def_readonly(...)</code>, <code>.def_property_readonly(...)</code></td><td><code>.property("max_hp", getter, nullptr)</code>; a store raises <code>Cannot assign to 'max_hp': it is read-only</code></td></tr>
+<tr><td><code>.def_readonly(...)</code>, <code>.def_property_readonly(...)</code>; <code>.add_property("max_hp", getter)</code> in Boost.Python</td><td><code>.property("max_hp", getter, nullptr)</code>; a store raises <code>Cannot assign to 'max_hp': it is read-only</code></td></tr>
 <tr><td><code>.def_property("hp", &amp;Monster::health, &amp;Monster::setHealth)</code>, <code>.add_property(...)</code></td><td><code>.property("hp", &amp;Monster::health, &amp;Monster::setHealth)</code></td></tr>
 <tr><td><code>.def(py::self == py::self)</code>, <code>.def(bp::self == bp::self)</code></td><td><code>.method("==", &amp;Monster::operator==)</code>; <code>!=</code> follows from <code>==</code></td></tr>
 <tr><td><code>.def_static(...)</code>, <code>.staticmethod(...)</code></td><td><code>.static_method("name", fn)</code>, called as <code>Monster::name()</code></td></tr>
@@ -89,40 +100,22 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <div class="tablewrap"><table><thead><tr><th>pybind11 / Boost.Python</th><th>JaiScript</th></tr></thead><tbody>
 <tr><td><code>py::object</code>, <code>o.cast&lt;T&gt;()</code>, <code>bp::extract&lt;T&gt;(o)</code></td><td><code>jai::script_value</code>, <code>v.as&lt;T&gt;()</code></td></tr>
 <tr><td><code>py::list</code>, <code>py::dict</code>, the conversions in <code>pybind11/stl.h</code></td><td>arrays and maps, converted to and from <code>std::vector</code> and <code>std::map</code> without an extra header; <code>eng-&gt;make_array()</code>, <code>eng-&gt;make_map()</code></td></tr>
-<tr><td><code>py::module_::import("__main__").attr("damage_for")(4).cast&lt;int64_t&gt;()</code></td><td><code>jai::convert_script_function&lt;int64_t(int64_t)&gt;(eng-&gt;get_variable("damage_for"))(4)</code>, which throws on failure, or <code>eng-&gt;get_variable("damage_for").as_function()({args})</code>, a <code>jai::checked_result</code></td></tr>
+<tr><td><code>py::module_::import("__main__").attr("damage_for")(4).cast&lt;int64_t&gt;()</code></td><td><code>jai::convert_script_function&lt;int64_t(int64_t)&gt;(eng-&gt;get_variable("damage_for"))(4)</code>, which throws on failure, or <code>eng-&gt;get_variable("damage_for").as_function()({args})</code>, a <code>jai::checked_result</code> (<a href="../embedding/17-host-api.html#error-surfaces">Error surfaces</a>)</td></tr>
 <tr><td><code>py::error_already_set</code>, <code>bp::error_already_set</code> with <code>PyErr_Print()</code></td><td><code>jai::runtime_error</code> (and <code>jai::script_exception</code> for an uncaught script <code>throw</code>), <code>jai::parse_error</code>, <code>jai::static_check_error</code>; <code>eng-&gt;format_stack_trace()</code></td></tr>
 <tr><td>a C++ exception becoming a Python exception (<code>std::runtime_error</code> is <code>RuntimeError</code>), <code>py::register_exception</code></td><td>a C++ exception becomes a run-time error the script catches; <code>catch (e)</code> receives its <code>what()</code> text</td></tr>
 </tbody></table></div>
 
 <h2 id="a-class-converted">A class converted<a class="hlink" href="#a-class-converted" aria-label="link">&#8203;</a></h2>
-<p>A class with two constructors, an overloaded method, a property with a getter and a setter, a read-only property, an operator and a base class:</p>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">struct Entity {
-    virtual ~Entity() = default;
-    std::string name = "entity";
-    virtual std::string describe() const { return "entity " + name; }
-};
-
-struct Monster : Entity {
-    int64_t hp = 10;
-    Monster() = default;
-    Monster(std::string a_name, int64_t a_hp) : hp(a_hp) { name = std::move(a_name); }
-    void damage(int64_t amount) { hp -= amount; }
-    void damage(int64_t amount, double multiplier) { hp -= static_cast&lt;int64_t&gt;(amount * multiplier); }
-    int64_t health() const { return hp; }
-    void setHealth(int64_t a_hp) { hp = a_hp &lt; 0 ? 0 : a_hp; }
-    bool alive() const { return hp &gt; 0; }
-    std::string describe() const override { return "monster " + name; }
-    bool operator==(const Monster&amp; o) const { return name == o.name &amp;&amp; hp == o.hp; }
-};
-
-int64_t load_level(const std::string&amp; name) {
-    if (name.empty()) { throw std::runtime_error("level name is empty"); }
-    return 1;
-}</code></pre></div>
+<p>The <code>Entity</code> and <code>Monster</code> classes of <a href="06-from-chaiscript.html#classes-in-full">From ChaiScript</a> (two constructors, an overloaded method, a getter and setter pair, an operator, a base class), and a function that throws:</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++ (pybind11)</span><pre><code class="lang-cpp">#include &lt;pybind11/embed.h&gt;
 #include &lt;pybind11/operators.h&gt;
 
 namespace py = pybind11;
+
+int64_t load_level(const std::string&amp; name) {
+    if (name.empty()) { throw std::runtime_error("level name is empty"); }
+    return 1;
+}
 
 PYBIND11_EMBEDDED_MODULE(game, m) {
     py::class_&lt;Entity, std::shared_ptr&lt;Entity&gt;&gt;(m, "Entity")
@@ -143,35 +136,14 @@ PYBIND11_EMBEDDED_MODULE(game, m) {
     m.def("load_level", &amp;load_level);
     m.attr("HOST_SEED") = 42;
 }</code></pre></div>
-<div class="codeblock cb-cpp"><span class="cb-label">C++ (Boost.Python)</span><pre><code class="lang-cpp">#include &lt;boost/python.hpp&gt;
-
-int64_t monster_max_hp(const Monster&amp;) { return 100; }
-
-BOOST_PYTHON_MODULE(game) {
-    using namespace boost::python;
-    class_&lt;Entity, std::shared_ptr&lt;Entity&gt;&gt;("Entity")
-        .def_readwrite("name", &amp;Entity::name)
-        .def("describe", &amp;Entity::describe);
-
-    class_&lt;Monster, bases&lt;Entity&gt;, std::shared_ptr&lt;Monster&gt;&gt;("Monster", init&lt;&gt;())
-        .def(init&lt;std::string, int64_t&gt;())
-        .def("damage", static_cast&lt;void (Monster::*)(int64_t)&gt;(&amp;Monster::damage))
-        .def("damage", static_cast&lt;void (Monster::*)(int64_t, double)&gt;(&amp;Monster::damage))
-        .def("alive", &amp;Monster::alive)
-        .add_property("hp", &amp;Monster::health, &amp;Monster::setHealth)
-        .add_property("max_hp", &amp;monster_max_hp)
-        .def(self == self);
-
-    def("load_level", &amp;load_level);
-}</code></pre></div>
+<p>The Boost.Python module has the same lines under the spellings in the tables above; its first constructor is an argument of <code>class_</code> (<code>class_&lt;Monster, bases&lt;Entity&gt;, std::shared_ptr&lt;Monster&gt;&gt;("Monster", init&lt;&gt;())</code>).</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">#include &lt;jaiscript/jaiscript.hpp&gt;
 #include &lt;jaiscript/stdlib/stdlib.hpp&gt;
 
 void bind_game(jai::engine&amp; eng) {
     jai::dynamic_binder&lt;Entity&gt;(eng, "Entity")
         .property("name", &amp;Entity::name)
-        .method("describe", &amp;Entity::describe)
-        .build();
+        .method("describe", &amp;Entity::describe);
 
     jai::dynamic_binder&lt;Monster&gt;(eng, "Monster")
         .base_class&lt;Entity&gt;()
@@ -182,8 +154,7 @@ void bind_game(jai::engine&amp; eng) {
         .method("alive", &amp;Monster::alive)
         .method("==", &amp;Monster::operator==)
         .property("hp", &amp;Monster::health, &amp;Monster::setHealth)
-        .property("max_hp", [](const Monster&amp;) { return int64_t{100}; }, nullptr)
-        .build();
+        .property("max_hp", [](const Monster&amp;) { return int64_t{100}; }, nullptr);
 
     eng.add_function("describe", [](std::shared_ptr&lt;Entity&gt; e) { return e-&gt;describe(); });
     eng.add_function("load_level", &amp;load_level);
@@ -208,16 +179,17 @@ print(m.name, " hp=", m.hp, " alive=", m.alive(), " max=", m.max_hp, " ", m.desc
 try { load_level(""); } catch (e) { print("script caught: ", e); }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output (both)</span><pre><code class="lang-output">ogre hp=0 alive=false max=100 monster ogre monster ogre
 script caught: level name is empty</code></pre></div>
-<p>(Python prints <code>False</code> where the JaiScript line prints <code>false</code>.) The holder argument and the separate module function are the only lines without a counterpart; the binding itself is a one-for-one rename.</p>
+<p>(Python prints <code>False</code> where the JaiScript line prints <code>false</code>.) Only the holder argument has no counterpart.</p>
 
 <h2 id="calling-into-script">Calling into script<a class="hlink" href="#calling-into-script" aria-label="link">&#8203;</a></h2>
 <div class="codeblock cb-cpp"><span class="cb-label">C++ (pybind11)</span><pre><code class="lang-cpp">py::scoped_interpreter guard{};
+py::module_::import("game");                                     // registers Monster before one crosses
+py::object main = py::module_::import("__main__");
 py::exec("def damage_for(level):\n    return level * 3\n");
-py::object damage_for = py::module_::import("__main__").attr("damage_for");
-int64_t dmg = damage_for(4).cast&lt;int64_t&gt;();                   // 12
+int64_t dmg = main.attr("damage_for")(4).cast&lt;int64_t&gt;();        // 12
 
 auto boss = std::make_shared&lt;Monster&gt;("boss", 50);
-py::module_::import("__main__").attr("boss") = boss;
+main.attr("boss") = boss;
 py::exec("boss.damage(20)");                                     // boss-&gt;hp is 30
 
 try {
@@ -241,10 +213,9 @@ try {
 } catch (const jai::script_exception&amp; e) {
     std::cerr &lt;&lt; e.what();                                       // from script
 }</code></pre></div>
-<p>A frame loop that should not throw calls through <code>as_function()</code> and tests the <code>jai::checked_result</code> it returns; the engine is ready for the next call after a failed one (<a href="../embedding/17-host-api.html#error-surfaces">Error surfaces</a>).</p>
 
 <h2 id="python-habits">Python habits that get a different answer<a class="hlink" href="#python-habits" aria-label="link">&#8203;</a></h2>
-<p>JaiScript's semantics are C++'s. A dynamic-language habit that changes is usually covered in <a href="01-from-javascript.html">From JavaScript</a>, and <a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> is the chapter to read first. The spellings:</p>
+<p>JaiScript's semantics are C++'s. A dynamic-language habit that changes is usually covered in <a href="01-from-javascript.html">From JavaScript</a> and <a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a>. The spellings:</p>
 <div class="tablewrap"><table><thead><tr><th>Python</th><th>JaiScript</th></tr></thead><tbody>
 <tr><td>indentation</td><td>braces and semicolons</td></tr>
 <tr><td><code>def f(x):</code></td><td><code>int f(int x) { ... }</code>, or <code>function f(x) { ... }</code> with types optional</td></tr>
@@ -257,29 +228,23 @@ try {
 <tr><td><code>raise</code>, <code>try</code> / <code>except</code></td><td><code>throw</code>, <code>try</code> / <code>catch (e)</code></td></tr>
 <tr><td><code>yield</code> in a function makes a generator</td><td>a <code>coroutine</code> function (<a href="12-from-coroutines.html">From Lua Coroutines</a>)</td></tr>
 </tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; scores = [3, 7];
-auto copy = scores;                // a copy, where Python's copy = scores shares the list
-copy.push(9);
-float hp = 72.456;
-print(scores.size(), " ", copy.size(), " ", 7 / 2, " ", 7.0 / 2, " ", `hp ${hp:.1f}`);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 3 3 3.5 hp 72.5</code></pre></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Counter {
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Counter {
     int count = 0;
     void bump() { count += 1; }    // no self: fields and methods are in scope
 }
 Counter c;
 c.bump();
-c.bump();
-print(c.count, " ", true &amp;&amp; !false, " ", null == null);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 true true</code></pre></div>
-
-<h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
-<p><a href="../embedding/02-dynamic-binder.html">dynamic_binder</a> covers every binder verb, and <code>JAI_PROPERTY</code> classes that are reflected, scripted and saved from one declaration; <a href="../embedding/13-script-extensible.html">Script-Extensible Objects</a> covers script classes deriving bound C++ classes; <a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a> covers globals, calls into script and every error surface.</p>
+array&lt;int&gt; scores = [3, 7];
+auto copy = scores;                // a copy, where Python's copy = scores shares the list
+copy.push(9);
+float hp = 72.456;
+print(c.count, " ", scores.size(), " ", copy.size(), " ", 7 / 2, " ", 7.0 / 2, " ", `hp ${hp:.1f}`);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 2 3 3 3.5 hp 72.5</code></pre></div>
 <nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../embedding/index.html"><span>next &middot; embedding &rarr;</span>Embedding &amp; Engine Guide</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

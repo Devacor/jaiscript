@@ -223,46 +223,46 @@ public:
 
         test("assignment_expressions_yield_the_stored_value", [this]() {
             // The value of an assignment expression is the destination's
-            // stored value on every spelling (`auto r = (c.n = 3.9)` is int 3): typed local, bare and
+            // stored value on every spelling (`auto r = (c.n = 3)` on a float field is float 3.0): typed local, bare and
             // explicit field, static, accessor (read back through _get_), array element, map value,
             // nested element, compound forms; postfix keeps the old stored value; a var element keeps
             // what it stored; a heavy value comes back as a copy. Both backends agree row for row
             const char* src = R"(
-                class C { int n = 0; int _get_x() { return n; } void _set_x(int v) { n = v; } static int s = 0;
-                          string test_plain() { auto r = (n = 3.9); return type_of(r) + ":" + to_string(r) + "|" + type_of(n) + ":" + to_string(n); }
-                          string test_compound() { n = 1; auto r = (n += 2.9); return type_of(r) + ":" + to_string(r) + "|" + type_of(n) + ":" + to_string(n); } }
+                class C { float n = 0; float _get_x() { return n; } void _set_x(float v) { n = v; } static float s = 0;
+                          string test_plain() { auto r = (n = 3); return type_of(r) + ":" + to_string(r) + "|" + type_of(n) + ":" + to_string(n); }
+                          string test_compound() { n = 1; auto r = (n += 2); return type_of(r) + ":" + to_string(r) + "|" + type_of(n) + ":" + to_string(n); } }
                 class D { int n = 0; int _get_x() { return n; } void _set_x(int v) { n = v * 2; } }
                 class S { string t = ""; }
                 class H { array<int> a = []; }
                 class T { static array<int> a = []; }
                 class G { string s = "a"; }
-                class W { int seen = 0; void _set_virt(int v) { seen = seen + v; } }
-                class T2 { static int s = 0; static string m() { float v = 3.9; auto r = (s = v); return type_of(r) + ":" + to_string(r) + "|" + type_of(s) + ":" + to_string(s); } }
+                class W { float seen = 0; void _set_virt(float v) { seen = seen + v; } }
+                class T2 { static float s = 0; static string m() { int v = 3; auto r = (s = v); return type_of(r) + ":" + to_string(r) + "|" + type_of(s) + ":" + to_string(s); } }
                 var out = [];
                 function cap(string label, function body) { try { out.push(label + ":" + to_string(body())); } catch (err) { out.push(label + "!" + err); } }
                 function show(var r, var dst) -> string { return type_of(r) + ":" + to_string(r) + "|" + type_of(dst) + ":" + to_string(dst); }
-                cap("local_plain", function() -> string { int n = 0; auto r = (n = 3.9); return show(r, n); });
-                cap("local_compound", function() -> string { int n = 1; auto r = (n += 2.9); return show(r, n); });
+                cap("local_plain", function() -> string { float n = 0; auto r = (n = 3); return show(r, n); });
+                cap("local_compound", function() -> string { float n = 1; auto r = (n += 2); return show(r, n); });
                 cap("bare_field_plain", function() -> string { C c = C(); return c.test_plain(); });
                 cap("bare_field_compound", function() -> string { C c = C(); return c.test_compound(); });
-                cap("field_plain", function() -> string { C c = C(); auto r = (c.n = 3.9); return show(r, c.n); });
-                cap("field_compound", function() -> string { C c = C(); c.n = 1; auto r = (c.n += 2.9); return show(r, c.n); });
-                cap("static_plain", function() -> string { auto r = (C::s = 3.9); return show(r, C::s); });
-                cap("static_compound", function() -> string { C::s = 1; auto r = (C::s += 2.9); return show(r, C::s); });
-                cap("accessor_plain", function() -> string { C c = C(); auto r = (c.x = 3.9); return show(r, c.x); });
-                cap("accessor_compound", function() -> string { C c = C(); c.n = 1; auto r = (c.x += 2.9); return show(r, c.x); });
-                cap("array_plain", function() -> string { array<int> a = [0]; auto r = (a[0] = 3.9); return show(r, a[0]); });
-                cap("array_compound", function() -> string { array<int> a = [1]; auto r = (a[0] += 2.9); return show(r, a[0]); });
-                cap("map_plain", function() -> string { map<string, int> m = {"k": 0}; auto r = (m["k"] = 3.9); return show(r, m["k"]); });
-                cap("map_compound", function() -> string { map<string, int> m = {"k": 1}; auto r = (m["k"] += 2.9); return show(r, m["k"]); });
-                cap("nested_plain", function() -> string { array<array<int>> g = [[0]]; auto r = (g[0][0] = 3.9); return show(r, g[0][0]); });
+                cap("field_plain", function() -> string { C c = C(); auto r = (c.n = 3); return show(r, c.n); });
+                cap("field_compound", function() -> string { C c = C(); c.n = 1; auto r = (c.n += 2); return show(r, c.n); });
+                cap("static_plain", function() -> string { auto r = (C::s = 3); return show(r, C::s); });
+                cap("static_compound", function() -> string { C::s = 1; auto r = (C::s += 2); return show(r, C::s); });
+                cap("accessor_plain", function() -> string { C c = C(); auto r = (c.x = 3); return show(r, c.x); });
+                cap("accessor_compound", function() -> string { C c = C(); c.n = 1; auto r = (c.x += 2); return show(r, c.x); });
+                cap("array_plain", function() -> string { array<float> a = [0]; auto r = (a[0] = 3); return show(r, a[0]); });
+                cap("array_compound", function() -> string { array<float> a = [1]; auto r = (a[0] += 2); return show(r, a[0]); });
+                cap("map_plain", function() -> string { map<string, float> m = {"k": 0}; auto r = (m["k"] = 3); return show(r, m["k"]); });
+                cap("map_compound", function() -> string { map<string, float> m = {"k": 1}; auto r = (m["k"] += 2); return show(r, m["k"]); });
+                cap("nested_plain", function() -> string { array<array<float>> g = [[0]]; auto r = (g[0][0] = 3); return show(r, g[0][0]); });
                 cap("var_array_plain", function() -> string { array<var> a = [0]; auto r = (a[0] = 3.9); return show(r, a[0]); });
-                cap("field_bool", function() -> string { C c = C(); auto r = (c.n = true); return show(r, c.n); });
+                cap("field_bool", function() -> string { D d = D(); auto r = (d.n = true); return show(r, d.n); });
                 cap("string_field", function() -> string { S s = S(); utf8_string u = "42"; auto r = (s.t = u); return show(r, s.t); });
-                cap("postfix_field", function() -> string { C c = C(); c.n = 7; auto r = (c.n++); return show(r, c.n); });
+                cap("postfix_field", function() -> string { D d = D(); d.n = 7; auto r = (d.n++); return show(r, d.n); });
                 cap("postfix_element", function() -> string { array<int> a = [7]; auto r = (a[0]++); return show(r, a[0]); });
                 cap("prefix_element", function() -> string { array<int> a = [7]; auto r = (++a[0]); return show(r, a[0]); });
-                cap("chain", function() -> string { array<int> a = [0]; var k = (a[0] = 3.9); return show(k, a[0]); });
+                cap("chain", function() -> string { array<float> a = [0]; var k = (a[0] = 3); return show(k, a[0]); });
                 cap("accessor_setter_transforms", function() -> string { D d = D(); auto r = (d.x = 3); return show(r, d.x); });
                 cap("heavy_copy", function() -> string { array<array<int>> g = [[1]]; auto r = (g[0] = [5, 6]); r.push(7); return to_string(r.size()) + "," + to_string(g[0].size()); });
                 cap("member_heavy", function() -> string { H h = H(); auto r = (h.a = [5, 6]); r.push(7); return to_string(r.size()) + "," + to_string(h.a.size()); });
@@ -270,8 +270,8 @@ public:
                 cap("static_heavy", function() -> string { auto r = (T::a = [5, 6]); r.push(7); return to_string(r.size()) + "," + to_string(T::a.size()); });
                 cap("compound_member_heavy", function() -> string { G g = G(); auto r = (g.s += "b"); r += "c"; return r + "," + g.s; });
                 cap("bare_static_from_lvalue", function() -> string { return T2::m(); });
-                cap("setter_only_member", function() -> string { W w = W(); auto r = (w.virt = 2.5); return type_of(r) + ":" + to_string(r) + "|" + to_string(w.seen); });
-                cap("statement_position", function() -> string { C c = C(); c.n = 3.9; array<int> a = [0]; a[0] = 2.5; map<string, int> m = {}; m["k"] = 1.5; c.x = 4.9; return to_string(c.n) + to_string(a[0]) + to_string(m["k"]); });
+                cap("setter_only_member", function() -> string { W w = W(); auto r = (w.virt = 2); return type_of(r) + ":" + to_string(r) + "|" + to_string(w.seen); });
+                cap("statement_position", function() -> string { C c = C(); c.n = 3; array<float> a = [0]; a[0] = 2; map<string, float> m = {}; m["k"] = 1; c.x = 4; return to_string(c.n) + to_string(a[0]) + to_string(m["k"]); });
                 out;
             )";
             std::vector<std::string> seen[2];
@@ -283,7 +283,7 @@ public:
                 for (const auto& r : rows) { seen[vm ? 1 : 0].push_back(r.as_string()); }
             }
             check_eq(seen[0], seen[1], "both backends yield identically");
-            const std::string stored3 = "int:3|int:3";
+            const std::string stored3 = "float:3.0|float:3.0";
             const std::vector<std::string> expected = {
                 "local_plain:" + stored3, "local_compound:" + stored3, "bare_field_plain:" + stored3, "bare_field_compound:" + stored3,
                 "field_plain:" + stored3, "field_compound:" + stored3, "static_plain:" + stored3, "static_compound:" + stored3,
@@ -292,7 +292,7 @@ public:
                 "var_array_plain:float:3.9|float:3.9", "field_bool:int:1|int:1", "string_field:string:42|string:42",
                 "postfix_field:int:7|int:8", "postfix_element:int:7|int:8", "prefix_element:int:8|int:8", "chain:" + stored3,
                 "accessor_setter_transforms:int:6|int:6", "heavy_copy:3,2",
-                "member_heavy:3,2", "map_heavy:3,2", "static_heavy:3,2", "compound_member_heavy:abc,ab", "bare_static_from_lvalue:int:3|int:3", "setter_only_member:float:2.5|2", "statement_position:421",
+                "member_heavy:3,2", "map_heavy:3,2", "static_heavy:3,2", "compound_member_heavy:abc,ab", "bare_static_from_lvalue:" + stored3, "setter_only_member:int:2|2.0", "statement_position:4.02.01.0",
             };
             check_eq(expected.size(), seen[0].size(), "row count");
             for (size_t i = 0; i < expected.size() && i < seen[0].size(); ++i) { check_eq(expected[i], seen[0][i], "row " + std::to_string(i)); }
@@ -518,12 +518,12 @@ public:
             });
         });
 
-        test("object_and_handle_slots_take_null_and_keep_their_class", [this]() {
+        test("handle_slots_take_null_and_keep_their_class", [this]() {
             const char* test_class = "class TestClass { int value = 42; }";
             check_values({
                 {"auto obj = shared_ptr<TestClass>(); obj = null; obj == null", true, test_class},
                 {"auto shared = shared_ptr<TestClass>(); auto weak = weak_ptr<TestClass>(shared); shared = null; weak.expired()", true, test_class},
-                {"auto obj = TestObj(); obj = null; obj = TestObj(); obj.x", 1, "class TestObj { int x = 1; }"},
+                {"shared_ptr<TestObj> obj = TestObj(); obj = null; obj = new TestObj(); obj.x", 1, "class TestObj { int x = 1; }"},
             });
         });
 
@@ -635,7 +635,6 @@ public:
                 {"class Dog { var name = \"Fido\"; } auto pet = Dog(); pet = Dog(); pet.name", "Fido"s},
                 {"class Dog { var name = \"Fido\"; } class Cat { var name = \"Whiskers\"; } var pet = Dog(); pet = Cat(); pet.name", "Whiskers"s},
                 {"class Animal { var species = \"unknown\"; } class Bird : Animal { var canFly = true; } auto pet = Animal(); pet = Bird(); pet.species", "unknown"s},
-                {"class Dog { var name = \"Fido\"; } auto pet = Dog(); pet = null; pet = Dog(); pet.name", "Fido"s},
                 {"class Entity { var id = 0; } class LivingEntity : Entity { var health = 100; } class Player : LivingEntity { var score = 0; } "
                  "auto entity = Entity(); entity = Player(); entity.id", 0},
                 {"auto c = Cat(); c.name = \"Whiskers\"; c.name", "Whiskers"s, "class Cat { string name = \"\"; } class Dog { string name = \"\"; }"},
@@ -644,7 +643,7 @@ public:
             });
             check_rejected({
                 {"class Animal { var species = \"unknown\"; } class Bird : Animal { var canFly = true; } auto bird = Bird(); bird = Animal();"},
-                {"class Dog { var name = \"Fido\"; } class Cat { var name = \"Whiskers\"; } auto pet = Dog(); pet = null; pet = Cat();"},
+                {"class Dog { var name = \"Fido\"; } auto pet = Dog(); pet = null;", "cannot assign 'null' to 'pet' declared 'Dog': a 'Dog' is never null; declare 'shared_ptr<Dog>' (or var) for a slot that can be empty"},
                 {"class Point2D { var x = 0; var y = 0; } class Vector2D { var x = 0; var y = 0; } auto p = Point2D(); p = Vector2D();"},
                 {"class Animal { var name = \"\"; } class Dog : Animal { var breed = \"mutt\"; } class Cat : Animal { var indoor = true; } auto pet = Dog(); pet = Cat();"},
                 {"class TypeA { var a = 1; } class TypeB { var b = 2; } auto x = TypeA(); auto y = TypeB(); x = y;"},
@@ -765,8 +764,8 @@ public:
 
         // ===== COMPOUND ASSIGNMENT: C++ RULES ON TYPED TARGETS =====
         // x op= rhs ≡ x = T(x op rhs): compute in the promoted type, convert the result
-        // back to the declared type exactly like plain '=' (int truncates toward zero).
-        // var (any-typed) targets keep the old dynamic behavior (int += 2.5 -> float 3.5).
+        // back to the declared type exactly like plain '=' (a float result never enters an int target).
+        // var (any-typed) targets stay dynamic (int += 2.5 -> float 3.5).
         // Every test runs on BOTH backends and pins byte-identical output.
 
         // warn_region: the run time's verdict, the unit under [[warn_mode]]
@@ -792,18 +791,128 @@ public:
             check_eq(expected, v_out, std::string("vm: ") + what);
         };
 
-        test("compound_int_target_converts_back", [this, check_both]() {
-            check_both("int x = 10; x += 2.5; type_of(x) + \":\" + to_string(x)", "int:12", "int +=");
-            check_both("int x = 10; x -= 2.5; to_string(x)", "7", "int -=");
-            check_both("int x = 10; x *= 2.5; to_string(x)", "25", "int *=");
-            check_both("int x = 10; x /= 4.0; to_string(x)", "2", "int /= truncates 2.5 -> 2");
-            check_both("int x = 10; x %= 4.5; to_string(x)", "1", "int %= fmod then truncate");
+        test("a_float_never_enters_an_int_slot_implicitly", [this, check_both, both]() {
+            const std::string hint = ": cast<int>(x) truncates toward zero, math::ifloor(x) rounds down";
+            const std::pair<const char*, std::string> load_rows[] = {
+                {"int x = 4.7;", "cannot initialize 'x' declared 'int' with 'float'" + hint},
+                {"int x = 10; x = 2.5;", "cannot assign 'float' to 'x' declared 'int'" + hint},
+                {"int x = 10; x += 2.5;", "cannot assign 'float' to 'x' declared 'int'" + hint},
+                {"int x = 10; x -= 2.5;", "cannot assign 'float' to 'x' declared 'int'" + hint},
+                {"int x = 10; x *= 2.5;", "cannot assign 'float' to 'x' declared 'int'" + hint},
+                {"int x = 10; x /= 4.0;", "cannot assign 'float' to 'x' declared 'int'" + hint},
+                {"auto x = 10; x += 2.5;", "cannot assign 'float' to 'x' declared 'int'" + hint},
+                {"function f(int x) { x += 2.5; return x; }", "cannot assign 'float' to 'x' declared 'int'" + hint},
+                {"function f(int p) { return p; } f(2.9);", "argument 1 of 'f': cannot pass 'float' to 'p' declared 'int'" + hint},
+                {"function g() -> int { return 2.5; }", "cannot return 'float' from 'g' declared to return 'int'" + hint},
+                {"class C { int v = 0; } auto c = C(); c.v = 4.7;", "cannot assign 'float' to field 'v' declared 'int'" + hint},
+                {"class C { int v = 10; } auto c = C(); c.v += 2.5;", "cannot assign 'float' to field 'v' declared 'int'" + hint},
+                {"class C { int v = 10; void bump() { v += 2.5; } }", "cannot assign 'float' to field 'v' declared 'int'" + hint},
+                {"class C { int v = 4.7; }", "cannot initialize field 'v' declared 'int' with 'float'" + hint},
+                {"float gf = 2.5; class C { int f = gf; }", "cannot initialize field 'f' declared 'int' with 'float'" + hint},
+                {"class C { static int i = 1; } C::i += 1.5;", "cannot assign 'float' to field 'i' declared 'int'" + hint},
+                {"array<int> a = [1]; a[0] = 2.7;", "cannot store into 'array<int>': expected 'int', got 'float'" + hint},
+                {"array<int> a = [10]; a[0] += 2.5;", "cannot store into 'array<int>': expected 'int', got 'float'" + hint},
+                {"array<int> a = [1]; a.push(1.5);", "cannot push into 'array<int>': expected 'int', got 'float'" + hint},
+                {"array<int> a = [1.5];", "cannot initialize 'a' declared 'array<int>' with 'array': array element 0: expected 'int', got 'float'" + hint},
+                {"array<float> fs = [1.5, 2.5]; array<int> ints = fs;", "cannot initialize 'ints' declared 'array<int>' with 'array<float>': array element type: expected 'int', got 'float'" + hint},
+                {"int sum(array<int> a) { return a[0]; } sum([1, 2.5, 3]);", "argument 1 of 'sum': cannot pass 'array' to 'a' declared 'array<int>': array element 1: expected 'int', got 'float'" + hint},
+                {"array<uint8> b = [0]; b[0] = 7.9;", "cannot store into 'array<uint8>': expected 'uint8', got 'float'" + hint},
+                {"map<string, int> m = {}; m[\"k\"] = 1.5;", "cannot store into 'map<string,int>': expected 'int', got 'float'" + hint},
+                {"int x = 1; cast<int&>(x) = 3.9;", "cannot assign 'float' to a cast<int&> target declared 'int'" + hint},
+                {"int x = 10; cast<int&>(x) += 2.5;", "cannot assign 'float' to a cast<int&> target declared 'int'" + hint},
+                {"int g = 1; function f() -> int& { return g; } f() = 3.9;", "cannot assign 'float' to the reference declared 'int'" + hint},
+                {"class C { int a = 0; C() {} C(int v) { a = v; } } class H { C c; } auto h = H(); h.c = 2.5;", "cannot assign 'float' to field 'c' declared 'C'"},
+            };
+            for (const auto& [src, text] : load_rows) {
+                auto [si, sv] = both(src);
+                check_eq(si, sv, std::string("load listing parity: ") + src);
+                check_true(si.find("ERROR: static check failed") == 0 && si.find(text) != std::string::npos, std::string("load error for ") + src + ": " + si);
+            }
+            const std::string prelude =
+                "var f = 2.5; var out = \"\"; "
+                "class C { int v = 1; static int s = 1; auto a = 1; C() {} C(var x) { v = x; } void set(var x) { v = x; } void set_auto(var x) { a = x; } } "
+                "function take(int a) { return a; } function give() -> int { return f; } function by_ref(int& p) { p = f; } function L(var x) { return x; } ";
+            const std::pair<const char*, const char*> run_rows[] = {
+                {"int x = f;", "Cannot initialize 'x' (declared int) with float"},
+                {"int y = 1; y = f;", "Cannot assign float to 'y' (declared int)"},
+                {"int y = 1; y += f;", "Cannot assign float to 'y' (declared int)"},
+                {"int y = 10; y %= f;", "Cannot assign float to 'y' (declared int)"},
+                {"auto y = 1; y += f;", "Cannot assign float to 'y' (declared int)"},
+                {"take(f);", "Cannot pass float to parameter 'a' of 'take' (declared int)"},
+                {"give();", "Cannot return float from 'give' (declared -> int)"},
+                {"C c = C(); c.v = f;", "Cannot assign float to field 'v' of C (declared int)"},
+                {"C c = C(); c.set(f);", "Cannot assign float to field 'v' of C (declared int)"},
+                {"C c = C(); c.set_auto(f);", "Cannot assign float to field 'a' of C (declared int)"},
+                {"C c = C(f);", "Cannot assign float to field 'v' of C (declared int)"},
+                {"C::s = f;", "Cannot assign float to static 's' of C (declared int)"},
+                {"C::s += f;", "Cannot assign float to static 's' of C (declared int)"},
+                {"array<int> a = [1]; a[0] = f;", "Cannot assign 'float' to element of type 'int'"},
+                {"array<int> a = [1]; var& r = a[0]; r += f;", "Cannot assign 'float' to element of type 'int'"},
+                {"array<int> a = [1]; a.push(f);", "Cannot push 'float' to array<int>"},
+                {"array<int> a = [1]; a.insert(0, f);", "Cannot insert 'float' into array<int>"},
+                {"var fs = [1.5, 2.5]; array<int> a = fs;", "Cannot store float in array<int>"},
+                {"var fs = [2.5]; array<int> a = [1]; a = fs;", "Cannot store float in array<int>"},
+                {"var fm = {\"k\": 2.5}; map<string, int> m = fm;", "Cannot store float in map<string,int>"},
+                {"var v = 1; by_ref(v);", "Cannot assign float to 'p' (declared int&)"},
+                {"var v = 1; int& r = v; r = f;", "Cannot assign float to 'r' (declared int&)"},
+                {"int x = 10; auto& r = x; r += f;", "Cannot assign float to 'r' (declared int)"},
+                {"int x = cast<int>(L(1e300));", "Cannot convert float to integer: non-finite or out of range"},
+            };
+            for (const auto& [body, text] : run_rows) {
+                check_both((prelude + "try { " + body + " out = \"stored\"; } catch (e) { out = e; } out").c_str(), text, body);
+            }
+            check_both("int x = 10; x = cast<int>(x + 2.5); type_of(x) + \":\" + to_string(x)", "int:12", "cast<int> spells the truncating store");
+            check_both("to_string(cast<int>(2.5)) + \",\" + to_string(cast<int>(-2.5)) + \",\" + to_string(cast<int>(5 - 7.5)) + \",\" + to_string(cast<int>(10 % 4.5))", "2,-2,-2,1", "cast<int> truncates toward zero");
+            check_both("to_string(math::itrunc(-2.5)) + \",\" + to_string(math::ifloor(-2.5)) + \",\" + type_of(math::ifloor(2.5))", "-2,-3,int", "math::itrunc and math::ifloor return ints");
+            check_both("function f(int v) { return \"int\"; } function f(float v) { return \"float\"; } f(1.5) + f(1)", "floatint", "a float argument never picks f(int)");
         });
 
-        test("compound_truncates_toward_zero", [this, check_both]() {
-            check_both("int x = 0; x += 2.5; to_string(x)", "2", "2.5 -> 2");
-            check_both("int x = 0; x -= 2.5; to_string(x)", "-2", "-2.5 -> -2");
-            check_both("int x = 5; x -= 7.5; to_string(x)", "-2", "5 - 7.5 = -2.5 -> -2");
+        test("a_class_value_slot_is_never_null", [this, check_both, both]() {
+            const std::string tail = ": a 'V' is never null; declare 'shared_ptr<V>' (or var) for a slot that can be empty";
+            const std::string V = "class V { int x = 1; } ";
+            const std::pair<const char*, std::string> load_rows[] = {
+                {"V a = null;", "cannot initialize 'a' declared 'V' with 'null'" + tail},
+                {"V b = V(); b = null;", "cannot assign 'null' to 'b' declared 'V'" + tail},
+                {"function f(V v) { return v.x; } f(null);", "argument 1 of 'f': cannot pass 'null' to 'v' declared 'V'" + tail},
+                {"function h() -> V { return null; }", "cannot return 'null' from 'h' declared to return 'V'" + tail},
+                {"class Holder { V v = null; }", "cannot initialize field 'v' declared 'V' with 'null'" + tail},
+                {"class Holder { V v; } auto o = Holder(); o.v = null;", "cannot assign 'null' to field 'v' declared 'V'" + tail},
+                {"function f(V d = null) { return d.x; }", "default value of 'd' declared 'V' has type 'null'"},
+                {"array<V> a = []; a.push(null);", "cannot push into 'array<V>': expected 'V', got 'null'"},
+                {"V a = V(); a == null;", "cannot compare 'V' with null using '==': 'V' is never null (it is always false); declare the slot shared_ptr<V> (or var) to hold null"},
+                {"function g(bool t) -> V { if (t) { return V(); } }", "'g' declared to return 'V' may reach the end of its body without returning"},
+                {"function g() -> V { return; }", "'g' declared to return 'V' returns no value here"},
+                {"class Node { int v = 0; Node next; }", "class 'Node' holds itself by value (Node.next): a class value is never null; make one link a 'shared_ptr<Node>' (an array or a map of them starts empty)"},
+                {"class A { B b; } class B { C c; } class C { A a; }", "class 'A' holds itself by value (A.b -> B.c -> C.a): a class value is never null; make one link a 'shared_ptr<A>' (an array or a map of them starts empty)"},
+                {"class Base { Derived d; } class Derived : Base { int k = 0; }", "class 'Derived' holds itself by value (Derived : Base -> Base.d): a class value is never null; make one link a 'shared_ptr<Derived>' (an array or a map of them starts empty)"},
+            };
+            for (const auto& [src, text] : load_rows) {
+                auto [si, sv] = both((V + src).c_str());
+                check_eq(si, sv, std::string("load listing parity: ") + src);
+                check_true(si.find("ERROR: static check failed") == 0 && si.find(text) != std::string::npos, std::string("load error for ") + src + ": " + si);
+            }
+            const std::string prelude = V +
+                "var n = null; var out = \"\"; class Holder { V v; static V s; } "
+                "function take(V v) { return v.x; } function give() -> V { return n; } ";
+            const std::pair<const char*, const char*> run_rows[] = {
+                {"V a = n;", "Cannot initialize 'a' (declared V) with null"},
+                {"V b = V(); b = n;", "Cannot assign null to 'b' (declared V)"},
+                {"take(n);", "Cannot convert null to V (no suitable single-argument constructor)"},
+                {"give();", "Cannot convert null to V (no suitable single-argument constructor)"},
+                {"auto o = Holder(); o.v = n;", "Cannot assign null to field 'v' of Holder (declared V)"},
+                {"Holder::s = n;", "Cannot assign null to static 's' of Holder (declared V)"},
+                {"array<V> a = []; a.push(n);", "Cannot push 'null' to array<V>"},
+                {"array<V> a = [V()]; a[0] = n;", "Cannot assign 'null' to element of type 'V'"},
+                {"map<string, V> m = {}; m[\"k\"] = n;", "Cannot assign 'null' to element of type 'V'"},
+                {"V c = cast<V>(n);", "Cannot cast 'null' to 'V'"},
+                {"shared_ptr<V> empty = null; V a = empty;", "Cannot initialize 'a' (declared V) with null"},
+            };
+            for (const auto& [body, text] : run_rows) {
+                check_both((prelude + "try { " + body + " out = \"stored\"; } catch (e) { out = e; } out").c_str(), text, body);
+            }
+            check_both((V + "class Node { int v = 0; shared_ptr<Node> next; array<Node> kids = []; } auto a = Node(); a.next = new Node(); a.next.v = 5; a.kids.push(Node()); "
+                        "shared_ptr<V> p = null; var q = null; auto z = null; to_string(a.next.v) + \",\" + to_string(a.next.next == null) + \",\" + to_string(a.kids.size()) + \",\" + to_string(p == null) + to_string(q == null) + to_string(z == null)").c_str(),
+                       "5,true,1,truetruetrue", "shared_ptr, var and auto-null slots stay nullable; containers of the own class start empty");
         });
 
         test("compound_float_target_stays_float", [this, check_both]() {
@@ -813,12 +922,13 @@ public:
         });
 
         test("compound_auto_locked_behaves_typed", [this, check_both]() {
-            check_both("auto x = 10; x += 2.5; type_of(x) + \":\" + to_string(x)", "int:12", "auto-locked int");
+            check_both("auto x = 1.5; x += 2; type_of(x) + \":\" + to_string(x)", "float:3.5", "auto-locked float takes an int");
             check_both("auto f = 1.0; f += 2.5; type_of(f) + \":\" + to_string(f)", "float:3.5", "auto-locked float");
-            // An auto parameter is inferred-then-enforced, so it converts back too
-            check_both("function f(auto x) { x += 2.5; return type_of(x) + \":\" + to_string(x); } f(10)", "int:12", "inferred param");
-            check_both("function f(int x) { x += 2.5; return to_string(x); } f(10)", "12", "typed param");
-            check_both("function g() { int y = 10; y += 2.5; return to_string(y); } g()", "12", "slot local");
+            // An auto parameter is inferred-then-enforced, so its compound stores by the inferred type too
+            check_both("function f(auto x) { x += 2; return type_of(x) + \":\" + to_string(x); } f(1.5)", "float:3.5", "inferred param");
+            check_both("function f(auto x) { var c = \"\"; try { x += 2.5; } catch (e) { c = e; } return c + \"|\" + type_of(x) + \":\" + to_string(x); } f(10)", "Cannot assign float to 'x' (declared int)|int:10", "inferred int param refuses a float");
+            check_both("function f(float x) { x += 2; return to_string(x); } f(10)", "12.0", "typed param");
+            check_both("function g() { float y = 10; y += 2; return to_string(y); } g()", "12.0", "slot local");
         });
 
         test("compound_var_target_stays_dynamic", [this, check_both]() {
@@ -840,7 +950,7 @@ public:
             check(i1.find("ERROR") == 0, "int %= 0 raises");
             auto [i2, v2] = both("float f = 1.5; f %= 0.0; f");
             check_eq(i2, v2, "float modulo-by-zero parity");
-            check(i2.find("ERROR") == 0, "float %= 0.0 raises");
+            check_eq(std::string("nan"), i2, "float %= 0.0 is IEEE");
         });
 
         test("compound_string_targets_append", [this, check_both, both]() {
@@ -855,23 +965,24 @@ public:
         test("compound_expression_result_is_stored_value", [this, check_both]() {
             // The compound expression evaluates to the converted (stored) value, exactly
             // like '=' on a typed local does
-            check_both("int x = 10; var r = (x += 2.5); type_of(r) + \":\" + to_string(r)", "int:12", "result converted");
+            check_both("float x = 10; var r = (x += 2); type_of(r) + \":\" + to_string(r)", "float:12.0", "result converted");
             check_both("var x = 10; var r = (x += 2.5); type_of(r) + \":\" + to_string(r)", "float:12.5", "var result promoted");
         });
 
         test("compound_typed_element_and_ref_targets", [this, check_both]() {
-            // Constrained element: the store converts (12.5 -> 12) and a consumed expression's
+            // Constrained element: the store converts (int 12 -> float 12.0) and a consumed expression's
             // value is the stored element
-            check_both("array<int> a = [10]; a[0] += 2.5; type_of(a[0]) + \":\" + to_string(a[0])", "int:12", "typed element converts");
-            check_both("array<int> a = [10]; var r = (a[0] += 2.5); to_string(r)", "12", "element result is the stored element");
-            check_both("array<int> a = [10]; a[0] %= 4.5; to_string(a[0])", "1", "typed element %=");
+            check_both("array<float> a = [10]; a[0] += 2; type_of(a[0]) + \":\" + to_string(a[0])", "float:12.0", "typed element converts");
+            check_both("array<float> a = [10]; var r = (a[0] += 2); to_string(r)", "12.0", "element result is the stored element");
+            check_both("array<float> a = [10]; a[0] %= 4; to_string(a[0])", "2.0", "typed element %=");
+            check_both("array<int> a = [10]; a[0] %= 4; type_of(a[0]) + \":\" + to_string(a[0])", "int:2", "int element %=");
             // Constrained ref bound to a typed element behaves route-independently
             check_both(R"(
-                array<int> a = [10];
-                function f(int& r) { r += 2.5; }
+                array<float> a = [10];
+                function f(float& r) { r += 2; }
                 f(a[0]);
                 type_of(a[0]) + ":" + to_string(a[0])
-            )", "int:12", "constrained ref compound converts");
+            )", "float:12.0", "constrained ref compound converts");
         });
 
         test("compound_mismatch_errors_parity", [this, both]() {
@@ -903,12 +1014,6 @@ public:
         // then enforce.
 
         test("typed_field_direct_assign_converts", [this, check_both, both, both_in]() {
-            check_both(R"(
-                class C { int v = 0; }
-                auto c = C();
-                c.v = 4.7;
-                type_of(c.v) + ":" + to_string(c.v)
-            )", "int:4", "int field truncates float assign");
             check_both(R"(
                 class C { float f = 0.0; }
                 auto c = C();
@@ -954,26 +1059,26 @@ public:
         test("typed_field_implicit_this_and_ctor_convert", [this, check_both, both]() {
             check_both(R"(
                 class C {
-                    int v = 0;
+                    float v = 0;
                     void set(var x) { v = x; }
                 }
                 auto c = C();
-                c.set(9.9);
+                c.set(9);
                 type_of(c.v) + ":" + to_string(c.v)
-            )", "int:9", "implicit-this assign converts");
+            )", "float:9.0", "implicit-this assign converts");
             check_both(R"(
-                class C { int v = 4.7; }
+                class C { float v = 4; }
                 auto c = C();
                 type_of(c.v) + ":" + to_string(c.v)
-            )", "int:4", "ctor field-init converts the initializer");
+            )", "float:4.0", "ctor field-init converts the initializer");
             check_both(R"(
                 class C {
-                    int v = 0;
+                    float v = 0;
                     C(var x) { v = x; }
                 }
-                auto c = C(6.9);
+                auto c = C(6);
                 to_string(c.v)
-            )", "6", "ctor body assign converts");
+            )", "6.0", "ctor body assign converts");
             auto [i_out, v_out] = both(R"(
                 class C {
                     int v = 0;
@@ -989,26 +1094,26 @@ public:
 
         test("typed_field_compound_converts", [this, check_both]() {
             check_both(R"(
-                class C { int v = 10; }
+                class C { float v = 10; }
                 auto c = C();
-                c.v += 2.5;
+                c.v += 2;
                 type_of(c.v) + ":" + to_string(c.v)
-            )", "int:12", "member compound converts back");
+            )", "float:12.0", "member compound converts back");
             check_both(R"(
                 class C {
-                    int v = 10;
-                    void bump() { v += 2.5; }
+                    float v = 10;
+                    void bump() { v += 2; }
                 }
                 auto c = C();
                 c.bump();
                 type_of(c.v) + ":" + to_string(c.v)
-            )", "int:12", "implicit-this compound converts back");
+            )", "float:12.0", "implicit-this compound converts back");
             check_both(R"(
-                class C { int v = 10; }
+                class C { float v = 10.5; }
                 auto c = C();
-                c.v %= 4.5;
+                c.v %= 4;
                 to_string(c.v)
-            )", "1", "member %= math::fmod then truncate");
+            )", "2.5", "member %= is math::fmod on a float field");
         });
 
         test("var_and_auto_fields", [this, check_both, both]() {
@@ -1029,11 +1134,11 @@ public:
             )", "float:12.5", "var field compound stays dynamic");
             // auto fields infer from the initializer then enforce
             check_both(R"(
-                class C { auto v = 1; }
+                class C { auto v = 1.5; }
                 auto c = C();
-                c.v = 2.5;
+                c.v = 2;
                 type_of(c.v) + ":" + to_string(c.v)
-            )", "int:2", "auto field locks to inferred int");
+            )", "float:2.0", "auto field locks to inferred float");
             auto [i_out, v_out] = both(R"(
                 class C { auto v = 1; }
                 auto c = C();
@@ -1046,12 +1151,12 @@ public:
 
         test("typed_field_inheritance_enforced", [this, check_both, both]() {
             check_both(R"(
-                class Base { int bv = 0; }
+                class Base { float bv = 0; }
                 class Derived : Base { var dv = 0; }
                 auto d = Derived();
-                d.bv = 7.7;
+                d.bv = 7;
                 type_of(d.bv) + ":" + to_string(d.bv)
-            )", "int:7", "base typed field enforced on derived instance");
+            )", "float:7.0", "base typed field enforced on derived instance");
             auto [i_out, v_out] = both(R"(
                 class Base { int bv = 0; }
                 class Derived : Base { var dv = 0; }
@@ -1064,15 +1169,15 @@ public:
         });
 
         test("typed_field_object_fields_keep_object_model", [this, check_both, both, both_in]() {
-            // Declared class-typed fields accept same class, subtypes, null, and shared_ptr
-            // wrappers (JaiScript objects travel as object OR shared_ptr over one holder).
+            // Declared class-typed fields accept same class, subtypes and shared_ptr
+            // wrappers (JaiScript objects travel as object OR shared_ptr over one holder), never null.
             // A subtype member is reached through cast<T&> or a var receiver: the field's
             // static class is S, and S has no 't' (exactly like C++). A field holding an S keeps
             // its object and takes the subtype's class (no slicing).
             check_both(R"(
                 class S { int x = 1; }
                 class T : S { int t = 2; }
-                class H { S p = null; }
+                class H { S p; }
                 auto h = H();
                 h.p = S();
                 var a = h.p.x;
@@ -1080,15 +1185,15 @@ public:
                 var b = cast<T&>(h.p).t;
                 var hv = h.p;
                 var b2 = hv.t;
-                h.p = null;
-                var c2 = "n";
-                if (h.p == null) { c2 = "null"; }
-                to_string(a) + "|" + to_string(b) + "|" + to_string(b2) + "|" + c2
-            )", "1|2|2|null", "same class, subtype (cast<T&> and var receiver), and null accepted");
+                var n = null;
+                var c2 = "stored";
+                try { h.p = n; } catch (e) { c2 = e; }
+                to_string(a) + "|" + to_string(b) + "|" + to_string(b2) + "|" + c2 + "|" + type_of(h.p)
+            )", "1|2|2|Cannot assign null to field 'p' of H (declared S)|T", "same class and subtype (cast<T&> and var receiver) accepted, null refused");
             const char* base_receiver = R"(
                 class S { int x = 1; }
                 class T : S { int t = 2; }
-                class H { S p = null; }
+                class H { S p; }
                 auto h = H();
                 h.p = T();
                 h.p.t
@@ -1104,7 +1209,7 @@ public:
             const char* unrelated = R"(
                 class S { int x = 1; }
                 class B { int x = 1; }
-                class H { S p = null; }
+                class H { S p; }
                 auto h = H();
                 h.p = B();
                 h.p
@@ -1121,7 +1226,7 @@ public:
             auto [du_out, duv_out] = both(R"(
                 class S { int x = 1; }
                 class B { int x = 1; }
-                class H { S p = null; }
+                class H { S p; }
                 auto h = H();
                 var b = B();
                 h.p = b;
@@ -1154,6 +1259,12 @@ public:
                  "cannot assign 'string' to 'x' declared 'int'", "Cannot apply '+=' to int and string"},
                 {"string s = 42; s",
                  "cannot initialize 's' declared 'string' with 'int': stringify it with to_string(x) or `${x}`", "Cannot initialize 's' (declared string) with int"},
+                {"int x = 4.7; x",
+                 "cannot initialize 'x' declared 'int' with 'float': cast<int>(x) truncates toward zero, math::ifloor(x) rounds down", "Cannot initialize 'x' (declared int) with float"},
+                {"class C { int v = 0; } auto c = C(); c.v = 4.7; c.v",
+                 "cannot assign 'float' to field 'v' declared 'int'", "Cannot assign float to field 'v' of C (declared int)"},
+                {"class P { int a = 0; } P p = null; p",
+                 "cannot initialize 'p' declared 'P' with 'null': a 'P' is never null; declare 'shared_ptr<P>' (or var) for a slot that can be empty", "Cannot initialize 'p' (declared P) with null"},
             };
             for (const row& r : typed_mismatches) {
                 auto [si, sv] = both_in(false, r.src);
@@ -1190,12 +1301,12 @@ public:
                 "the var-sourced runtime error is catchable in script under strict");
             struct clean_row { const char* src; const char* expected; };
             const clean_row clean[] = {
-                {"int x = 4.7; x", "4"},
+                {"int x = cast<int>(4.7); x", "4"},
                 {"float f = 2; type_of(f) + \":\" + to_string(f)", "float:2.0"},
                 {"class S { int x = 1; } class T : S { int t = 2; } function f(S s) -> int { return s.x; } f(T())", "1"},
                 {"function twice(int v) -> int { return v * 2; } twice(21)", "42"},
-                {"class C { int v = 0; } auto c = C(); c.v = 4.7; type_of(c.v) + \":\" + to_string(c.v)", "int:4"},
-                {"class S { int x = 1; } class T : S { int t = 2; } class H { S p = null; } auto h = H(); h.p = T(); cast<T&>(h.p).t", "2"},
+                {"class C { float v = 0; } auto c = C(); c.v = 4; type_of(c.v) + \":\" + to_string(c.v)", "float:4.0"},
+                {"class S { int x = 1; } class T : S { int t = 2; } class H { S p; } auto h = H(); h.p = T(); cast<T&>(h.p).t", "2"},
             };
             for (const clean_row& r : clean) {
                 auto [si, sv] = both_in(false, r.src);
@@ -1210,7 +1321,7 @@ public:
         // cast<T>(e) / cast<T&>(e) / cast<shared_ptr<T>>(e) (docs/site/guide/02-type-ladder.html, detail/cast_kernel.hpp):
         // every row is byte-identical on both backends under the strict default
         const std::string cast_prelude =
-            "class S { int x = 1; } class T : S { int t = 2; } class H { S p = null; } "
+            "class S { int x = 1; } class T : S { int t = 2; } class H { S p; } "
             "auto h = H(); h.p = T(); ";
         auto with_prelude = [cast_prelude](const char* tail) { return cast_prelude + tail; };
 
@@ -1231,7 +1342,7 @@ public:
             check_both(with_prelude("S up = cast<S>(T()); to_string(up.x)").c_str(), "1", "upcast by value");
             check_both(with_prelude("cast<S&>(h.p).x").c_str(), "1", "upcast by reference");
             check_both(with_prelude("shared_ptr<S> sh = cast<shared_ptr<S>>(h.p); to_string(sh.x)").c_str(), "1", "upcast handle");
-            check_both("class T { int t = 2; } var n = null; to_string(cast<T>(n) == null) + \",\" + to_string(cast<shared_ptr<T>>(n) == null)", "true,true", "null passes the value and shared_ptr forms");
+            check_both("class T { int t = 2; } var n = null; var c = \"\"; try { cast<T>(n); } catch (e) { c = e; } c + \",\" + to_string(cast<shared_ptr<T>>(n) == null)", "Cannot cast 'null' to 'T',true", "null fails the value form and passes the shared_ptr form");
             check_both("class T { int t = 2; } var n = null; var c = \"\"; try { cast<T&>(n).t; } catch (e) { c = e; } c", "Cannot cast 'null' to 'T&'", "null fails the reference form");
         });
 
@@ -1288,7 +1399,7 @@ public:
                 class S { int x = 1; }
                 class T : S { int t = 2; }
                 class M {
-                    S field = null;
+                    S field;
                     M() { field = T(); }
                     int peek() { return cast<T&>(field).t; }
                     int poke() { cast<T&>(field).t = 77; return cast<T&>(this.field).t; }
@@ -1302,13 +1413,13 @@ public:
         test("cast_reference_is_an_assignment_target", [this, check_both, both, both_in, with_prelude]() {
             // cast<T&>(e) is an lvalue (C++): =, op= and ++/-- store through it under the rules of the storage it names
             check_both("int x = 1; cast<int&>(x) = 5; to_string(x)", "5", "a variable");
-            check_both("int x = 1; cast<int&>(x) = 3.9; type_of(x) + \":\" + to_string(x)", "int:3", "the variable's table converts");
-            check_both("int x = 10; cast<int&>(x) += 2.5; type_of(x) + \":\" + to_string(x)", "int:12", "a compound converts back to the variable's type");
+            check_both("float x = 1; cast<float&>(x) = 3; type_of(x) + \":\" + to_string(x)", "float:3.0", "the variable's table converts");
+            check_both("float x = 10; cast<float&>(x) += 2; type_of(x) + \":\" + to_string(x)", "float:12.0", "a compound converts back to the variable's type");
             check_both("int x = 5; cast<int&>(x)++; ++cast<int&>(x); cast<int&>(x)--; to_string(x)", "6", "increment and decrement");
             check_both("int x = 5; int old = cast<int&>(x)++; int now = ++cast<int&>(x); to_string(old) + \",\" + to_string(now) + \",\" + to_string(x)", "5,7,7", "postfix yields the old value, prefix the new");
-            check_both("int x = 0; auto r = (cast<int&>(x) = 3.9); type_of(r) + \":\" + to_string(r)", "int:3", "the expression's value is the stored value");
-            check_both("int x = 1; auto r = (cast<int&>(x) += 0.5); type_of(r) + \":\" + to_string(r)", "int:1", "a consumed compound yields the stored value");
-            check_both("function f() -> int { int x = 1; cast<int&>(x) += 2.9; cast<int&>(x) *= 2; return x; } to_string(f())", "6", "a function's slot local");
+            check_both("float x = 0; auto r = (cast<float&>(x) = 3); type_of(r) + \":\" + to_string(r)", "float:3.0", "the expression's value is the stored value");
+            check_both("float x = 1; auto r = (cast<float&>(x) += 1); type_of(r) + \":\" + to_string(r)", "float:2.0", "a consumed compound yields the stored value");
+            check_both("function f() -> int { int x = 1; cast<int&>(x) += 2; cast<int&>(x) *= 2; return x; } to_string(f())", "6", "a function's slot local");
             check_both("class C { int n = 0; } C c = C(); cast<int&>(c.n) = 7; cast<int&>(c.n) *= 3; to_string(c.n)", "21", "a field");
             check_both("class C { int n = 0; void go() { cast<int&>(n) = 4; cast<int&>(this.n) += 1; } } C c = C(); c.go(); to_string(c.n)", "5", "a bare field and this.field");
             check_both("class W { static int s = 1; } cast<int&>(W::s) = 6; cast<int&>(W::s) += 1; to_string(W::s)", "7", "a static");
@@ -1336,14 +1447,15 @@ public:
             check_both("var log = \"\"; function v() -> int { log += \"v\"; return 5; } "
                        "coroutine h() { array<int> a = [0, 0]; cast<int&>(a[(yield 1) == null ? 1 : 0]) += v(); int k = 1; cast<int&>(k) += v() + ((yield 2) == null ? 1 : 0); yield to_string(a[1]) + to_string(k); } "
                        "var co = h(); co.next(); co.next(); co.next() + log", "57vv", "a yield inside the target or the right side resumes without re-running either");
-            check_both("class W { static int s = 1; } cast<int&>(W::s) += 0.75; type_of(W::s) + \":\" + to_string(W::s)", "int:1", "a static's own table");
+            check_both("class W { static float s = 1; } cast<float&>(W::s) += 1; type_of(W::s) + \":\" + to_string(W::s)", "float:2.0", "a static's own table");
         });
 
         test("reference_stores_run_the_storage_rules", [this, check_both]() {
             // a compound through a reference to a typed variable runs the variable's table, as the direct compound does
-            check_both("int x = 10; auto& r = x; r += 2.5; type_of(x) + \":\" + to_string(x)", "int:12", "auto& to an int");
-            check_both("function f(int& r) { r += 2.5; } int x = 10; f(x); type_of(x) + \":\" + to_string(x)", "int:12", "an int& parameter");
-            check_both("int x = 10; var& r = x; r -= 0.5; type_of(x) + \":\" + to_string(x)", "int:9", "var& to an int");
+            check_both("float x = 10; auto& r = x; r += 2; type_of(x) + \":\" + to_string(x)", "float:12.0", "auto& to a float");
+            check_both("function f(float& r) { r += 2; } float x = 10; f(x); type_of(x) + \":\" + to_string(x)", "float:12.0", "a float& parameter");
+            check_both("float x = 10; var& r = x; r -= 1; type_of(x) + \":\" + to_string(x)", "float:9.0", "var& to a float");
+            check_both("int x = 10; var& r = x; var h = 0.5; var c = \"\"; try { r -= h; } catch (e) { c = e; } c + \"|\" + type_of(x) + \":\" + to_string(x)", "Cannot assign float to 'r' (declared int)|int:10", "var& to an int refuses a float");
             const std::string cnt = "class Cnt { int n = 0; function operator=(int v) { n = v * 10; } } ";
             check_both((cnt + "Cnt c = Cnt(); auto& r = c; r = 3; to_string(c.n)").c_str(), "30", "a reference to a class variable runs its operator=");
             check_both((cnt + "class H { Cnt k = Cnt(); } H h = H(); auto& r = h.k; r = 4; to_string(h.k.n)").c_str(), "40", "a reference to a class field runs its operator=");
@@ -1359,14 +1471,14 @@ public:
         test("a_reference_result_is_an_assignment_target", [this, check_both, both]() {
             // f() returning T&, a conditional of lvalues, an assignment and a prefix ++/-- are lvalues (C++)
             check_both("int g = 1; function f() -> int& { return g; } f() = 9; f() += 1; ++f(); f()++; to_string(g)", "12", "a function returning int&");
-            check_both("int g = 1; function f() -> int& { return g; } f() = 3.9; type_of(g) + \":\" + to_string(g)", "int:3", "the referent's table converts");
-            check_both("int g = 1; function f() -> int& { return g; } auto r = (f() = 3.9); type_of(r) + \":\" + to_string(r)", "int:3", "the expression's value is the stored value");
+            check_both("float g = 1; function f() -> float& { return g; } f() = 3; type_of(g) + \":\" + to_string(g)", "float:3.0", "the referent's table converts");
+            check_both("float g = 1; function f() -> float& { return g; } auto r = (f() = 3); type_of(r) + \":\" + to_string(r)", "float:3.0", "the expression's value is the stored value");
             check_both("class W { array<int> d = [1, 2, 3]; int& first() { return d[0]; } } W w = W(); w.first() = 11; w.first() *= 2; to_string(w.d[0])", "22", "a method returning int&");
             check_both("class S { static int s = 1; static int& get() { return S::s; } } S::get() = 4; S::get()++; to_string(S::s)", "5", "a static method returning a static");
             check_both("class W { array<int> d = [1, 2, 3]; int& operator[](int i) { return d[i]; } } W w = W(); w[2] = 30; ++w[1]; to_string(w.d[1]) + \",\" + to_string(w.d[2])", "3,30", "a user operator[] returning int&");
             check_both("var log = \"\"; int g = 0; function f() -> int& { log += \"f\"; return g; } function v() -> int { log += \"v\"; return 1; } f() = v(); f() += v(); log + to_string(g)", "vfvf2", "the right side runs before the call");
             check_both("int a = 1; int b = 2; bool t = true; (t ? a : b) = 5; (!t ? a : b) += 10; to_string(a) + \",\" + to_string(b)", "5,12", "a conditional of variables");
-            check_both("int a = 1; float b = 2; bool t = true; (t ? a : b) = 2.5; (!t ? a : b) = 2.5; to_string(a) + \",\" + to_string(b)", "2,2.5", "each arm stores by its own table");
+            check_both("int a = 1; float b = 2; bool t = true; (t ? a : b) = 3; (!t ? a : b) = 3; to_string(a) + \",\" + to_string(b)", "3,3.0", "each arm stores by its own table");
             check_both("class P { int x = 0; } P p = P(); array<int> arr = [0, 0]; int i = 1; bool t = false; (t ? p.x : arr[i]) = 7; ++(t ? p.x : arr[i]); (!t ? p.x : arr[i])--; to_string(p.x) + \",\" + to_string(arr[1])", "-1,8", "a conditional of a field and an element");
             check_both("int a = 0; int b = 0; int c = 0; bool t = false; bool u = true; (t ? a : (u ? b : c)) = 3; to_string(a) + to_string(b) + to_string(c)", "030", "a nested conditional");
             check_both("var log = \"\"; function cond() -> bool { log += \"c\"; return true; } function v() -> int { log += \"v\"; return 1; } int a = 0; int b = 0; (cond() ? a : b) = v(); log + to_string(a)", "vc1", "the right side, then the condition once");
@@ -1420,25 +1532,25 @@ public:
         test("a_reference_stores_by_its_declared_type", [this, check_both]() {
             // The reference's declared type governs the store (cast<int&>(v), int& r = v); var& and auto&
             // keep the referent's own rule
-            check_both("var v = 1; cast<int&>(v) = 2.5; type_of(v) + \":\" + to_string(v)", "int:2", "cast<int&> over a var");
-            check_both("var v = 1; int& r = v; r = 2.5; type_of(v) + \":\" + to_string(v)", "int:2", "int& over a var");
-            check_both("var v = 1; int& r = v; r += 0.5; type_of(v) + \":\" + to_string(v)", "int:1", "a compound through int& over a var");
-            check_both("var v = 1; int& r = v; v = 1.5; r++; type_of(v) + \":\" + to_string(v)", "int:2", "++ through int& over a var that now holds a float");
-            check_both("var v = 1; cast<int&>(v) += 0.5; cast<int&>(v)++; type_of(v) + \":\" + to_string(v)", "int:2", "compound and ++ through cast<int&>");
-            check_both("var a = [1, 2]; int& r = a[0]; r = 7.9; type_of(a[0]) + \":\" + to_string(a[0])", "int:7", "int& over an untyped element");
+            check_both("var v = 1; cast<int&>(v) = true; type_of(v) + \":\" + to_string(v)", "int:1", "cast<int&> over a var");
+            check_both("var v = 1; int& r = v; r = true; type_of(v) + \":\" + to_string(v)", "int:1", "int& over a var");
+            check_both("var v = 1; int& r = v; var h = 0.5; var c = \"\"; try { r += h; } catch (e) { c = e; } c + \"|\" + type_of(v) + \":\" + to_string(v)", "Cannot assign float to a variable declared int|int:1", "a float compound through int& over a var is refused where the var alone would take it");
+            check_both("var v = 1; int& r = v; v = 1.5; var c = \"\"; try { r++; } catch (e) { c = e; } c + \"|\" + type_of(v) + \":\" + to_string(v)", "Cannot assign float to a variable declared int|float:1.5", "++ through int& over a var that now holds a float is refused");
+            check_both("var v = 1; cast<int&>(v) += 1; cast<int&>(v)++; type_of(v) + \":\" + to_string(v)", "int:3", "compound and ++ through cast<int&>");
+            check_both("var a = [1, 2]; int& r = a[0]; r = true; type_of(a[0]) + \":\" + to_string(a[0])", "int:1", "int& over an untyped element");
             check_both("var v = 1; auto& r = v; r = 2.5; var& q = v; q = \"s\"; type_of(v)", "string", "auto& and var& keep the var");
             check_both("class Cnt { int n = 0; function operator=(int x) { n = x * 10; } } var c = Cnt(); cast<Cnt&>(c) = 2; to_string(c.n)", "20", "a class's operator= through cast<Cnt&> over a var");
-            check_both("function f() -> int { var v = 1; int& r = v; r = 3.5; return v; } to_string(f())", "3", "a function's slot local");
+            check_both("function f() -> string { var v = 5; int& r = v; r = true; return type_of(v) + to_string(v); } f()", "int1", "a function's slot local");
             check_both("var v = 1.5; float& r = v; r = 2; r += 1; var w = 1.5; float& s = w; s = 1; s++; type_of(v) + \":\" + to_string(v) + \",\" + type_of(w) + \":\" + to_string(w)", "float:3.0,float:2.0", "an int stored through float& takes the declared kind");
             check_both("var v = 1; int& r = v; r += 2; r *= 3; r++; type_of(v) + \":\" + to_string(v)", "int:10", "matching kinds take the storage's own path");
             // a function's `T& name` is decided at its stores from the name; one whose reference reaches another binding carries
             // the declared type with it, so every route agrees
-            check_both("function f() -> string { var v = 1; int& q = v; q = 2.5; return type_of(v) + to_string(v); } f()", "int2", "a slot-resident int& over a var");
-            check_both("function f() -> string { var v = 1; int& q = v; q += 0.5; v = 1.5; q++; return type_of(v) + to_string(v); } f()", "int2", "compound and ++ through a slot-resident int&");
-            check_both("function g(var& p) { p = 2.5; } function f() -> string { var v = 1; int& q = v; g(q); return type_of(v) + to_string(v); } f()", "int2", "passed on to a var& parameter");
-            check_both("function f() -> string { var v = 1; int& q = v; auto& r = q; r = 2.5; return type_of(v) + to_string(v); } f()", "int2", "aliased by auto&");
-            check_both("function f() -> string { var v = 1; int& q = v; var h = [&]() { q = 2.5; }; h(); return type_of(v) + to_string(v); } f()", "int2", "captured by reference");
-            check_both("function f() -> string { var v = 1; var w = 1; int& q = v; (true ? q : w) = 2.5; return type_of(v) + to_string(v); } f()", "int2", "an arm of a conditional target");
+            check_both("function f() -> string { var v = 1; int& q = v; q = false; return type_of(v) + to_string(v); } f()", "int0", "a slot-resident int& over a var");
+            check_both("function f() -> string { var v = 1; int& q = v; var h = 0.5; var c = \"\"; try { q += h; } catch (e) { c = e; } q += 1; q++; return c + \"|\" + type_of(v) + to_string(v); } f()", "Cannot assign float to a variable declared int|int3", "compound and ++ through a slot-resident int&");
+            check_both("function g(var& p) { p = false; } function f() -> string { var v = 1; int& q = v; g(q); return type_of(v) + to_string(v); } f()", "int0", "passed on to a var& parameter");
+            check_both("function f() -> string { var v = 1; int& q = v; auto& r = q; r = false; return type_of(v) + to_string(v); } f()", "int0", "aliased by auto&");
+            check_both("function f() -> string { var v = 1; int& q = v; var h = [&]() { q = false; }; h(); return type_of(v) + to_string(v); } f()", "int0", "captured by reference");
+            check_both("function f() -> string { var v = 1; var w = 1; int& q = v; (true ? q : w) = false; return type_of(v) + to_string(v); } f()", "int0", "an arm of a conditional target");
             check_both("function f() -> string { var v = 1.5; float& q = v; q = 2; q += 1; return type_of(v) + to_string(v); } f()", "float3.0", "a slot-resident float& over a var holding a float");
         });
 
@@ -1475,7 +1587,7 @@ public:
             check_both("var a = [1, 2]; var c = \"\"; try { float& r = a[0]; c = \"bound\"; } catch (e) { c = e; } c", "Cannot initialize 'r' (declared float&) with int", "an untyped element");
             check_both("function f(float& p) { p = 1; } var v = 1; var c = \"\"; try { f(v); c = \"bound\"; } catch (e) { c = e; } c", "Cannot pass int to parameter 'p' of 'f' (declared float&)", "a parameter");
             check_both("var v = 1; var c = \"\"; try { cast<float&>(v) = 2; c = \"bound\"; } catch (e) { c = e; } c", "Cannot cast 'int' to 'float&'", "a reference cast");
-            check_both("var v = 1; int& r = v; r = 2.5; type_of(v) + to_string(v)", "int2", "a matching binding stores by T");
+            check_both("var v = 1; int& r = v; r = false; type_of(v) + to_string(v)", "int0", "a matching binding stores by T");
             check_both("class A { int a = 1; } class B : A { int b = 2; } var v = B(); A& r = v; type_of(r)", "B", "a subclass binds a base reference");
             check_both("var v = 1; auto& r = v; var& q = v; r = \"s\"; type_of(v)", "string", "auto& and var& bind any value");
             auto [si, sv] = both("int x = 1; float& r = x;");
@@ -1485,17 +1597,17 @@ public:
 
         test("a_reference_parameter_stores_by_its_declared_type", [this, check_both]() {
             // `void f(int& p)` over a var stores ints, decided at the stores from the parameter's declared type
-            check_both("function f(int& p) { p = 2.5; } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:2", "a converting store");
-            check_both("function f(int& p) { p += 0.5; p++; } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:2", "compound and ++");
+            check_both("function f(int& p) { p = false; } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:0", "a converting store");
+            check_both("function f(int& p, var h) { p += h; } var v = 1; var c = \"\"; try { f(v, 0.5); } catch (e) { c = e; } c + \"|\" + type_of(v) + \":\" + to_string(v)", "Cannot assign float to a variable declared int|int:1", "a float compound is refused where the var alone would take it");
             check_both("function f(int& p) { p = p + 1; p += 2; p++; } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:5", "matching kinds");
             check_both("function f(float& p) { p = 2; p += 1; } var v = 1.5; f(v); type_of(v) + \":\" + to_string(v)", "float:3.0", "an int stored through float& into a var");
             check_both("class Cnt { int n = 0; function operator=(int x) { n = x * 10; } } function f(Cnt& c) { c = 3; } var c = Cnt(); f(c); to_string(c.n)", "30", "a class's operator=");
             check_both("function f(var& p) { p = 2.5; } function g(auto& p) { p = \"s\"; } var v = 1; f(v); var w = 1; g(w); type_of(v) + \",\" + type_of(w)", "float,string", "var& and auto& keep the var");
-            check_both("function g(var& q) { q = 2.5; } function f(int& p) { g(p); } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:2", "passed on to a var& parameter");
-            check_both("class K { void set(int& p) { p = 7.9; } } var v = 1; K().set(v); type_of(v) + \":\" + to_string(v)", "int:7", "a method's parameter");
+            check_both("function g(var& q) { q = false; } function f(int& p) { g(p); } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:0", "passed on to a var& parameter");
+            check_both("class K { void set(int& p) { p = false; } } var v = 1; K().set(v); type_of(v) + \":\" + to_string(v)", "int:0", "a method's parameter");
             check_both("function f(int& p) { p = p + 1; } function h() -> int { int n = 1; f(n); f(n); return n; } to_string(h())", "3", "a typed local argument");
-            check_both("function f(int& p) { p = 2.5; } function h() -> string { var w = 1; f(w); return type_of(w) + to_string(w); } h()", "int2", "a var local argument");
-            check_both("function f(int& p) { var g = [&]() { p = 4.5; }; g(); } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:4", "captured by reference");
+            check_both("function f(int& p) { p = false; } function h() -> string { var w = 1; f(w); return type_of(w) + to_string(w); } h()", "int0", "a var local argument");
+            check_both("function f(int& p) { var g = [&]() { p = false; }; g(); } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:0", "captured by reference");
         });
 
         test("typed_field_set_field_cpp_api", [this]() {
@@ -1541,18 +1653,28 @@ public:
             )", "int:7", "JSON float into int field truncates");
         });
 
-        test("compound_fused_mixed_type_bails_to_conversion", [this, check_both]() {
+        test("compound_fused_mixed_type_bails_to_the_general_path", [this, check_both]() {
             // VM: x += f * 2.0 compiles to op_compound_fused; the int-only fast path must
-            // bail (float operand) and the general path converts each iteration (2.5 -> 2)
+            // bail (float operand) and the general path refuses the float, the int untouched
             check_both(R"(
                 function h() {
                     int x = 0;
-                    float f = 1.25;
-                    for (int i = 0; i < 4; ++i) { x += f * 2.0; }
+                    var f = 1.25;
+                    var c = "";
+                    try { for (int i = 0; i < 4; ++i) { x += f * 2.0; } } catch (e) { c = e; }
+                    return c + "|" + type_of(x) + ":" + to_string(x);
+                }
+                h()
+            )", "Cannot assign float to 'x' (declared int)|int:0", "fused mixed bails and refuses");
+            check_both(R"(
+                function h() {
+                    float x = 0;
+                    var f = 2;
+                    for (int i = 0; i < 4; ++i) { x += f * 2; }
                     return type_of(x) + ":" + to_string(x);
                 }
                 h()
-            )", "int:8", "fused mixed bails and converts");
+            )", "float:16.0", "fused mixed bails and converts");
             // Pure int fused fast path is untouched
             check_both(R"(
                 function h() {
@@ -1567,7 +1689,7 @@ public:
         // ===== TYPED CONTAINER BOUNDARIES ARE ELEMENT-CHECKED =====
         // An array/map value crossing into a concretely-typed container binding (decl,
         // assign, field write) validates every element with push's rules: exact match
-        // passes, int<->float converts, anything else raises. The stored value is
+        // passes, an int widens to float, anything else (a float into int included) raises. The stored value is
         // retagged to the declared type so later pushes stay enforced. Pre-fix, the
         // same-base fast path admitted ANY array into array<T> — a string could sit
         // behind an array<int> tag (silently breaking the parallel all-primitive proof).
@@ -1579,12 +1701,10 @@ public:
             auto [i2, v2] = both("var a = [1, \"s\", 3]; array<int> b = a; b.size()");
             check_eq(i2, v2, "mixed-into-array<int> parity");
             check(i2.find("ERROR") == 0, "mixed elements into array<int> raises");
-            check_both("var a = [1.5, 2.5]; array<int> b = a; type_of(b[0]) + \":\" + to_string(b[0]) + \",\" + to_string(b[1])",
-                       "int:1,2", "float elements truncate into array<int>");
             check_both("var a = [1, 2]; array<float> b = a; type_of(b[0]) + \":\" + to_string(b[0])",
                        "float:1.0", "int elements widen into array<float>");
-            check_both("var a = [1.5]; array<int> b = a; type_of(a[0]) + \":\" + to_string(a[0])",
-                       "float:1.5", "source unchanged after converting decl");
+            check_both("var a = [1]; array<float> b = a; type_of(a[0]) + \":\" + to_string(a[0])",
+                       "int:1", "source unchanged after converting decl");
         });
 
         test("typed_array_literal_init_converts_elements", [this, check_both]() {
@@ -1592,15 +1712,15 @@ public:
             // initializer exactly like assignment — element payloads included
             check_both("array<float> a = [1, 2, 3]; type_of(a[0]) + \":\" + to_string(a[0])",
                        "float:1.0", "literal ints become float payloads");
-            check_both("array<int> a = [1.5]; type_of(a[0]) + \":\" + to_string(a[0])",
-                       "int:1", "literal float truncates into array<int>");
+            check_both("array<int> a = [true, 2]; type_of(a[0]) + \":\" + to_string(a[0])",
+                       "int:1", "literal bool becomes an int payload");
         });
 
         test("typed_array_assign_validates_elements", [this, both, check_both]() {
             auto [i1, v1] = both("array<int> b = [1]; var a = [\"s\"]; b = a; b[0]");
             check_eq(i1, v1, "assign parity");
             check(i1.find("ERROR") == 0, "assigning string array into array<int> raises");
-            check_both("array<int> b = [1]; var a = [2.5]; b = a; to_string(b[0])", "2", "assign converts");
+            check_both("array<float> b = [1.5]; var a = [2]; b = a; type_of(b[0]) + \":\" + to_string(b[0])", "float:2.0", "assign converts");
         });
 
         test("typed_array_field_validates_elements", [this, both, check_both]() {
@@ -1611,14 +1731,15 @@ public:
             auto [i2, v2] = both("class C { array<int> f = []; } auto c = C(); var a = [1, 2]; c.f = a; c.f.push(\"s\"); c.f.size()");
             check_eq(i2, v2, "field push-after-store parity");
             check(i2.find("ERROR") == 0, "push string into stored array<int> field raises");
-            check_both("class C { array<int> f = []; } auto c = C(); var a = [2.5]; c.f = a; to_string(c.f[0])", "2", "field store converts");
+            check_both("class C { array<float> f = []; } auto c = C(); var a = [2]; c.f = a; type_of(c.f[0]) + \":\" + to_string(c.f[0])", "float:2.0", "field store converts");
+            check_both("class C { array<int> f = []; } auto c = C(); var a = [2.5]; var r = \"\"; try { c.f = a; } catch (e) { r = e; } r + \"|\" + to_string(c.f.size())", "Cannot assign array to field 'f' of C (declared array<int>)|0", "a float element is refused, the field untouched");
         });
 
         test("typed_map_decl_validates_values", [this, both, check_both]() {
             auto [i1, v1] = both("var m = {\"k\": \"s\"}; map<string, int> t = m; t.size()");
             check_eq(i1, v1, "map parity");
             check(i1.find("ERROR") == 0, "string values into map<string,int> raises");
-            check_both("var m = {\"k\": 2.5}; map<string, int> t = m; to_string(t[\"k\"])", "2", "map value converts");
+            check_both("var m = {\"k\": 2}; map<string, float> t = m; type_of(t[\"k\"]) + \":\" + to_string(t[\"k\"])", "float:2.0", "map value converts");
         });
 
         test("typed_array_var_ref_keeps_enforcement", [this, both]() {
@@ -1787,7 +1908,8 @@ public:
             const std::string M = "class M { int acc = 0; int add(int v) { acc += v; return acc; } float scale(float f, int k) { return f * k; } } M m = M(); ";
             auto q = [&](const char* tail) { return M + tail; };
             check_quad(q("int t = 0; for (int i = 0; i < 5; ++i) { t = m.add(i); } to_string(t)").c_str(), "10", "exact int args hit the memo across the loop");
-            check_quad(q("m.add(1); m.add(2.9); to_string(m.acc)").c_str(), "3", "a float into int truncates on the resolver path after a memo hit (one table)");
+            check_quad(q("m.add(1); m.add(true); to_string(m.acc)").c_str(), "2", "a bool into int converts on the resolver path after a memo hit (one table)");
+            check_quad(q("m.add(1); var x = 2.9; var caught = \"\"; try { m.add(x); } catch (e) { caught = e; } caught + \"|\" + to_string(m.acc)").c_str(), "Cannot pass float to parameter 'v' of 'add' (declared int)|1", "a var-sourced float raises the parameter's text after memo hits");
             check_quad(q("m.add(1); var x = \"x\"; var caught = \"\"; try { m.add(x); } catch (e) { caught = e; } caught").c_str(), "Cannot pass string to parameter 'v' of 'add' (declared int)", "a var-sourced rejected argument raises the parameter's text after memo hits");
             check_quad(q("to_string(m.scale(2.0, 3)) + \",\" + to_string(m.scale(2, 3))").c_str(), "6.0,6.0", "two-parameter memo: exact then int-to-float conversion");
             check_quad(q("m.add(1); m.add(2); class M { int acc = 0; int add(float v) { acc += cast<int>(v * 10.0); return acc; } } m.add(3); to_string(m.acc)").c_str(), "33", "a retyping reload invalidates the memo (the new overload runs)");
@@ -1800,12 +1922,9 @@ public:
             // exact pre-lane output of both backends. The vm branch lane answers a null
             // operand from storage (handle_equal's verdict); weak_ptr, cpp-bound and
             // operator-overloaded engines keep the general path
-            const std::string P = "class N { int a = 1; shared_ptr<N> next; N other = null; } class E { int v = 0; bool operator==(E o) { return true; } bool operator!=(E o) { return true; } } class L { shared_ptr<L> left; int f() { if (left == null) { return 1; } return 2; } int g() { if (left != null) { return 1; } return 2; } } auto n = N(); auto e = E(); auto l = L(); var v; int i = 5; float fl = 1.5; string s = \"s\"; char c = 'c'; bool b = true; array<var> arr = [1]; map<string,int> m = {\"a\": 1}; function fn() { return 1; } auto sp = shared_ptr<N>(); weak_ptr<N> w = sp; ";
+            const std::string P = "class O { int z = 0; } class N { int a = 1; shared_ptr<N> next; O other; } class E { int v = 0; bool operator==(E o) { return true; } bool operator!=(E o) { return true; } } class L { shared_ptr<L> left; int f() { if (left == null) { return 1; } return 2; } int g() { if (left != null) { return 1; } return 2; } } auto n = N(); auto e = E(); auto l = L(); var v; int i = 5; float fl = 1.5; string s = \"s\"; char c = 'c'; bool b = true; array<var> arr = [1]; map<string,int> m = {\"a\": 1}; function fn() { return 1; } auto sp = shared_ptr<N>(); weak_ptr<N> w = sp; ";
             auto q = [&](const char* tail) { return P + tail; };
-            check_quad(q("n == null").c_str(), "false", "object vs null");
-            check_quad(q("n != null").c_str(), "true", "object != null");
             check_quad(q("n.next == null").c_str(), "true", "unset shared_ptr field");
-            check_quad(q("n.other == null").c_str(), "true", "typed-null object field");
             check_quad(q("null == null").c_str(), "true", "null == null");
             check_quad(q("null != null").c_str(), "false", "null != null");
             check_quad(q("v == null").c_str(), "true", "unset var");
@@ -1822,6 +1941,9 @@ public:
                     check_eq(expected, e->execute("[[warn_mode]]; " + src).to_string(), std::string(use_vm ? "vm/warn region: " : "interp/warn region: ") + what);
                 }
             };
+            check_runtime("n == null", "false", "object vs null");
+            check_runtime("n != null", "true", "object != null");
+            check_runtime("n.other == null", "false", "class value field vs null");
             check_runtime("i == null", "false", "int vs null");
             check_runtime("fl != null", "true", "float != null");
             check_runtime("s == null", "false", "string vs null");
@@ -1830,9 +1952,9 @@ public:
             check_runtime("arr == null", "false", "array vs null");
             check_runtime("m != null", "true", "map != null");
             check_quad(q("fn == null").c_str(), "false", "function vs null");
-            check_quad(q("e == null").c_str(), "false", "class operator== is NOT consulted for a null operand");
-            check_quad(q("e != null").c_str(), "true", "class operator!= is NOT consulted for a null operand");
-            check_quad(q("null == e").c_str(), "false", "null on the left");
+            check_runtime("e == null", "false", "class operator== is NOT consulted for a null operand");
+            check_runtime("e != null", "true", "class operator!= is NOT consulted for a null operand");
+            check_runtime("null == e", "false", "null on the left");
             check_quad(q("l.f()").c_str(), "1", "method body: if (field == null) - the branch lane");
             check_quad(q("l.g()").c_str(), "2", "method body: if (field != null)");
             check_quad(q("l.left = shared_ptr<L>(); l.f()").c_str(), "2", "set shared_ptr field: == null false");
@@ -1846,9 +1968,9 @@ public:
             check_quad(q("n.next = shared_ptr<N>(); n.next != null").c_str(), "true", "assigned shared_ptr field != null");
             check_quad(q("array<var> xs = [N(), null, N()]; int cnt = 0; for (auto x : xs) { if (x != null) { cnt += 1; } } cnt").c_str(), "2", "loop guard != null over mixed elements");
             check_quad(q("array<var> xs = [N(), null, N()]; int cnt = 0; for (auto x : xs) { if (x == null) { cnt += 1; } } cnt").c_str(), "1", "loop guard == null over mixed elements");
-            check_quad(q("bool bb = (n == null); bb").c_str(), "false", "value position (binary, not the branch lane)");
+            check_runtime("bool bb = (n == null); bb", "false", "value position (binary, not the branch lane)");
             check_quad(q("bool bc = (n.next != null); bc").c_str(), "false", "value position on an unset field");
-            check_quad(q("string r = \"\"; try { throw \"boom\"; } catch (err) { r = to_string(err == null) + \",\" + to_string(n == null); } r").c_str(), "false,false", "inside a catch (catch-var gate keeps the general path)");
+            check_runtime("string r = \"\"; try { throw \"boom\"; } catch (err) { r = to_string(err == null) + \",\" + to_string(n == null); } r", "false,false", "inside a catch (catch-var gate keeps the general path)");
             check_quad(q("(null == null) == true").c_str(), "true", "nested compare");
         });
 
@@ -1901,27 +2023,27 @@ public:
             // shape) on both backends: rows are the exact pre-lane outputs. The vm's store-side
             // this-field cache lands typed enforcement + the store on the cell directly;
             // texts, conversions and value semantics must not move
-            const std::string P = "class F { int i = 1; float f = 1.5; string s = \"a\"; bool b = false; auto a = 10; var v = 0; array<int> arr = [1, 2]; F other = null; shared_ptr<F> sp; static int st = 5; string setInt(var x) { string r = \"ok\"; try { i = x; } catch (err) { r = err; } return r; } string setFloat(var x) { string r = \"ok\"; try { f = x; } catch (err) { r = err; } return r; } string setStr(var x) { string r = \"ok\"; try { s = x; } catch (err) { r = err; } return r; } string setBool(var x) { string r = \"ok\"; try { b = x; } catch (err) { r = err; } return r; } string setAuto(var x) { string r = \"ok\"; try { a = x; } catch (err) { r = err; } return r; } string setVar(var x) { string r = \"ok\"; try { v = x; } catch (err) { r = err; } return r; } string setArr(var x) { string r = \"ok\"; try { arr = x; } catch (err) { r = err; } return r; } string setOther(var x) { string r = \"ok\"; try { other = x; } catch (err) { r = err; } return r; } string setSp(var x) { string r = \"ok\"; try { sp = x; } catch (err) { r = err; } return r; } int loopStore(int n) { for (int k = 0; k < n; ++k) { i = k; f = k; } return i; } int chainStore() { i = 7; int t = i; i = t + 1; return i; } int storeResult() { int r = (i = 42); return r; } float storeResultConv() { float r = (i = 3.9); return r; } string setStatic(var x) { string r = \"ok\"; try { st = x; } catch (err) { r = err; } return r; } string dump() { return to_string(i) + \"|\" + to_string(f) + \"|\" + s + \"|\" + to_string(b) + \"|\" + to_string(a) + \"|\" + to_string(v) + \"|\" + to_string(arr.size()) + \"|\" + to_string(other == null) + \"|\" + to_string(sp == null); } } class G : F { int g = 2; string setInherited(var x) { string r = \"ok\"; try { i = x; } catch (err) { r = err; } return r; } string setG(var x) { string r = \"ok\"; try { g = x; } catch (err) { r = err; } return r; } } auto o = F(); ";
+            const std::string P = "class O { int i = 1; } class F { int i = 1; float f = 1.5; string s = \"a\"; bool b = false; auto a = 10; var v = 0; array<int> arr = [1, 2]; O other; shared_ptr<F> sp; static int st = 5; string setInt(var x) { string r = \"ok\"; try { i = x; } catch (err) { r = err; } return r; } string setFloat(var x) { string r = \"ok\"; try { f = x; } catch (err) { r = err; } return r; } string setStr(var x) { string r = \"ok\"; try { s = x; } catch (err) { r = err; } return r; } string setBool(var x) { string r = \"ok\"; try { b = x; } catch (err) { r = err; } return r; } string setAuto(var x) { string r = \"ok\"; try { a = x; } catch (err) { r = err; } return r; } string setVar(var x) { string r = \"ok\"; try { v = x; } catch (err) { r = err; } return r; } string setArr(var x) { string r = \"ok\"; try { arr = x; } catch (err) { r = err; } return r; } string setOther(var x) { string r = \"ok\"; try { other = x; } catch (err) { r = err; } return r; } string setSp(var x) { string r = \"ok\"; try { sp = x; } catch (err) { r = err; } return r; } int loopStore(int n) { for (int k = 0; k < n; ++k) { i = k; f = k; } return i; } int chainStore() { i = 7; int t = i; i = t + 1; return i; } int storeResult() { int r = (i = 42); return r; } float storeResultConv() { float r = (i = true); return r; } string setStatic(var x) { string r = \"ok\"; try { st = x; } catch (err) { r = err; } return r; } string dump() { return to_string(i) + \"|\" + to_string(f) + \"|\" + s + \"|\" + to_string(b) + \"|\" + to_string(a) + \"|\" + to_string(v) + \"|\" + to_string(arr.size()) + \"|\" + to_string(other.i) + \"|\" + to_string(sp == null); } } class G : F { int g = 2; string setInherited(var x) { string r = \"ok\"; try { i = x; } catch (err) { r = err; } return r; } string setG(var x) { string r = \"ok\"; try { g = x; } catch (err) { r = err; } return r; } } auto o = F(); ";
             auto q = [&](const char* tail) { return P + tail; };
-            check_quad(q("o.setInt(5) + \" \" + o.dump()").c_str(), "ok 5|1.5|a|false|10|0|2|true|true", "typed int field, int");
-            check_quad(q("o.setInt(2.7) + \" \" + o.dump()").c_str(), "ok 2|1.5|a|false|10|0|2|true|true", "typed int field, float truncates");
-            check_quad(q("o.setInt(\"x\") + \" \" + o.dump()").c_str(), "Cannot assign string to field 'i' of F (declared int) 1|1.5|a|false|10|0|2|true|true", "typed int field, string raises, field untouched");
-            check_quad(q("o.setInt(true) + \" \" + o.dump()").c_str(), "ok 1|1.5|a|false|10|0|2|true|true", "typed int field, bool converts");
-            check_quad(q("o.setInt(null) + \" \" + o.dump()").c_str(), "Cannot assign null to field 'i' of F (declared int) 1|1.5|a|false|10|0|2|true|true", "typed int field, null raises");
-            check_quad(q("o.setFloat(2) + \" \" + o.dump()").c_str(), "ok 1|2.0|a|false|10|0|2|true|true", "typed float field, int promotes");
-            check_quad(q("o.setFloat(\"q\") + \" \" + o.dump()").c_str(), "Cannot assign string to field 'f' of F (declared float) 1|1.5|a|false|10|0|2|true|true", "typed float field, string raises");
-            check_quad(q("o.setStr(12) + \" \" + o.dump()").c_str(), "Cannot assign int to field 's' of F (declared string) 1|1.5|a|false|10|0|2|true|true", "typed string field, int raises, field untouched");
-            check_quad(q("o.setBool(1) + \" \" + o.dump()").c_str(), "ok 1|1.5|a|true|10|0|2|true|true", "typed bool field, int converts");
-            check_quad(q("o.setAuto(2.5) + \" \" + o.dump()").c_str(), "ok 1|1.5|a|false|2|0|2|true|true", "auto field infers int from its initializer, float truncates");
-            check_quad(q("o.setAuto(\"str\") + \" \" + o.dump()").c_str(), "Cannot assign string to field 'a' of F (declared int) 1|1.5|a|false|10|0|2|true|true", "auto field rejects a string");
-            check_quad(q("o.setVar(\"anything\") + \" \" + o.setVar([1,2,3]) + \" \" + o.dump()").c_str(), "ok ok 1|1.5|a|false|10|[1, 2, 3]|2|true|true", "var field takes anything");
-            check_quad(q("o.setArr([4,5,6]) + \" \" + o.setArr([\"a\"]) + \" \" + o.setArr(7) + \" \" + o.dump()").c_str(), "ok Cannot assign array to field 'arr' of F (declared array<int>) Cannot assign int to field 'arr' of F (declared array<int>) 1|1.5|a|false|10|0|3|true|true", "typed array field: typed array ok, wrong element type and scalar raise");
-            check_quad(q("auto o2 = F(); string r1 = o.setOther(o2); o2.i = 99; r1 + \" \" + to_string(o.other.i) + \" \" + o.setOther(5)").c_str(), "ok 1 Cannot assign int to field 'other' of F (declared F)", "object field: by-value copy, scalar raises");
-            check_quad(q("o.setSp(shared_ptr<F>()) + \" \" + o.setSp(F()) + \" \" + o.setSp(3) + \" \" + o.dump()").c_str(), "ok ok Cannot assign int to field 'sp' of F (declared shared_ptr<F>) 1|1.5|a|false|10|0|2|true|false", "shared_ptr field: handle, value, scalar");
-            check_quad(q("to_string(o.loopStore(1000)) + \" \" + o.dump()").c_str(), "999 999|999.0|a|false|10|0|2|true|true", "1000 stores at one site (the cached lane)");
-            check_quad(q("to_string(o.chainStore()) + \",\" + to_string(o.storeResult()) + \",\" + to_string(o.storeResultConv()) + \",\" + to_string(o.i)").c_str(), "8,42,3.0,3", "store as expression: value is the stored (converted) value");
+            check_quad(q("o.setInt(5) + \" \" + o.dump()").c_str(), "ok 5|1.5|a|false|10|0|2|1|true", "typed int field, int");
+            check_quad(q("o.setInt(2.7) + \" \" + o.dump()").c_str(), "Cannot assign float to field 'i' of F (declared int) 1|1.5|a|false|10|0|2|1|true", "typed int field, float raises, field untouched");
+            check_quad(q("o.setInt(\"x\") + \" \" + o.dump()").c_str(), "Cannot assign string to field 'i' of F (declared int) 1|1.5|a|false|10|0|2|1|true", "typed int field, string raises, field untouched");
+            check_quad(q("o.setInt(true) + \" \" + o.dump()").c_str(), "ok 1|1.5|a|false|10|0|2|1|true", "typed int field, bool converts");
+            check_quad(q("o.setInt(null) + \" \" + o.dump()").c_str(), "Cannot assign null to field 'i' of F (declared int) 1|1.5|a|false|10|0|2|1|true", "typed int field, null raises");
+            check_quad(q("o.setFloat(2) + \" \" + o.dump()").c_str(), "ok 1|2.0|a|false|10|0|2|1|true", "typed float field, int promotes");
+            check_quad(q("o.setFloat(\"q\") + \" \" + o.dump()").c_str(), "Cannot assign string to field 'f' of F (declared float) 1|1.5|a|false|10|0|2|1|true", "typed float field, string raises");
+            check_quad(q("o.setStr(12) + \" \" + o.dump()").c_str(), "Cannot assign int to field 's' of F (declared string) 1|1.5|a|false|10|0|2|1|true", "typed string field, int raises, field untouched");
+            check_quad(q("o.setBool(1) + \" \" + o.dump()").c_str(), "ok 1|1.5|a|true|10|0|2|1|true", "typed bool field, int converts");
+            check_quad(q("o.setAuto(2.5) + \" \" + o.dump()").c_str(), "Cannot assign float to field 'a' of F (declared int) 1|1.5|a|false|10|0|2|1|true", "auto field infers int from its initializer, float raises");
+            check_quad(q("o.setAuto(\"str\") + \" \" + o.dump()").c_str(), "Cannot assign string to field 'a' of F (declared int) 1|1.5|a|false|10|0|2|1|true", "auto field rejects a string");
+            check_quad(q("o.setVar(\"anything\") + \" \" + o.setVar([1,2,3]) + \" \" + o.dump()").c_str(), "ok ok 1|1.5|a|false|10|[1, 2, 3]|2|1|true", "var field takes anything");
+            check_quad(q("o.setArr([4,5,6]) + \" \" + o.setArr([\"a\"]) + \" \" + o.setArr(7) + \" \" + o.dump()").c_str(), "ok Cannot assign array to field 'arr' of F (declared array<int>) Cannot assign int to field 'arr' of F (declared array<int>) 1|1.5|a|false|10|0|3|1|true", "typed array field: typed array ok, wrong element type and scalar raise");
+            check_quad(q("auto o2 = O(); string r1 = o.setOther(o2); o2.i = 99; r1 + \" \" + to_string(o.other.i) + \" \" + o.setOther(5) + \" \" + o.setOther(null)").c_str(), "ok 1 Cannot assign int to field 'other' of F (declared O) Cannot assign null to field 'other' of F (declared O)", "object field: by-value copy, scalar and null raise");
+            check_quad(q("o.setSp(shared_ptr<F>()) + \" \" + o.setSp(F()) + \" \" + o.setSp(3) + \" \" + o.dump()").c_str(), "ok ok Cannot assign int to field 'sp' of F (declared shared_ptr<F>) 1|1.5|a|false|10|0|2|1|false", "shared_ptr field: handle, value, scalar");
+            check_quad(q("to_string(o.loopStore(1000)) + \" \" + o.dump()").c_str(), "999 999|999.0|a|false|10|0|2|1|true", "1000 stores at one site (the cached lane)");
+            check_quad(q("to_string(o.chainStore()) + \",\" + to_string(o.storeResult()) + \",\" + to_string(o.storeResultConv()) + \",\" + to_string(o.i)").c_str(), "8,42,1.0,1", "store as expression: value is the stored (converted) value");
             check_quad(q("o.setStatic(9) + \" \" + o.setStatic(\"bad\") + \" \" + to_string(F::st)").c_str(), "ok Cannot assign string to static 'st' of F (declared int) 9", "static field stores enforce like instance fields (not the this-field lane)");
-            check_quad(q("auto g = G(); g.setInherited(11) + \" \" + g.setInherited(\"no\") + \" \" + g.dump() + \" \" + g.setG(3.2) + \" \" + to_string(g.g)").c_str(), "ok Cannot assign string to field 'i' of G (declared int) 11|1.5|a|false|10|0|2|true|true ok 3", "inherited field through a derived instance");
+            check_quad(q("auto g = G(); g.setInherited(11) + \" \" + g.setInherited(\"no\") + \" \" + g.dump() + \" \" + g.setG(3.2) + \" \" + g.setG(true) + \" \" + to_string(g.g)").c_str(), "ok Cannot assign string to field 'i' of G (declared int) 11|1.5|a|false|10|0|2|1|true Cannot assign float to field 'g' of G (declared int) ok 1", "inherited field through a derived instance");
             check_quad(q("array<F> fs = [F(), G()]; string acc = \"\"; for (auto& e : fs) { acc = acc + e.setInt(1) + \",\"; } acc = acc + to_string(fs[0].i) + to_string(fs[1].i); acc").c_str(), "ok,ok,11", "one site, two classes (polymorphic site re-arms)");
             check_quad(q("class H { int i = 0; int bump() { for (int k = 0; k < 5; ++k) { i += 1; } return i; } } auto h = H(); to_string(h.bump()) + \" \" + to_string(h.bump())").c_str(), "5 10", "compound field stores");
             check_quad(q("class R { int x = 1; int y = 2; void swap() { int t = x; x = y; y = t; } string dump() { return to_string(x) + \",\" + to_string(y); } } auto r = R(); r.swap(); r.swap(); r.swap(); r.dump()").c_str(), "2,1", "two fields swapped through a local");
@@ -1960,33 +2082,33 @@ public:
             // Every supported static-store spelling (C::s anywhere; bare s in instance methods,
             // constructors and static methods) runs the instance-field store table on both
             // backends: same conversions, same text, the static untouched on a miss
-            const std::string P = "class C { static int i = 1; static float f = 1.5; static string s = \"a\"; static bool b = false; static auto a = 10; static var v = 0; static array<int> arr = [1, 2]; static C other = null; static shared_ptr<C> sp; static weak_ptr<C> w; int x = 0; C() {} C(var val) { i = val; } string setQ(var val) { string r = \"ok\"; try { i = val; } catch (err) { r = err; } return r; } static string setS(var val) { string r = \"ok\"; try { i = val; } catch (err) { r = err; } return r; } string dump() { return to_string(i) + \"|\" + to_string(f) + \"|\" + s + \"|\" + to_string(b) + \"|\" + to_string(a) + \"|\" + to_string(v) + \"|\" + to_string(arr.size()) + \"|\" + to_string(other == null) + \"|\" + to_string(sp == null) + \"|\" + to_string(w == null); } } function setI(var val) { string r = \"ok\"; try { C::i = val; } catch (err) { r = err; } return r; } function setF(var val) { string r = \"ok\"; try { C::f = val; } catch (err) { r = err; } return r; } function setStr(var val) { string r = \"ok\"; try { C::s = val; } catch (err) { r = err; } return r; } function setB(var val) { string r = \"ok\"; try { C::b = val; } catch (err) { r = err; } return r; } function setA(var val) { string r = \"ok\"; try { C::a = val; } catch (err) { r = err; } return r; } function setV(var val) { string r = \"ok\"; try { C::v = val; } catch (err) { r = err; } return r; } function setArr(var val) { string r = \"ok\"; try { C::arr = val; } catch (err) { r = err; } return r; } function setOther(var val) { string r = \"ok\"; try { C::other = val; } catch (err) { r = err; } return r; } function setSp(var val) { string r = \"ok\"; try { C::sp = val; } catch (err) { r = err; } return r; } function setW(var val) { string r = \"ok\"; try { C::w = val; } catch (err) { r = err; } return r; } auto o = C(); ";
+            const std::string P = "class O { int x = 0; O() {} O(var val) { x = 7; } } class C { static int i = 1; static float f = 1.5; static string s = \"a\"; static bool b = false; static auto a = 10; static var v = 0; static array<int> arr = [1, 2]; static O other; static shared_ptr<C> sp; static weak_ptr<C> w; int x = 0; C() {} C(var val) { i = val; } string setQ(var val) { string r = \"ok\"; try { i = val; } catch (err) { r = err; } return r; } static string setS(var val) { string r = \"ok\"; try { i = val; } catch (err) { r = err; } return r; } string dump() { return to_string(i) + \"|\" + to_string(f) + \"|\" + s + \"|\" + to_string(b) + \"|\" + to_string(a) + \"|\" + to_string(v) + \"|\" + to_string(arr.size()) + \"|\" + to_string(other.x) + \"|\" + to_string(sp == null) + \"|\" + to_string(w == null); } } function setI(var val) { string r = \"ok\"; try { C::i = val; } catch (err) { r = err; } return r; } function setF(var val) { string r = \"ok\"; try { C::f = val; } catch (err) { r = err; } return r; } function setStr(var val) { string r = \"ok\"; try { C::s = val; } catch (err) { r = err; } return r; } function setB(var val) { string r = \"ok\"; try { C::b = val; } catch (err) { r = err; } return r; } function setA(var val) { string r = \"ok\"; try { C::a = val; } catch (err) { r = err; } return r; } function setV(var val) { string r = \"ok\"; try { C::v = val; } catch (err) { r = err; } return r; } function setArr(var val) { string r = \"ok\"; try { C::arr = val; } catch (err) { r = err; } return r; } function setOther(var val) { string r = \"ok\"; try { C::other = val; } catch (err) { r = err; } return r; } function setSp(var val) { string r = \"ok\"; try { C::sp = val; } catch (err) { r = err; } return r; } function setW(var val) { string r = \"ok\"; try { C::w = val; } catch (err) { r = err; } return r; } auto o = C(); ";
             auto q = [&](const char* tail) { return P + tail; };
-            const std::string base = "1|1.5|a|false|10|0|2|true|true|true";
-            check_quad(q("setI(5) + \" \" + o.dump()").c_str(), "ok 5|1.5|a|false|10|0|2|true|true|true", "C::i, int");
-            check_quad(q("setI(2.7) + \" \" + o.dump()").c_str(), "ok 2|1.5|a|false|10|0|2|true|true|true", "C::i, float truncates");
+            const std::string base = "1|1.5|a|false|10|0|2|0|true|true";
+            check_quad(q("setI(5) + \" \" + o.dump()").c_str(), "ok 5|1.5|a|false|10|0|2|0|true|true", "C::i, int");
+            check_quad(q("setI(2.7) + \" \" + o.dump()").c_str(), "Cannot assign float to static 'i' of C (declared int) " + base, "C::i, float raises, static untouched");
             check_quad(q("setI(\"x\") + \" \" + o.dump()").c_str(), "Cannot assign string to static 'i' of C (declared int) " + base, "C::i, string raises, static untouched");
-            check_quad(q("setI(true) + \" \" + o.dump()").c_str(), "ok 1|1.5|a|false|10|0|2|true|true|true", "C::i, bool converts");
+            check_quad(q("setI(true) + \" \" + o.dump()").c_str(), "ok 1|1.5|a|false|10|0|2|0|true|true", "C::i, bool converts");
             check_quad(q("setI(null) + \" \" + o.dump()").c_str(), "Cannot assign null to static 'i' of C (declared int) " + base, "C::i, null raises");
             check_quad(q("setI([1]) + \" \" + o.dump()").c_str(), "Cannot assign array to static 'i' of C (declared int) " + base, "C::i, array raises");
             check_quad(q("setI(C()) + \" \" + o.dump()").c_str(), "Cannot assign C to static 'i' of C (declared int) " + base, "C::i, object raises");
-            check_quad(q("o.setQ(5) + \" \" + o.setQ(2.7) + \" \" + o.setQ(\"x\") + \" \" + to_string(C::i)").c_str(), "ok ok Cannot assign string to static 'i' of C (declared int) 2", "bare static in an instance method");
-            check_quad(q("C::setS(6) + \" \" + C::setS(3.9) + \" \" + C::setS(\"x\") + \" \" + to_string(C::i)").c_str(), "ok ok Cannot assign string to static 'i' of C (declared int) 3", "bare static in a static method");
+            check_quad(q("o.setQ(5) + \" \" + o.setQ(2.7) + \" \" + o.setQ(\"x\") + \" \" + to_string(C::i)").c_str(), "ok Cannot assign float to static 'i' of C (declared int) Cannot assign string to static 'i' of C (declared int) 5", "bare static in an instance method");
+            check_quad(q("C::setS(6) + \" \" + C::setS(3.9) + \" \" + C::setS(\"x\") + \" \" + to_string(C::i)").c_str(), "ok Cannot assign float to static 'i' of C (declared int) Cannot assign string to static 'i' of C (declared int) 6", "bare static in a static method");
             check_quad(q("C(7); string r = \"ok\"; try { C(\"x\"); } catch (err) { r = err; } r + \" \" + to_string(C::i)").c_str(), "Cannot assign string to static 'i' of C (declared int) 7", "bare static in a constructor");
             check_quad(q("auto lam = [](var val) { string r = \"ok\"; try { C::i = val; } catch (err) { r = err; } return r; }; lam(\"x\") + \" \" + lam(3) + \" \" + to_string(C::i)").c_str(), "Cannot assign string to static 'i' of C (declared int) ok 3", "C::i inside a lambda");
-            check_quad(q("var vv = 2.9; C::i = vv; to_string(C::i) + \"|\" + type_of(C::i)").c_str(), "2|int", "C::i at top level keeps the declared type");
-            check_quad(q("setF(2) + \" \" + setF(\"q\") + \" \" + o.dump()").c_str(), "ok Cannot assign string to static 'f' of C (declared float) 1|2.0|a|false|10|0|2|true|true|true", "float static: int promotes, string raises");
-            check_quad(q("setStr(12) + \" \" + setStr(null) + \" \" + setStr(C()) + \" \" + o.dump()").c_str(), "Cannot assign int to static 's' of C (declared string) Cannot assign null to static 's' of C (declared string) Cannot assign C to static 's' of C (declared string) 1|1.5|a|false|10|0|2|true|true|true", "a string static takes text only (the instance-field row)");
-            check_quad(q("setB(1) + \" \" + o.dump()").c_str(), "ok 1|1.5|a|true|10|0|2|true|true|true", "bool static: int converts");
-            check_quad(q("setA(2.5) + \" \" + setA(\"str\") + \" \" + o.dump()").c_str(), "ok Cannot assign string to static 'a' of C (declared int) 1|1.5|a|false|2|0|2|true|true|true", "auto static infers int from its initializer");
-            check_quad(q("setV(\"anything\") + \" \" + setV([1, 2, 3]) + \" \" + o.dump()").c_str(), "ok ok 1|1.5|a|false|10|[1, 2, 3]|2|true|true|true", "var static takes anything");
-            check_quad(q("setArr([4, 5, 6]) + \" \" + setArr([\"a\"]) + \" \" + setArr(7) + \" \" + o.dump()").c_str(), "ok Cannot assign array to static 'arr' of C (declared array<int>) Cannot assign int to static 'arr' of C (declared array<int>) 1|1.5|a|false|10|0|3|true|true|true", "array<int> static: typed array ok, wrong element type and scalar raise");
-            check_quad(q("auto o2 = C(); string r1 = setOther(o2); o2.x = 99; r1 + \" \" + to_string(C::other.x) + \" \" + setOther(5)").c_str(), "ok 0 ok", "object static: by-value copy, a scalar converts through C(var)");
-            check_quad(q("setSp(shared_ptr<C>()) + \" \" + setSp(C()) + \" \" + setSp(3) + \" \" + o.dump()").c_str(), "ok ok Cannot assign int to static 'sp' of C (declared shared_ptr<C>) 1|1.5|a|false|10|0|2|true|false|true", "shared_ptr static: handle, value, scalar");
-            check_quad(q("auto keep = shared_ptr<C>(); setW(keep) + \" \" + setW(C()) + \" \" + o.dump()").c_str(), "ok Cannot assign C to static 'w' of C (declared weak_ptr<C>) 1|1.5|a|false|10|0|2|true|true|false", "weak_ptr static: the instance-field rows (a shared handle downgrades, a value raises)");
+            check_quad(q("var vv = true; C::i = vv; to_string(C::i) + \"|\" + type_of(C::i)").c_str(), "1|int", "C::i at top level keeps the declared type");
+            check_quad(q("setF(2) + \" \" + setF(\"q\") + \" \" + o.dump()").c_str(), "ok Cannot assign string to static 'f' of C (declared float) 1|2.0|a|false|10|0|2|0|true|true", "float static: int promotes, string raises");
+            check_quad(q("setStr(12) + \" \" + setStr(null) + \" \" + setStr(C()) + \" \" + o.dump()").c_str(), "Cannot assign int to static 's' of C (declared string) Cannot assign null to static 's' of C (declared string) Cannot assign C to static 's' of C (declared string) 1|1.5|a|false|10|0|2|0|true|true", "a string static takes text only (the instance-field row)");
+            check_quad(q("setB(1) + \" \" + o.dump()").c_str(), "ok 1|1.5|a|true|10|0|2|0|true|true", "bool static: int converts");
+            check_quad(q("setA(2.5) + \" \" + setA(\"str\") + \" \" + o.dump()").c_str(), "Cannot assign float to static 'a' of C (declared int) Cannot assign string to static 'a' of C (declared int) 1|1.5|a|false|10|0|2|0|true|true", "auto static infers int from its initializer");
+            check_quad(q("setV(\"anything\") + \" \" + setV([1, 2, 3]) + \" \" + o.dump()").c_str(), "ok ok 1|1.5|a|false|10|[1, 2, 3]|2|0|true|true", "var static takes anything");
+            check_quad(q("setArr([4, 5, 6]) + \" \" + setArr([\"a\"]) + \" \" + setArr(7) + \" \" + o.dump()").c_str(), "ok Cannot assign array to static 'arr' of C (declared array<int>) Cannot assign int to static 'arr' of C (declared array<int>) 1|1.5|a|false|10|0|3|0|true|true", "array<int> static: typed array ok, wrong element type and scalar raise");
+            check_quad(q("auto o2 = O(); string r1 = setOther(o2); o2.x = 99; r1 + \" \" + to_string(C::other.x) + \" \" + setOther(5) + \" \" + to_string(C::other.x) + \" \" + setOther(null)").c_str(), "ok 0 ok 7 Cannot assign null to static 'other' of C (declared O)", "object static: by-value copy, a scalar converts through O(var), null raises");
+            check_quad(q("setSp(shared_ptr<C>()) + \" \" + setSp(C()) + \" \" + setSp(3) + \" \" + o.dump()").c_str(), "ok ok Cannot assign int to static 'sp' of C (declared shared_ptr<C>) 1|1.5|a|false|10|0|2|0|false|true", "shared_ptr static: handle, value, scalar");
+            check_quad(q("auto keep = shared_ptr<C>(); setW(keep) + \" \" + setW(C()) + \" \" + o.dump()").c_str(), "ok Cannot assign C to static 'w' of C (declared weak_ptr<C>) 1|1.5|a|false|10|0|2|0|true|false", "weak_ptr static: the instance-field rows (a shared handle downgrades, a value raises)");
             check_quad("class P { int v = 1; } class S { static shared_ptr<P> p; } auto h = shared_ptr<P>(); S::p = h; h.v = 5; to_string(S::p.v)", "5", "shared_ptr static shares the handle on both backends");
             check_quad(q("int r = (C::i = 42); to_string(r)").c_str(), "42", "store as expression");
-            check_quad(q("float r = (C::i = 3.9); to_string(r) + \"|\" + to_string(C::i)").c_str(), "3.0|3", "store as expression yields the stored (converted) value");
+            check_quad(q("float r = (C::i = true); to_string(r) + \"|\" + to_string(C::i)").c_str(), "1.0|1", "store as expression yields the stored (converted) value");
         });
 
         test("static_compound_battery", [check_quad, check_quad_error]() {
@@ -1999,7 +2121,7 @@ public:
             check_quad(q("C::i *= 2; to_string(C::i)").c_str(), "2", "*=");
             check_quad(q("C::i = 8; C::i /= 2; to_string(C::i) + \"|\" + type_of(C::i)").c_str(), "4|int", "/= converts back to the declared int");
             check_quad(q("C::i = 7; C::i %= 3; to_string(C::i)").c_str(), "1", "%=");
-            check_quad(q("C::i += 1.5; to_string(C::i) + \"|\" + type_of(C::i)").c_str(), "2|int", "int static += float truncates back to int");
+            check_quad(q("string r = \"ok\"; try { C::i += L(1.5); } catch (err) { r = err; } r + \" \" + to_string(C::i) + \"|\" + type_of(C::i)").c_str(), "Cannot assign float to static 'i' of C (declared int) 1|int", "int static += float raises, static untouched");
             check_quad(q("C::v += 1.5; to_string(C::v) + \"|\" + type_of(C::v)").c_str(), "2.5|float", "var static += float becomes float");
             check_quad(q("C::f *= 2; to_string(C::f)").c_str(), "3.0", "float static *=");
             check_quad(q("C::s += \"b\"; C::s").c_str(), "ab", "string static concat");
@@ -2029,20 +2151,20 @@ public:
             check_quad("class C { static int s; } to_string(C::s)", "0", "a typed static without an initializer is its type's zero");
             check_quad("class C { static var v = null; } to_string(C::v == null)", "true", "null var static reads");
             check_quad("class P { int a = 0; } class C { static shared_ptr<P> p; } to_string(C::p == null)", "true", "null shared_ptr static reads");
-            check_quad("class P { int a = 0; } class C { static P obj; static P none = null; } to_string(C::obj.a) + \",\" + to_string(C::none == null)", "0,true", "a class-typed static default-constructs; = null spells a null one");
+            check_quad("class P { int a = 0; } class C { static P obj; } to_string(C::obj.a)", "0", "a class-typed static default-constructs");
             check_quad("function L(var x) { return x; } class C { static int s; } C::s = L(4); string r = \"ok\"; try { C::s = L(\"x\"); } catch (err) { r = err; } to_string(C::s) + \" \" + r", "4 Cannot assign string to static 's' of C (declared int)", "a null-initialized static still enforces its declared type");
-            check_quad("function L(var x) { return x; } class C { static auto a = 2; } C::a = L(2.5); string r = \"ok\"; try { C::a = L(\"str\"); } catch (err) { r = err; } to_string(C::a) + \" \" + r", "2 Cannot assign string to static 'a' of C (declared int)", "auto static enforces the inferred int");
+            check_quad("function L(var x) { return x; } class C { static auto a = 2; } C::a = L(3); string r = \"ok\"; try { C::a = L(\"str\"); } catch (err) { r = err; } to_string(C::a) + \" \" + r", "3 Cannot assign string to static 'a' of C (declared int)", "auto static enforces the inferred int");
         });
 
         test("static_spellings_rejected", [check_quad_error, check_quad_runtime, check_quad_error_text]() {
             // `C.s` and `this.s` are not static spellings: their read and write errors stay,
-            // byte-identical across backends (the write raises a STRING, never a bool)
+            // byte-identical across backends (the write raises an error, never a bool)
             const std::string P = "class C { static int s = 0; int q = 1; string viaThis() { string r = \"ok\"; try { this.s = 1; } catch (err) { r = type_of(err) + \":\" + to_string(err); } return r; } string readThis() { string r = \"ok\"; try { int t = this.s; } catch (err) { r = to_string(err); } return r; } } ";
             check_quad_error("class C { static int s = 0; } C.s", "dot read on a class name");
-            check_quad_runtime("class C { static int s = 0; } string r = \"\"; try { C.s = 8; } catch (err) { r = type_of(err) + \":\" + to_string(err); } r + \" \" + to_string(C::s)", "string:'C' is a class; use C::s 0", "dot store on a class name");
+            check_quad_runtime("class C { static int s = 0; } string r = \"\"; try { C.s = 8; } catch (err) { r = type_of(err) + \":\" + to_string(err); } r + \" \" + to_string(C::s)", "error:'C' is a class; use C::s 0", "dot store on a class name");
             check_quad_error("class C { static int s = 0; } C.s += 1", "dot compound on a class name");
             check_quad_error("class C { static int s = 0; } C.s++", "dot ++ on a class name");
-            check_quad_runtime((P + "auto o = C(); o.viaThis() + \" \" + to_string(C::s)").c_str(), "string:Cannot assign to 's': C has no such member 0", "this.s store");
+            check_quad_runtime((P + "auto o = C(); o.viaThis() + \" \" + to_string(C::s)").c_str(), "error:Cannot assign to 's': C has no such member 0", "this.s store");
             check_quad_runtime((P + "auto o = C(); o.readThis()").c_str(), "C has no member 's'", "this.s read");
             check_quad_error_text("class S { private: static int counter = 0; public: static int peek() { return counter; } } S::counter = 5", "Cannot access private member 'counter' of class 'S'", "private static store is refused before any conversion");
         });
@@ -2127,10 +2249,10 @@ public:
         test("typed_storage_reads_and_stores", [check_quad, check_quad_error]() {
             check_quad("array<int> a = [1,2,3]; `${to_string(a[0])},${to_string(a[2])}`", "1,3", "reads");
             check_quad("array<int> a = [1,2,3]; a[1] = 9; to_string(a[1])", "9", "store");
-            check_quad("array<int> a = [1]; a[0] = 2.7; `${type_of(a[0])}:${to_string(a[0])}`", "int:2", "store converts");
+            check_quad("array<int> a = [1]; a[0] = true; `${type_of(a[0])}:${to_string(a[0])}`", "int:1", "store converts");
             check_quad("array<float> a = [1.5]; a[0] = 2; `${type_of(a[0])}:${to_string(a[0])}`", "float:2.0", "float store widens");
-            check_quad("array<int> a = [10]; a[0] += 2.5; `${type_of(a[0])}:${to_string(a[0])}`", "int:12", "compound converts");
-            check_quad("array<int> a = [10]; a[0] %= 4.5; to_string(a[0])", "1", "compound modulo");
+            check_quad("array<float> a = [10]; a[0] += 2; `${type_of(a[0])}:${to_string(a[0])}`", "float:12.0", "compound converts");
+            check_quad("array<int> a = [10]; a[0] %= 4; to_string(a[0])", "2", "compound modulo");
             // byte kinds (bool/char buffers): reads, stores, push, sort, reverse, copies, json
             check_quad("array<bool> f = [true, false, true]; f[1] = true; to_string(f[0]) + to_string(f[1]) + to_string(f.size())", "truetrue3", "bool buffer store/read");
             check_quad("array<bool> f = []; f.push(false); f.push(true); f.sort((a, b) => !a && b); to_string(f[0]) + to_string(f[1])", "falsetrue", "bool buffer push/sort");
@@ -2200,9 +2322,9 @@ public:
             expect(caught("array<int8> b = [0]; int v = -129; b[0] = v"), "Cannot store -129 in array<int8> (-128..127)", "int8 below");
             expect(caught("array<int8> b = []; int v = 128; b.push(v)"), "Cannot store 128 in array<int8> (-128..127)", "push above the range");
             expect("array<uint8> b = []; for (int i = 0; i < 10; i++) { b.push(i * 25); } int s = 0; for (int i = 0; i < b.size(); i++) { s += b[i]; } to_string(s) + \" \" + to_string(b[9])", "1125 225", "push and read in counted loops");
-            expect("array<uint8> b = [0, 0, 0]; b[0] = 7.9; b[1] = true; b[2] = false; to_json(b)", "[7,1,0]", "float and bool convert");
-            expect(caught("array<uint8> b = [0]; float f = 300.5; b[0] = f"), "Cannot store 300 in array<uint8> (0..255)", "a float converts then meets the range");
-            expect(caught("array<uint8> b = [0]; float f = 1e300; b[0] = f"), "Cannot convert float to integer: non-finite or out of range", "a float outside int");
+            expect("array<uint8> b = [0, 0, 0]; b[0] = cast<int>(7.9); b[1] = true; b[2] = false; to_json(b)", "[7,1,0]", "a cast float and bools convert");
+            expect(caught("array<uint8> b = [0]; float f = 300.5; b[0] = cast<int>(f)"), "Cannot store 300 in array<uint8> (0..255)", "a cast float meets the range");
+            expect(caught("array<uint8> b = [0]; float f = 1e300; b[0] = cast<int>(f)"), "Cannot convert float to integer: non-finite or out of range", "a cast float outside int");
             expect("array<uint8> b = [250]; b[0] += 5; to_string(b[0])", "255", "a compound inside the range");
             expect(caught("array<uint8> b = [255]; b[0] += 1"), "Cannot store 256 in array<uint8> (0..255)", "a compound past the range");
             expect(caught("array<uint8> b = [255]; b[0]++"), "Cannot store 256 in array<uint8> (0..255)", "++ past the range");
@@ -2218,7 +2340,7 @@ public:
             expect(caught("array<int> x = [1, 300]; array<uint8> b = x"), "Cannot store 300 in array<uint8> (0..255)", "array<uint8> from an int past the range");
             expect(caught("array<int8> s = [-1]; array<uint8> b = s"), "Cannot store -1 in array<uint8> (0..255)", "array<uint8> from array<int8>");
             expect("array<uint8> u = [127]; array<int8> s = u; to_json(s)", "[127]", "array<int8> from array<uint8> in range");
-            expect("array<float> f = [1.9, 2.1]; array<uint8> b = f; to_json(b)", "[1,2]", "array<uint8> from array<float>");
+            expect(caught("var f = [1.9, 2.1]; array<uint8> b = f"), "Cannot store float in array<uint8>", "array<uint8> refuses var-held floats");
             expect("array<uint8> b = [5]; array<var> v = b; v.push(\"s\"); to_json(v) + \" \" + to_json(b)", "[5,\"s\"] [5]", "array<var> from array<uint8>");
             expect("var v = [1, 2, 3]; array<uint8> b = v; to_json(b)", "[1,2,3]", "array<uint8> from an untyped array");
             expect(caught("array<char> c = ['a']; var cv = c; array<uint8> b = cv"), "Cannot store char in array<uint8>", "a char does not convert");
@@ -2303,15 +2425,15 @@ public:
             check_quad("array<int> a = [1,2,3]; var s = 0; for (auto x : a) { s += x; } to_string(s)", "6", "range-for copy");
             check_quad("array<int> a = [1,2,3]; for (auto& x : a) { x *= 2; } to_string(a[0]) + to_string(a[2])", "26", "range-for ref mutates");
             check_quad("array<int> a = [5]; var& r = a[0]; r = 9; to_string(a[0])", "9", "var& element write");
-            check_quad("array<int> a = [5]; var& r = a[0]; r += 2.5; type_of(a[0]) + \":\" + to_string(a[0])", "int:7", "ref compound converts");
+            check_quad("array<float> a = [5]; var& r = a[0]; r += 2; type_of(a[0]) + \":\" + to_string(a[0])", "float:7.0", "ref compound converts");
             check_quad("array<int> a = [5]; var& r = a[0]; r++; to_string(a[0]) + to_string(r)", "66", "ref increment commits");
             check_quad("array<float> a = [1.5]; var& r = a[0]; r--; to_string(a[0])", "0.5", "float ref decrement");
             check_quad(R"(
-                array<int> a = [10];
-                function f(int& r) { r += 2.5; }
+                array<float> a = [10];
+                function f(float& r) { r += 2; }
                 f(a[0]);
                 type_of(a[0]) + ":" + to_string(a[0])
-            )", "int:12", "int& param through element");
+            )", "float:12.0", "float& param through element");
             check_quad("array<int> a = [1,2]; var [x, y] = a; to_string(x) + to_string(y)", "12", "destructure");
         });
 
@@ -2375,8 +2497,8 @@ public:
 			// element coercion between primitive buffers, independent both ways
 			check_quad("array<int> ints = [1, 2]; array<float> fs = ints; fs.push(3.5); ints.push(7); to_json(fs) + \"|\" + type_of(fs[0]) + \"|\" + to_json(ints)",
 					   "[1.0,2.0,3.5]|float|[1,2,7]", "array<int> -> array<float>");
-			check_quad("array<float> fs = [1.5, 2.5]; array<int> ints = fs; ints.push(3); to_json(ints) + \"|\" + type_of(ints[0]) + \"|\" + to_json(fs)",
-					   "[1,2,3]|int|[1.5,2.5]", "array<float> -> array<int>");
+			check_quad("array<int> ints = [1, 2]; array<float> fs = ints; fs.push(3.5); to_json(fs) + \"|\" + type_of(fs[0]) + \"|\" + to_json(ints)",
+					   "[1.0,2.0,3.5]|float|[1,2]", "array<int> -> array<float>");
 			// mismatches keep the documented boundary text on both backends
 			auto mixed = quad("array<var> m = [1, \"two\"]; array<int> ints = m; ints.size()");
 			check_eq(mixed[0], mixed[1], "mixed vector -> array<int> parity");
@@ -2441,7 +2563,7 @@ public:
             check_quad("array<int> ints = [1, 2, 3]; class B { int x = 0; } class C : B { array<int> f = ints; } B b = B(); extend(b, C); b.f.push(4); to_json(ints) + \"|\" + to_json(b.f)",
                        "[1,2,3]|[1,2,3,4]", "extend() runs the same pass");
             // the field table still converts and rejects with its own text
-            check_quad("float gf = 2.5; class C { int f = gf; } C c = C(); type_of(c.f) + \":\" + to_string(c.f)", "int:2", "conversion through the field table");
+            check_quad("int gi = 2; class C { float f = gi; } C c = C(); type_of(c.f) + \":\" + to_string(c.f)", "float:2.0", "conversion through the field table");
             auto rej = quad("var gs = \"s\"; class CD { int f = gs; } CD cd = CD(); cd.f");
             check_eq(rej[0], rej[1], "rejection parity");
             check(rej[0].find("Cannot assign string to field 'f' of CD (declared int)") != std::string::npos, "rejection keeps the field-store text: " + rej[0]);
@@ -2599,7 +2721,7 @@ public:
             // mismatching store that must take the ladder behind the (now stale) proof
             struct kind_row { const char* type; const char* a; const char* b; const char* mismatch; const char* expect; const char* expect_mismatch; };
             const kind_row rows[] = {
-                {"int",    "1",     "2",     "2.5", "int:2:int:2:2:1:2",                      "int:2:int:2"},
+                {"int",    "1",     "2",     "true", "int:2:int:2:2:1:2",                     "int:1:int:1"},
                 {"float",  "1.5",   "2.5",   "3",   "float:2.5:float:2.5:2.5:1.5:2.5", "float:3.0:float:3.0"},
                 {"bool",   "true",  "false", "1",   "bool:false:bool:false:false:true:false", "bool:true:bool:true"},
                 {"char",   "'a'",   "'b'",   "65",  "char:b:char:b:b:a:b",                    ""},
@@ -2899,9 +3021,10 @@ public:
                 "var m1 = \"\"; try { c.b = -1; m1 = \"stored\"; } catch (err1) { m1 = err1; }\n"
                 "var m2 = \"\"; try { c.b = \"str\"; m2 = \"stored\"; } catch (err2) { m2 = err2; }\n"
                 "var m3 = \"\"; try { c.b = 1.5; m3 = \"stored\"; } catch (err3) { m3 = err3; }\n"
-                "m1 + \"|\" + m2 + \"|\" + m3 + \"|\" + to_string(c.raw()) + \"|\" + to_string(c.b)");
+                "var m4 = \"\"; try { c.b = true; m4 = \"stored\"; } catch (err4) { m4 = err4; }\n"
+                "m1 + \"|\" + m2 + \"|\" + m3 + \"|\" + m4 + \"|\" + to_string(c.raw()) + \"|\" + to_string(c.b)");
             check_eq(i_out, v_out, "setter error texts agree across backends");
-            check_eq(std::string("negative|Cannot pass string to parameter 'v' of '_set_b' (declared int)|stored|10|10"), i_out, "script throw, parameter rejection, float->int conversion");
+            check_eq(std::string("negative|Cannot pass string to parameter 'v' of '_set_b' (declared int)|Cannot pass float to parameter 'v' of '_set_b' (declared int)|stored|10|10"), i_out, "script throw, parameter rejections, bool->int conversion");
         });
 
         test("accessor_ref_binding_is_non_lvalue", [check_both]() {
@@ -2971,29 +3094,47 @@ public:
             )JAI", "52.5truec[1]D{}7", "cast<string> and to_string stringify anything");
         });
 
-        test("typed_slot_bool_is_truthiness_everywhere", [check_both]() {
+        test("typed_slot_bool_is_truthiness_everywhere", [this, check_both, both]() {
             check_both(R"JAI(
                 class D {} class B { bool to_bool() { return false; } } class C { int a = 0; }
                 bool b(bool x) { return x; }
                 string j(bool v) { return to_string(v) + ","; }
-                j(b(5)) + j(b(0)) + j(b(2.5)) + j(b("")) + j(b("a")) + j(b(null)) + j(b([])) + j(b([1])) + j(b(D())) + j(b(B())) + j(b(shared_ptr<C>()))
+                var es = ""; var sa = "a"; var ea = []; var a1 = [1];
+                j(b(5)) + j(b(0)) + j(b(2.5)) + j(b(es)) + j(b(sa)) + j(b(null)) + j(b(ea)) + j(b(a1)) + j(b(D())) + j(b(B())) + j(b(shared_ptr<C>()))
             )JAI", "true,false,true,false,true,false,false,true,true,false,true,", "bool parameter: is_truthy rows incl. to_bool()");
             check_both(R"JAI(
                 class D {} class B { bool to_bool() { return false; } }
-                bool r1() { return 5; } bool r2() { return ""; } bool r3() { return D(); } bool r4() { return B(); } bool r5() { return [1]; }
+                bool r1() { return 5; } bool r2() { var s = ""; return s; } bool r3() { return D(); } bool r4() { return B(); } bool r5() { var a = [1]; return a; }
                 to_string(r1()) + "," + to_string(r2()) + "," + to_string(r3()) + "," + to_string(r4()) + "," + to_string(r5())
             )JAI", "true,false,true,false,true", "bool return: is_truthy rows");
             check_both(R"JAI(
                 class D {} class B { bool to_bool() { return false; } }
                 class H { bool f = false; }
                 auto h = H();
-                h.f = [1]; string acc = to_string(h.f);
+                var a1 = [1]; var m1 = {"k": 1}; var ea = [];
+                h.f = a1; string acc = to_string(h.f);
                 h.f = D(); acc = acc + "," + to_string(h.f);
                 h.f = B(); acc = acc + "," + to_string(h.f);
-                h.f = {"k": 1}; acc = acc + "," + to_string(h.f);
-                h.f = []; acc = acc + "," + to_string(h.f);
+                h.f = m1; acc = acc + "," + to_string(h.f);
+                h.f = ea; acc = acc + "," + to_string(h.f);
                 acc
-            )JAI", "true,true,false,true,false", "bool field: containers and objects convert like a bool local");
+            )JAI", "true,true,false,true,false", "bool field: var-held containers and objects convert like a bool local");
+            const std::string hint = ": write !x.empty() or an explicit comparison";
+            const std::pair<const char*, std::string> declared_rows[] = {
+                {"bool b = \"a\";", "cannot initialize 'b' declared 'bool' with 'string'" + hint},
+                {"utf8_string u = \"a\"; bool b = u;", "cannot initialize 'b' declared 'bool' with 'utf8_string'" + hint},
+                {"bool b = false; b = [1];", "cannot assign 'array' to 'b' declared 'bool'" + hint},
+                {"bool b = false; b = {\"k\": 1};", "cannot assign 'map' to 'b' declared 'bool'" + hint},
+                {"bool p(bool x) { return x; } p(\"a\");", "argument 1 of 'p': cannot pass 'string' to 'x' declared 'bool'" + hint},
+                {"bool r() { return \"\"; }", "cannot return 'string' from 'r' declared to return 'bool'" + hint},
+                {"class H { bool f = false; } auto h = H(); h.f = [1];", "cannot assign 'array' to field 'f' declared 'bool'" + hint},
+            };
+            for (const auto& [src, text] : declared_rows) {
+                auto [si, sv] = both(src);
+                check_eq(si, sv, std::string("load listing parity: ") + src);
+                check_true(si.find("ERROR: static check failed") == 0 && si.find(text) != std::string::npos, std::string("load error for ") + src + ": " + si);
+            }
+            check_both("string s = \"a\"; array<int> xs = []; int n = 0; if (s) { n += 1; } if (!xs) { n += 2; } if (s && !xs) { n += 4; } to_string(n)", "7", "conditions keep truthiness for declared text and containers");
             check_both(R"JAI(
                 class B { bool to_bool() { return false; } }
                 bool p(bool x) { return x; }
@@ -3054,9 +3195,9 @@ public:
             )JAI", "2,3,0,4", "a C declaration from a shared_ptr<C> handle copies the pointee, as C x = *h does");
             auto [i_out, v_out] = both(R"JAI(
                 class C { int a = 0; C() {} C(int v) { a = v; } }
-                string pt(C c) { return type_of(c) + ":" + to_string(c == null); }
+                string pt(C c) { return type_of(c) + ":" + to_string(c.a); }
                 C d1 = new C(2); C d2 = shared_ptr<C>();
-                string decl = type_of(d1) + ":" + to_string(d1 == null) + "|" + type_of(d2) + ":" + to_string(d2 == null);
+                string decl = type_of(d1) + ":" + to_string(d1.a) + "|" + type_of(d2) + ":" + to_string(d2.a);
                 string param = pt(new C(2)) + "|" + pt(shared_ptr<C>());
                 to_string(decl == param) + " " + decl
             )JAI");
@@ -3079,10 +3220,10 @@ public:
         test("typed_slot_no_chained_conversion_anywhere", [check_both]() {
             check_both(R"JAI(
                 class TA { int v = 1; } class TB { int v = 0; TB(TA a) { v = a.v * 2; } } class TC { int v = 0; TC(TB b) { v = b.v * 3; } }
-                class H { TC t = null; } class X { int to_int() { return 7; } } class C { int a = 0; C() {} C(int v) { a = v; } }
+                class H { TC t = TC(TB(TA())); } class X { int to_int() { return 7; } } class C { int a = 0; C() {} C(int v) { a = v; } }
                 var ta = TA(); var xs = X();
                 string r1 = ""; try { TC c = ta; r1 = "ok"; } catch (e) { r1 = e; }
-                string r2 = ""; try { TC c2 = null; c2 = ta; r2 = "ok"; } catch (e) { r2 = e; }
+                string r2 = ""; try { TC c2 = TC(TB(TA())); c2 = ta; r2 = "ok"; } catch (e) { r2 = e; }
                 string r3 = ""; try { auto h = H(); h.t = ta; r3 = "ok"; } catch (e) { r3 = e; }
                 int pc(TC c) { return c.v; }
                 string r4 = ""; try { pc(ta); r4 = "ok"; } catch (e) { r4 = e; }
@@ -3094,9 +3235,9 @@ public:
                 "TA->TB->TC and X->to_int->C are never implicit");
             check_both(R"JAI(
                 class TA { int v = 1; } class TB { int v = 0; TB(TA a) { v = a.v * 2; } }
-                class HB { TB t = null; }
+                class HB { TB t = TB(TA()); }
                 var ta = TA();
-                TB b = ta; TB b2 = null; b2 = ta; auto hb = HB(); hb.t = ta;
+                TB b = ta; TB b2 = TB(TA()); b2.v = 0; b2 = ta; auto hb = HB(); hb.t.v = 0; hb.t = ta;
                 int pb(TB b) { return b.v; } TB rb() { return ta; }
                 to_string(b.v) + to_string(b2.v) + to_string(hb.t.v) + to_string(pb(ta)) + to_string(rb().v)
             )JAI", "22222", "exactly one user conversion works on every path");
@@ -3105,12 +3246,13 @@ public:
         test("typed_slot_field_ctor_conversion", [this, check_both]() {
             check_both(R"JAI(
                 class C { int a = 0; C() {} C(int v) { a = v; } } class D {} class H { C c; } class G { D d; }
-                auto h = H(); h.c = 5; string r = to_string(h.c.a); h.c = 2.5; r = r + "," + to_string(h.c.a);
+                auto h = H(); h.c = 5; string r = to_string(h.c.a);
+                var f = 2.5; try { h.c = f; r = r + ",ok"; } catch (e) { r = r + "," + e; }
                 var t = true;
                 try { h.c = t; r = r + ",ok"; } catch (e) { r = r + "," + e; }
                 auto g = G(); var c1 = C(1); try { g.d = c1; r = r + ",ok"; } catch (e) { r = r + "," + e; }
                 r
-            )JAI", "5,2,Cannot assign bool to field 'c' of H (declared C),Cannot assign C to field 'd' of G (declared D)", "field stores construct through a true 1-param ctor; bool needs int<->float or same base");
+            )JAI", "5,Cannot assign float to field 'c' of H (declared C),Cannot assign bool to field 'c' of H (declared C),Cannot assign C to field 'd' of G (declared D)", "field stores construct through a true 1-param ctor; a float or a bool never reaches C(int)");
             // host set_field runs the table without its script rows; hot reload likewise falls back
             // to the initializer default when the live value converts only through script
             for (bool use_vm : {false, true}) {
@@ -3143,11 +3285,12 @@ public:
 				array<int> ga() { return ["x"]; }
 				string r2 = ""; try { ga(); r2 = "ok"; } catch (e) { r2 = e; }
 				string pb(array<int> a) { return type_of(a[1]) + to_string(a[1]); }
-				string r3 = pb([1, 2.5]);
+				string r3 = pb([1, true]);
+				string r3f = ""; try { pb([1, 2.5]); r3f = "ok"; } catch (e) { r3f = e; }
 				array<int> g = [1, 2];
 				string pt(array<int> a) { return to_string(a.size()) + type_of(a[0]); }
-				r1 + "|" + r2 + "|" + r3 + "|" + pt(g)
-			)JAI", "Cannot store string in array<int>|Cannot store string in array<int>|int2|2int", "array<int> parameters and returns run the element boundary");
+				r1 + "|" + r2 + "|" + r3 + "|" + r3f + "|" + pt(g)
+			)JAI", "Cannot store string in array<int>|Cannot store string in array<int>|int1|Cannot store float in array<int>|2int", "array<int> parameters and returns run the element boundary");
 			auto [i_out, v_out] = both(R"JAI(
 				[[warn_mode]] // retain runtime boundary-text coverage
 				void pc(array<int> a) { a.push("zz"); }
@@ -3246,11 +3389,11 @@ public:
 
         test("typed_slot_throwing_conversion_propagates", [check_both]() {
             check_both(R"JAI(
-                class T { int v = 0; T(int x) { throw "boom"; } }
+                class T { int v = 0; T() {} T(int x) { throw "boom"; } }
                 var five = 5;
                 string r1 = ""; try { T t = five; } catch (e) { r1 = e; }
-                string r2 = ""; try { T t2 = null; t2 = five; } catch (e) { r2 = e; }
-                class H { T t = null; } string r3 = ""; try { auto h = H(); h.t = five; } catch (e) { r3 = e; }
+                string r2 = ""; try { T t2; t2 = five; } catch (e) { r2 = e; }
+                class H { T t; } string r3 = ""; try { auto h = H(); h.t = five; } catch (e) { r3 = e; }
                 void p(T t) {} string r4 = ""; try { p(five); } catch (e) { r4 = e; }
                 T g() { return five; } string r5 = ""; try { g(); } catch (e) { r5 = e; }
                 r1 + "|" + r2 + "|" + r3 + "|" + r4 + "|" + r5
@@ -3289,7 +3432,7 @@ public:
 
         test("typed_slot_proof_lanes", [check_proof_run]() {
             check_proof_run({"string f(string t) { return t + \"!\"; } utf8_string u = \"5\"; string r = f(u); r = r + f(u); r"}, "5!5!", "string parameter bound from a utf8_string under every lane");
-            check_proof_run({"int sum(array<int> a) { int s = 0; for (auto x : a) { s += x; } return s; } to_string(sum([1, 2.5, 3]))"}, "6", "array<int> parameter bound from a hetero literal under every lane");
+            check_proof_run({"int sum(array<int> a) { int s = 0; for (auto x : a) { s += x; } return s; } to_string(sum([1, true, 3]))"}, "5", "array<int> parameter bound from a hetero literal under every lane");
             check_proof_run({"bool b(bool x) { return x; } to_string(b(5)) + to_string(b(0))"}, "truefalse", "bool parameter bound from an int under every lane");
         });
 

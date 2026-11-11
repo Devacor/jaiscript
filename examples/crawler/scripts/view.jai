@@ -70,9 +70,9 @@ function ramp(int rgb) -> int {
 	for (int l = 0; l < 16; ++l) {
 		float t = l / 15.0;
 		float lit = 0.3 + 0.85 * t;
-		int lr = iclamp(lerp_f(fr, r * lit * (1.0 + 0.12 * t), t), 0, 255);
-		int lg = iclamp(lerp_f(fg, g * lit, t), 0, 255);
-		int lb = iclamp(lerp_f(fb, b * lit * (1.0 - 0.12 * t), t), 0, 255);
+		int lr = iclamp(cast<int>(lerp_f(fr, r * lit * (1.0 + 0.12 * t), t)), 0, 255);
+		int lg = iclamp(cast<int>(lerp_f(fg, g * lit, t)), 0, 255);
+		int lb = iclamp(cast<int>(lerp_f(fb, b * lit * (1.0 - 0.12 * t), t)), 0, 255);
 		RAMP.push(pal((lr << 16) | (lg << 8) | lb));
 	}
 	return base;
@@ -279,8 +279,8 @@ function light_tile(int tx, int ty, float lx, float ly) -> void {
 }
 
 function light_at(float x, float y) -> float {
-	int lx = iclamp(x * LIGHT_RES, 0, LIGHT_W - 1);
-	int ly = iclamp(y * LIGHT_RES, 0, MAP_H * LIGHT_RES - 1);
+	int lx = iclamp(cast<int>(x * LIGHT_RES), 0, LIGHT_W - 1);
+	int ly = iclamp(cast<int>(y * LIGHT_RES), 0, MAP_H * LIGHT_RES - 1);
 	return LIGHT[ly * LIGHT_W + lx];
 }
 
@@ -613,8 +613,8 @@ function render_pane(int p, float posx, float posy, float dirx, float diry) -> v
 	CAM_PY = planey;
 	CAM_POSX = posx;
 	CAM_POSY = posy;
-	int cellx = posx;
-	int celly = posy;
+	int cellx = cast<int>(posx);
+	int celly = cast<int>(posy);
 	int pw = PW;
 	int ph = PH;
 	int stride = STRIDE;
@@ -680,7 +680,7 @@ function render_pane(int p, float posx, float posy, float dirx, float diry) -> v
 
 		float wallx = side == 0 ? posy + pdist * rdy : posx + pdist * rdx;
 		wallx = wallx - math::floor(wallx);
-		int u = wallx * 32.0;
+		int u = cast<int>(wallx * 32.0);
 		if (u > 31) { u = 31; }
 		if ((side == 0 && rdx > 0.0) || (side == 1 && rdy < 0.0)) { u = 31 - u; }
 		int kind = 0;
@@ -689,14 +689,14 @@ function render_pane(int p, float posx, float posy, float dirx, float diry) -> v
 		tb += u;
 
 		// the face takes the brighter of your torch and the sconce light just in front of it
-		int lineh = kpx / pdist;
+		int lineh = cast<int>(kpx / pdist);
 		if (lineh < 1) { lineh = 1; }
 		int ytop = ph / 2 - lineh / 2;
 		int y0 = ytop < 0 ? 0 : ytop;
 		int y1 = ytop + lineh > ph ? ph : ytop + lineh;
 		float lf = lightf(pdist) * TORCH_LEVEL * vignette;
-		int hlx = (posx + (pdist - 0.1) * rdx) * lres;
-		int hly = (posy + (pdist - 0.1) * rdy) * lres;
+		int hlx = cast<int>((posx + (pdist - 0.1) * rdx) * lres);
+		int hly = cast<int>((posy + (pdist - 0.1) * rdy) * lres);
 		if (hlx >= 0 && hly >= 0 && hlx < lw && hly < lh) {
 			float sconce = light[hly * lw + hlx] * pane_light;
 			if (sconce > lf) { lf = sconce; }
@@ -717,7 +717,7 @@ function render_pane(int p, float posx, float posy, float dirx, float diry) -> v
 		int bx = x & 3;
 		int cb = base + x;
 		for (int y = y0; y < y1; ++y) {
-			int l = lf + bayer[((y & 3) << 2) + bx];
+			int l = cast<int>(lf + bayer[((y & 3) << 2) + bx]);
 			pix[y * stride + cb] = ramps[wtex[tb + ((v >> 16) & 31) * 32] + l];
 			v += vstep;
 		}
@@ -728,16 +728,16 @@ function render_pane(int p, float posx, float posy, float dirx, float diry) -> v
 			float d = rowd[roff + y];
 			float fx = posx + d * rdx;
 			float fy = posy + d * rdy;
-			int ix = fx;
-			int iy = fy;
-			int tu = (fx - ix) * 32.0;
-			int tv = (fy - iy) * 32.0;
+			int ix = cast<int>(fx);
+			int iy = cast<int>(fy);
+			int tu = cast<int>((fx - ix) * 32.0);
+			int tv = cast<int>((fy - iy) * 32.0);
 			int texel = (tv & 31) * 32 + (tu & 31);
 			if (ix < 0) { ix = 0; } else if (ix >= mapw) { ix = mapw - 1; }
 			if (iy < 0) { iy = 0; } else if (iy >= maph) { iy = maph - 1; }
 			float fl = rowl[roff + y] * vignette;
-			int flx = fx * lres;
-			int fly = fy * lres;
+			int flx = cast<int>(fx * lres);
+			int fly = cast<int>(fy * lres);
 			if (flx >= 0 && fly >= 0 && flx < lw && fly < lh) {
 				float sconce = light[fly * lw + flx] * pane_light;
 				if (sconce > fl) { fl = sconce; }
@@ -749,12 +749,12 @@ function render_pane(int p, float posx, float posy, float dirx, float diry) -> v
 			}
 			if (fl > 15.0) { fl = 15.0; }
 			if (y >= y1) {
-				int l = fl + bayer[((y & 3) << 2) + bx];
+				int l = cast<int>(fl + bayer[((y & 3) << 2) + bx]);
 				pix[y * stride + cb] = ramps[ftex[fkind[iy * mapw + ix] + texel] + l];
 			}
 			int cy = ph - 1 - y;
 			if (cy < y0) {
-				int l = fl * 0.8 + bayer[((cy & 3) << 2) + bx];
+				int l = cast<int>(fl * 0.8 + bayer[((cy & 3) << 2) + bx]);
 				pix[cy * stride + cb] = ramps[ctex[texel] + l];
 			}
 		}
@@ -939,15 +939,15 @@ function draw_sprites() -> void {
 	}
 	for (int i : order) {
 		Sprite sp = SPRITES[i];
-		int hgt = iclamp(WALL_KPX * sp.height / sp.depth, 1, sp.cap);
-		int wdt = imax(1, hgt * ART_W[sp.art] * SPRITE_ASPECT / ART_H[sp.art]);
-		int bot = PH * 0.5 + WALL_KPX * (0.5 - sp.lift) / sp.depth;
-		int x0 = math::floor(sp.sx - wdt * 0.5);
+		int hgt = iclamp(cast<int>(WALL_KPX * sp.height / sp.depth), 1, sp.cap);
+		int wdt = imax(1, cast<int>(hgt * ART_W[sp.art] * SPRITE_ASPECT / ART_H[sp.art]));
+		int bot = cast<int>(PH * 0.5 + WALL_KPX * (0.5 - sp.lift) / sp.depth);
+		int x0 = cast<int>(math::floor(sp.sx - wdt * 0.5));
 		if (sp.melt > 0.0) {
-			draw_art_melt(sp.art, sp.rgb, x0, bot - hgt, wdt, hgt, sp.lit + 0.5, sp.depth, sp.melt, sp.fx);
+			draw_art_melt(sp.art, sp.rgb, x0, bot - hgt, wdt, hgt, cast<int>(sp.lit + 0.5), sp.depth, sp.melt, sp.fx);
 			continue;
 		}
-		draw_art(sp.art, sp.rgb, x0, bot - hgt, wdt, hgt, sp.lit + 0.5, sp.depth, sp.flash);
+		draw_art(sp.art, sp.rgb, x0, bot - hgt, wdt, hgt, cast<int>(sp.lit + 0.5), sp.depth, sp.flash);
 		if (sp.hp >= 0) { draw_hp_bar(x0, bot - hgt - 2, wdt, sp.hp, sp.depth); }
 	}
 	fx_overlays();
@@ -963,9 +963,9 @@ function draw_art_melt(int a, int rgb, int x0, int y0, int w, int h, int lvl, fl
 	tab[2] = (packed >> 20) & 0xFFFFF;
 	tab[3] = (packed >> 40) & 0xFFFFF;
 	lvl = hot ? 15 : iclamp(lvl, 0, 15);
-	int sink = h * melt * 0.45;
+	int sink = cast<int>(h * melt * 0.45);
 	int floor_y = y0 + h;
-	int cut = melt * 100;
+	int cut = cast<int>(melt * 100);
 	int aw = ART_W[a];
 	int ah = ART_H[a];
 	int off = ART_OFF[a];

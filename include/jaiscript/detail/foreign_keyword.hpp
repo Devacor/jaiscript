@@ -23,7 +23,6 @@ enum class foreign_word : unsigned char {
 	new_without_arguments,
 	goto_statement,
 	address_of,
-	typed_catch,
 	extends_base,
 	strict_equal,
 	strict_not_equal,
@@ -63,8 +62,6 @@ inline constexpr std::string_view foreign_word_text(foreign_word w) noexcept {
 			return "JaiScript has no 'goto': use break, continue, return or a flag";
 		case foreign_word::address_of:
 			return "JaiScript has no address-of '&x': bind a reference with auto& r = x, or pass x to a T& parameter";
-		case foreign_word::typed_catch:
-			return "catch takes one name and no type: catch (e) { ... }; e.value is what was thrown and type_of(e.value) its type";
 		case foreign_word::extends_base:
 			return "JaiScript has no 'extends': derive with class Name : Base";
 		case foreign_word::strict_equal:

@@ -84,14 +84,14 @@ function canyon_light_row(int y) -> array<int> {
 		ao = ao < 0.42 ? 0.42 : (ao > 1.08 ? 1.08 : ao);
 		float light = (0.26 + 0.12 / nl) * ao + 1.02 * diff * lit;
 		int grain = ((((x * 73856093 + y * 19349663) & 1048575) * 1274126177) >> 12) & 3;
-		int lv = itrunc(light * 6.4 + grain * 0.4 - 0.3);
+		int lv = math::itrunc(light * 6.4 + grain * 0.4 - 0.3);
 		lv = lv < 0 ? 0 : (lv > 7 ? 7 : lv);
 		int dxr = x - rc;
 		dxr = dxr > 256 ? dxr - 512 : dxr;
 		dxr = dxr < -256 ? dxr + 512 : dxr;
 		int ad = dxr < 0 ? 0 - dxr : dxr;
 		float slope = math::sqrt(gx * gx + gy * gy);
-		int warp = itrunc(14.0 * math::sin(x * 0.036 + y * 0.024) + 7.0 * math::sin(x * 0.095 - y * 0.065));
+		int warp = math::itrunc(14.0 * math::sin(x * 0.036 + y * 0.024) + 7.0 * math::sin(x * 0.095 - y * 0.065));
 		int layer = ((hv * 4 + warp + 400) / 38) % 10;
 		int mat = 4 + layer;
 		if (ad < 10 && y >= CR_LIP - 10 && y < CR_LIP && hv > CR_LAKE) { mat = 15; }   // whitewater racing for the lip
@@ -230,10 +230,10 @@ class CanyonRun : Scene {
 		float hsc = h * 0.085;
 		for (int i = 0; i < nsteps; ++i) {
 			zs.push(z * 4.0);
-			dzs.push(itrunc(z * 65536.0 / hsc));
-			invz.push(itrunc(hsc * 65536.0 / z));
+			dzs.push(math::itrunc(z * 65536.0 / hsc));
+			invz.push(math::itrunc(hsc * 65536.0 / z));
 			float zr = i / (nsteps - 1.0);
-			int hzv = itrunc(math::pow(zr, 2.0) * (nhaze + 0.5));
+			int hzv = math::itrunc(math::pow(zr, 2.0) * (nhaze + 0.5));
 			hazes.push(hzv > nhaze - 1 ? nhaze - 1 : hzv);
 			z *= 1.0365;
 		}
@@ -316,7 +316,7 @@ class CanyonRun : Scene {
 		ph2 = rng.nextf() * 6.283185307;
 		CR_RIV = [];
 		for (int ry = 0; ry < n; ++ry) {
-			CR_RIV.push(itrunc(256.0 + 104.0 * math::sin(ry * 0.01227184630 + ph1) + 44.0 * math::sin(ry * 0.03681553891 + ph2)));
+			CR_RIV.push(math::itrunc(256.0 + 104.0 * math::sin(ry * 0.01227184630 + ph1) + 44.0 * math::sin(ry * 0.03681553891 + ph2)));
 		}
 		// carve a U-shaped gorge 68 texels wide down to the floor, lift the land
 		// around it, then terrace: flat benches broken by steep risers. Toward the end
@@ -371,7 +371,7 @@ class CanyonRun : Scene {
 				rs = rs * rs * (3.0 - 2.0 * rs);
 				float terr = (fl + rs) * 23.0;
 				hv = hv * 0.3 + terr * 0.7;
-				int hi = itrunc(hv);
+				int hi = math::itrunc(hv);
 				hi = hv <= CR_LAKE + 0.5 ? CR_LAKE : hi;
 				hm[rowc + cx] = hi < 0 ? 0 : (hi > 255 ? 255 : hi);
 			}
@@ -455,7 +455,7 @@ class CanyonRun : Scene {
 					v += (top + (bot - top) * uy) * a;
 					a *= 0.5;
 				}
-				int d = itrunc((v - 0.42) * 20.0);
+				int d = math::itrunc((v - 0.42) * 20.0);
 				clouds[y * cn + x] = d < 0 ? 0 : (d > 7 ? 7 : d);
 			}
 		}
@@ -533,13 +533,13 @@ class CanyonRun : Scene {
 		pdx = dirx;
 		pdy = diry;
 		// altitude: the plan, floored by terrain clearance ahead
-		int g0 = CR_H[((ifloor(posy) & mmask) * msz) + (ifloor(posx) & mmask)];
-		int g1 = CR_H[((ifloor(posy + diry * 16.0) & mmask) * msz) + (ifloor(posx + dirx * 16.0) & mmask)];
-		int g2 = CR_H[((ifloor(posy + diry * 40.0) & mmask) * msz) + (ifloor(posx + dirx * 40.0) & mmask)];
+		int g0 = CR_H[((math::ifloor(posy) & mmask) * msz) + (math::ifloor(posx) & mmask)];
+		int g1 = CR_H[((math::ifloor(posy + diry * 16.0) & mmask) * msz) + (math::ifloor(posx + dirx * 16.0) & mmask)];
+		int g2 = CR_H[((math::ifloor(posy + diry * 40.0) & mmask) * msz) + (math::ifloor(posx + dirx * 40.0) & mmask)];
 		if (t > MUSIC_BAR * 8.5) {
 			// in the slot the clearance is read along the river itself, never off a bend into a wall
-			g1 = CR_H[((ifloor(posy + 16.0) & mmask) * msz) + (ifloor(path_x(u + 16.0, t)) & mmask)];
-			g2 = CR_H[((ifloor(posy + 40.0) & mmask) * msz) + (ifloor(path_x(u + 40.0, t)) & mmask)];
+			g1 = CR_H[((math::ifloor(posy + 16.0) & mmask) * msz) + (math::ifloor(path_x(u + 16.0, t)) & mmask)];
+			g2 = CR_H[((math::ifloor(posy + 40.0) & mmask) * msz) + (math::ifloor(path_x(u + 40.0, t)) & mmask)];
 		}
 		int gm = g0 > g1 ? g0 : g1;
 		gm = g2 > gm ? g2 : gm;
@@ -554,14 +554,14 @@ class CanyonRun : Scene {
 			float vz = (camhf - was) / dt;
 			climb += (vz - climb) * (mixa > 0.5 ? 0.5 : mixa);
 		}
-		camh = itrunc(camhf);
+		camh = math::itrunc(camhf);
 		// pitch: the nose follows the climb and the dive
 		float pit = climb * 0.0019;
 		pit = pit > 0.16 ? 0.16 : pit;
 		pit = pit < -0.24 ? -0.24 : pit;
 		float kick = cue != null ? cue.kick_env(t) : 0.0;
 		float nod = kick * 0.024;
-		horizon = itrunc(h * (0.36 + pit + nod));
+		horizon = math::itrunc(h * (0.36 + pit + nod));
 		// the kick punches the lens in
 		float lens = 0.9 * (1.0 - kick * 0.07 - (cue != null ? cue.hit(t) * 0.08 : 0.0));
 		planex = 0.0 - diry * lens;
@@ -604,7 +604,7 @@ class CanyonRun : Scene {
 		var& jt = jitter;
 		var& so = strata;
 		int w2 = ww / 2;
-		int rollfp = itrunc(roll * 65536.0);
+		int rollfp = math::itrunc(roll * 65536.0);
 		for (int x = 0; x < ww; ++x) {
 			yb[x] = hh;
 			ro[x] = horiz + rollfp * (x - w2) / 65536;   // horizon folded in
@@ -612,7 +612,7 @@ class CanyonRun : Scene {
 		// the sun's column: where its bearing falls across the camera plane
 		float sdot = CR_LX * dx_ + CR_LY * dy_;
 		float scross = CR_LX * dy_ - CR_LY * dx_;
-		int scol = sdot > 0.05 ? itrunc(w2 - scross / sdot / 0.9 * w2) : -9999;
+		int scol = sdot > 0.05 ? math::itrunc(w2 - scross / sdot / 0.9 * w2) : -9999;
 		// +4096 keeps the fixed-point coords positive so /65536 floors exactly
 		float bigx = posx + 4096.0;
 		float bigy = posy + 4096.0;
@@ -626,10 +626,10 @@ class CanyonRun : Scene {
 			float ply = bigy + (dy_ - py_) * z;
 			float prx = bigx + (dx_ + px_) * z;
 			float pry = bigy + (dy_ + py_) * z;
-			int rxf = itrunc(plx * 65536.0);
-			int ryf = itrunc(ply * 65536.0);
-			int dxf = itrunc((prx - plx) * 65536.0 / ww);
-			int dyf = itrunc((pry - ply) * 65536.0 / ww);
+			int rxf = math::itrunc(plx * 65536.0);
+			int ryf = math::itrunc(ply * 65536.0);
+			int dxf = math::itrunc((prx - plx) * 65536.0 / ww);
+			int dyf = math::itrunc((pry - ply) * 65536.0 / ww);
 			for (int x2 = 0; x2 < ww; ++x2) {
 				int ybv = yb[x2];
 				if (ybv > 0) {
@@ -743,7 +743,7 @@ class CanyonRun : Scene {
 						float dd = (ddx * ddx + ddy * ddy) / (sr * sr);
 						if (dd < 1.0) { pix2 = sunb + 5; }
 						else if (dd < halo) {
-							int gl = itrunc((halo - dd) * 1.1);
+							int gl = math::itrunc((halo - dd) * 1.1);
 							if (gl > 0) { pix2 = sunb + (gl > 4 ? 4 : gl - 1); }
 						}
 					}
@@ -766,12 +766,12 @@ class CanyonRun : Scene {
 			float a = r * 0.4487989 + tt * 0.15;
 			float cx = math::cos(a);
 			float cy = math::sin(a);
-			int steps = itrunc(reach);
+			int steps = math::itrunc(reach);
 			for (int k = 2; k < steps; ++k) {
-				int x = itrunc(sx + cx * k);
-				int y = itrunc(sy + cy * k * 0.8);
+				int x = math::itrunc(sx + cx * k);
+				int y = math::itrunc(sy + cy * k * 0.8);
 				if (x < 0 || x >= w || y < 0 || y >= h || y >= yb[x]) { continue; }
-				int lv = itrunc((1.0 - k * 1.0 / steps) * flare * 4.0);
+				int lv = math::itrunc((1.0 - k * 1.0 / steps) * flare * 4.0);
 				if (lv > 0) { grid[y * w + x] = sunb + (lv > 3 ? 3 : lv); }
 			}
 		}
@@ -786,11 +786,11 @@ class CanyonRun : Scene {
 			float fx = math::fmod(tt * (9.0 + b * 0.7) + b * 37.0, span * 1.0) - 30.0;
 			float fy = horizon - h * 0.2 - (b % 4) * size * 2.2 + math::sin(tt * 1.3 + b) * size * 1.5;
 			float flap = math::sin(tt * 11.0 + b * 1.7);
-			int wing = itrunc(size * 2.2);
+			int wing = math::itrunc(size * 2.2);
 			for (int k = 0; k <= wing; ++k) {
-				int dy = itrunc(k * 0.6 * flap) - (flap < 0.0 ? 0 : 0);
-				bird_px(grid, yb, itrunc(fx) + k, itrunc(fy) - dy);
-				bird_px(grid, yb, itrunc(fx) - k, itrunc(fy) - dy);
+				int dy = math::itrunc(k * 0.6 * flap) - (flap < 0.0 ? 0 : 0);
+				bird_px(grid, yb, math::itrunc(fx) + k, math::itrunc(fy) - dy);
+				bird_px(grid, yb, math::itrunc(fx) - k, math::itrunc(fy) - dy);
 			}
 		}
 	}
@@ -807,10 +807,10 @@ class CanyonRun : Scene {
 		for (int m = 0; m < dust_z.size(); ++m) {
 			float z = dust_z[m];
 			float z2 = z + trail;
-			int x0 = itrunc(w * 0.5 + dust_x[m] / z * f);
-			int y0 = itrunc(horizon + dust_y[m] / z * f);
-			int x1 = itrunc(w * 0.5 + dust_x[m] / z2 * f);
-			int y1 = itrunc(horizon + dust_y[m] / z2 * f);
+			int x0 = math::itrunc(w * 0.5 + dust_x[m] / z * f);
+			int y0 = math::itrunc(horizon + dust_y[m] / z * f);
+			int x1 = math::itrunc(w * 0.5 + dust_x[m] / z2 * f);
+			int y1 = math::itrunc(horizon + dust_y[m] / z2 * f);
 			int lv = z < 0.25 ? 2 : (z < 0.55 ? 1 : 0);
 			int n = (x0 - x1 < 0 ? x1 - x0 : x0 - x1) + (y0 - y1 < 0 ? y1 - y0 : y0 - y1);
 			n = n > 40 ? 40 : n;

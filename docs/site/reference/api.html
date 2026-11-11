@@ -10,8 +10,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="Full API signatures — JaiScript docs">
 <meta property="og:description" content="Full callable signatures, defaults, return types, effects and availability for builtins, the standard library and standalone runner.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/reference/api.html">
+<meta property="og:url" content="https://jaiscript.com/reference/api.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -24,15 +32,18 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html" class="active" aria-current="page">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html" class="active" aria-current="page">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="On this page"><details class="sidebar-box" open><summary class="sidebar-title">On this page</summary><ol class="page-toc" data-page-toc></ol></details></aside>
-<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Reference</a><span class="sep" aria-hidden="true">/</span>API</nav>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Reference<span class="sidebar-current">Full API Signatures</span></summary><ol class="chapter-list"><li><a href="../reference/rules.html">Language Rules</a></li><li><a href="../reference/errors.html">Errors and Diagnostics</a></li><li><a href="../reference/library.html">Library Reference</a></li><li><a href="../reference/host.html">Host and Runner Reference</a></li><li class="current"><a href="../reference/api.html" aria-current="page">Full API Signatures</a><ol class="page-toc" data-page-toc data-toc-h3></ol></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Reference</a><span class="sep" aria-hidden="true">/</span>Full API Signatures</nav>
 <article class="chapter"><h1 id="full-api">Full API signatures</h1>
 <p>The complete callable reference for core builtins, standard-library registrations, and the standalone runner. Each entry shows arguments, defaults, result, effects, and availability. Host applications may register additional APIs.</p>
 <p><a href="index.html">Reference overview</a> &middot; <a href="api-catalog.json" download>Machine-readable catalog</a></p>
@@ -41,7 +52,7 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <p><strong>Effects:</strong> observe reads; copy returns new values; mutate changes the receiver; advance changes a cursor or coroutine; callback may execute script; filesystem, network, output, and audio affect the host environment. Receiver text mutators return text for chaining. Core APIs exist on every engine; stdlib APIs require their registration; runner additions are provided by jaiscript.exe.</p>
 <h2 id="sorting-arrays">Sorting arrays</h2>
 <p><code>values.sort()</code> sorts the receiver in place using the language&#x27;s <code>&lt;</code>. A class&#x27;s explicit <code>operator&lt;</code> takes precedence; when absent, <code>operator&lt;=&gt;</code> supplies the comparison with zero. <code>values.sort(predicate)</code> uses a boolean predicate: true means the left item comes before the right. Equal items may be reordered. The receiver method returns no value; <code>array::sort(values[, predicate])</code> returns a sorted copy. Default numeric sorting groups all NaNs last and treats signed zeros as equivalent; an explicit predicate supplies its own ordering.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; values = [3, 1, 2];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; values = [3, 1, 2];
 values.sort();
 print(to_json(values));
 values.sort((a, b) =&gt; a &gt; b);
@@ -164,26 +175,26 @@ print(to_json(values));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array::fill(values: array&lt;t&gt;, value: t) -&gt; array&lt;t&gt; copy returns a copy whose every element is value. every engine"><h3 id="api-7e434162965c"><code>array::fill(values: array&lt;T&gt;, value: T) -&gt; array&lt;T&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>Returns a copy whose every element is value.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2];
 print(to_json(array::fill(xs, 0)), &quot; &quot;, to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[0,0] [1,2]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array::filter(values: array&lt;t&gt;, predicate: function(t[, int]) -&gt; bool) -&gt; array&lt;t&gt; copy; callback preserves element constraints and copies selected values only. reference callback parameters still target live input elements. every engine"><h3 id="api-ba490ec8a9c9"><code>array::filter(values: array&lt;T&gt;, predicate: function(T[, int]) -&gt; bool) -&gt; array&lt;T&gt;</code></h3><p><strong>Every engine</strong> &middot; copy; callback</p>
 <p>Preserves element constraints and copies selected values only. Reference callback parameters still target live input elements.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3, 4];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3, 4];
 print(to_json(array::filter(xs, x =&gt; x &gt; 2)), &quot; &quot;, to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[3,4] [1,2,3,4]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array::map(values: array&lt;t&gt;, callback: function(t[, int]) -&gt; r) -&gt; array&lt;r&gt; copy; callback a declared callback return type r gives array&lt;r&gt;; an undeclared return gives an array of the results&#x27; type when they all share one, and array&lt;var&gt; when they differ. reference callbacks can mutate input elements. every engine"><h3 id="api-9fd5cdd885a3"><code>array::map(values: array&lt;T&gt;, callback: function(T[, int]) -&gt; R) -&gt; array&lt;R&gt;</code></h3><p><strong>Every engine</strong> &middot; copy; callback</p>
 <p>A declared callback return type R gives array&lt;R&gt;; an undeclared return gives an array of the results&#x27; type when they all share one, and array&lt;var&gt; when they differ. Reference callbacks can mutate input elements.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
 auto labels = array::map(xs, [](int x) -&gt; string { return &quot;#&quot; + to_string(x); });
 print(to_json(labels), &quot; &quot;, to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[&quot;#1&quot;,&quot;#2&quot;,&quot;#3&quot;] [1,2,3]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array::resize(values: array&lt;t&gt;, size: int, value: t = omitted) -&gt; array&lt;t&gt; copy returns a resized copy with input constraints, as values.resize(size, value) would leave values. every engine"><h3 id="api-d8e332afb62c"><code>array::resize(values: array&lt;T&gt;, size: int, value: T = omitted) -&gt; array&lt;T&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>Returns a resized copy with input constraints, as values.resize(size, value) would leave values.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2];
 print(to_json(array::resize(xs, 4, 3)), &quot; &quot;, to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[1,2,3,3] [1,2]</code></pre></div>
 </div>
@@ -195,7 +206,7 @@ print(to_json(array::resize(xs, 4, 3)), &quot; &quot;, to_json(xs));</code></pre
 </div>
 <div class="api-entry" data-provider="core" data-search="array::sort(values: array&lt;t&gt;, predicate: function(t, t) -&gt; bool = omitted) -&gt; array&lt;t&gt; copy; callback returns a sorted value copy with input constraints; handles retain identity. default numeric sorting treats signed zeros as equivalent and groups all nans last; an explicit predicate supplies its own order. every engine"><h3 id="api-7c3ad8c18f4d"><code>array::sort(values: array&lt;T&gt;, predicate: function(T, T) -&gt; bool = omitted) -&gt; array&lt;T&gt;</code></h3><p><strong>Every engine</strong> &middot; copy; callback</p>
 <p>Returns a sorted value copy with input constraints; handles retain identity. Default numeric sorting treats signed zeros as equivalent and groups all NaNs last; an explicit predicate supplies its own order.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [3, 1, 2];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [3, 1, 2];
 print(to_json(array::sort(xs)), &quot; &quot;, to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[1,2,3] [3,1,2]</code></pre></div>
 </div>
@@ -203,39 +214,39 @@ print(to_json(array::sort(xs)), &quot; &quot;, to_json(xs));</code></pre></div>
 <section class="api-group"><h2 id="group-array-t">array&lt;T&gt;</h2>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.append(other: array&lt;var&gt; or array&lt;t&gt;) -&gt; void mutate appends the other array in place, retaining input element constraints. same-kind primitive/string/vector buffers avoid per-element boxing. added values copy; handles share. returns nothing; alias of concat; array::append returns a copy. every engine"><h3 id="api-7d6a0fe08c03"><code>array&lt;T&gt;.append(other: array&lt;var&gt; or array&lt;T&gt;) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Appends the other array in place, retaining input element constraints. Same-kind primitive/string/vector buffers avoid per-element boxing. Added values copy; handles share. Returns nothing; alias of concat; array::append returns a copy.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2];
 xs.append([3, 4]);        // changes xs, returns nothing
 print(to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[1,2,3,4]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.assign(size: int, value: t) -&gt; void mutate std::vector::assign: size elements equal to value; the elements kept are assigned as xs[i] = value assigns (operator=), the rest copy-constructed or destroyed. every engine"><h3 id="api-8c6e2707e83b"><code>array&lt;T&gt;.assign(size: int, value: T) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>std::vector::assign: size elements equal to value; the elements kept are assigned as xs[i] = value assigns (operator=), the rest copy-constructed or destroyed.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
 xs.assign(2, 7);
 print(to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[7,7]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.back() -&gt; t observe empty array raises. an object, array or map element comes back as a reference to it, like a c++ reference return: binding the result to var, auto or t copies the element, while var&amp;, t&amp; and a member call on the result reach the stored element. every engine"><h3 id="api-bb691742ebe2"><code>array&lt;T&gt;.back() -&gt; T</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Empty array raises. An object, array or map element comes back as a reference to it, like a C++ reference return: binding the result to var, auto or T copies the element, while var&amp;, T&amp; and a member call on the result reach the stored element.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [4, 5, 6];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [4, 5, 6];
 print(xs.front(), &quot; &quot;, xs.back());</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">4 6</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.clear() -&gt; void mutate  every engine"><h3 id="api-b9dc5329f667"><code>array&lt;T&gt;.clear() -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [4, 5, 6];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [4, 5, 6];
 xs.clear();
 print(xs.size());</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">0</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.concat(other: array&lt;var&gt; or array&lt;t&gt;) -&gt; void mutate appends the other array in place, retaining input element constraints. same-kind primitive/string/vector buffers avoid per-element boxing. added values copy; handles share. returns nothing; alias of append; array::concat returns a copy. every engine"><h3 id="api-cf51509d2c3f"><code>array&lt;T&gt;.concat(other: array&lt;var&gt; or array&lt;T&gt;) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Appends the other array in place, retaining input element constraints. Same-kind primitive/string/vector buffers avoid per-element boxing. Added values copy; handles share. Returns nothing; alias of append; array::concat returns a copy.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; a = [1];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; a = [1];
 print(to_json(array::concat(a, [2, 3])), &quot; &quot;, to_json(a));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[1,2,3] [1]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.contains(value: var) -&gt; bool observe alias of has. every engine"><h3 id="api-ad02fc81b499"><code>array&lt;T&gt;.contains(value: var) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Alias of has.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
 print(xs.contains(2), &quot; &quot;, xs.contains(9));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true false</code></pre></div>
 </div>
@@ -243,26 +254,26 @@ print(xs.contains(2), &quot; &quot;, xs.contains(9));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.erase(index: int) -&gt; bool mutate alias of remove(index); false without change when out of range. every engine"><h3 id="api-4602602868f2"><code>array&lt;T&gt;.erase(index: int) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Alias of remove(index); false without change when out of range.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [10, 20, 30];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [10, 20, 30];
 print(xs.erase(1), &quot; &quot;, to_json(xs), &quot; &quot;, xs.erase(9));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true [10,30] false</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.every(predicate: function(t[, int]) -&gt; bool) -&gt; bool callback true if all match; empty array is true. every engine"><h3 id="api-0338b48ab7a9"><code>array&lt;T&gt;.every(predicate: function(T[, int]) -&gt; bool) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; callback</p>
 <p>True if all match; empty array is true.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [2, 4, 7];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [2, 4, 7];
 print(xs.every(x =&gt; x % 2 == 0));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">false</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.fill(value: t) -&gt; void mutate every element is assigned value as xs[i] = value assigns (operator=); the size stays. every engine"><h3 id="api-6958b3c7d879"><code>array&lt;T&gt;.fill(value: T) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Every element is assigned value as xs[i] = value assigns (operator=); the size stays.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; xs = [&quot;a&quot;, &quot;b&quot;];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; xs = [&quot;a&quot;, &quot;b&quot;];
 xs.fill(&quot;z&quot;);
 print(to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[&quot;z&quot;,&quot;z&quot;]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.filter(predicate: function(t[, int]) -&gt; bool) -&gt; void mutate; callback filters in place, retaining element constraints and selected values without cloning. reference callback parameters target live elements. returns nothing; array::filter returns a copy. every engine"><h3 id="api-2a381aec473e"><code>array&lt;T&gt;.filter(predicate: function(T[, int]) -&gt; bool) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate; callback</p>
 <p>Filters in place, retaining element constraints and selected values without cloning. Reference callback parameters target live elements. Returns nothing; array::filter returns a copy.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; hp = [5, 0, 12, 0];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; hp = [5, 0, 12, 0];
 array&lt;int&gt; alive = array::filter(hp, h =&gt; h &gt; 0);   // a copy
 hp.filter(h =&gt; h &gt; 10);                            // in place
 print(to_json(alive), &quot; &quot;, to_json(hp));</code></pre></div>
@@ -270,13 +281,13 @@ print(to_json(alive), &quot; &quot;, to_json(hp));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.find(predicate: function(t[, int]) -&gt; bool) -&gt; t or null copy, callback first match, copied; null if absent. value results copy, while shared_ptr/weak_ptr handles retain identity. every engine"><h3 id="api-33610903ccad"><code>array&lt;T&gt;.find(predicate: function(T[, int]) -&gt; bool) -&gt; T or null</code></h3><p><strong>Every engine</strong> &middot; copy, callback</p>
 <p>First match, copied; null if absent. Value results copy, while shared_ptr/weak_ptr handles retain identity.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; names = [&quot;ann&quot;, &quot;bob&quot;, &quot;cy&quot;];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; names = [&quot;ann&quot;, &quot;bob&quot;, &quot;cy&quot;];
 print(names.find(n =&gt; n.size() == 3), &quot; &quot;, names.find(n =&gt; n == &quot;zed&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ann null</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.find_index(predicate: function(t[, int]) -&gt; bool) -&gt; int callback first match index; -1 if absent. every engine"><h3 id="api-6a41368e7e7f"><code>array&lt;T&gt;.find_index(predicate: function(T[, int]) -&gt; bool) -&gt; int</code></h3><p><strong>Every engine</strong> &middot; callback</p>
 <p>First match index; -1 if absent.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; names = [&quot;ann&quot;, &quot;bob&quot;, &quot;cy&quot;];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; names = [&quot;ann&quot;, &quot;bob&quot;, &quot;cy&quot;];
 print(names.find_index(n =&gt; n == &quot;cy&quot;), &quot; &quot;, names.find_index(n =&gt; n == &quot;zed&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 -1</code></pre></div>
 </div>
@@ -285,7 +296,7 @@ print(names.find_index(n =&gt; n == &quot;cy&quot;), &quot; &quot;, names.find_i
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.for_each(callback: function(t[, int]) -&gt; var) -&gt; void callback t&amp; callback parameters bind live elements. every engine"><h3 id="api-ce67fb889c65"><code>array&lt;T&gt;.for_each(callback: function(T[, int]) -&gt; var) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; callback</p>
 <p>T&amp; callback parameters bind live elements.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; xs = [&quot;a&quot;, &quot;b&quot;];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; xs = [&quot;a&quot;, &quot;b&quot;];
 xs.for_each((s, i) =&gt; print(i, &quot;: &quot;, s));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">0: a
 1: b</code></pre></div>
@@ -298,20 +309,20 @@ xs.for_each((s, i) =&gt; print(i, &quot;: &quot;, s));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.index_of(value: var) -&gt; int observe language equality; -1 if absent. every engine"><h3 id="api-3c5191732bfd"><code>array&lt;T&gt;.index_of(value: var) -&gt; int</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Language equality; -1 if absent.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; xs = [&quot;a&quot;, &quot;b&quot;];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; xs = [&quot;a&quot;, &quot;b&quot;];
 print(xs.index_of(&quot;b&quot;), &quot; &quot;, xs.index_of(&quot;z&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 -1</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.insert(index: int, value: t) -&gt; void mutate index from 0 through size inclusive. every engine"><h3 id="api-03a8f66852f4"><code>array&lt;T&gt;.insert(index: int, value: T) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Index from 0 through size inclusive.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; xs = [&quot;a&quot;, &quot;c&quot;];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; xs = [&quot;a&quot;, &quot;c&quot;];
 xs.insert(1, &quot;b&quot;);
 print(to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[&quot;a&quot;,&quot;b&quot;,&quot;c&quot;]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.join(separator: string = &quot;&quot;) -&gt; string observe stringifies values between separators. every engine"><h3 id="api-c292cfa601de"><code>array&lt;T&gt;.join(separator: string = &quot;&quot;) -&gt; string</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Stringifies values between separators.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
 print(xs.join(&quot;, &quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1, 2, 3</code></pre></div>
 </div>
@@ -323,27 +334,27 @@ print(xs.join(&quot;, &quot;));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.map(callback: function(t[, int]) -&gt; var) -&gt; void mutate; callback maps in place, retaining input element constraints; results convert through the usual typed-element rules. reference callback parameters target live elements. returns nothing; array::map returns a copy and can change the result type. every engine"><h3 id="api-b9398bcaf556"><code>array&lt;T&gt;.map(callback: function(T[, int]) -&gt; var) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate; callback</p>
 <p>Maps in place, retaining input element constraints; results convert through the usual typed-element rules. Reference callback parameters target live elements. Returns nothing; array::map returns a copy and can change the result type.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
 xs.map(x =&gt; x * 10);       // in place, keeps array&lt;int&gt;
 print(to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[10,20,30]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.pop() -&gt; t mutate removes the last element; empty array raises. every engine"><h3 id="api-8bd012d0f8b1"><code>array&lt;T&gt;.pop() -&gt; T</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Removes the last element; empty array raises.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
 print(xs.pop(), &quot; &quot;, to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 [1,2]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.push(value: t) -&gt; void mutate converts through the element boundary. every engine"><h3 id="api-72ff7a390b60"><code>array&lt;T&gt;.push(value: T) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Converts through the element boundary.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2];
 xs.push(3);
 print(to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[1,2,3]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.reduce(callback: function(var, t[, int]) -&gt; r, initial: var = first_element) -&gt; r callback without initial, empty array raises; callback receives accumulator and element, optionally index. the accumulator starts as a copy of the initial value (or of the first element), as std::accumulate takes its init by value. every engine"><h3 id="api-708a0df8d248"><code>array&lt;T&gt;.reduce(callback: function(var, T[, int]) -&gt; R, initial: var = first_element) -&gt; R</code></h3><p><strong>Every engine</strong> &middot; callback</p>
 <p>Without initial, empty array raises; callback receives accumulator and element, optionally index. The accumulator starts as a copy of the initial value (or of the first element), as std::accumulate takes its init by value.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3, 4];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3, 4];
 print(xs.reduce((sum, x) =&gt; sum + x), &quot; &quot;, xs.reduce((sum, x) =&gt; sum + x, 100));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">10 110</code></pre></div>
 </div>
@@ -352,13 +363,13 @@ print(xs.reduce((sum, x) =&gt; sum + x), &quot; &quot;, xs.reduce((sum, x) =&gt;
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.remove_if(predicate: function(t) -&gt; bool) -&gt; int mutate, callback removes matches; returns removed count. every engine"><h3 id="api-73c1411afbbf"><code>array&lt;T&gt;.remove_if(predicate: function(T) -&gt; bool) -&gt; int</code></h3><p><strong>Every engine</strong> &middot; mutate, callback</p>
 <p>Removes matches; returns removed count.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3, 4, 5];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3, 4, 5];
 print(xs.remove_if(x =&gt; x % 2 == 0), &quot; &quot;, to_json(xs));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 [1,3,5]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.reserve(size: int) -&gt; void mutate std::vector::reserve: room for size elements, so pushes up to it never reallocate. changes no element and no size. every engine"><h3 id="api-837fb77e1655"><code>array&lt;T&gt;.reserve(size: int) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>std::vector::reserve: room for size elements, so pushes up to it never reallocate. Changes no element and no size.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs;
 xs.reserve(100);
 xs.push(1);
 print(xs.size());</code></pre></div>
@@ -366,7 +377,7 @@ print(xs.size());</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.resize(size: int, value: t = omitted) -&gt; void mutate std::vector::resize: grows with copies of value, or with value-initialized elements (0, false, an empty text or container, null, a default-constructed object); shrinks from the end. a failed grow leaves the array as it was. array&lt;t&gt;(size, value) builds the same array. every engine"><h3 id="api-3709bd9ff3a4"><code>array&lt;T&gt;.resize(size: int, value: T = omitted) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>std::vector::resize: grows with copies of value, or with value-initialized elements (0, false, an empty text or container, null, a default-constructed object); shrinks from the end. A failed grow leaves the array as it was. array&lt;T&gt;(size, value) builds the same array.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
 xs.resize(5);
 print(to_json(xs));
 xs.resize(2);
@@ -376,19 +387,19 @@ print(to_json(xs));</code></pre></div>
 [1,2,9,9]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.reverse() -&gt; void mutate  every engine"><h3 id="api-c503303db5a8"><code>array&lt;T&gt;.reverse() -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 2, 3];
 xs.reverse();
 print(to_json(xs), &quot; &quot;, to_json(array::reverse(xs)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[3,2,1] [1,2,3]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.size() -&gt; int observe  every engine"><h3 id="api-48e4476a2c7d"><code>array&lt;T&gt;.size() -&gt; int</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [4, 5, 6];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [4, 5, 6];
 print(xs.size(), &quot; &quot;, xs.empty());</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 false</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.slice(start: int = 0, end: int = size()) -&gt; void mutate retains the selected range in place, end exclusive; defaults 0 and size, negative indices relative to end, bounds clamp. retained elements move without cloning. returns nothing; array::slice returns a copy. every engine"><h3 id="api-bee5409b773b"><code>array&lt;T&gt;.slice(start: int = 0, end: int = size()) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Retains the selected range in place, end exclusive; defaults 0 and size, negative indices relative to end, bounds clamp. Retained elements move without cloning. Returns nothing; array::slice returns a copy.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [0, 1, 2, 3, 4];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [0, 1, 2, 3, 4];
 array&lt;int&gt; part = array::slice(xs, 1, 3);   // a copy
 xs.slice(3);                                 // xs itself becomes [3, 4]
 print(to_json(part), &quot; &quot;, to_json(xs));</code></pre></div>
@@ -396,13 +407,13 @@ print(to_json(part), &quot; &quot;, to_json(xs));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.some(predicate: function(t[, int]) -&gt; bool) -&gt; bool callback true if any match; short circuits. every engine"><h3 id="api-ce786ddb143c"><code>array&lt;T&gt;.some(predicate: function(T[, int]) -&gt; bool) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; callback</p>
 <p>True if any match; short circuits.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 3, 4];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [1, 3, 4];
 print(xs.some(x =&gt; x % 2 == 0), &quot; &quot;, xs.every(x =&gt; x &gt; 0));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true true</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="array&lt;t&gt;.sort(predicate: function(t, t) -&gt; bool = omitted) -&gt; void mutate, callback mutates in place; optional bool predicate, otherwise language &lt;, with &lt;=&gt; fallback for class and builtin orders. errors stop sorting without committing the order; callback side effects remain. strict weak ordering required. typed primitive buffers avoid boxing. default numeric sorting treats signed zeros as equivalent and groups all nans last; an explicit predicate supplies its own order. every engine"><h3 id="api-3fa8b725c3d8"><code>array&lt;T&gt;.sort(predicate: function(T, T) -&gt; bool = omitted) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate, callback</p>
 <p>Mutates in place; optional bool predicate, otherwise language &lt;, with &lt;=&gt; fallback for class and builtin orders. Errors stop sorting without committing the order; callback side effects remain. Strict weak ordering required. Typed primitive buffers avoid boxing. Default numeric sorting treats signed zeros as equivalent and groups all NaNs last; an explicit predicate supplies its own order.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [3, 1, 2];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; xs = [3, 1, 2];
 xs.sort();
 print(to_json(xs));
 xs.sort((a, b) =&gt; a &gt; b);
@@ -534,7 +545,7 @@ print(to_json(xs));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="binary::reader.text(count: int) -&gt; string advance  every engine"><h3 id="api-7402373802bd"><code>binary::reader.text(count: int) -&gt; string</code></h3><p><strong>Every engine</strong> &middot; advance</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="binary::reader.uint16() -&gt; int advance  every engine"><h3 id="api-27ae303f421c"><code>binary::reader.uint16() -&gt; int</code></h3><p><strong>Every engine</strong> &middot; advance</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">binary::writer w;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">binary::writer w;
 w.uint16(513).int32(-2);
 auto r = w.to_string().reader();
 print(r.uint16(), &quot; &quot;, r.int32(), &quot; &quot;, r.at_end());</code></pre></div>
@@ -545,7 +556,7 @@ print(r.uint16(), &quot; &quot;, r.int32(), &quot; &quot;, r.at_end());</code></
 <div class="api-entry" data-provider="core" data-search="binary::reader.uint8() -&gt; int advance  every engine"><h3 id="api-c1ba9036be38"><code>binary::reader.uint8() -&gt; int</code></h3><p><strong>Every engine</strong> &middot; advance</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="binary::reader.unpack(layout: binary::layout) -&gt; map&lt;string,var&gt; advance  every engine"><h3 id="api-e47a0786cdd1"><code>binary::reader.unpack(layout: binary::layout) -&gt; map&lt;string,var&gt;</code></h3><p><strong>Every engine</strong> &middot; advance</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto entry = binary::layout(&quot;id&quot;, binary::uint16, &quot;hp&quot;, binary::int32);
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto entry = binary::layout(&quot;id&quot;, binary::uint16, &quot;hp&quot;, binary::int32);
 binary::writer w;
 w.pack(entry, {&quot;id&quot;: 7, &quot;hp&quot;: 120});
 auto row = w.to_string().reader().unpack(entry);
@@ -587,7 +598,7 @@ print(row[&quot;id&quot;], &quot; &quot;, row[&quot;hp&quot;]);</code></pre></di
 <div class="api-entry" data-provider="core" data-search="binary::writer.size() -&gt; int observe  every engine"><h3 id="api-1d1d9564c65f"><code>binary::writer.size() -&gt; int</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="binary::writer.text(value: string, count: int = encoded_length) -&gt; binary::writer mutate  every engine"><h3 id="api-8fcc058c6944"><code>binary::writer.text(value: string, count: int = encoded_length) -&gt; binary::writer</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">binary::writer w;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">binary::writer w;
 w.text(&quot;ab&quot;, 4).text(&quot;c&quot;);
 print(w.size(), &quot; &quot;, to_json(w.to_string().to_bytes()));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">6 [97,98,0,0,99,0]</code></pre></div>
@@ -661,7 +672,7 @@ print(w.size(), &quot; &quot;, to_json(w.to_string().to_bytes()));</code></pre><
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="crypto::sha256(bytes: text) -&gt; string observe the sha-256 digest (fips 180-4) of the bytes (a utf8_string&#x27;s utf-8 bytes), 64 lowercase hex digits. register_all() or area registration"><h3 id="api-6b444235e9fd"><code>crypto::sha256(bytes: text) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
 <p>The SHA-256 digest (FIPS 180-4) of the bytes (a utf8_string&#x27;s UTF-8 bytes), 64 lowercase hex digits.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(crypto::sha256(&quot;abc&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(crypto::sha256(&quot;abc&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="crypto::sha256_bytes(bytes: text) -&gt; string observe the 32 raw digest bytes. register_all() or area registration"><h3 id="api-b5cbe1f81637"><code>crypto::sha256_bytes(bytes: text) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
@@ -722,12 +733,12 @@ print(w.size(), &quot; &quot;, to_json(w.to_string().to_bytes()));</code></pre><
 <div class="api-entry" data-provider="runner" data-search="file_exists(path: string) -&gt; bool filesystem  standalone jaiscript.exe"><h3 id="api-16f4448fc25e"><code>file_exists(path: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="file_name(path: string) -&gt; string observe  every engine"><h3 id="api-ac1a6b423ff4"><code>file_name(path: string) -&gt; string</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(file_name(&quot;assets/maps/e1m1.jai&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(file_name(&quot;assets/maps/e1m1.jai&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">e1m1.jai</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="format(template: string, values: var...) -&gt; string callback creates formatted text from a string literal format string; a string the checker sees is not a literal fails the load (vformat formats a run-time text). register_all() or area registration"><h3 id="api-9d10f1ecddeb"><code>format(template: string, values: var...) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; callback</p>
 <p>Creates formatted text from a string literal format string; a string the checker sees is not a literal fails the load (vformat formats a run-time text).</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(format(&quot;{} has {} hp&quot;, &quot;orc&quot;, 7));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(format(&quot;{} has {} hp&quot;, &quot;orc&quot;, 7));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">orc has 7 hp</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="format_value(value: var, specification: string) -&gt; string observe  every engine"><h3 id="api-497d9b94d285"><code>format_value(value: var, specification: string) -&gt; string</code></h3><p><strong>Every engine</strong> &middot; observe</p>
@@ -738,7 +749,7 @@ print(w.size(), &quot; &quot;, to_json(w.to_string().to_bytes()));</code></pre><
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="from_json(text: string) -&gt; var deserialize reconstructs registered classes when tagged; otherwise values/maps/arrays. register_all() or area registration"><h3 id="api-a94ccf3230d6"><code>from_json(text: string) -&gt; var</code></h3><p><strong>register_all() or area registration</strong> &middot; deserialize</p>
 <p>Reconstructs registered classes when tagged; otherwise values/maps/arrays.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var v = from_json(&quot;{\&quot;hp\&quot;: 3, \&quot;tags\&quot;: [\&quot;a\&quot;]}&quot;);
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var v = from_json(&quot;{\&quot;hp\&quot;: 3, \&quot;tags\&quot;: [\&quot;a\&quot;]}&quot;);
 print(v[&quot;hp&quot;], &quot; &quot;, v[&quot;tags&quot;][0]);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 a</code></pre></div>
 </div>
@@ -762,7 +773,7 @@ print(v[&quot;hp&quot;], &quot; &quot;, v[&quot;tags&quot;][0]);</code></pre></d
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="merge(first: map&lt;k,v&gt;, second: map) -&gt; map&lt;k,v&gt; copy preserves the first input key/value constraints and converts selected second values through normal map-store rules. second entries replace colliding keys. only values retained in the result copy; explicit handles retain identity. inputs do not mutate. register_all() or area registration"><h3 id="api-723e9adc001f"><code>merge(first: map&lt;K,V&gt;, second: map) -&gt; map&lt;K,V&gt;</code></h3><p><strong>register_all() or area registration</strong> &middot; copy</p>
 <p>Preserves the first input key/value constraints and converts selected second values through normal map-store rules. Second entries replace colliding keys. Only values retained in the result copy; explicit handles retain identity. Inputs do not mutate.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(merge({&quot;a&quot;: 1, &quot;b&quot;: 2}, {&quot;b&quot;: 3})));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(merge({&quot;a&quot;: 1, &quot;b&quot;: 2}, {&quot;b&quot;: 3})));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{&quot;a&quot;:1,&quot;b&quot;:3}</code></pre></div>
 </div>
 <div class="api-entry" data-provider="runner" data-search="move_file(from: string, to: string) -&gt; bool filesystem replaces destination; may copy across volumes. standalone jaiscript.exe"><h3 id="api-dee472e46d06"><code>move_file(from: string, to: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
@@ -798,7 +809,7 @@ print(v[&quot;hp&quot;], &quot; &quot;, v[&quot;tags&quot;][0]);</code></pre></d
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="random(seed: int) -&gt; random construct a generator whose draws are fixed by the seed on every platform and backend. `random r(seed);` declares one. register_all() or area registration"><h3 id="api-bdc9156937eb"><code>random(seed: int) -&gt; random</code></h3><p><strong>register_all() or area registration</strong> &middot; construct</p>
 <p>A generator whose draws are fixed by the seed on every platform and backend. `random r(seed);` declares one.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">random r(42);
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">random r(42);
 print(r.next_int(1, 6), &quot; &quot;, r.next_int(1, 6), &quot; &quot;, r.next_int(1, 6));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 3 5</code></pre></div>
 </div>
@@ -810,7 +821,7 @@ print(r.next_int(1, 6), &quot; &quot;, r.next_int(1, 6), &quot; &quot;, r.next_i
 </div>
 <div class="api-entry" data-provider="core" data-search="regex(pattern: string = &quot;&quot;, flags: string = &quot;&quot;) -&gt; regex construct flags i, m, s, x; literal texts compile once at load and an invalid one fails the load. every engine"><h3 id="api-7ad407136269"><code>regex(pattern: string = &quot;&quot;, flags: string = &quot;&quot;) -&gt; regex</code></h3><p><strong>Every engine</strong> &middot; construct</p>
 <p>Flags i, m, s, x; literal texts compile once at load and an invalid one fails the load.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">regex r = regex(R&quot;((\w+)@(\w+))&quot;, &quot;i&quot;);
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">regex r = regex(R&quot;((\w+)@(\w+))&quot;, &quot;i&quot;);
 print(r.pattern, &quot; &quot;, r.search(&quot;mail BOB@example now&quot;)[2]);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(\w+)@(\w+) example</code></pre></div>
 </div>
@@ -823,7 +834,7 @@ print(r.pattern, &quot; &quot;, r.search(&quot;mail BOB@example now&quot;)[2]);<
 </div>
 <div class="api-entry" data-provider="core" data-search="same_object(left: var, right: var) -&gt; bool observe object/storage identity, not memberwise equality. every engine"><h3 id="api-8cccda2a065b"><code>same_object(left: var, right: var) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Object/storage identity, not memberwise equality.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; a = [1];
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;int&gt; a = [1];
 array&lt;int&gt; b = a;
 auto&amp; r = a;
 print(same_object(a, b), &quot; &quot;, same_object(a, r), &quot; &quot;, a == b);</code></pre></div>
@@ -853,11 +864,11 @@ print(same_object(a, b), &quot; &quot;, same_object(a, r), &quot; &quot;, a == b
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="to_char(code: int) -&gt; char convert byte code conversion. register_all() or area registration"><h3 id="api-28005c097351"><code>to_char(code: int) -&gt; char</code></h3><p><strong>register_all() or area registration</strong> &middot; convert</p>
 <p>Byte code conversion.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_char(65), &quot; &quot;, type_of(to_char(65)));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_char(65), &quot; &quot;, type_of(to_char(65)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">A char</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="to_json(value: var, indent: int = -1) -&gt; string serialize  register_all() or area registration"><h3 id="api-78e34a34fc6d"><code>to_json(value: var, indent: int = -1) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; serialize</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json({&quot;hp&quot;: 3, &quot;tags&quot;: [&quot;a&quot;]}));
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json({&quot;hp&quot;: 3, &quot;tags&quot;: [&quot;a&quot;]}));
 print(to_json([1, 2], 2));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{&quot;hp&quot;:3,&quot;tags&quot;:[&quot;a&quot;]}
 [
@@ -867,18 +878,18 @@ print(to_json([1, 2], 2));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="to_string(value: var) -&gt; string callback the display text print shows: a container&#x27;s contents, an instance&#x27;s to_string(), else its class name and fields. register_all() or area registration"><h3 id="api-30059b265de9"><code>to_string(value: var) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; callback</p>
 <p>The display text print shows: a container&#x27;s contents, an instance&#x27;s to_string(), else its class name and fields.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_string(3) + &quot;!&quot;, &quot; &quot;, to_string(2.5), &quot; &quot;, to_string([1, &quot;two&quot;]));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_string(3) + &quot;!&quot;, &quot; &quot;, to_string(2.5), &quot; &quot;, to_string([1, &quot;two&quot;]));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3! 2.5 [1, &quot;two&quot;]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="type_of(value: var) -&gt; string observe  register_all() or area registration"><h3 id="api-b30f6412a259"><code>type_of(value: var) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(type_of(1), &quot; &quot;, type_of(1.5), &quot; &quot;, type_of(&quot;s&quot;), &quot; &quot;, type_of([1]));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(type_of(1), &quot; &quot;, type_of(1.5), &quot; &quot;, type_of(&quot;s&quot;), &quot; &quot;, type_of([1]));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">int float string array</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="utf8_string(value: var) -&gt; utf8_string convert  register_all() or area registration"><h3 id="api-ecc77b2a8369"><code>utf8_string(value: var) -&gt; utf8_string</code></h3><p><strong>register_all() or area registration</strong> &middot; convert</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="vformat(format: string, values: var...) -&gt; string callback formats a run-time format text the way format formats a literal (c++&#x27;s std::vformat). register_all() or area registration"><h3 id="api-daeba915bd3e"><code>vformat(format: string, values: var...) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; callback</p>
 <p>Formats a run-time format text the way format formats a literal (C++&#x27;s std::vformat).</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string pattern = &quot;{} has {} hp&quot;;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string pattern = &quot;{} has {} hp&quot;;
 print(vformat(pattern, &quot;orc&quot;, 7));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">orc has 7 hp</code></pre></div>
 </div>
@@ -917,7 +928,7 @@ print(vformat(pattern, &quot;orc&quot;, 7));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="scoped_template_text(text: string, args: map) -&gt; web::html execute scoped_template over template text instead of a file. the scoped_template privilege (on by default)"><h3 id="api-326c54513600"><code>scoped_template_text(text: string, args: map) -&gt; web::html</code></h3><p><strong>The scoped_template privilege (on by default)</strong> &middot; execute</p>
 <p>scoped_template over template text instead of a file.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(scoped_template_text(&quot;&lt;b&gt;${args[\&quot;name\&quot;]}&lt;/b&gt;&quot;, {&quot;name&quot;: &quot;&lt;i&gt;&quot;}));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(scoped_template_text(&quot;&lt;b&gt;${args[\&quot;name\&quot;]}&lt;/b&gt;&quot;, {&quot;name&quot;: &quot;&lt;i&gt;&quot;}));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;b&gt;&amp;lt;i&amp;gt;&lt;/b&gt;</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="template(path: string, names: variable names...) -&gt; web::html execute renders the template file at path, seeing each passed name by reference with its declared type, and the program; every splice html-escaped. a literal path compiles and checks at load; another path at its first render. a render writes at most engine::template_output_limit bytes. every engine (reads the file under the filesystem privilege)"><h3 id="api-f26ca47e3461"><code>template(path: string, names: variable names...) -&gt; web::html</code></h3><p><strong>Every engine (reads the file under the filesystem privilege)</strong> &middot; execute</p>
@@ -934,7 +945,7 @@ print(vformat(pattern, &quot;orc&quot;, 7));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="map&lt;k,v&gt;.contains(key: k) -&gt; bool observe keys never coerce. every engine"><h3 id="api-03aa788c3ffc"><code>map&lt;K,V&gt;.contains(key: K) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Keys never coerce.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2};
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2};
 print(stock.contains(&quot;axe&quot;), &quot; &quot;, stock.contains(&quot;bow&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true false</code></pre></div>
 </div>
@@ -942,13 +953,13 @@ print(stock.contains(&quot;axe&quot;), &quot; &quot;, stock.contains(&quot;bow&q
 </div>
 <div class="api-entry" data-provider="core" data-search="map&lt;k,v&gt;.erase(key: k) -&gt; bool mutate alias of remove(key); true if an entry was removed, false when absent. every engine"><h3 id="api-920ae15b72b5"><code>map&lt;K,V&gt;.erase(key: K) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Alias of remove(key); true if an entry was removed, false when absent.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2, &quot;bow&quot;: 1};
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2, &quot;bow&quot;: 1};
 print(stock.erase(&quot;axe&quot;), &quot; &quot;, stock.erase(&quot;axe&quot;), &quot; &quot;, to_json(stock));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true false {&quot;bow&quot;:1}</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="map&lt;k,v&gt;.filter(predicate: function(k, v) -&gt; bool) -&gt; void mutate; callback keeps the entries the predicate accepts in place, retaining key/value constraints, and returns nothing; map::filter returns a copy. callback value references target live entries. every engine"><h3 id="api-86a9709d490f"><code>map&lt;K,V&gt;.filter(predicate: function(K, V) -&gt; bool) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate; callback</p>
 <p>Keeps the entries the predicate accepts in place, retaining key/value constraints, and returns nothing; map::filter returns a copy. Callback value references target live entries.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2, &quot;bow&quot;: 0, &quot;cup&quot;: 5};
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2, &quot;bow&quot;: 0, &quot;cup&quot;: 5};
 map&lt;string, int&gt; big = map::filter(stock, (k, v) =&gt; v &gt; 2);   // a copy
 stock.filter((k, v) =&gt; v &gt; 0);                                 // in place
 print(to_json(big), &quot; &quot;, to_json(stock));</code></pre></div>
@@ -956,7 +967,7 @@ print(to_json(big), &quot; &quot;, to_json(stock));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="map&lt;k,v&gt;.get(key: k, fallback: var = null) -&gt; v or var observe does not insert; returns the stored value or fallback; missing keys default to null. an object, array or map element comes back as a reference to it, like a c++ reference return: binding the result to var, auto or t copies the element, while var&amp;, t&amp; and a member call on the result reach the stored element. every engine"><h3 id="api-6c6197bc503b"><code>map&lt;K,V&gt;.get(key: K, fallback: var = null) -&gt; V or var</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Does not insert; returns the stored value or fallback; missing keys default to null. An object, array or map element comes back as a reference to it, like a C++ reference return: binding the result to var, auto or T copies the element, while var&amp;, T&amp; and a member call on the result reach the stored element.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2};
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2};
 print(stock.get(&quot;axe&quot;), &quot; &quot;, stock.get(&quot;bow&quot;), &quot; &quot;, stock.get(&quot;bow&quot;, 0), &quot; &quot;, stock.size());</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 null 0 1</code></pre></div>
 </div>
@@ -965,7 +976,7 @@ print(stock.get(&quot;axe&quot;), &quot; &quot;, stock.get(&quot;bow&quot;), &qu
 </div>
 <div class="api-entry" data-provider="core" data-search="map&lt;k,v&gt;.keys() -&gt; array&lt;var&gt; copy key order; keys become detached values. value results copy, while shared_ptr/weak_ptr handles retain identity. every engine"><h3 id="api-f373781a2c3f"><code>map&lt;K,V&gt;.keys() -&gt; array&lt;var&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>Key order; keys become detached values. Value results copy, while shared_ptr/weak_ptr handles retain identity.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;bow&quot;: 1, &quot;axe&quot;: 2};
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;bow&quot;: 1, &quot;axe&quot;: 2};
 print(to_json(stock.keys()), &quot; &quot;, to_json(stock.values()));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[&quot;axe&quot;,&quot;bow&quot;] [2,1]</code></pre></div>
 </div>
@@ -977,7 +988,7 @@ print(to_json(stock.keys()), &quot; &quot;, to_json(stock.values()));</code></pr
 </div>
 <div class="api-entry" data-provider="core" data-search="map&lt;k,v&gt;.remove_if(predicate: function(k, v) -&gt; bool) -&gt; int mutate, callback returns removed count; keys remain immutable. every engine"><h3 id="api-eb52f312ba9a"><code>map&lt;K,V&gt;.remove_if(predicate: function(K, V) -&gt; bool) -&gt; int</code></h3><p><strong>Every engine</strong> &middot; mutate, callback</p>
 <p>Returns removed count; keys remain immutable.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2, &quot;bow&quot;: 0, &quot;cap&quot;: 0};
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2, &quot;bow&quot;: 0, &quot;cap&quot;: 0};
 print(stock.remove_if((k, v) =&gt; v == 0), &quot; &quot;, to_json(stock));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 {&quot;axe&quot;:2}</code></pre></div>
 </div>
@@ -985,7 +996,7 @@ print(stock.remove_if((k, v) =&gt; v == 0), &quot; &quot;, to_json(stock));</cod
 </div>
 <div class="api-entry" data-provider="core" data-search="map&lt;k,v&gt;.to_array() -&gt; array&lt;array&lt;var&gt;&gt; copy ordered [key,value] arrays; not pair objects. value results copy, while shared_ptr/weak_ptr handles retain identity. every engine"><h3 id="api-de18a2ac1234"><code>map&lt;K,V&gt;.to_array() -&gt; array&lt;array&lt;var&gt;&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>Ordered [key,value] arrays; not Pair objects. Value results copy, while shared_ptr/weak_ptr handles retain identity.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2};
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; stock = {&quot;axe&quot;: 2};
 print(to_json(stock.to_array()));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[[&quot;axe&quot;,2]]</code></pre></div>
 </div>
@@ -997,10 +1008,13 @@ print(to_json(stock.to_array()));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="math::abs(value: number or vector) -&gt; number or vector observe integral arguments retain exact integral results. every engine"><h3 id="api-38030f8a78a5"><code>math::abs(value: number or vector) -&gt; number or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Integral arguments retain exact integral results.</p>
 </div>
+<div class="api-entry" data-provider="core" data-search="math::angle(vector: vector2) -&gt; float observe radians, atan2(y, x) in (-pi, pi]; 0 for the zero vector. every engine"><h3 id="api-118408163959"><code>math::angle(vector: vector2) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>Radians, atan2(y, x) in (-pi, pi]; 0 for the zero vector.</p>
+</div>
 <div class="api-entry" data-provider="core" data-search="math::angle_between(left: vector, right: matching_vector) -&gt; float observe radians. every engine"><h3 id="api-d8bdc82ef15f"><code>math::angle_between(left: vector, right: matching_vector) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Radians.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::atan2(y: number or vector, x: number or vector) -&gt; float or vector observe  every engine"><h3 id="api-b58e547463b2"><code>math::atan2(y: number or vector, x: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::atan2(y: number, x: number) -&gt; float observe  every engine"><h3 id="api-2e4ecbb3113f"><code>math::atan2(y: number, x: number) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::ceil(value: number or vector) -&gt; float or vector observe  every engine"><h3 id="api-a545376d57cb"><code>math::ceil(value: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
@@ -1014,12 +1028,12 @@ print(to_json(stock.to_array()));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="math::color(value: math::color) -&gt; math::color construct copies a color; a lone scalar or other vector kind is rejected. every engine"><h3 id="api-e2aa6bbaf8bb"><code>math::color(value: math::color) -&gt; math::color</code></h3><p><strong>Every engine</strong> &middot; construct</p>
 <p>Copies a color; a lone scalar or other vector kind is rejected.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::cos(angle: number or vector) -&gt; float or vector observe  every engine"><h3 id="api-290e932f1169"><code>math::cos(angle: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::cos(angle: number) -&gt; float observe  every engine"><h3 id="api-eb84530cdd24"><code>math::cos(angle: number) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::cross(left: vector2 or vector3, right: matching_vector) -&gt; number or vector3 observe 2d determinant or 3d cross product. every engine"><h3 id="api-ce38f5a700b0"><code>math::cross(left: vector2 or vector3, right: matching_vector) -&gt; number or vector3</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>2D determinant or 3D cross product.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::degrees_to_radians(angle: number or vector) -&gt; float or vector observe  every engine"><h3 id="api-bf57a4848c41"><code>math::degrees_to_radians(angle: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::degrees_to_radians(angle: number) -&gt; float observe  every engine"><h3 id="api-263d61ee0e51"><code>math::degrees_to_radians(angle: number) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::distance(left: vector, right: matching_vector) -&gt; float observe vector form; scalar-coordinate form has four arguments. every engine"><h3 id="api-cfe9cb8c4e73"><code>math::distance(left: vector, right: matching_vector) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Vector form; scalar-coordinate form has four arguments.</p>
@@ -1037,6 +1051,12 @@ print(to_json(stock.to_array()));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::floor(value: number or vector) -&gt; float or vector observe component-wise for floating vectors; integers accepted. every engine"><h3 id="api-52e688a9dffb"><code>math::floor(value: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Component-wise for floating vectors; integers accepted.</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="math::from_angle(angle: number) -&gt; vector2 observe radians; the unit vector (cos, sin). every engine"><h3 id="api-0612e0b6da27"><code>math::from_angle(angle: number) -&gt; vector2</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>Radians; the unit vector (cos, sin).</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="math::from_angle(angle: number, length: number) -&gt; vector2 observe radians. every engine"><h3 id="api-5ead3aba7978"><code>math::from_angle(angle: number, length: number) -&gt; vector2</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>Radians.</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::ifloor(value: number) -&gt; int convert  every engine"><h3 id="api-651b056cd2db"><code>math::ifloor(value: number) -&gt; int</code></h3><p><strong>Every engine</strong> &middot; convert</p>
 </div>
@@ -1066,7 +1086,7 @@ print(to_json(stock.to_array()));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="math::length_squared(vector: vector) -&gt; number observe integral vector result remains exact when representable. every engine"><h3 id="api-45a0664fb9bf"><code>math::length_squared(vector: vector) -&gt; number</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Integral vector result remains exact when representable.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::lerp(start: number or vector or color, end: same_shape, percent: number) -&gt; same_shape observe color interpolation uses oklab. every engine"><h3 id="api-207c9a29c815"><code>math::lerp(start: number or vector or color, end: same_shape, percent: number) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::lerp(start: number or vector or color, end: same_shape, percent: number or same_shape) -&gt; same_shape observe color interpolation uses oklab. every engine"><h3 id="api-6adc56ae0579"><code>math::lerp(start: number or vector or color, end: same_shape, percent: number or same_shape) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Color interpolation uses OKLab.</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::max(left: number or vector, right: number or vector) -&gt; number or vector observe  every engine"><h3 id="api-660405728f0b"><code>math::max(left: number or vector, right: number or vector) -&gt; number or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
@@ -1074,18 +1094,18 @@ print(to_json(stock.to_array()));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="math::min(left: number or vector, right: number or vector) -&gt; number or vector observe scalar selected operand retains its kind; vectors component-wise. every engine"><h3 id="api-4f619f197f00"><code>math::min(left: number or vector, right: number or vector) -&gt; number or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Scalar selected operand retains its kind; vectors component-wise.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::mix(start: number or vector or color, end: same_shape, percent: number) -&gt; same_shape observe alias of lerp. every engine"><h3 id="api-a8fb53ca59e2"><code>math::mix(start: number or vector or color, end: same_shape, percent: number) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::mix(start: number or vector or color, end: same_shape, percent: number or same_shape) -&gt; same_shape observe alias of lerp. every engine"><h3 id="api-de18f5ce66d9"><code>math::mix(start: number or vector or color, end: same_shape, percent: number or same_shape) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Alias of lerp.</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::mix_hsv(start: color, end: color, percent: number) -&gt; color observe  every engine"><h3 id="api-587a4e40b6a8"><code>math::mix_hsv(start: color, end: color, percent: number) -&gt; color</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::mix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape observe  every engine"><h3 id="api-fdce42f93212"><code>math::mix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::mix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape observe  every engine"><h3 id="api-dc08dc9c7e84"><code>math::mix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::mix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape observe  every engine"><h3 id="api-e5280a710ddb"><code>math::mix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::mix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape observe  every engine"><h3 id="api-4dc6cdfe7149"><code>math::mix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::mix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape observe  every engine"><h3 id="api-4f157f16c4d4"><code>math::mix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::mix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape observe  every engine"><h3 id="api-59369a4a5021"><code>math::mix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::mix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape observe  every engine"><h3 id="api-331b27f1a6da"><code>math::mix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::mix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape observe  every engine"><h3 id="api-36d1560a37df"><code>math::mix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::mix_rgb(start: color, end: color, percent: number) -&gt; color observe  every engine"><h3 id="api-0563d5e24801"><code>math::mix_rgb(start: color, end: color, percent: number) -&gt; color</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
@@ -1094,11 +1114,11 @@ print(to_json(stock.to_array()));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::perpendicular(vector: vector2) -&gt; vector2 observe  every engine"><h3 id="api-5f2e1e09c28a"><code>math::perpendicular(vector: vector2) -&gt; vector2</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::pow(base: number or vector, exponent: number or vector) -&gt; float or vector observe  every engine"><h3 id="api-177ddc1199bf"><code>math::pow(base: number or vector, exponent: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::pow(base: number, exponent: number) -&gt; float observe  every engine"><h3 id="api-d3fb71291425"><code>math::pow(base: number, exponent: number) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::project(vector: vector, onto: matching_vector) -&gt; floating_vector observe  every engine"><h3 id="api-364512c82844"><code>math::project(vector: vector, onto: matching_vector) -&gt; floating_vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::radians_to_degrees(angle: number or vector) -&gt; float or vector observe  every engine"><h3 id="api-94c0b011bb1a"><code>math::radians_to_degrees(angle: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::radians_to_degrees(angle: number) -&gt; float observe  every engine"><h3 id="api-efe69b9c33bc"><code>math::radians_to_degrees(angle: number) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::reflect(vector: vector, normal: matching_vector) -&gt; floating_vector observe  every engine"><h3 id="api-3d1057499c06"><code>math::reflect(vector: vector, normal: matching_vector) -&gt; floating_vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
@@ -1109,24 +1129,27 @@ print(to_json(stock.to_array()));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::rotate(vector: vector3, axis: vector3, angle: number) -&gt; vector3 observe  every engine"><h3 id="api-e1caaba42aae"><code>math::rotate(vector: vector3, axis: vector3, angle: number) -&gt; vector3</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::round(value: number or vector) -&gt; float or vector observe  every engine"><h3 id="api-c6265a0558ee"><code>math::round(value: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-</div>
-<div class="api-entry" data-provider="core" data-search="math::sin(angle: number or vector) -&gt; float or vector observe radians. every engine"><h3 id="api-df80855c584e"><code>math::sin(angle: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::rotate_around(point: vector2, pivot: vector2, angle: number) -&gt; vector2 observe radians. every engine"><h3 id="api-dee567668a2e"><code>math::rotate_around(point: vector2, pivot: vector2, angle: number) -&gt; vector2</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Radians.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::sqrt(value: number or vector) -&gt; float or vector observe  every engine"><h3 id="api-a0d2ca8ba5ea"><code>math::sqrt(value: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::round(value: number or vector) -&gt; float or vector observe  every engine"><h3 id="api-c6265a0558ee"><code>math::round(value: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::tan(angle: number or vector) -&gt; float or vector observe  every engine"><h3 id="api-00639c0df18b"><code>math::tan(angle: number or vector) -&gt; float or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::sin(angle: number) -&gt; float observe radians. every engine"><h3 id="api-567c32e3594d"><code>math::sin(angle: number) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>Radians.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::unmix(start: number or vector, end: same_shape, value: same_shape) -&gt; number or vector observe  every engine"><h3 id="api-8601538a615d"><code>math::unmix(start: number or vector, end: same_shape, value: same_shape) -&gt; number or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::sqrt(value: number) -&gt; float observe  every engine"><h3 id="api-1507e0ce0049"><code>math::sqrt(value: number) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::unmix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape observe  every engine"><h3 id="api-d4ca74dc9b56"><code>math::unmix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::tan(angle: number) -&gt; float observe  every engine"><h3 id="api-4c785a0286ed"><code>math::tan(angle: number) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::unmix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape observe  every engine"><h3 id="api-c7547bf38f57"><code>math::unmix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::unmix(start: number or vector or color, end: same_shape, value: number or same_shape) -&gt; number or vector observe  every engine"><h3 id="api-17688506b425"><code>math::unmix(start: number or vector or color, end: same_shape, value: number or same_shape) -&gt; number or vector</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::unmix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape observe  every engine"><h3 id="api-c560a8293912"><code>math::unmix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::unmix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape observe  every engine"><h3 id="api-0f1f3892c447"><code>math::unmix_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="math::unmix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape observe  every engine"><h3 id="api-405735918a8b"><code>math::unmix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<div class="api-entry" data-provider="core" data-search="math::unmix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape observe  every engine"><h3 id="api-99508ff4ecd8"><code>math::unmix_in_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="math::unmix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape observe  every engine"><h3 id="api-0678556a3b10"><code>math::unmix_out(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="math::unmix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape observe  every engine"><h3 id="api-684cf9550f48"><code>math::unmix_out_in(start: number or vector or color, end: same_shape, value: number or same_shape, strength: number or same_shape) -&gt; same_shape</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::vec2() -&gt; math::vec2 construct zero initialized. every engine"><h3 id="api-c32277cf38b4"><code>math::vec2() -&gt; math::vec2</code></h3><p><strong>Every engine</strong> &middot; construct</p>
 <p>Zero initialized.</p>
@@ -1214,6 +1237,8 @@ print(to_json(stock.to_array()));</code></pre></div>
 </div>
 </section>
 <section class="api-group"><h2 id="group-math-ivec2">math::ivec2</h2>
+<div class="api-entry" data-provider="core" data-search="math::ivec2.angle() -&gt; float observe  every engine"><h3 id="api-706bebb23373"><code>math::ivec2.angle() -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+</div>
 <div class="api-entry" data-provider="core" data-search="math::ivec2.cross(other: matching_vector) -&gt; number or vector3 observe  every engine"><h3 id="api-e7aba0fdbc42"><code>math::ivec2.cross(other: matching_vector) -&gt; number or vector3</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::ivec2.distance_to(other: matching_vector) -&gt; float observe  every engine"><h3 id="api-dcbb4fa63226"><code>math::ivec2.distance_to(other: matching_vector) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
@@ -1227,6 +1252,8 @@ print(to_json(stock.to_array()));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="math::ivec2.normalized() -&gt; floating_vector copy  every engine"><h3 id="api-39e65223a0af"><code>math::ivec2.normalized() -&gt; floating_vector</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::ivec2.rotated(angle: number) -&gt; vector2 copy  every engine"><h3 id="api-68c1198a2cfc"><code>math::ivec2.rotated(angle: number) -&gt; vector2</code></h3><p><strong>Every engine</strong> &middot; copy</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="math::ivec2.rotated_around(pivot: vector2, angle: number) -&gt; vector2 copy  every engine"><h3 id="api-ecb2e4b17cbf"><code>math::ivec2.rotated_around(pivot: vector2, angle: number) -&gt; vector2</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 </div>
 </section>
 <section class="api-group"><h2 id="group-math-ivec3">math::ivec3</h2>
@@ -1246,6 +1273,8 @@ print(to_json(stock.to_array()));</code></pre></div>
 </div>
 </section>
 <section class="api-group"><h2 id="group-math-vec2">math::vec2</h2>
+<div class="api-entry" data-provider="core" data-search="math::vec2.angle() -&gt; float observe  every engine"><h3 id="api-ae3aab68e7de"><code>math::vec2.angle() -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+</div>
 <div class="api-entry" data-provider="core" data-search="math::vec2.cross(other: matching_vector) -&gt; number or vector3 observe  every engine"><h3 id="api-4646d50ba020"><code>math::vec2.cross(other: matching_vector) -&gt; number or vector3</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::vec2.distance_to(other: matching_vector) -&gt; float observe  every engine"><h3 id="api-e88dab1d188a"><code>math::vec2.distance_to(other: matching_vector) -&gt; float</code></h3><p><strong>Every engine</strong> &middot; observe</p>
@@ -1259,6 +1288,8 @@ print(to_json(stock.to_array()));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="math::vec2.normalized() -&gt; floating_vector copy  every engine"><h3 id="api-7386218321ed"><code>math::vec2.normalized() -&gt; floating_vector</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="math::vec2.rotated(angle: number) -&gt; vector2 copy  every engine"><h3 id="api-4df70c342199"><code>math::vec2.rotated(angle: number) -&gt; vector2</code></h3><p><strong>Every engine</strong> &middot; copy</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="math::vec2.rotated_around(pivot: vector2, angle: number) -&gt; vector2 copy  every engine"><h3 id="api-82bcc83b3030"><code>math::vec2.rotated_around(pivot: vector2, angle: number) -&gt; vector2</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 </div>
 </section>
 <section class="api-group"><h2 id="group-math-vec3">math::vec3</h2>
@@ -1320,7 +1351,7 @@ print(to_json(stock.to_array()));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::bind(object: var, method: string) -&gt; function bind pins receiver; later calls follow reloaded methods. register_all() or area registration"><h3 id="api-733ca39fe916"><code>reflect::bind(object: var, method: string) -&gt; function</code></h3><p><strong>register_all() or area registration</strong> &middot; bind</p>
 <p>Pins receiver; later calls follow reloaded methods.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int hp = 7; void hit() { hp -= 1; } }
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int hp = 7; void hit() { hp -= 1; } }
 auto o = new Orc();
 auto hit = reflect::bind(o, &quot;hit&quot;);
 hit();
@@ -1333,7 +1364,7 @@ print(o.hp);</code></pre></div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::classes() -&gt; array&lt;string&gt; observe  register_all() or area registration"><h3 id="api-d19d5773fa6f"><code>reflect::classes() -&gt; array&lt;string&gt;</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::construct(class_name: string, args: var...) -&gt; var construct  register_all() or area registration"><h3 id="api-f12257fed82d"><code>reflect::construct(class_name: string, args: var...) -&gt; var</code></h3><p><strong>register_all() or area registration</strong> &middot; construct</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int hp = 7; Orc(int h) { hp = h; } }
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int hp = 7; Orc(int h) { hp = h; } }
 var o = reflect::construct(&quot;Orc&quot;, 12);
 print(o.hp);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">12</code></pre></div>
@@ -1341,7 +1372,7 @@ print(o.hp);</code></pre></div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::construct_shared(class_name: string, args: var...) -&gt; shared_ptr construct  register_all() or area registration"><h3 id="api-69824260edf5"><code>reflect::construct_shared(class_name: string, args: var...) -&gt; shared_ptr</code></h3><p><strong>register_all() or area registration</strong> &middot; construct</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::fields(object_or_class: var) -&gt; array&lt;map&lt;string,var&gt;&gt; observe  register_all() or area registration"><h3 id="api-6b11a52f5f5b"><code>reflect::fields(object_or_class: var) -&gt; array&lt;map&lt;string,var&gt;&gt;</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int hp = 7; string name = &quot;grok&quot;; }
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int hp = 7; string name = &quot;grok&quot;; }
 for (auto f : reflect::fields(Orc())) { print(f[&quot;name&quot;], &quot;: &quot;, f[&quot;type&quot;]); }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">hp: int
 name: string</code></pre></div>
@@ -1355,7 +1386,7 @@ name: string</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::get(object: var, field: string) -&gt; var observe, callback reads through normal field/accessor semantics. register_all() or area registration"><h3 id="api-5e2d3cd7cd9f"><code>reflect::get(object: var, field: string) -&gt; var</code></h3><p><strong>register_all() or area registration</strong> &middot; observe, callback</p>
 <p>Reads through normal field/accessor semantics.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int hp = 7; }
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int hp = 7; }
 Orc o;
 reflect::set(o, &quot;hp&quot;, 9);
 print(reflect::get(o, &quot;hp&quot;));</code></pre></div>
@@ -1366,16 +1397,19 @@ print(reflect::get(o, &quot;hp&quot;));</code></pre></div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::has_field(object_or_class: var, name: string) -&gt; bool observe  register_all() or area registration"><h3 id="api-1729b7033c9c"><code>reflect::has_field(object_or_class: var, name: string) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::has_method(object_or_class: var, name: string) -&gt; bool observe  register_all() or area registration"><h3 id="api-5cfca9f5d7bf"><code>reflect::has_method(object_or_class: var, name: string) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int hp = 7; void hit() {} }
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int hp = 7; void hit() {} }
 print(reflect::has_field(Orc(), &quot;hp&quot;), &quot; &quot;, reflect::has_method(Orc(), &quot;hit&quot;), &quot; &quot;, reflect::has_method(Orc(), &quot;fly&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true true false</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::instances(class: class or string) -&gt; array&lt;var&gt; observe  register_all() or area registration"><h3 id="api-d444464167a1"><code>reflect::instances(class: class or string) -&gt; array&lt;var&gt;</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::invoke(object: var, method: string, args: var...) -&gt; var callback  register_all() or area registration"><h3 id="api-5667edc6a7cd"><code>reflect::invoke(object: var, method: string, args: var...) -&gt; var</code></h3><p><strong>register_all() or area registration</strong> &middot; callback</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int add(int a, int b) { return a + b; } }
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Orc { int add(int a, int b) { return a + b; } }
 print(reflect::invoke(Orc(), &quot;add&quot;, 2, 3));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">5</code></pre></div>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="reflect::is_a(value: var, class_name: string) -&gt; bool observe instanceof for a class named at run time: true for an object of the class or of one derived from it, false for any other value. an unknown class name raises. register_all() or area registration"><h3 id="api-1309fbc7f473"><code>reflect::is_a(value: var, class_name: string) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
+<p>instanceof for a class named at run time: true for an object of the class or of one derived from it, false for any other value. An unknown class name raises.</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::is_cpp_bound(value: var) -&gt; bool observe  register_all() or area registration"><h3 id="api-15481cb7ffa0"><code>reflect::is_cpp_bound(value: var) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
 </div>
@@ -1416,7 +1450,7 @@ print(reflect::invoke(Orc(), &quot;add&quot;, 2, 3));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="regex.replace(text: string, replacement: string) -&gt; string copy $1..$99, ${n}, ${name}, $0, $$. every engine"><h3 id="api-d3cdbf497108"><code>regex.replace(text: string, replacement: string) -&gt; string</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>$1..$99, ${n}, ${name}, $0, $$.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(regex(R&quot;((\w+) (\w+))&quot;).replace(&quot;ada lovelace&quot;, &quot;$2, $1&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(regex(R&quot;((\w+) (\w+))&quot;).replace(&quot;ada lovelace&quot;, &quot;$2, $1&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">lovelace, ada</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="regex.replace_first(text: string, replacement: (regex::match) -&gt; string) -&gt; string copy, callback  every engine"><h3 id="api-1a3fada9cb9f"><code>regex.replace_first(text: string, replacement: (regex::match) -&gt; string) -&gt; string</code></h3><p><strong>Every engine</strong> &middot; copy, callback</p>
@@ -1432,7 +1466,7 @@ print(reflect::invoke(Orc(), &quot;add&quot;, 2, 3));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="regex.split(text: string) -&gt; array&lt;string&gt; copy ecmascript&#x27;s split; each split&#x27;s groups follow its piece. every engine"><h3 id="api-f84f7811f3d7"><code>regex.split(text: string) -&gt; array&lt;string&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>ECMAScript&#x27;s split; each split&#x27;s groups follow its piece.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(regex(R&quot;(\s*,\s*)&quot;).split(&quot;a , b,c&quot;)));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(regex(R&quot;(\s*,\s*)&quot;).split(&quot;a , b,c&quot;)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[&quot;a&quot;,&quot;b&quot;,&quot;c&quot;]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="regex.split(text: string, max_splits: int) -&gt; array&lt;string&gt; copy the rest stays in the last piece; a negative count is no limit. every engine"><h3 id="api-d260b338694f"><code>regex.split(text: string, max_splits: int) -&gt; array&lt;string&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
@@ -1520,7 +1554,7 @@ print(reflect::invoke(Orc(), &quot;add&quot;, 2, 3));</code></pre></div>
 <div class="api-entry" data-provider="stdlib" data-search="string::is_valid_utf8(value: text) -&gt; bool observe  register_all() or area registration"><h3 id="api-97caaac62ba4"><code>string::is_valid_utf8(value: text) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="string::join(values: array, separator: text = &quot;&quot;) -&gt; string copy  register_all() or area registration"><h3 id="api-ca09244ad131"><code>string::join(values: array, separator: text = &quot;&quot;) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; copy</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(string::join([&quot;a&quot;, &quot;b&quot;, &quot;c&quot;], &quot;/&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(string::join([&quot;a&quot;, &quot;b&quot;, &quot;c&quot;], &quot;/&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">a/b/c</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="string::pad_left(value: text, width: int, fill: char or text = &#x27; &#x27;) -&gt; same_text_kind copy  register_all() or area registration"><h3 id="api-2beea1021546"><code>string::pad_left(value: text, width: int, fill: char or text = &#x27; &#x27;) -&gt; same_text_kind</code></h3><p><strong>register_all() or area registration</strong> &middot; copy</p>
@@ -1545,7 +1579,7 @@ print(reflect::invoke(Orc(), &quot;add&quot;, 2, 3));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.at(index: int) -&gt; char observe returns an inline byte char like []; no temporary string allocation. negative indices count from end; out-of-range raises. every engine"><h3 id="api-b5c09b083fa9"><code>string.at(index: int) -&gt; char</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Returns an inline byte char like []; no temporary string allocation. Negative indices count from end; out-of-range raises.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = &quot;abc&quot;;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = &quot;abc&quot;;
 print(s.at(1), &quot; &quot;, s[2], &quot; &quot;, type_of(s.at(0)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">b c char</code></pre></div>
 </div>
@@ -1562,7 +1596,7 @@ print(s.at(1), &quot; &quot;, s[2], &quot; &quot;, type_of(s.at(0)));</code></pr
 <p>Negative, zero or positive lexical comparison.</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.contains(needle: text) -&gt; bool observe  every engine"><h3 id="api-b0b1c979a50d"><code>string.contains(needle: text) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(&quot;hello&quot;.contains(&quot;ell&quot;), &quot; &quot;, &quot;hello&quot;.count(&quot;l&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(&quot;hello&quot;.contains(&quot;ell&quot;), &quot; &quot;, &quot;hello&quot;.count(&quot;l&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true 2</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.count(needle: text) -&gt; int observe  every engine"><h3 id="api-6faa6bf97427"><code>string.count(needle: text) -&gt; int</code></h3><p><strong>Every engine</strong> &middot; observe</p>
@@ -1579,7 +1613,7 @@ print(s.at(1), &quot; &quot;, s[2], &quot; &quot;, type_of(s.at(0)));</code></pr
 </div>
 <div class="api-entry" data-provider="core" data-search="string.find(needle: text, start: int = 0) -&gt; int observe -1 if absent. every engine"><h3 id="api-1cb1142d54ab"><code>string.find(needle: text, start: int = 0) -&gt; int</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>-1 if absent.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(&quot;banana&quot;.find(&quot;an&quot;), &quot; &quot;, &quot;banana&quot;.find(&quot;an&quot;, 2), &quot; &quot;, &quot;banana&quot;.find(&quot;x&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(&quot;banana&quot;.find(&quot;an&quot;), &quot; &quot;, &quot;banana&quot;.find(&quot;an&quot;, 2), &quot; &quot;, &quot;banana&quot;.find(&quot;x&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 3 -1</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.find_first_not_of(characters: text, start: int = 0) -&gt; int observe -1 if absent. every engine"><h3 id="api-ab9dd7cc6ce7"><code>string.find_first_not_of(characters: text, start: int = 0) -&gt; int</code></h3><p><strong>Every engine</strong> &middot; observe</p>
@@ -1619,7 +1653,7 @@ print(s.at(1), &quot; &quot;, s[2], &quot; &quot;, type_of(s.at(0)));</code></pr
 </div>
 <div class="api-entry" data-provider="core" data-search="string.lines() -&gt; array&lt;self&gt; copy splits line endings. every engine"><h3 id="api-595a204ecb12"><code>string.lines() -&gt; array&lt;Self&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>Splits line endings.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(&quot;one\ntwo&quot;.lines()));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(&quot;one\ntwo&quot;.lines()));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[&quot;one&quot;,&quot;two&quot;]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.pad_center(width: int, fill: char or text = &#x27; &#x27;) -&gt; void mutate changes the receiver in place and returns nothing. every engine"><h3 id="api-370de8e0907c"><code>string.pad_center(width: int, fill: char or text = &#x27; &#x27;) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
@@ -1627,7 +1661,7 @@ print(s.at(1), &quot; &quot;, s[2], &quot; &quot;, type_of(s.at(0)));</code></pr
 </div>
 <div class="api-entry" data-provider="core" data-search="string.pad_left(width: int, fill: char or text = &#x27; &#x27;) -&gt; void mutate string::pad_left returns a copy. every engine"><h3 id="api-ff1ad660d958"><code>string.pad_left(width: int, fill: char or text = &#x27; &#x27;) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>string::pad_left returns a copy.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string id = &quot;7&quot;;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string id = &quot;7&quot;;
 id.pad_left(3, &#x27;0&#x27;);           // in place
 print(&quot;[&quot;, id, &quot;] [&quot;, string::pad_right(&quot;ab&quot;, 4), &quot;]&quot;);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[007] [ab  ]</code></pre></div>
@@ -1637,7 +1671,7 @@ print(&quot;[&quot;, id, &quot;] [&quot;, string::pad_right(&quot;ab&quot;, 4), 
 </div>
 <div class="api-entry" data-provider="core" data-search="string.partition(separator: text) -&gt; array&lt;self&gt; copy three parts: before, separator, after; absent separator gives text and two empty strings. every engine"><h3 id="api-394041e3f0e8"><code>string.partition(separator: text) -&gt; array&lt;Self&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>Three parts: before, separator, after; absent separator gives text and two empty strings.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(&quot;key=value=more&quot;.partition(&quot;=&quot;)));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(&quot;key=value=more&quot;.partition(&quot;=&quot;)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[&quot;key&quot;,&quot;=&quot;,&quot;value=more&quot;]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.reader() -&gt; binary::reader copy creates an independent reader cursor over these bytes. every engine"><h3 id="api-ca2615363139"><code>string.reader() -&gt; binary::reader</code></h3><p><strong>Every engine</strong> &middot; copy</p>
@@ -1651,14 +1685,14 @@ print(&quot;[&quot;, id, &quot;] [&quot;, string::pad_right(&quot;ab&quot;, 4), 
 </div>
 <div class="api-entry" data-provider="core" data-search="string.repeat(count: int) -&gt; void mutate repeats the receiver in place and returns nothing. string::repeat returns a copy. every engine"><h3 id="api-22f015333985"><code>string.repeat(count: int) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Repeats the receiver in place and returns nothing. string::repeat returns a copy.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = &quot;ab&quot;;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = &quot;ab&quot;;
 s.repeat(3);
 print(s, &quot; &quot;, string::repeat(&quot;-&quot;, 4));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ababab ----</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.replace(from: text, to: text) -&gt; void mutate replaces every occurrence of from, left to right and without overlap. string::replace returns a copy. every engine"><h3 id="api-90b7b171b664"><code>string.replace(from: text, to: text) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Replaces every occurrence of from, left to right and without overlap. string::replace returns a copy.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = &quot;a-b-c&quot;;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = &quot;a-b-c&quot;;
 s.replace(&quot;-&quot;, &quot;+&quot;);
 print(s);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">a+b+c</code></pre></div>
@@ -1680,7 +1714,7 @@ print(s);</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.split(separator: text = whitespace, max_splits: int = -1) -&gt; array&lt;string&gt; copy whitespace runs by default; empty separator splits characters. negative limit is unlimited; last piece retains rest. utf-8 receiver yields utf-8 text values. every engine"><h3 id="api-e1a47c9d5bae"><code>string.split(separator: text = whitespace, max_splits: int = -1) -&gt; array&lt;string&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>Whitespace runs by default; empty separator splits characters. Negative limit is unlimited; last piece retains rest. UTF-8 receiver yields UTF-8 text values.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(&quot;a  b\tc&quot;.split()));
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(&quot;a  b\tc&quot;.split()));
 print(to_json(&quot;a,,b&quot;.split(&quot;,&quot;)));
 print(to_json(&quot;k=v=w&quot;.split(&quot;=&quot;, 1)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[&quot;a&quot;,&quot;b&quot;,&quot;c&quot;]
@@ -1688,17 +1722,17 @@ print(to_json(&quot;k=v=w&quot;.split(&quot;=&quot;, 1)));</code></pre></div>
 [&quot;k&quot;,&quot;v=w&quot;]</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.starts_with(prefix: text) -&gt; bool observe  every engine"><h3 id="api-6047f1b1506b"><code>string.starts_with(prefix: text) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(&quot;player_1&quot;.starts_with(&quot;player&quot;), &quot; &quot;, &quot;a.jai&quot;.ends_with(&quot;.jai&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(&quot;player_1&quot;.starts_with(&quot;player&quot;), &quot; &quot;, &quot;a.jai&quot;.ends_with(&quot;.jai&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true true</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.substr(start: int, count: int = remaining) -&gt; self copy second argument is count, not end index. every engine"><h3 id="api-d86727fa0b6c"><code>string.substr(start: int, count: int = remaining) -&gt; Self</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>Second argument is count, not end index.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(&quot;dungeon&quot;.substr(3), &quot; &quot;, &quot;dungeon&quot;.substr(0, 3));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(&quot;dungeon&quot;.substr(3), &quot; &quot;, &quot;dungeon&quot;.substr(0, 3));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">geon dun</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.to_bytes(offset: int = 0, count: int = remaining) -&gt; array&lt;uint8&gt; copy offsets/counts are raw bytes even for utf8_string. every engine"><h3 id="api-b7df524ae09e"><code>string.to_bytes(offset: int = 0, count: int = remaining) -&gt; array&lt;uint8&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>Offsets/counts are raw bytes even for utf8_string.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(&quot;AB&quot;.to_bytes()), &quot; &quot;, string::from_bytes([72, 105]));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(&quot;AB&quot;.to_bytes()), &quot; &quot;, string::from_bytes([72, 105]));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[65,66] Hi</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.to_float(fallback: var = null) -&gt; float or fallback observe whole trimmed parse; parse failure returns fallback. every engine"><h3 id="api-2c40d0c2e024"><code>string.to_float(fallback: var = null) -&gt; float or fallback</code></h3><p><strong>Every engine</strong> &middot; observe</p>
@@ -1706,7 +1740,7 @@ print(to_json(&quot;k=v=w&quot;.split(&quot;=&quot;, 1)));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.to_int(fallback: var = null, base: int = 10) -&gt; int or fallback observe whole trimmed parse; base is 0 or 2..36; parse failure returns fallback. every engine"><h3 id="api-9f991934ec38"><code>string.to_int(fallback: var = null, base: int = 10) -&gt; int or fallback</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Whole trimmed parse; base is 0 or 2..36; parse failure returns fallback.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(&quot;42&quot;.to_int(), &quot; &quot;, &quot;ff&quot;.to_int(0, 16), &quot; &quot;, &quot;x&quot;.to_int(-1), &quot; &quot;, &quot;2.5&quot;.to_float());</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(&quot;42&quot;.to_int(), &quot; &quot;, &quot;ff&quot;.to_int(0, 16), &quot; &quot;, &quot;x&quot;.to_int(-1), &quot; &quot;, &quot;2.5&quot;.to_float());</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">42 255 -1 2.5</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.to_lower() -&gt; void mutate ascii case conversion in place; returns nothing. string::to_lower returns a copy. every engine"><h3 id="api-e98cc48e5f93"><code>string.to_lower() -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
@@ -1714,7 +1748,7 @@ print(to_json(&quot;k=v=w&quot;.split(&quot;=&quot;, 1)));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.to_upper() -&gt; void mutate ascii case conversion in place; returns nothing. string::to_upper returns a copy. every engine"><h3 id="api-f881471e57a0"><code>string.to_upper() -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>ASCII case conversion in place; returns nothing. string::to_upper returns a copy.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = &quot;loud&quot;;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = &quot;loud&quot;;
 s.to_upper();                 // changes s, returns nothing
 print(s, &quot; &quot;, string::to_lower(s));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">LOUD loud</code></pre></div>
@@ -1724,7 +1758,7 @@ print(s, &quot; &quot;, string::to_lower(s));</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.trim(characters: text = string::whitespace) -&gt; void mutate mutates using the shared whitespace set by default: space, tab, lf, vt, ff and cr. returns nothing. string::trim returns a copy. every engine"><h3 id="api-3755493d772c"><code>string.trim(characters: text = string::whitespace) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Mutates using the shared whitespace set by default: space, tab, LF, VT, FF and CR. Returns nothing. string::trim returns a copy.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = &quot;  hi  &quot;;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = &quot;  hi  &quot;;
 s.trim();                        // in place
 string t = &quot;--x--&quot;;
 t.trim(&quot;-&quot;);                     // a chosen character set
@@ -2000,53 +2034,53 @@ print(&quot;[&quot;, s, &quot;] [&quot;, t, &quot;] [&quot;, string::trim(&quot;
 <section class="api-group"><h2 id="group-web">web</h2>
 <div class="api-entry" data-provider="stdlib" data-search="web::build_query(fields: map) -&gt; string copy keys and values form-encoded in the map&#x27;s key order; a number or bool as to_string writes it, an array repeats its key, a null value is left out; anything else raises. register_web()"><h3 id="api-8b3aff6e4f58"><code>web::build_query(fields: map) -&gt; string</code></h3><p><strong>register_web()</strong> &middot; copy</p>
 <p>Keys and values form-encoded in the map&#x27;s key order; a number or bool as to_string writes it, an array repeats its key, a null value is left out; anything else raises.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::build_query({&quot;q&quot;: &quot;jai script&quot;, &quot;page&quot;: 2, &quot;tags&quot;: [&quot;a&quot;, &quot;b c&quot;], &quot;skip&quot;: null}));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::build_query({&quot;q&quot;: &quot;jai script&quot;, &quot;page&quot;: 2, &quot;tags&quot;: [&quot;a&quot;, &quot;b c&quot;], &quot;skip&quot;: null}));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">page=2&amp;q=jai+script&amp;tags=a&amp;tags=b+c</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="web::form_decode(text: text) -&gt; string copy url_decode that also reads + as a space. register_web()"><h3 id="api-391b74933acf"><code>web::form_decode(text: text) -&gt; string</code></h3><p><strong>register_web()</strong> &middot; copy</p>
 <p>url_decode that also reads + as a space.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::form_decode(&quot;two+words+%26+more&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::form_decode(&quot;two+words+%26+more&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">two words &amp; more</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="web::form_encode(text: text) -&gt; string copy application/x-www-form-urlencoded (urlencode): a-z a-z 0-9 * - . _ stay, a space is +, every other byte is %xx. register_web()"><h3 id="api-363f5c3a0809"><code>web::form_encode(text: text) -&gt; string</code></h3><p><strong>register_web()</strong> &middot; copy</p>
 <p>application/x-www-form-urlencoded (urlencode): A-Z a-z 0-9 * - . _ stay, a space is +, every other byte is %XX.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::form_encode(&quot;two words &amp; more&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::form_encode(&quot;two words &amp; more&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">two+words+%26+more</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="web::html_escape(value: text) -&gt; same_text_kind copy writes &amp; &lt; &gt; &quot; &#x27; as &amp;amp; &amp;lt; &amp;gt; &amp;quot; &amp;#39; (htmlspecialchars with ent_quotes); every other byte, utf-8 included, is kept. register_web()"><h3 id="api-cf3552f63d48"><code>web::html_escape(value: text) -&gt; same_text_kind</code></h3><p><strong>register_web()</strong> &middot; copy</p>
 <p>Writes &amp; &lt; &gt; &quot; &#x27; as &amp;amp; &amp;lt; &amp;gt; &amp;quot; &amp;#39; (htmlspecialchars with ENT_QUOTES); every other byte, UTF-8 included, is kept.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::html_escape(&quot;&lt;a title=\&quot;Tom &amp; Jerry&#x27;s\&quot;&gt;&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::html_escape(&quot;&lt;a title=\&quot;Tom &amp; Jerry&#x27;s\&quot;&gt;&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&amp;lt;a title=&amp;quot;Tom &amp;amp; Jerry&amp;#39;s&amp;quot;&amp;gt;</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="web::html_unescape(value: text) -&gt; same_text_kind copy reads the html5 named references (legacy names without the ;, longest match) and numeric ones as a browser does in text; 0, surrogates and values past u+10ffff become u+fffd; anything else is kept. register_web()"><h3 id="api-6034af0da4d4"><code>web::html_unescape(value: text) -&gt; same_text_kind</code></h3><p><strong>register_web()</strong> &middot; copy</p>
 <p>Reads the HTML5 named references (legacy names without the ;, longest match) and numeric ones as a browser does in text; 0, surrogates and values past U+10FFFF become U+FFFD; anything else is kept.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::html_unescape(&quot;&amp;lt;b&amp;gt; &amp;copy &amp;#x41;&amp;#66; &amp;bogus;&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::html_unescape(&quot;&amp;lt;b&amp;gt; &amp;copy &amp;#x41;&amp;#66; &amp;bogus;&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;b&gt; © AB &amp;bogus;</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="web::parse_query(query: text) -&gt; map&lt;string, string&gt; copy pairs split on &amp;, form-decoded; a leading ? is skipped, a key without = is empty, an empty key is dropped, a repeated key keeps its last value. register_web()"><h3 id="api-4490a0249fcb"><code>web::parse_query(query: text) -&gt; map&lt;string, string&gt;</code></h3><p><strong>register_web()</strong> &middot; copy</p>
 <p>Pairs split on &amp;, form-decoded; a leading ? is skipped, a key without = is empty, an empty key is dropped, a repeated key keeps its last value.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(web::parse_query(&quot;?page=2&amp;tag=a+b&amp;tag=c&amp;empty&quot;)));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(web::parse_query(&quot;?page=2&amp;tag=a+b&amp;tag=c&amp;empty&quot;)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{&quot;empty&quot;:&quot;&quot;,&quot;page&quot;:&quot;2&quot;,&quot;tag&quot;:&quot;c&quot;}</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="web::parse_query_all(query: text) -&gt; map&lt;string, var&gt; copy parse_query keeping every value of a key, an array&lt;string&gt; in arrival order. register_web()"><h3 id="api-ca894546662b"><code>web::parse_query_all(query: text) -&gt; map&lt;string, var&gt;</code></h3><p><strong>register_web()</strong> &middot; copy</p>
 <p>parse_query keeping every value of a key, an array&lt;string&gt; in arrival order.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(web::parse_query_all(&quot;tag=a+b&amp;tag=c&quot;)));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(web::parse_query_all(&quot;tag=a+b&amp;tag=c&quot;)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{&quot;tag&quot;:[&quot;a b&quot;,&quot;c&quot;]}</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="web::parse_url(url: text) -&gt; web::url copy an rfc 3986 uri reference split as written: scheme, user, password, host, port (0 for none), path, query, fragment; a malformed host or port raises. register_web()"><h3 id="api-f0114f6089c3"><code>web::parse_url(url: text) -&gt; web::url</code></h3><p><strong>register_web()</strong> &middot; copy</p>
 <p>An RFC 3986 URI reference split as written: scheme, user, password, host, port (0 for none), path, query, fragment; a malformed host or port raises.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">web::url u = web::parse_url(&quot;https://snapjaw.example:8443/posts/7?sort=new#comments&quot;);
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">web::url u = web::parse_url(&quot;https://snapjaw.example:8443/posts/7?sort=new#comments&quot;);
 print(u.host, &quot; &quot;, u.port, &quot; &quot;, u.path, &quot; &quot;, u.query);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">snapjaw.example 8443 /posts/7 sort=new</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="web::url_decode(text: text) -&gt; string copy each %xx becomes its byte; a % without two hex digits stays as written; + stays a +. register_web()"><h3 id="api-94db96044ea2"><code>web::url_decode(text: text) -&gt; string</code></h3><p><strong>register_web()</strong> &middot; copy</p>
 <p>Each %XX becomes its byte; a % without two hex digits stays as written; + stays a +.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::url_decode(&quot;Snap%20Jaw%2FSocial%3F&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::url_decode(&quot;Snap%20Jaw%2FSocial%3F&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Snap Jaw/Social?</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="web::url_encode(text: text) -&gt; string copy rfc 3986 percent-encoding (rawurlencode): a-z a-z 0-9 - . _ ~ stay, every other byte is %xx in upper-case hex. register_web()"><h3 id="api-9557c73c5d48"><code>web::url_encode(text: text) -&gt; string</code></h3><p><strong>register_web()</strong> &middot; copy</p>
 <p>RFC 3986 percent-encoding (rawurlencode): A-Z a-z 0-9 - . _ ~ stay, every other byte is %XX in upper-case hex.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::url_encode(&quot;Snap Jaw/Social? &amp; more&quot;));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(web::url_encode(&quot;Snap Jaw/Social? &amp; more&quot;));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Snap%20Jaw%2FSocial%3F%20%26%20more</code></pre></div>
 </div>
 </section>
@@ -2058,7 +2092,7 @@ print(u.host, &quot; &quot;, u.port, &quot; &quot;, u.path, &quot; &quot;, u.que
 <section class="api-group"><h2 id="group-web-url">web::url</h2>
 <div class="api-entry" data-provider="stdlib" data-search="web::url.to_string() -&gt; string observe the url the fields spell: // and the authority when there is a host, a user or a port; ? and # before a non-empty query and fragment. register_web()"><h3 id="api-fbdfdb39a01e"><code>web::url.to_string() -&gt; string</code></h3><p><strong>register_web()</strong> &middot; observe</p>
 <p>The URL the fields spell: // and the authority when there is a host, a user or a port; ? and # before a non-empty query and fragment.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">web::url u = web::parse_url(&quot;http://a.example/x?y=1&quot;);
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">web::url u = web::parse_url(&quot;http://a.example/x?y=1&quot;);
 u.path = &quot;/z&quot;;
 print(u.to_string());</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">http://a.example/z?y=1</code></pre></div>
@@ -2156,11 +2190,11 @@ print(u.to_string());</code></pre></div>
 <tr><td><code>web::url.scheme</code></td><td>string</td><td>read/write / stdlib</td><td>web::parse_url&#x27;s part, as written</td></tr>
 <tr><td><code>web::url.user</code></td><td>string</td><td>read/write / stdlib</td><td>web::parse_url&#x27;s part, as written</td></tr>
 </tbody></table></div>
-</article>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../reference/host.html"><span>&larr; previous</span>Host and Runner Reference</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">Source-audited API reference</p>
 </footer>
 <script src="../assets/search-index.js"></script>

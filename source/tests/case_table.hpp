@@ -56,11 +56,12 @@ inline std::string printed_output(jai::engine& a_engine, const std::string& a_co
 }
 
 // Each {code, expected} runs a_prelude + code on a fresh make_engine(); expected is the printed output, or "ERROR <text>"
-// for a run that throws an error whose message holds <text>.
+// for a run that throws an error whose message holds <text>. a_stdlib registers the standard library first.
 template<typename Cases>
-void check_outputs(const Cases& a_cases, const std::string& a_prelude = {}) {
+void check_outputs(const Cases& a_cases, const std::string& a_prelude = {}, bool a_stdlib = false) {
     check_each(a_cases, [&](const auto& c) {
         auto e = make_engine();
+        if (a_stdlib) { jai::stdlib::register_all(*e); }
         const std::string got = printed_output(*e, a_prelude + std::get<0>(c));
         const std::string want = std::get<1>(c);
         const bool error_case = want.rfind("ERROR ", 0) == 0;

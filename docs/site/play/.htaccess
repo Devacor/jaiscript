@@ -1,0 +1,14 @@
+# The engine runs in a worker that shares memory with the page, which browsers allow only on a cross-origin isolated page
+<IfModule mod_headers.c>
+Header set Cross-Origin-Opener-Policy "same-origin"
+Header set Cross-Origin-Embedder-Policy "require-corp"
+</IfModule>
+AddType application/wasm .wasm
+# A folder's rewrite rules replace its parent's, so the redirect to https is repeated here; the sandbox is a tab of the Play page
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+RewriteRule ^sandbox\.html$ /play/index.html#sandbox [NE,R=301,L]
+</IfModule>

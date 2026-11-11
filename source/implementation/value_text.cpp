@@ -412,11 +412,11 @@ checked_result<std::string> value_text(const script_value& v, const own_text_hoo
 JAI_NOINLINE error_propagator map_key_missing_error(string_symbolizer* sym, const type_info* map_tag, const script_value& key) {
 	const script_value& k = key.deref();
 	if (map_tag && map_tag->base_type == script_value_type::jai_map_type) {
-		if (type_info_ptr key_type = map_tag->key_type(); key_type && key_type->base_type != script_value_type::jai_any_type && k.type() != key_type->base_type) {
-			if (!map_key_kind_admits(k.type(), key_type->base_type)) {
+		if (type_info_ptr key_type = map_tag->key_type(); key_type && key_type->base_type != script_value_type::jai_any_type && k.type() != map_key_kind(*key_type)) {
+			if (!map_key_kind_admits(k.type(), map_key_kind(*key_type))) {
 				return element_type_error(sym, runtime_error_code::map_key_type_mismatch, "Cannot use '{0}' as a key of type '{1}'", k, key_type);
 			}
-			if (auto in_kind = map_key_in_kind(k, key_type->base_type, k.payload_engine()); !in_kind) { return in_kind.error_value(); }
+			if (auto in_kind = map_key_in_kind(k, map_key_kind(*key_type), k.payload_engine()); !in_kind) { return in_kind.error_value(); }
 		}
 	}
 	const auto code = make_error_code(runtime_error_code::map_key_not_found);

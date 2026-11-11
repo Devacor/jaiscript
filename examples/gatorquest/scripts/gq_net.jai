@@ -350,7 +350,7 @@ string net_join(string host, int port, string name, int hue, bool prepare_world)
 	int waited = 0;
 	bool said = false;
 	while (waited < 800) {
-		NOW_MS = time::now() * 1000;
+		NOW_MS = cast<int>(time::now() * 1000);
 		net_session_pump(s);
 		string st = NCS_STATUS[s];
 		if (st == "joined") { break; }

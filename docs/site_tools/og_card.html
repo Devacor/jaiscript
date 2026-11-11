@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>JaiScript link preview card</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Chakra+Petch:wght@600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=block">
+<style>
+html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+body {
+  background: #0b0d13; color: #d5dae6; position: relative;
+  font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+}
+.bar { position: absolute; left: 0; right: 0; top: 0; height: 14px;
+  background: linear-gradient(90deg, #ff5e3a, #ff9f1a, #ffd83a, #6fe04a, #3ac8ff, #8a7bff, #ff4fd8, #ff5e3a); }
+.glow { position: absolute; left: -200px; top: -260px; width: 900px; height: 900px;
+  background: radial-gradient(closest-side, rgba(255,180,60,.16), rgba(255,180,60,0)); }
+.card { position: absolute; left: 84px; right: 84px; top: 96px; }
+.brand { display: flex; align-items: center; gap: 30px; }
+.brand img { width: 132px; height: 132px; }
+.brand span { font: 700 104px/1 "Chakra Petch", "Bahnschrift", "Segoe UI", sans-serif; color: #f1f3f8; letter-spacing: .01em; }
+h1 { margin: 58px 0 0; font: 700 76px/1.05 "Chakra Petch", "Bahnschrift", "Segoe UI", sans-serif; letter-spacing: -.01em; }
+h1 span { background: linear-gradient(90deg, #ffd83a, #ffffff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+p { margin: 26px 0 0; font-size: 34px; line-height: 1.35; color: #d5dae6; max-width: 980px; }
+.site { position: absolute; left: 84px; bottom: 54px; font: 600 28px/1 "JetBrains Mono", Consolas, monospace; color: #ffb43c; }
+.chips { position: absolute; right: 84px; bottom: 50px; display: flex; gap: 14px; font: 400 22px/1 "JetBrains Mono", Consolas, monospace; color: #8f98ae; }
+.chips span { border: 1px solid #3d4560; border-radius: 8px; padding: 10px 14px 8px; }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<div class="bar"></div>
+<div class="card">
+<div class="brand"><img src="../site/assets/favicon.svg" alt=""><span>JaiScript</span></div>
+<h1><span>Fluent C++ scripting.</span></h1>
+<p>An embedded scripting language for C++ engines: script classes with hot reload, coroutines and gradual typing.</p>
+</div>
+<div class="site">jaiscript.com</div>
+<div class="chips"><span>hot reload</span><span>coroutines</span><span>parallel_for</span></div>
+</body>
+</html>

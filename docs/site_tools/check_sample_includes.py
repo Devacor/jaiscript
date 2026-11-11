@@ -31,7 +31,8 @@ MARKER_RE = re.compile(r"^(\s*)// \[sample ([\w-]+)\]")
 END_RE = re.compile(r"^\s*// \[/sample\]")
 CONTEXT_RE = re.compile(r"^\s*// \[context ([\w-]+)\]")
 END_CONTEXT_RE = re.compile(r"^\s*// \[/context\]")
-COMPLETE_PAGES = ("embedding/01-embedding-quickstart.html", "embedding/02-dynamic-binder.html")
+COMPLETE_PAGES = ("embedding/01-embedding-quickstart.html", "embedding/02-dynamic-binder.html",
+                  "embedding/21-visual-studio.html")
 TEST_RE = re.compile(r'^\s*test\("([\w-]+)"')
 ENGINE_RE = re.compile(r"\b(?:auto|std::shared_ptr<jai::engine>)\s+eng\s*=")
 

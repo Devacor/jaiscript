@@ -231,7 +231,7 @@ public:
                     map<string, int> ms = {};
                     array<string> keys = ["a", "b"];
                     string k = "b";
-                    ms[k] = 2.0;                 // a float converts into the int value slot
+                    ms[k] = true;                // a bool converts into the int value slot
                     ms[keys[0]] = 7;
                     var v = (ms[keys[0]] = 9);   // the assignment's value
                     string out = `${ms["a"]},${ms[k]},${v},${ms.size()}`;
@@ -251,7 +251,7 @@ public:
                 }
                 run();
             )");
-            check_eq(std::string("9,2,9,2,Key \"zz\" not found in map,2,true,false|Cannot assign 'string' to element of type 'int',2|4.0,3.0,2|Cannot use 'string' as a key of type 'int'|5"),
+            check_eq(std::string("9,1,9,2,Key \"zz\" not found in map,2,true,false|Cannot assign 'string' to element of type 'int',2|4.0,3.0,2|Cannot use 'string' as a key of type 'int'|5"),
                      r.as<std::string>());
         });
     }

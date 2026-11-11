@@ -15,9 +15,9 @@ class Palette {
 	array<int> rgb = [];
 
 	int add(float r, float g, float b) {
-		int ir = itrunc(r < 0.0 ? 0.0 : (r > 255.0 ? 255.0 : r));
-		int ig = itrunc(g < 0.0 ? 0.0 : (g > 255.0 ? 255.0 : g));
-		int ib = itrunc(b < 0.0 ? 0.0 : (b > 255.0 ? 255.0 : b));
+		int ir = math::itrunc(r < 0.0 ? 0.0 : (r > 255.0 ? 255.0 : r));
+		int ig = math::itrunc(g < 0.0 ? 0.0 : (g > 255.0 ? 255.0 : g));
+		int ib = math::itrunc(b < 0.0 ? 0.0 : (b > 255.0 ? 255.0 : b));
 		string c = `${ir};${ig};${ib}m`;
 		fg.push(ESC + "[38;2;" + c);
 		bg.push(ESC + "[48;2;" + c);
@@ -41,7 +41,7 @@ class Palette {
 		int ns = stops.size() - 1;
 		for (int i = 0; i < n; ++i) {
 			float f = n > 1 ? i * ns / (n - 1.0) : 0.0;
-			int k = itrunc(f);
+			int k = math::itrunc(f);
 			k = k >= ns ? ns - 1 : k;
 			float u = f - k;
 			var a = stops[k];
@@ -326,7 +326,7 @@ class Gfx {
 	}
 
 	string fmt1(float v) {
-		int t = itrunc(v * 10.0 + 0.5);
+		int t = math::itrunc(v * 10.0 + 0.5);
 		return `${(t / 10)}.${(t % 10)}`;
 	}
 
@@ -371,7 +371,7 @@ class Gfx {
 	// merged palette, `edge` is the palette index of a glowing seam
 	// kind: 0 dissolve, 1 slant wipe, 2 blinds, 3 iris, 4 melt, 5 zoom through, 6 shatter, 7 ripple, 8 swirl
 	void mix_grids(var& ga, var& gb, var& gm, int w, int h, int kind, float prog, int off, int edge, var& melt) {
-		int kilo = itrunc(prog * 1000.0);
+		int kilo = math::itrunc(prog * 1000.0);
 		int idx = 0;
 		if (kind >= 5) {
 			mix_motion(ga, gb, gm, w, h, kind, prog, off, edge);
@@ -388,7 +388,7 @@ class Gfx {
 			return;
 		}
 		if (kind == 1) {
-			int e = itrunc(prog * (w + h / 2 + 8.0)) - 4;
+			int e = math::itrunc(prog * (w + h / 2 + 8.0)) - 4;
 			for (int y = 0; y < h; ++y) {
 				int sh = e - (h - y) / 2;
 				for (int x = 0; x < w; ++x) {
@@ -401,7 +401,7 @@ class Gfx {
 		}
 		if (kind == 2) {
 			int band = 8;
-			int e2 = itrunc(prog * (band + 1.0));
+			int e2 = math::itrunc(prog * (band + 1.0));
 			for (int y = 0; y < h; ++y) {
 				int yb = (y + (y / band) % 2 * 3) % band;
 				for (int x = 0; x < w; ++x) {
@@ -415,8 +415,8 @@ class Gfx {
 			int cx = w / 2;
 			int cy = h / 2;
 			int rmax = cx * cx + cy * cy;
-			int r = itrunc(prog * prog * (rmax + 400.0));
-			int r2 = itrunc(math::sqrt(r * 1.0) + 2.0);
+			int r = math::itrunc(prog * prog * (rmax + 400.0));
+			int r2 = math::itrunc(math::sqrt(r * 1.0) + 2.0);
 			r2 *= r2;
 			for (int y = 0; y < h; ++y) {
 				int dy = y - cy;
@@ -432,7 +432,7 @@ class Gfx {
 		// melt: the departing frame slides down in ragged columns
 		float fall = prog * prog * (h + 24.0);
 		for (int x = 0; x < w; ++x) {
-			int o = itrunc(fall - melt[x]);
+			int o = math::itrunc(fall - melt[x]);
 			o = o < 0 ? 0 : o;
 			int gi = x;
 			for (int y = 0; y < h; ++y) {
@@ -470,7 +470,7 @@ class Gfx {
 					float sy = cy + (dy * ca - dx * sa) / zoom;
 					float r = math::sqrt(dx * dx + dy * dy) / reach;
 					bool open = r < e * e * 1.3;
-					if (!open && sx >= 0.0 && sx < w && sy >= 0.0 && sy < h) { src = itrunc(sy) * w + itrunc(sx); }
+					if (!open && sx >= 0.0 && sx < w && sy >= 0.0 && sy < h) { src = math::itrunc(sy) * w + math::itrunc(sx); }
 					gm[idx] = src >= 0 ? ga[src] : gb[idx] + off;
 				} else if (kind == 6) {
 					int tx = x / tile;
@@ -493,8 +493,8 @@ class Gfx {
 					float uy = (ly * cs - lx * sn) / shrink;
 					float half = tile * 0.5;
 					if (k < 1.0 && ux > -half && ux < half && uy > -half && uy < half) {
-						int sx2 = itrunc((tx + 0.5) * tile + ux);
-						int sy2 = itrunc((ty + 0.5) * tile + uy);
+						int sx2 = math::itrunc((tx + 0.5) * tile + ux);
+						int sy2 = math::itrunc((ty + 0.5) * tile + uy);
 						if (sx2 >= 0 && sx2 < w && sy2 >= 0 && sy2 < h) { src = sy2 * w + sx2; }
 					}
 					bool seam = k > 0.0 && k < 0.15 && (x % tile == 0 || y % tile == 0);
@@ -507,8 +507,8 @@ class Gfx {
 					float sx3 = x + dx / (r2 + 0.01) * wave;
 					float sy3 = y + dy / (r2 + 0.01) * wave;
 					bool arrived = d < 0.0;
-					int ix = itrunc(sx3);
-					int iy = itrunc(sy3);
+					int ix = math::itrunc(sx3);
+					int iy = math::itrunc(sy3);
 					ix = ix < 0 ? 0 : (ix >= w ? w - 1 : ix);
 					iy = iy < 0 ? 0 : (iy >= h ? h - 1 : iy);
 					int si = iy * w + ix;
@@ -522,7 +522,7 @@ class Gfx {
 					float sx4 = cx + (dx * ca2 - dy * sa2) * pull;
 					float sy4 = cy + (dx * sa2 + dy * ca2) * pull;
 					bool drained = r3 > 1.15 - e * 1.3;
-					if (!drained && sx4 >= 0.0 && sx4 < w && sy4 >= 0.0 && sy4 < h) { src = itrunc(sy4) * w + itrunc(sx4); }
+					if (!drained && sx4 >= 0.0 && sx4 < w && sy4 >= 0.0 && sy4 < h) { src = math::itrunc(sy4) * w + math::itrunc(sx4); }
 					gm[idx] = src >= 0 ? ga[src] : gb[idx] + off;
 				}
 				++idx;

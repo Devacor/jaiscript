@@ -29,6 +29,10 @@
 #include <unistd.h>
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/fiber.h>   // minicoro includes it inside extern "C", where its C++ templates cannot go
+#endif
+
 // The vendored fiber library: its symbols stay in this unit
 #define MINICORO_IMPL
 #define MCO_API static

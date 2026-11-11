@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Language Rules — JaiScript docs</title>
+<meta name="description" content="Operators, keywords, the type-conversion table, cast, extern, the checker attributes, include and import, and the language's contractual rules, one per row.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Language Rules — JaiScript docs">
+<meta property="og:description" content="Operators, keywords, the type-conversion table, cast, extern, the checker attributes, include and import, and the language's contractual rules, one per row.">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/reference/rules.html">
+<meta property="og:url" content="https://jaiscript.com/reference/rules.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html" class="active" aria-current="page">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Reference<span class="sidebar-current">Language Rules</span></summary><ol class="chapter-list"><li class="current"><a href="../reference/rules.html" aria-current="page">Language Rules</a><ol class="page-toc" data-page-toc data-toc-h3></ol></li><li><a href="../reference/errors.html">Errors and Diagnostics</a></li><li><a href="../reference/library.html">Library Reference</a></li><li><a href="../reference/host.html">Host and Runner Reference</a></li><li><a href="../reference/api.html">Full API Signatures</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Reference</a><span class="sep" aria-hidden="true">/</span>Language Rules</nav>
+<article class="chapter"><h1 id="language-rules-page">Language Rules<a class="hlink" href="#language-rules-page" aria-label="link">&#8203;</a></h1>
+<p>One rule per row. The guide section linked from a row shows the rule running; an error text quoted here has its row in <a href="errors.html">Errors and Diagnostics</a>.</p>
+
+<h2 id="spellings">Two spellings, one meaning<a class="hlink" href="#spellings" aria-label="link">&#8203;</a></h2>
+<p>JaiScript reads as C++ or as JavaScript. Each row&#x27;s two columns are the same construct. <strong>One pair differs in behaviour:</strong> a <code>[]</code> lambda captures only what its list names, while an arrow or a <code>function(...)</code> expression captures its whole scope by reference (as <code>[&amp;]</code>).</p>
+<div class="tablewrap"><table><thead><tr><th>Construct</th><th>C++ spelling</th><th>JavaScript spelling</th></tr></thead><tbody>
+<tr><td>Named function</td><td><code>int f(int a) { ... }</code></td><td><code>function f(a) { ... }</code>, <code>function f(int a) -&gt; int { ... }</code></td></tr>
+<tr><td>Anonymous function</td><td><code>[x, &amp;y](int a) { ... }</code>: captures what it lists</td><td><code>(a) =&gt; expr</code>, <code>(a) =&gt; { ... }</code>, <code>a =&gt; expr</code>, <code>function(a) { ... }</code>: capture by reference</td></tr>
+<tr><td>Dynamic variable</td><td>none (<code>auto</code> takes its initializer&#x27;s static type)</td><td><code>var x</code>, <code>let x</code></td></tr>
+<tr><td>Null literal</td><td><code>nullptr</code></td><td><code>null</code></td></tr>
+<tr><td>One shared object</td><td><code>make_shared&lt;T&gt;(args)</code></td><td><code>new T(args)</code></td></tr>
+<tr><td>Floating-point type</td><td><code>double</code>, <code>float</code> (one type)</td><td>none (a literal with a <code>.</code> is a float)</td></tr>
+<tr><td>Non-public members</td><td><code>private:</code>, <code>protected:</code> (one level: the class and its subclasses)</td><td>none</td></tr>
+<tr><td>Textual inclusion</td><td><code>#include "x.jai"</code></td><td><code>include "x.jai"</code></td></tr>
+<tr><td>Is it a T?</td><td>none (<code>dynamic_cast</code> has no spelling: <code>cast&lt;T&amp;&gt;(x)</code> raises where it would fail)</td><td><code>x instanceof T</code></td></tr>
+<tr><td>A constant</td><td><code>const auto x = e;</code>, <code>for (const auto x : xs)</code>, <code>const auto [a, b] = e;</code></td><td><code>const x = e;</code>, <code>for (const x : xs)</code>, <code>const [a, b] = e;</code></td></tr>
+</tbody></table></div>
+<p>Words from other languages (<code>virtual</code>, <code>delete</code>, <code>goto</code>, <code>extends</code>, <code>constexpr</code>, <code>const_cast</code>, <code>===</code>, <code>function*</code>, <code>&amp;x</code>) are not reserved; where one fails to parse, the error names the JaiScript spelling (<a href="errors.html#run-time-errors">catalogue</a>, <a href="../bridges/index.html">Language Bridges</a>). <code>const</code> is a keyword; C++&#x27;s other places for it (a const method, a const return type, <code>array&lt;const int&gt;</code>, <code>shared_ptr&lt;const T&gt;</code>) each raise their own text.</p>
+
+<h2 id="operators">Operators<a class="hlink" href="#operators" aria-label="link">&#8203;</a></h2>
+<p>Chapter: <a href="../guide/04-operators.html">Operators &amp; Arithmetic</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Category</th><th>Operators</th><th>Rule</th></tr></thead><tbody>
+<tr><td>Arithmetic</td><td><code>+ - * / %</code></td><td><code>int op int</code> stays int (<code>7 / 2</code> → <code>3</code>); any float operand promotes.</td></tr>
+<tr><td>String <code>+</code></td><td><code>+</code></td><td>Joins text; a char beside a string joins as its character. A number, bool or null beside a string is an error: write <code>to_string(x)</code> or <code>`${x}`</code>.</td></tr>
+<tr><td>Unary</td><td><code>+ - ! ~</code></td><td><code>+</code>: identity on a number, a char (promoted to its int) and a math value (a copy). <code>-</code> also negates a math value. <code>~</code>: an int only.</td></tr>
+<tr><td>Step</td><td><code>++ --</code></td><td>Prefix and postfix, on every lvalue (elements, map entries, members).</td></tr>
+<tr><td>Assignment</td><td><code>= += -= *= /= %= &amp;= |= ^= &lt;&lt;= &gt;&gt;=</code></td><td>Typed targets convert C++-style. <code>x op= y</code> is <code>x = x op y</code> with <code>x</code> evaluated once; the right side runs before any part of the target.</td></tr>
+<tr><td>Assignment targets</td><td></td><td>Every C++ lvalue: a call returning <code>T&amp;</code>, a conditional of lvalues, <code>(a = b) = c</code>, <code>++x = v</code>, <code>cast&lt;T&amp;&gt;(e)</code>.</td></tr>
+<tr><td>Comparison</td><td><code>== != &lt; &gt; &lt;= &gt;=</code></td><td><code>1 == 1.0</code> is true. A char beside a string compares as its one-character string (<code>s[i] == "x"</code>). NaN follows IEEE (false and unequal).</td></tr>
+<tr><td>Three-way</td><td><code>&lt;=&gt;</code></td><td>Returns -1 / 0 / 1; groups all NaNs last; signed zeros are equivalent.</td></tr>
+<tr id="rule-instanceof"><td>Class test</td><td><code>x instanceof T</code></td><td>True when <code>x</code> holds an object whose class is <code>T</code> or derives from it at any depth (script and host classes, <code>ns::T</code>). A handle answers for its object; a null or expired handle and a value that is no object are false. A relational operator: <code>!(x instanceof T)</code>, <code>a instanceof T &amp;&amp; b</code>. <code>T</code> is a class: an unknown name, an enum and a builtin type fail the load.</td></tr>
+<tr><td>Logical</td><td><code>&amp;&amp;</code> <code>||</code> <code>!</code></td><td>Short-circuit. <code>!v</code> on a class instance is <code>!to_bool(v)</code>; an instance whose class declares no <code>bool to_bool()</code> is true.</td></tr>
+<tr><td>Bitwise</td><td><code>&amp;</code> <code>|</code> <code>^</code> <code>~</code> <code>&lt;&lt;</code> <code>&gt;&gt;</code></td><td>Integers, on the 64-bit pattern. <code>&lt;&lt;</code> discards high bits by contract, <code>&gt;&gt;</code> is arithmetic; the count must be 0..63.</td></tr>
+<tr><td>Null</td><td><code>?? ??=</code></td><td><code>a ?? b</code>: <code>a</code> unless null, else <code>b</code> (evaluated only then). <code>a ??= b</code> stores only into a null <code>a</code>.</td></tr>
+<tr><td>Ternary</td><td><code>?:</code></td><td>Right-associative. An int arm and a float arm make a float.</td></tr>
+<tr><td>Arrow function</td><td><code>(params) =&gt; expr</code> <code>(params) =&gt; { ... }</code> <code>x =&gt; expr</code></td><td>A function expression that closes over its scope by reference, like <code>function(...)</code>.</td></tr>
+<tr><td>Cast</td><td><code>cast&lt;T&gt;(e)</code> <code>cast&lt;T&amp;&gt;(e)</code> <code>cast&lt;shared_ptr&lt;T&gt;&gt;(e)</code></td><td><code>cast</code> is a keyword (<a href="#cast">cast</a>).</td></tr>
+<tr><td>Member, index</td><td><code>. []</code></td><td></td></tr>
+<tr><td>Null-safe member</td><td><code>?.</code></td><td>A null in front of it skips the rest of the chain. <code>a?.b.c</code> is null when <code>a</code> is and still raises when <code>b</code> is null: write <code>a?.b?.c</code>.</td></tr>
+<tr><td>Scope</td><td><code>::</code></td><td>Statics and namespaces. <code>Class::name</code> is the <em>only</em> static spelling; <code>Class.name</code> is not one.</td></tr>
+</tbody></table></div>
+
+<h3 id="integer-and-char-arithmetic">Integer and char arithmetic<a class="hlink" href="#integer-and-char-arithmetic" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Case</th><th>Rule</th></tr></thead><tbody>
+<tr><td>Integer overflow</td><td><code>+ - *</code>, unary <code>-</code> and <code>INT64_MIN / -1</code> raise a <strong>catchable</strong> error in the default build (<code>JAISCRIPT_CHECKED_OVERFLOW</code>). Integer arithmetic is never undefined behavior.</td></tr>
+<tr><td>Division by zero</td><td>Integer <code>/</code> and <code>%</code> by zero raise a catchable error. With a float operand they are IEEE: an infinity or NaN.</td></tr>
+<tr><td>Deliberate wraparound</td><td><code>math::wrap_add</code> / <code>wrap_sub</code> / <code>wrap_mul</code>.</td></tr>
+<tr><td>char operands</td><td>Promote to <code>int</code> (unsigned, 0..255) under arithmetic, bitwise <em>and</em> comparison operators: <code>'a' == 97</code> is true, <code>'z' - 'a'</code> is 25, <code>s[i] &gt; 127</code> is an unsigned high-bit test (byte <code>0xC3</code> is 195, never -61).</td></tr>
+<tr><td>int → char</td><td>Never implicit: <code>type_of('a' + 1)</code> is <code>"int"</code>.</td></tr>
+<tr><td>Making a char</td><td><code>cast&lt;char&gt;(n)</code> (range-checked 0..255), <code>cast&lt;char&gt;("a")</code>, <code>to_char(n)</code>, a <code>\xNN</code> literal. Out of one: <code>cast&lt;int&gt;(c)</code>, <code>cast&lt;string&gt;(c)</code>.</td></tr>
+</tbody></table></div>
+
+<h3 id="operator-overloading">Operators on script classes<a class="hlink" href="#operator-overloading" aria-label="link">&#8203;</a></h3>
+<p>A class declares an operator as a method (<code>Vec operator+(Vec o)</code>). It runs only when the (left) operand is an instance whose class chain declares it; every other operand keeps the builtin meaning.</p>
+<div class="tablewrap"><table><thead><tr><th>Operator</th><th>Rule</th></tr></thead><tbody>
+<tr><td>Declarable set</td><td>C++&#x27;s overloadable set less <code>&amp;&amp; || , -&gt; new delete</code> and <code>!</code>: binary <code>+ - * / % &amp; | ^ &lt;&lt; &gt;&gt; &lt; &gt; &lt;= &gt;= == != &lt;=&gt;</code>, unary <code>- + ~</code> (told apart by the parameter count), <code>=</code>, <code>[]</code> and <code>()</code>.</td></tr>
+<tr><td><code>a op= b</code></td><td><code>a = a op b</code> through <code>operator op</code>; there is no <code>operator op=</code>.</td></tr>
+<tr><td><code>=</code></td><td>Into an existing object (a slot declared the class, a <code>var</code>): <code>operator=</code> when an overload takes the value, else the implicit memberwise copy. Initialization copy-constructs.</td></tr>
+<tr><td><code>!=</code>, relational</td><td><code>!=</code> without an <code>operator!=</code> negates <code>operator==</code>. A relational operator the class does not declare uses <code>&lt;=&gt;</code>.</td></tr>
+<tr><td>Truthiness</td><td><code>bool to_bool()</code>: <code>if (v)</code> calls it and <code>!v</code> negates it. Declaring <code>operator!</code> is the parse error <code>operator! cannot be declared: !v is !to_bool(v); declare bool to_bool()</code>.</td></tr>
+<tr><td><code>operator()</code></td><td>Makes an instance callable (<code>v(1, 2)</code>). A <code>function</code> slot still takes only functions and null: wrap the instance in a lambda.</td></tr>
+</tbody></table></div>
+
+<h2 id="keywords">Keywords<a class="hlink" href="#keywords" aria-label="link">&#8203;</a></h2>
+<p>A reserved word names no variable, parameter, program-scope function or class. After <code>.</code>, <code>?.</code>, <code>-&gt;</code> or <code>::</code>, or in a member declaration, it is a name (<a href="#rule-keyword-member-names">keyword member names</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>Word</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>int</code> <code>float</code> <code>bool</code> <code>char</code> <code>string</code> <code>void</code></td><td>The scalar types and the no-result return type.</td></tr>
+<tr><td><code>var</code> <code>let</code></td><td>A dynamic variable; <code>let</code> is <code>var</code>.</td></tr>
+<tr><td><code>auto</code></td><td>A variable that takes its initializer&#x27;s static type (<a href="../guide/02-type-ladder.html">The Type Ladder</a>).</td></tr>
+<tr><td><code>array</code> <code>map</code> <code>shared_ptr</code> <code>weak_ptr</code></td><td>Container and handle types, written with arguments: <code>array&lt;int&gt;</code>, <code>map&lt;string, int&gt;</code>, <code>shared_ptr&lt;T&gt;</code>.</td></tr>
+<tr><td><code>function</code></td><td>A function declaration or expression (<a href="#spellings">spellings</a>); the callable-or-null slot type (<code>function cb = null;</code>).</td></tr>
+<tr><td><code>const</code></td><td>A variable, parameter or field set once and then only read (<a href="../guide/03-value-semantics.html#const-set-once-then-only-read">const</a>).</td></tr>
+<tr><td><code>class</code> <code>nocopy</code></td><td>A class; <code>nocopy class C</code>: instances cannot be copied.</td></tr>
+<tr><td><code>public</code> <code>private</code> <code>protected</code></td><td>Access labels; <code>protected</code> is <code>private</code>, which admits the class and its subclasses.</td></tr>
+<tr><td><code>static</code></td><td>A member of the class, not of an instance (<code>C::s</code>).</td></tr>
+<tr><td><code>override</code></td><td>A method that replaces a base class&#x27;s method.</td></tr>
+<tr><td><code>this</code> <code>super</code></td><td>The receiver in a method; the base class (<code>: super(args)</code> in a constructor&#x27;s initializer list, <code>super::m()</code> in a method).</td></tr>
+<tr><td><code>new</code></td><td><code>new T(args)</code>: one shared object, a <code>shared_ptr&lt;T&gt;</code>; the same expression as <code>make_shared&lt;T&gt;(args)</code>.</td></tr>
+<tr><td><code>enum</code></td><td>A scoped enumeration (<code>E::v</code>); its name is a type (<a href="../guide/11-kitchen-sink.html">Kitchen Sink</a>).</td></tr>
+<tr><td><code>namespace</code></td><td>A named scope (<code>ns::x</code>).</td></tr>
+<tr><td><code>if</code> <code>else</code> <code>while</code> <code>for</code> <code>break</code> <code>continue</code> <code>return</code></td><td>Control flow; <code>for</code> is the C-style loop and the range form <code>for (auto x : xs)</code>.</td></tr>
+<tr><td><code>switch</code> <code>case</code> <code>default</code> <code>fallthrough</code></td><td>A switch; <code>fallthrough;</code> continues into the next case (<a href="#rules-control-flow">rule</a>).</td></tr>
+<tr><td><code>try</code> <code>catch</code> <code>throw</code></td><td>Exceptions (<a href="#rules-control-flow">rule</a>, <a href="../guide/05-control-flow.html#typed-catch">typed catch</a>).</td></tr>
+<tr><td><code>coroutine</code> <code>yield</code></td><td>A coroutine declaration (<code>coroutine</code> prefixes any function spelling); a value it hands out (<a href="../guide/08-coroutines.html">Coroutines</a>).</td></tr>
+<tr><td><code>parallel_for</code></td><td>A data-parallel loop (<a href="../guide/16-parallel.html">Parallel loops</a>).</td></tr>
+<tr><td><code>cast</code></td><td><code>cast&lt;T&gt;(e)</code>, <code>cast&lt;T&amp;&gt;(e)</code>, <code>cast&lt;shared_ptr&lt;T&gt;&gt;(e)</code> (<a href="#cast">cast</a>).</td></tr>
+<tr><td><code>include</code> <code>import</code></td><td>Textual inclusion of a file; a module, its own unit (<a href="#include-vs-import">include vs import</a>).</td></tr>
+<tr><td><code>#</code></td><td><code>#include "x"</code> is <code>include "x"</code> and <code>#import</code> is <code>import</code>. A <code>#</code> begins nothing else but a <code>#!</code> shebang on the first line.</td></tr>
+<tr><td><code>extern</code> <code>inline</code></td><td>A name defined outside the program; a program-scope variable every declaring unit shares (<a href="#extern">extern</a>).</td></tr>
+<tr><td><code>true</code> <code>false</code> <code>null</code> <code>nullptr</code></td><td>The literals; <code>nullptr</code> is <code>null</code>.</td></tr>
+</tbody></table></div>
+<p>Words with a meaning in one position only, and names everywhere else:</p>
+<div class="tablewrap"><table><thead><tr><th>Word</th><th>Position</th></tr></thead><tbody>
+<tr><td><code>operator</code></td><td>An operator declared in a class (<code>operator+</code>).</td></tr>
+<tr><td><code>using</code></td><td><code>using ns::name;</code> at the start of a statement.</td></tr>
+<tr><td><code>do</code></td><td><code>do { } while (c);</code> when a <code>{</code> follows.</td></tr>
+<tr><td><code>double</code></td><td><code>float</code>, where a type is read.</td></tr>
+<tr><td><code>utf8_string</code></td><td>The text type, where a type is read.</td></tr>
+<tr><td><code>uint8</code> <code>int8</code></td><td>An array&#x27;s element type only.</td></tr>
+<tr><td><code>[[warn_mode]]</code> <code>[[strict_mode]]</code> <code>[[nodiscard]]</code></td><td>The attributes (<a href="#region-attributes">attributes</a>).</td></tr>
+<tr><td><code>instanceof</code></td><td>The class test, after an operand (<a href="#rule-instanceof">class test</a>).</td></tr>
+<tr><td><code>hot_reload_migrate</code></td><td>Reserved for the reload hook at a file&#x27;s top level.</td></tr>
+</tbody></table></div>
+
+<h2 id="type-conversions">Type conversions<a class="hlink" href="#type-conversions" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Meters { float v = 0; Meters(float x) { v = x; } }
+class Reading { int raw = 0; Reading(int r) { raw = r; } int to_int() { return raw * 10; } }
+Meters m = 3;              // one-step converting constructor
+int n = Reading(4);        // to_int() on the way into an int slot
+float f = 7;               // widens
+int t = cast&lt;int&gt;(3.99);   // a float enters an int only through cast
+bool b = 5;                // truthiness
+string s = to_string(42);  // text only: stringify explicitly
+print("{} {} {} {} {} {}", m.v, n, f, t, b, s);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3.0 40 7.0 3 true 42</code></pre></div>
+<p><strong>One table</strong> governs declarations (<code>int x = e</code>), assignment (<code>x = e</code>), by-value parameters, return values, instance and static field stores, and the elements of typed arrays and maps. A conversion is <em>one</em> step: a converting constructor or a <code>to_X()</code> method runs, never a chain (<code>X.to_int()</code> then <code>C(int)</code> is not implicit); one that throws shows its own error. Between typed sides a mismatch fails the load; out of a <code>var</code> the same rule raises at run time (<a href="errors.html#diagnostics">Diagnostics</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>Target</th><th>Accepts</th><th>Refuses</th></tr></thead><tbody>
+<tr><td><code>int</code></td><td>int; bool (<code>true</code> → 1); an enum value; an object with <code>to_int()</code></td><td>A float (<a href="#rule-float-into-int">rule</a>). string, char, null, containers: no implicit parse (<code>"42".to_int()</code>).</td></tr>
+<tr><td><code>float</code></td><td>float; int (widens); bool; an object with <code>to_float()</code></td><td>A string: <code>s.to_float()</code>.</td></tr>
+<tr><td><code>bool</code></td><td>bool, int, float, null, an object: truthiness (<code>5</code> → <code>true</code>, <code>0</code> → <code>false</code>)</td><td>A string, an array or a map into a declared <code>bool</code>: a load error (<code>!s.empty()</code>). Conditions keep truthiness for all of them.</td></tr>
+<tr><td>enum <code>E</code></td><td>a value of <code>E</code>; an int out of a <code>var</code> that is one of its values</td><td>An int or another enum&#x27;s value: <code>cast&lt;E&gt;(n)</code> converts an int that is one of its values.</td></tr>
+<tr><td><code>string</code> / <code>utf8_string</code></td><td>either text kind (a utf8_string&#x27;s bytes, a string&#x27;s characters); a char (its one-character text); an object with <code>to_string()</code></td><td>int, float, bool, null, containers: no implicit stringify. Write <code>to_string(x)</code> or <code>`${x}`</code> (<a href="../guide/09-containers-strings.html#printing-values">Printing values</a>).</td></tr>
+<tr><td><code>char</code></td><td>char; a string of exactly one character; an object with <code>to_char()</code></td><td>A string of another length: <code>Cannot convert 'string' to 'char': a char takes a string of exactly one character</code> (a literal fails the load). <code>char c = 65</code>: write <code>cast&lt;char&gt;(65)</code>.</td></tr>
+<tr><td><code>array&lt;T&gt;</code> / <code>map&lt;K,V&gt;</code></td><td>an array / a map</td><td>An element or key of the wrong type, on every store: at load where the checker sees both types (<code>cannot push into 'array&lt;int&gt;': expected 'int', got 'string'</code>), else at run time (<code>Cannot store string in array&lt;int&gt;</code>, <code>Cannot push 'string' to array&lt;int&gt;</code>).</td></tr>
+<tr><td>an element</td><td>its exact type; an int into a float element; bool and int both ways; char and string both ways</td><td>Anything else: no truthiness and no <code>to_X()</code> at the element boundary.</td></tr>
+<tr><td>a map key</td><td>the declared key type; a char key and its one-character string are one key (stored as the declared type)</td><td>Keys never coerce numerically.</td></tr>
+<tr id="rule-vec-into-ivec"><td><code>math::vec2</code> <code>vec3</code> <code>vec4</code></td><td>the same type; the ivec of its dimensions (widens, as an int into a float)</td><td>Another dimension, a color, a number.</td></tr>
+<tr><td><code>math::ivec2</code> <code>ivec3</code></td><td>the same type</td><td>The vec of its dimensions: <code>cast&lt;math::ivec2&gt;(v)</code> truncates each component toward zero (a load error where both types are visible, the slot&#x27;s error through a <code>var</code>). A constructor converts what it is handed: <code>math::ivec2(v)</code>.</td></tr>
+<tr><td>class <code>C</code></td><td>the same class; a derived class (it keeps its class in the slot: <code>B x = D(); type_of(x)</code> is <code>"D"</code>); a <code>shared_ptr</code> to <code>C</code> or a derived class (copies the pointee); a value exactly one single-parameter constructor <code>C(src)</code> accepts directly; on plain <code>=</code>, a user <code>operator=</code> of <code>C</code> that accepts the source</td><td>A parent, a sibling, an unrelated class of the same shape; arrays, maps, functions. <code>null</code>: a class value is never null (<a href="#rule-class-never-null">rule</a>).</td></tr>
+<tr><td><code>shared_ptr&lt;T&gt;</code></td><td>a handle to <code>T</code> or a subclass; a <code>T</code> value (construct-and-share); null</td><td>Another pointee: <code>shared_ptr&lt;Bar&gt; p = Foo()</code> is a load error when the checker sees both classes, else <code>Cannot initialize shared_ptr&lt;Bar&gt; with Foo: type must match or be a subclass</code>. A <code>shared_ptr&lt;Base&gt;</code> into a <code>shared_ptr&lt;C&gt;</code>: <code>cast&lt;shared_ptr&lt;C&gt;&gt;(b)</code>.</td></tr>
+<tr><td><code>weak_ptr&lt;T&gt;</code></td><td>a handle to <code>T</code> or a subclass; null</td><td>An instance: it has no shared owner.</td></tr>
+<tr><td><code>function</code></td><td>a function, a lambda, a bound method; null</td><td>Anything else, an instance with <code>operator()</code> included: wrap it in a lambda.</td></tr>
+<tr><td><code>T&amp;</code> (declaration or parameter)</td><td>an lvalue that holds a <code>T</code> (a class: <code>T</code> or a subclass); a <code>var</code> only while it holds one</td><td>Any conversion: <code>float&amp; r = v</code> with <code>v</code> holding an int raises <code>Cannot initialize 'r' (declared float&amp;) with int</code>.</td></tr>
+<tr><td><code>T&amp;</code> parameter given a literal or temporary</td><td>when its body never writes through it; a <code>string&amp;</code> parameter takes one as a writable temporary</td><td>A write-through parameter: the load error <code>'bump' writes through parameter 'x' (line 1); pass a variable</code>.</td></tr>
+<tr><td>a store through <code>T&amp;</code></td><td>what the reference&#x27;s declared type takes (<code>var v = 0; int&amp; r = v; r = 3.9</code> and <code>r = "s"</code> are load errors)</td><td>What the storage&#x27;s own declared type refuses: <code>int x; var&amp; w = x; w = 2.7</code> raises <code>Cannot assign float to 'w' (declared int&amp;)</code>.</td></tr>
+<tr><td><code>var</code></td><td>anything, forever</td><td>Nothing. Everything computed from a <code>var</code> is unknown to the checker and can only fail at run time.</td></tr>
+<tr><td><code>auto</code> with an initializer</td><td>the initializer&#x27;s type, then enforced as that type</td><td>A <code>null</code> initializer carries no type: the variable stays dynamic until its first non-null store.</td></tr>
+<tr><td><code>auto</code> without an initializer</td><td>dynamic until the first assignment, then locked</td><td>The checker cannot see branch order and stays silent.</td></tr>
+</tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>Case</th><th>Rule</th></tr></thead><tbody>
+<tr><td><code>a op= b</code>, typed or locked-<code>auto</code> target</td><td>Computes like C++ and converts back to the target&#x27;s type: <code>int i = 7; i /= 2</code> → <code>3</code>; <code>i += 0.5</code> and <code>i += "s"</code> are errors.</td></tr>
+<tr><td><code>a op= b</code>, <code>var</code> target</td><td>Stores whatever the operation produces.</td></tr>
+<tr><td><code>a op= b</code>, missing map key</td><td>A compound reads its target first: <code>map&lt;string, int&gt; m; m["x"] += 5</code> raises <code>Key "x" not found in map</code>.</td></tr>
+<tr><td>Value of an assignment</td><td>What the destination stored: <code>float f; auto r = (f = 3)</code> is float 3.0.</td></tr>
+<tr><td>Printing a float</td><td>The shortest text that reads back to the same value, keeping <code>.0</code> on a whole number; <code>inf</code>, <code>-inf</code>, <code>nan</code> (every NaN prints <code>nan</code>, under a format spec too).</td></tr>
+<tr><td>Format specs</td><td>Template strings and <code>{}</code> placeholders take them: <code>${f:.1f}</code> (<a href="library.html#format-specs">format specs</a>).</td></tr>
+</tbody></table></div>
+
+<h2 id="typed-boundary">The typed boundary<a class="hlink" href="#typed-boundary" aria-label="link">&#8203;</a></h2>
+<h3 id="cast">cast&lt;T&gt;(e), cast&lt;T&amp;&gt;(e), cast&lt;shared_ptr&lt;T&gt;&gt;(e)<a class="hlink" href="#cast" aria-label="link">&#8203;</a></h3>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Base { int b = 1; }
+class Derived : Base { int t = 0; }
+class Holder { Base p = Derived(); }     // a Derived, held through a Base-typed field
+
+print("{} {} {}", cast&lt;int&gt;('a'), cast&lt;char&gt;(97), cast&lt;string&gt;('z'));
+char c = cast&lt;char&gt;(65);                 // `char c = 65;` would be a load error
+
+auto h = Holder();
+cast&lt;Derived&amp;&gt;(h.p).t = 5;               // alias the same object: the store lands
+print("{} {}", c, cast&lt;Derived&amp;&gt;(h.p).t);
+
+shared_ptr&lt;Derived&gt; sp = new Derived();
+shared_ptr&lt;Base&gt; sb = cast&lt;shared_ptr&lt;Base&gt;&gt;(sp);   // share it, don't copy it
+sb.b = 42;
+print("{}", sp.b);
+
+var v = Base();
+try { Derived d = cast&lt;Derived&gt;(v); } catch (e) { print("caught: {}", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">97 a z
+A 5
+42
+caught: Cannot cast 'Base' to 'Derived'</code></pre></div>
+<div class="tablewrap"><table><thead><tr><th>Form</th><th>Yields</th><th>Rule</th></tr></thead><tbody>
+<tr><td><code>cast&lt;T&gt;(e)</code>, class <code>T</code></td><td>what <code>T tmp = e;</code> would hold</td><td>A <strong>value copy</strong> when <code>e</code>&#x27;s class is <code>T</code> or derives from it; the copy keeps <code>e</code>&#x27;s class. On a handle or a reference it <em>copies the instance</em>: the checker warns and suggests the two forms below.</td></tr>
+<tr><td><code>cast&lt;T&gt;(e)</code>, primitive <code>T</code></td><td>the <a href="#type-conversions">conversion table</a>&#x27;s result</td><td>Plus float to int, truncating toward zero (<code>cast&lt;int&gt;(2.7)</code> is <code>2</code>), and an int to the enum value it equals.</td></tr>
+<tr><td><code>cast&lt;T&amp;&gt;(e)</code></td><td>a reference to the <em>same</em> object</td><td>Member reads and stores go through: <code>cast&lt;Derived&amp;&gt;(h.p).t = 5</code> reaches a subtype&#x27;s member through a base-typed receiver.</td></tr>
+<tr><td><code>cast&lt;T&amp;&gt;(e)</code> as a target</td><td>an lvalue</td><td>Its declared type governs the store: <code>cast&lt;int&amp;&gt;(x) += 2</code> leaves an int in <code>x</code>, even when <code>x</code> is a <code>var</code>.</td></tr>
+<tr><td><code>cast&lt;E&gt;(n)</code>, enum <code>E</code></td><td>the enum value that equals <code>n</code></td><td><code>Cannot cast 3 to 'E': not one of its values</code> otherwise.</td></tr>
+<tr><td><code>cast&lt;shared_ptr&lt;T&gt;&gt;(e)</code></td><td>a handle sharing the instance</td><td>An upcast of a handle without a copy.</td></tr>
+<tr><td><code>cast&lt;int&gt;(c)</code> / <code>cast&lt;float&gt;(c)</code></td><td>the code point, 0..255</td><td>The char → int door.</td></tr>
+<tr><td><code>cast&lt;string&gt;(e)</code></td><td>e&#x27;s display text, as <code>to_string(e)</code> gives it</td><td>The explicit stringify; a char is its one-character string.</td></tr>
+<tr><td><code>cast&lt;char&gt;(e)</code></td><td>a char</td><td>From an int in 0..255 or a string of exactly one character; anything else raises <code>Cannot cast 'int' to 'char'</code> / <code>Cannot cast 'string' to 'char'</code>.</td></tr>
+<tr><td>a class mismatch</td><td>the catchable <code>Cannot cast 'X' to 'T'</code></td><td><code>X</code> is the object&#x27;s run-time class. The operand is never checked against <code>T</code> statically.</td></tr>
+<tr><td><code>null</code></td><td>an empty handle from the handle form</td><td>Fails the value form (<code>Cannot cast 'null' to 'T'</code>) and the reference form (<code>Cannot cast 'null' to 'T&amp;'</code>).</td></tr>
+<tr><td>a <code>T</code> that names no type</td><td>a load error</td><td><code>unknown type in cast: 'Nope'</code>.</td></tr>
+</tbody></table></div>
+<p>Chapter: <a href="../guide/02-type-ladder.html#cast-the-explicit-boundary">The Type Ladder</a>.</p>
+
+<h3 id="extern">extern, inline, using<a class="hlink" href="#extern" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Spelling</th><th>Rule</th></tr></thead><tbody>
+<tr><td><code>extern</code></td><td>Declares a name that exists outside the program (a host global bound after load, a function the running instance registers, a value another engine injects). The checker counts it as declared instead of reporting <code>use of undeclared identifier</code>.</td></tr>
+<tr><td><code>extern</code> at run time</td><td>Declares nothing; the name resolves when used. A use while nothing defines it raises <code>'name' is declared extern but never defined (an 'inline' declaration creates it)</code> (<code>extern function</code>: without the parenthesis).</td></tr>
+<tr><td><code>extern function log_to_host;</code></td><td>A callable of unknown signature: calls are unchecked.</td></tr>
+<tr><td><code>extern int frame;</code> / <code>extern shared_ptr&lt;Game&gt; G;</code></td><td>Typed: member access, assignments and conversions are checked as for a declared variable of that type.</td></tr>
+<tr><td><code>extern config;</code></td><td>Untyped: behaves like <code>var</code>.</td></tr>
+<tr><td><code>extern function game::spawn;</code> / <code>extern int a::b::depth;</code></td><td>A namespace member, in any of the three strengths. The namespace declares it (<code>game::spawn</code> is not <code>no member 'spawn' in namespace 'game'</code>), and the path opens the namespace for its other members&#x27; checks.</td></tr>
+<tr><td>Where it stands</td><td>At program scope or in a namespace, where its name is the namespace&#x27;s: <code>namespace game { extern int tick; }</code> declares <code>game::tick</code> (read as <code>tick</code> by the namespace&#x27;s own blocks); <code>namespace game { extern ai::depth; }</code> declares <code>game::ai::depth</code>.</td></tr>
+<tr><td>A qualified extern nothing defines</td><td>Raises the same text with the qualified name: <code>'game::tick' is declared extern but never defined (an 'inline' declaration creates it)</code>. The definition is a namespace block of any unit (<code>namespace game { int tick = 0; }</code>) or the host&#x27;s registration of that namespace.</td></tr>
+<tr><td>Reach</td><td>An <code>extern</code> name travels with the program: every unit the root imports sees it. Where a program does import the defining module, the declaration is inert and the definition wins.</td></tr>
+<tr><td><code>inline T name;</code></td><td>The C++17 inline variable: one variable shared by every unit that declares it. The first unit to run creates it with its initializer or its type&#x27;s default; the rest adopt it and their initializers do not run.</td></tr>
+<tr><td>A plain declaration of an inline variable</td><td>Raises <code>'x' is already defined inline; declare it 'inline int x;' to share it</code>; at load, with this text, when the checker sees both units.</td></tr>
+<tr><td>An inline declaration of another unit&#x27;s plain variable</td><td>Raises <code>'x' is already defined (not inline) in &lt;file&gt;; declare every definition 'inline' to share it</code>.</td></tr>
+<tr><td><code>using ns::name;</code></td><td>The rest of the file reads <code>name</code> as <code>ns::name</code>, for any namespace; a comma list works (<code>using game::spawn, game::cost;</code>). A parse-time rewrite: file-local, not transitive through imports or includes, and the name cannot be declared again in that file. There is no <code>using namespace</code>.</td></tr>
+</tbody></table></div>
+
+<h3 id="region-attributes">[[warn_mode]] and [[strict_mode]]<a class="hlink" href="#region-attributes" aria-label="link">&#8203;</a></h3>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">extern function log_to_host;   // the host registers this later: calls are unchecked
+extern int frame;              // typed: reads and stores are checked as an int
+extern config;                 // untyped: behaves like var
+
+int total = 0;
+try {
+    [[warn_mode]] total = "oops";        // this one statement is only warned about...
+} catch (e) {
+    print("run time: {}", e);            // ...so the mistake surfaces here instead
+}
+print("{}", total);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">run time: Cannot assign string to 'total' (declared int)
+0</code></pre></div>
+<p>The two attributes set the checker&#x27;s mode for a region of one file. They compose and the innermost wins; everywhere else a file is strict.</p>
+<div class="tablewrap"><table><thead><tr><th>Position</th><th>Covers</th></tr></thead><tbody>
+<tr><td>First declaration of a file (<code>[[warn_mode]];</code> at the top; a leading comment is fine)</td><td>The whole unit.</td></tr>
+<tr><td>First statement of a block (a function, method or lambda body, an <code>if</code>/<code>while</code>/<code>for</code> body, a bare <code>{ }</code>)</td><td>The whole block, nested bodies included.</td></tr>
+<tr><td>Before any other statement</td><td>That statement&#x27;s own subtree; a nested function or lambda body inside it keeps the <em>enclosing</em> mode.</td></tr>
+</tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>Mode</th><th>Rule</th></tr></thead><tbody>
+<tr><td>Warn region</td><td>Every error is reported as a warning (still collected, still visible through <code>engine-&gt;check()</code>). An undeclared identifier is accepted as unknown; nothing is proven from it.</td></tr>
+<tr><td>Strict region</td><td>Errors gate the load, even inside a warn region.</td></tr>
+<tr><td>Run time</td><td>Never changes: both backends treat the attribute as nothing, so a warn region&#x27;s type mistakes raise at run time.</td></tr>
+<tr><td>Imports</td><td>A unit&#x27;s mode says nothing about the units it imports.</td></tr>
+<tr><td><code>[[nodiscard]]</code></td><td>Marks a function or a method whose result a caller must use (<a href="../guide/06-functions.html#nodiscard">Functions</a>). Any other attribute name is a parse error.</td></tr>
+</tbody></table></div>
+
+<h2 id="language-rules">Language rules in one place<a class="hlink" href="#language-rules" aria-label="link">&#8203;</a></h2>
+<p>The contractual one-liners: both backends are tested to agree on each, byte for byte.</p>
+<h3 id="rules-checking">Checking and program shape<a class="hlink" href="#rules-checking" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Rule</th><th>Statement</th><th>Chapter</th></tr></thead><tbody>
+<tr><td><strong>Checking is always strict</strong></td><td>A typed-to-typed mismatch or an undeclared identifier fails the load; a <code>[[warn_mode]]</code> region reports its errors as warnings. Only a <code>var</code>-sourced value can still fail at run time, where <code>try</code>/<code>catch</code> sees it.</td><td><a href="../embedding/06-static-checking.html">Static Checking</a></td></tr>
+<tr><td><strong>Program closure</strong></td><td>A file whose <code>import</code>/<code>include</code> paths are literals is the root of a program: every unit they reach is gathered and checked before anything runs. Names, class models, function signatures and global types cross units; import order does not matter for names.</td><td><a href="../guide/10-modules.html">Modules</a></td></tr>
+<tr><td><strong>A qualified name is checked as the bare one</strong></td><td><code>ns::f(x)</code>, <code>ns::limit = v</code> and a read of <code>ns::limit</code> check against the namespace&#x27;s declarations, at any depth and through <code>using ns::name;</code>.</td><td><a href="../guide/13-strict-checking.html#what-the-checker-sees">Caught at load</a></td></tr>
+<tr><td><strong>Builtin and host calls check their arguments</strong></td><td>A builtin method and a <code>math::</code> function take the shapes the <a href="api.html">API reference</a> states (a number, text, an array, a map, a function, a vector); a host function or bound method takes what its C++ signature takes. A name declared <code>extern function f;</code> is unchecked.</td><td><a href="../guide/13-strict-checking.html#what-the-checker-sees">Caught at load</a></td></tr>
+<tr><td><strong>Dynamic paths</strong></td><td>A dynamic-path <code>import(expr)</code> keeps undeclared identifiers at warning severity in that unit.</td><td><a href="../guide/10-modules.html">Modules</a></td></tr>
+<tr id="rule-top-level-order"><td><strong>Top-level code runs in order</strong></td><td>A top-level statement sees the declarations above it. A function or method body may name a later declaration: it runs only when called, and what it names must exist by then.</td><td><a href="../guide/13-strict-checking.html#what-the-checker-sees">What the checker sees</a></td></tr>
+<tr><td>A call before the declaration</td><td>Fails the load: <code>'f' is called before its declaration (line 1): top-level code runs in order, so declare it above the call or make the call after it</code>.</td><td></td></tr>
+<tr><td>A read before the declaration</td><td>A global read, a class constructed or a function taken as a value before its declaration raises <code>Undefined variable 'G'</code>.</td><td></td></tr>
+<tr><td>Namespace top level</td><td>Runs in order the same way. Until its declaration runs, a bare name the namespace declares further down reaches an enclosing namespace&#x27;s member or the global; with neither it is the same load error.</td><td></td></tr>
+<tr><td><strong>One declaration per scope</strong></td><td>A block, a parameter list or one file&#x27;s top level that declares a variable name twice is a load error (<code>redeclaration of 'x' in the same scope</code>).</td><td><a href="errors.html#the-static-listing">Static listing</a></td></tr>
+<tr><td><strong>Shadowing is legal and warned about</strong></td><td>A local shadowing a field or an outer local is a warning whenever the checker runs; warnings never gate.</td><td><a href="../guide/06-functions.html#redefinition-and-the-duplicate-warning">Functions</a></td></tr>
+<tr><td><strong>An assignment as a condition warns</strong></td><td><code>if (a = b)</code>, <code>while (a = b)</code> draw <code>assignment used as a condition: write '==' to compare, or '((a = b))' with parentheses of its own to assign</code>; <code>if ((a = b))</code> is silent.</td><td><a href="../guide/05-control-flow.html">Control Flow</a></td></tr>
+<tr><td><strong>A lost write fails the load</strong></td><td>A store into a by-value copy of a known value type (a range-for variable, a parameter, a local, a field or element of one) that no path reads again before the copy dies, and nothing else can observe, is a load error naming the reference spelling.</td><td><a href="../guide/03-value-semantics.html#lost-writes">Lost writes</a></td></tr>
+<tr><td><strong>A dropped [[nodiscard]] result fails the load</strong></td><td>An expression statement whose value is a call to a <code>[[nodiscard]]</code> function, method or host callable, or to a library copy such as <code>string::to_upper</code> or <code>array::sort</code>. The check is static only.</td><td><a href="../guide/06-functions.html#nodiscard">[[nodiscard]]</a></td></tr>
+<tr><td><strong>Format text is checked at load</strong></td><td>A <code>print</code> or <code>format</code> literal&#x27;s placeholders must pair with its arguments, a literal alone included (<code>print("{}")</code> has a placeholder and no argument); <code>format(s, ...)</code> takes only a literal (<code>vformat</code> formats a run-time text).</td><td><a href="../guide/01-hello.html#print-and-format">print and format</a></td></tr>
+</tbody></table></div>
+<h3 id="rules-types">Types and values<a class="hlink" href="#rules-types" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Rule</th><th>Statement</th><th>Chapter</th></tr></thead><tbody>
+<tr id="rule-float-into-int"><td><strong>A float never enters an int slot implicitly</strong></td><td>Compound assignment, <code>insert</code>, a range-for variable, a coroutine&#x27;s <code>yield</code> or <code>return</code> and a store through an <code>int&amp;</code> included: a load error between typed sides. <code>cast&lt;int&gt;(x)</code> and <code>math::itrunc(x)</code> truncate toward zero, <code>math::ifloor(x)</code> rounds down. An int widens to a float everywhere.</td><td><a href="../guide/02-type-ladder.html#conversion-table-typed-locked-auto-targets">Type Ladder</a></td></tr>
+<tr id="rule-class-never-null"><td><strong>A class value is never null</strong></td><td>A slot declared as a class by value (a variable, a field, a static, a parameter, a return) refuses <code>null</code>, and a class-returning function returns on every path. <code>shared_ptr&lt;T&gt;</code>, <code>weak_ptr&lt;T&gt;</code>, <code>var</code> and <code>function</code> hold null.</td><td><a href="../guide/02-type-ladder.html#conversion-table-typed-locked-auto-targets">Type Ladder</a></td></tr>
+<tr><td>A class holding itself by value</td><td>A load error, through fields or a base, in a warn region too: make one link a <code>shared_ptr&lt;T&gt;</code>.</td><td><a href="errors.html#the-static-listing">Static listing</a></td></tr>
+<tr><td><strong>An enum name is a type</strong></td><td>An <code>E</code> slot holds E&#x27;s values and starts at the first. A value converts to int; an int enters only through <code>cast&lt;E&gt;(n)</code>; <code>var v = E::a</code> holds the int. The bare name is its value table, a <code>map&lt;string,int&gt;</code>.</td><td><a href="../guide/11-kitchen-sink.html#enums">Enums</a></td></tr>
+<tr><td><strong>Builtin method results are typed</strong></td><td>On a receiver of declared type a builtin method has its catalog result type at load: <code>int bad = xs.join(",");</code> is a load error. <code>s.to_int()</code> is null for text that does not parse; <code>s.to_int(0)</code> is an int.</td><td><a href="api.html">API</a></td></tr>
+<tr><td><strong>Defaults</strong></td><td>A declaration without an initializer takes its type&#x27;s default: a class default-constructs, <code>int</code> 0, <code>float</code> 0.0, <code>bool</code> false, an enum its first value, <code>string</code> &quot;&quot;, containers empty, a math vector zero; <code>var</code> stays null.</td><td><a href="../guide/07-classes.html">Classes</a></td></tr>
+<tr><td>A reference has no default</td><td><code>int&amp; r;</code> raises <code>Reference variable must be initialized</code>.</td><td></td></tr>
+<tr><td><strong>Aggregate initialization</strong></td><td>A class that declares no constructor takes <code>Pt p{1, 2}</code>, <code>Pt{1, 2}</code>, <code>Pt(1, 2)</code>: instance fields fill in declaration order (bases first); the rest keep their initializers.</td><td><a href="../guide/07-classes.html">Classes</a></td></tr>
+<tr><td><strong>Value semantics; references by declaration</strong></td><td>Assignment, parameters and returns copy. <code>&amp;</code> parameters, <code>auto&amp;</code>, <code>for (auto&amp; x : ...)</code> and <code>shared_ptr&lt;T&gt;</code> (<code>new T(...)</code> is sugar for it) are the spelled-out ways to alias.</td><td><a href="../guide/03-value-semantics.html">Value Semantics</a></td></tr>
+<tr><td><strong><code>==</code> is memberwise on heavy values</strong></td><td>Arrays elementwise, maps entrywise, instances of one class fieldwise (a user <code>operator==</code> first); handles by pointer; <code>same_object(x, y)</code> is identity. <code>contains</code>, <code>index_of</code>, <code>has</code> and <code>switch</code> cases use the same <code>==</code>.</td><td><a href="../guide/04-operators.html">Operators</a></td></tr>
+<tr><td><strong>A missing map key raises on read</strong></td><td><code>Key "k" not found in map</code>, and the read does not insert. <code>m[k] = v</code> inserts. <code>get(k, default)</code> is the explicit fallback. A dot store on a map the checker knows is a load error: store the key as <code>["k"]</code>.</td><td><a href="../guide/09-containers-strings.html#maps">Maps</a></td></tr>
+<tr><td><strong>In-place methods return nothing</strong></td><td><code>s.to_upper()</code>, <code>xs.filter(f)</code>, …: using the result, or chaining, is an error. The <code>string::</code>, <code>array::</code> and <code>map::</code> functions return copies, and <code>+</code> never mutates.</td><td><a href="../guide/09-containers-strings.html#in-place-or-a-copy">In place or a copy</a></td></tr>
+</tbody></table></div>
+<h3 id="rules-functions">Functions and evaluation<a class="hlink" href="#rules-functions" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Rule</th><th>Statement</th><th>Chapter</th></tr></thead><tbody>
+<tr><td><strong>Evaluation order is contractual</strong></td><td>The callee is resolved before any argument; arguments go left to right, each taking its value when evaluated (<code>pick()(arg("left", 1), arg("right", 2))</code> records <code>callee left right</code>).</td><td><a href="../guide/06-functions.html">Functions</a></td></tr>
+<tr><td>Assignment order</td><td><code>t = e</code> and <code>t op= e</code> evaluate <code>e</code> before every part of the target (a member&#x27;s receiver, a subscript&#x27;s container and index), as in C++17.</td><td></td></tr>
+<tr><td><strong>Captures are exhaustive</strong></td><td><code>[]</code> captures nothing and <code>[x]</code> only <code>x</code>. Using an unlisted enclosing local is the parse error <code>Lambda capture list does not capture enclosing local 'n'; name it or use [=] or [&amp;]</code>.</td><td><a href="../guide/06-functions.html#lambdas-and-captures">Lambdas and captures</a></td></tr>
+<tr><td>Capture forms</td><td><code>[=]</code>/<code>[x]</code> copy at creation; <code>[&amp;]</code>/<code>[&amp;x]</code> share the variable (and outlive its frame); <code>[x = e]</code> initializes the lambda&#x27;s own <code>x</code>; <code>[this]</code> captures the instance.</td><td></td></tr>
+<tr><td>Program-scope names</td><td>Never captured by default: the lambda reads them when it runs.</td><td></td></tr>
+<tr><td><strong>A captured <code>for</code> variable is each iteration&#x27;s own</strong></td><td>A C-style <code>for</code> variable captured by reference is copied forward before the update. A loop no closure shares compiles as it would without the rule.</td><td><a href="../guide/06-functions.html#lambdas-and-captures">Lambdas and captures</a></td></tr>
+<tr><td><strong>Default arguments cannot name parameters</strong></td><td>A default that reads a parameter of its own list is a load error.</td><td><a href="../guide/06-functions.html">Functions</a></td></tr>
+<tr><td><strong>Typed returns are required</strong></td><td>A function declared to return a primitive, a string, an enum, a class value or a reference must return on every path: <code>'f' declared to return 'int' may reach the end of its body without returning</code>.</td><td><a href="../guide/13-strict-checking.html">Strict checking</a></td></tr>
+<tr><td><strong>A return conversion is part of the <code>return</code></strong></td><td>It fails inside the callee, at the return&#x27;s line, with the callee as the top frame; a <code>try</code> around the <code>return</code> catches it there, and uncaught it surfaces in the caller.</td><td><a href="../guide/06-functions.html#return-type-rules">Return-type rules</a></td></tr>
+<tr><td><strong>Coroutine spellings</strong></td><td><code>coroutine</code> prefixes every function form, at top level, in namespaces and as methods (static ones too): <code>coroutine int g()</code>, <code>coroutine g() -&gt; int</code>, <code>coroutine function g() -&gt; auto</code>, <code>coroutine function g()</code>, bare <code>coroutine g()</code>.</td><td><a href="../guide/08-coroutines.html">Coroutines</a></td></tr>
+<tr><td>Coroutine limits</td><td>No coroutine lambdas. No reference parameter: a coroutine runs on after the call returns, so it takes copies or a <code>shared_ptr</code>.</td><td></td></tr>
+</tbody></table></div>
+<h3 id="rules-classes">Classes<a class="hlink" href="#rules-classes" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Rule</th><th>Statement</th><th>Chapter</th></tr></thead><tbody>
+<tr id="rule-field-order"><td><strong>Fields initialize in declaration order</strong></td><td>A field initializer reads the fields above it, its bases&#x27; fields, the statics and the enclosing scope, never a constructor&#x27;s parameters; reading its own field or a later one fails the load. Its value lands as the declaration <code>T f = e;</code> would, so a class value field refuses a <code>null</code> initializer.</td><td><a href="../guide/07-classes.html#constructor-exits-and-destructors">Classes</a></td></tr>
+<tr><td><strong>Methods are called or bound</strong></td><td><code>obj.heal</code> without a call is an error, at load when the checker knows the receiver: <code>'heal' is a method of Player; call it with player.heal() or bind it with reflect::bind(player, "heal")</code>. <code>reflect::bind(obj, "name")</code> is the method as a callable that holds the object.</td><td><a href="../guide/07-classes.html">Classes</a></td></tr>
+<tr><td>A builtin method read without a call</td><td>Raises the same way: <code>'push' is a method of array; call it with arr.push() or wrap the call in a lambda</code>.</td><td></td></tr>
+<tr><td><strong>Access control is two levels</strong></td><td><code>public:</code> for everyone; <code>private:</code> (and <code>protected:</code>) for the declaring class and every class derived from it. Members start public.</td><td><a href="../guide/07-classes.html">Classes</a></td></tr>
+<tr><td>Outside the family</td><td><code>Cannot access private member 'x' of class 'C'</code>; for a private constructor (checked on the overload resolution picks) <code>Cannot access private constructor of class 'C'</code>.</td><td></td></tr>
+<tr><td>Loads ignore access</td><td><code>from_json</code> and <code>from_binary</code> reconstitute the saved state: they run the default constructor whatever its access, or create an instance without one when no constructor takes zero arguments.</td><td></td></tr>
+<tr><td><strong>Statics</strong></td><td>Enforce their declared type; spelled <code>Class::name</code>, or bare <code>name</code> inside the class&#x27;s own methods. Inherited as in C++: a subclass sees its bases&#x27; statics bare, and <code>Derived::name</code> names them.</td><td><a href="../guide/07-classes.html#statics">Statics</a></td></tr>
+<tr><td><strong>User accessors win</strong></td><td>If a class (or an ancestor) declares <code>_get_x</code> / <code>_set_x</code>, <code>obj.x</code> reads and writes through them. A bare <code>x</code> inside the class&#x27;s methods is the backing field, so an accessor reads its own field without recursing.</td><td><a href="../guide/07-classes.html#name-resolution-in-methods">Name resolution</a></td></tr>
+<tr id="rule-keyword-member-names"><td><strong>A reserved word is a member name when qualified</strong></td><td>After <code>.</code>, <code>?.</code>, <code>-&gt;</code> or <code>::</code> every word is a member name (<code>p.catch(f)</code>, <code>obj.default</code>, <code>spider::catch(url)</code>, <code>Mode::default</code>, <code>super::catch()</code>). Every reserved word but <code>this</code> and <code>super</code> declares a field, a method, a namespace member or an enum value.</td><td><a href="../guide/07-classes.html#reference-returns-and-keyword-names">Keyword names</a></td></tr>
+<tr><td>Keyword members, bare and bound</td><td>Bare, the word stays the keyword: a statement <code>catch(x);</code> and a program-scope <code>void catch() {}</code> are parse errors; a class reaches its own as <code>this.catch(x)</code>. A host binds one the same way (<code>.method("catch", ...)</code>); reflection and archives use the word as written.</td><td></td></tr>
+<tr><td><strong>C++ property references bind the member</strong></td><td>A bound property passed to a <code>&amp;</code> parameter (<code>f(this.value)</code>, <code>f(obj.value)</code>) reads and writes through the host getter and setter, like any field lvalue.</td><td><a href="../guide/03-value-semantics.html#escape-hatch-2-field-and-element-lvalues-as-ref-arguments">Value Semantics</a></td></tr>
+</tbody></table></div>
+<h3 id="rules-control-flow">Control flow and errors<a class="hlink" href="#rules-control-flow" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Rule</th><th>Statement</th><th>Chapter</th></tr></thead><tbody>
+<tr><td><strong><code>switch</code> breaks by default</strong></td><td>Write <code>fallthrough;</code> to fall through. A case with no statements shares the body of the label below it. <code>break</code> in a case leaves the switch only.</td><td><a href="../guide/05-control-flow.html">Control Flow</a></td></tr>
+<tr><td><strong><code>do { } while (c);</code></strong></td><td>C++&#x27;s: <code>continue</code> reaches the condition.</td><td><a href="../guide/05-control-flow.html">Control Flow</a></td></tr>
+<tr><td><strong>The catch variable is the thrown value</strong></td><td><code>catch (Type e)</code> takes a class (and its subclasses), an enum&#x27;s value, a builtin kind or <code>error</code>; clauses run in order; <code>catch (e)</code> takes everything and is last; an error no clause takes goes on.</td><td><a href="../guide/05-control-flow.html#typed-catch">Typed catch</a></td></tr>
+<tr><td><strong><code>error</code> and <code>e.kind</code></strong></td><td><code>catch (error e)</code> takes a run-time error; <code>e.kind</code> is one of the <code>error_kind::</code> names: <code>null_receiver</code>, <code>no_member</code>, <code>name</code>, <code>not_callable</code>, <code>arguments</code>, <code>type</code>, <code>arithmetic</code>, <code>bounds</code>, <code>key_not_found</code>, <code>container</code>, <code>reference</code>, <code>limit</code>, <code>host</code>, <code>other</code>.</td><td><a href="errors.html#error-kinds">Error kinds</a></td></tr>
+<tr><td><strong>Budget and memory cap are terminal</strong></td><td>The execution budget cannot be caught by script; the memory cap gives one catchable raise, then goes terminal. Budget and second memory-cap errors pass every <code>catch</code> clause.</td><td><a href="../embedding/05-safety-rails.html">Safety Rails</a></td></tr>
+<tr><td><strong>A <code>.jaibite</code> carries its format version</strong></td><td>The version moves whenever the parser&#x27;s output changes; a bite loads only in a build with the same version. Proofs are never serialized and are re-derived on load.</td><td><a href="../embedding/04-jaibite.html">jaibite</a></td></tr>
+<tr><td>A bite of another version</td><td>The automatic disk cache silently reparses a cache file of another version or of another source text. An explicit <code>jaibite_load</code> fails with <code>jaibite: unsupported format version N (expected M)</code>, <code>M</code> being the build&#x27;s version.</td><td></td></tr>
+</tbody></table></div>
+
+<h2 id="include-vs-import">include vs import<a class="hlink" href="#include-vs-import" aria-label="link">&#8203;</a></h2>
+<p>Chapter: <a href="../guide/10-modules.html">Modules</a>.</p>
+<div class="tablewrap"><table><thead><tr><th></th><th><code>include "f.jai"</code></th><th><code>import "f.jai"</code></th></tr></thead><tbody>
+<tr><td>Runs</td><td><strong>Every time</strong> it is evaluated.</td><td>When first reached, then again when its file changed (checked in passes: <code>import_recheck_interval</code>, default 0.2 s).</td></tr>
+<tr><td>Scope</td><td>Executes in the current scope.</td><td>Module declaration.</td></tr>
+<tr><td>Expression?</td><td>Yes: <code>var cfg = include "config.jai";</code> evaluates to the file&#x27;s last expression.</td><td>The statement form never (<code>auto x = import ...</code> is a parse error). The call form <code>import("f.jai")</code> is a bool: true when a module ran.</td></tr>
+<tr><td>Dynamic paths</td><td><code>include(expr)</code></td><td><code>import(expr)</code></td></tr>
+<tr><td>Checked how?</td><td colspan="2">A literal path joins the program closure: its names and classes are known to every unit and checked before anything runs. A dynamic path cannot be gathered: that unit&#x27;s undeclared identifiers drop to warnings.</td></tr>
+<tr><td>Idiom</td><td>Forcing a re-run: hot reload of rules or content mid-game.</td><td>Declaring the module graph at the top of each file.</td></tr>
+<tr><td>Persistent state</td><td colspan="2">Goes in a module that is <em>only</em> imported and never included, so a reload cannot wipe it.</td></tr>
+</tbody></table></div>
+<h3 id="jaibite-disk-cache">The jaibite disk cache<a class="hlink" href="#jaibite-disk-cache" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Aspect</th><th>Rule</th></tr></thead><tbody>
+<tr><td>Where</td><td>Every file-based load keeps one in a <code>.cache</code> folder beside the source (<code>foo.jai</code> → <code>.cache/foo.jai.jaibite</code>), or below the host&#x27;s cache directory.</td></tr>
+<tr><td>Hit</td><td>A cache recording the exact source text (size + hash) and a matching registration fingerprint loads instead of parsing. Any other text reparses and refreshes the cache, whatever its mtime.</td></tr>
+<tr><td>Effect</td><td>Parse-level and side-effect-free: it never changes whether a file <em>runs</em>. Silent on write failure.</td></tr>
+<tr><td>Off</td><td><code>eng-&gt;jaibite_cache(false)</code></td></tr>
+</tbody></table></div>
+<h3 id="import-modes">Import modes (<code>engine::import_behavior</code>)<a class="hlink" href="#import-modes" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Mode</th><th>Behavior</th></tr></thead><tbody>
+<tr><td><code>file_timestamp</code> (<strong>default</strong>)</td><td>Re-runs a module when its file&#x27;s (modification time, size) stamp, or that of a file its last run included, changed.</td></tr>
+<tr><td>Recheck passes</td><td>Engine-wide, at most once per <code>import_recheck_interval</code> (0.2 s by default; 0 checks on every reach).</td></tr>
+<tr><td>A module whose file disappears</td><td>Raises <code>Failed to open import file</code> once, then waits until the file is back.</td></tr>
+<tr><td>A stamp that moves during a read</td><td>Never re-runs a loaded module from that read; the next pass reads it whole.</td></tr>
+<tr><td><code>eng-&gt;file_stamp_source(fn)</code></td><td>Supplies the stamps: <code>fn(path)</code> returns a <code>jai::engine::file_stamp</code> or <code>std::nullopt</code>; empty = the file system&#x27;s.</td></tr>
+<tr><td><code>once</code></td><td>Imports exactly once; ignores later file changes.</td></tr>
+<tr><td><code>always</code></td><td>Treats <code>import</code> as <code>include</code> (runs every time).</td></tr>
+</tbody></table></div>
+
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../reference/index.html"><span>&larr; reference</span>Reference</a><a class="next" rel="next" href="../reference/errors.html"><span>next &rarr;</span>Errors and Diagnostics</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

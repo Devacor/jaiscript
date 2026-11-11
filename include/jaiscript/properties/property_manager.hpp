@@ -1,9 +1,9 @@
 #pragma once
 
+#include <cstdint>
+#include <span>
 #include <string>
-#include <map>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 #include <memory>
 #include <jaiscript/properties/property.hpp>
@@ -36,9 +36,14 @@ namespace jai {
 		property_manager(const property_manager&) = delete;
 		property_manager& operator=(const property_manager&) = delete;
 
+		// The manager of an object copied or moved from a_source's owner: each property a_source registered inside the
+		// a_ownerSize bytes at a_sourceOwner is registered at the same offset from this manager, where the owner's copy
+		// or move constructs it afterwards. The script receivers stay with a_source.
+		property_manager(const property_manager& a_source, const void* a_sourceOwner, size_t a_ownerSize) noexcept;
+
 		void add(property_base* prop);
-		// keyed by each property's own name: an entry holds no copy of it
-		const std::map<std::string_view, property_base*>& all() const { return m_properties; }
+		// in name order; an entry holds no copy of its property's name
+		std::span<property_base* const> all() const { return { m_properties, m_count }; }
 
 		// Track a script-created receiver - keeps it alive for the lifetime of the property_manager
 		template<typename T>
@@ -50,7 +55,7 @@ namespace jai {
 
 		template<typename Fn>
 		void visit(Fn&& func) const {
-			for (const auto& [key, prop] : m_properties) {
+			for (property_base* prop : all()) {
 				func(prop->name(), prop);
 			}
 		}
@@ -73,7 +78,13 @@ namespace jai {
 		void clone_to_target(property_manager& target) const;
 
 	private:
-		std::map<std::string_view, property_base*> m_properties;
+		size_t lower_bound(std::string_view a_name) const;
+
+		property_base** m_properties = nullptr;
+		std::uint32_t m_count = 0;
+		std::uint32_t m_capacity : 31 = 0;
+		// made by the relocating constructor: an entry may name a property its owner has yet to construct
+		std::uint32_t m_relocated : 1 = 0;
 		receiver_owner script_receivers_;  // Holds receivers created by script callbacks
 	};
 
@@ -130,6 +141,15 @@ namespace jai {
 	//       }
 	//   };
 
+	namespace detail {
+		// Whether a class can copy or move its base subobject of type Base. No trait constructs an abstract class, so
+		// for one its assignment stands in: a class gives up both or neither.
+		template<typename Base>
+		inline constexpr bool base_copy_constructible_v = std::is_abstract_v<Base> ? std::is_copy_assignable_v<Base> : std::is_copy_constructible_v<Base>;
+		template<typename Base>
+		inline constexpr bool base_move_constructible_v = std::is_abstract_v<Base> ? std::is_move_assignable_v<Base> : std::is_move_constructible_v<Base>;
+	}
+
 	// Every property_owner is script_extensible (docs/site/embedding/13-script-extensible.html): the slot comes
 	// from the first extensible base when one exists (so multiple property_owner bases never
 	// leave two ambiguous slots), else from deriving the mixin here.
@@ -175,8 +195,12 @@ namespace jai {
 			register_inheritance();
 		}
 
+		// one argument that is this owner itself is a copy or a move, never the base's constructor argument
 		template<typename... Args>
-		explicit property_owner(Args&&... args) requires (sizeof...(Bases) == 1)
+		static constexpr bool _jai_is_relocation_v = sizeof...(Args) == 1 && (std::is_convertible_v<std::remove_reference_t<Args>*, const property_owner*> && ...);
+
+		template<typename... Args>
+		explicit property_owner(Args&&... args) requires (sizeof...(Bases) == 1 && !_jai_is_relocation_v<Args...>)
 			: detail::first_type_t<Bases...>(std::forward<Args>(args)...) {
 			register_inheritance();
 		}
@@ -221,15 +245,6 @@ namespace jai {
 			}();
 			(void)_inheritance_registered;
 		}
-
-	private:
-
-	public:
-
-		// Move operations deleted: property_manager holds raw pointers to
-		// member properties that would be invalidated by a move.
-		property_owner(property_owner&&) = delete;
-		property_owner& operator=(property_owner&&) = delete;
 
 		virtual ~property_owner() = default;
 
@@ -281,7 +296,7 @@ namespace jai {
 			if constexpr (sizeof...(Bases) > 0) {
 				(try_collect_base<Bases>(out), ...);
 			}
-			for (const auto& [name, prop] : property_mgr.all()) {
+			for (property_base* prop : property_mgr.all()) {
 				out.emplace_back(&prop->name(), prop);
 			}
 		}
@@ -384,14 +399,41 @@ namespace jai {
 		receiver_owner& receivers() { return receivers_; }
 		const receiver_owner& receivers() const { return receivers_; }
 
-		property_owner(const property_owner& rhs) {
-			*this = rhs;
+		// Copies and moves, level by level. The new owner's property_mgr registers the properties Derived declares where
+		// they sit in the new object, and Derived's own copy or move constructs them there with their values. A copy has
+		// no receivers; a move takes the tracked ones, script receivers included, and leaves the source registered,
+		// destructible and assignable. Assignment leaves every registration alone: Derived's members assign the values,
+		// and copy assignment first clones each property into its counterpart, which is all a hand-written Derived
+		// assignment that calls only this one gets.
+		using _jai_script_slot_base = std::conditional_t<detail::any_script_extensible_v<Bases...>, detail::no_script_slot<Derived>, script_extensible>;
+
+		property_owner(const property_owner& a_other) requires (detail::base_copy_constructible_v<Bases> && ...)
+			: Bases(static_cast<const Bases&>(a_other))...
+			, _jai_script_slot_base()
+			, property_mgr(a_other.property_mgr, static_cast<const Derived*>(&a_other), sizeof(Derived)) {
 		}
 
-		property_owner& operator=(const property_owner& other) {
-			if (this != &other) {
-				other.property_mgr.clone_to_target(property_mgr);
-				// Note: receivers_ are NOT copied - each instance manages its own connections
+		property_owner(property_owner&& a_other) noexcept requires (detail::base_move_constructible_v<Bases> && ...)
+			: Bases(std::move(static_cast<Bases&>(a_other)))...
+			, _jai_script_slot_base()
+			, property_mgr(a_other.property_mgr, static_cast<const Derived*>(&a_other), sizeof(Derived))
+			, receivers_(std::move(a_other.receivers_)) {
+			property_mgr.script_receivers() = std::move(a_other.property_mgr.script_receivers());
+		}
+
+		property_owner& operator=(const property_owner& a_other) requires (std::is_copy_assignable_v<Bases> && ...) {
+			if (this != &a_other) {
+				(static_cast<void>(static_cast<Bases&>(*this) = static_cast<const Bases&>(a_other)), ...);
+				a_other.property_mgr.clone_to_target(property_mgr);
+			}
+			return *this;
+		}
+
+		property_owner& operator=(property_owner&& a_other) noexcept requires (std::is_move_assignable_v<Bases> && ...) {
+			if (this != &a_other) {
+				(static_cast<void>(static_cast<Bases&>(*this) = std::move(static_cast<Bases&>(a_other))), ...);
+				property_mgr.script_receivers() = std::move(a_other.property_mgr.script_receivers());
+				receivers_ = std::move(a_other.receivers_);
 			}
 			return *this;
 		}

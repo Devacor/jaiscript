@@ -343,9 +343,11 @@ namespace jai::vm {
         // that joins no plain text (a non-string target, a registered operator) hands the chain to the general `+` and store
         op_text_append,     // a = text_append_protos index
         op_c_text_append,   // a = the loop's text_appends index: the pieces' string cells appended to the target slot's own node, else a miss
+        op_fresh_cell,      // a=nodes index (a for loop's variable_decl a lambda captures by reference): a cell the iteration shared is replaced by one holding a copy, ahead of the update
+        op_try_types,       // a=nodes index (a try_stmt with clause_types), after its op_try_push: the record takes only what those clauses take
     };
     inline constexpr size_t k_opcode_space = 512;   // tables indexed by opcode (the coverage report's) are this long
-    static_assert(static_cast<size_t>(opcode::op_c_text_append) < k_opcode_space, "the opcode space is full: widen k_opcode_space");
+    static_assert(static_cast<size_t>(opcode::op_try_types) < k_opcode_space, "the opcode space is full: widen k_opcode_space");
     static_assert(static_cast<uint32_t>(opcode::op_d_jne) < 256 && static_cast<uint32_t>(opcode::op_t_load) < 256, "a cell instruction packs a typed opcode above k_cell_op_shift in 8 bits");
     // op_capture_arg forms: where the callee stands while its arguments evaluate
     inline constexpr uint32_t capture_form_probe = 0;    // the pending callee register (op_probe_callee)
@@ -693,6 +695,8 @@ namespace jai::vm {
             case opcode::op_concat_operands: return "CONCAT_OPERANDS";
             case opcode::op_text_append: return "TEXT_APPEND";
             case opcode::op_c_text_append: return "C_TEXT_APPEND";
+            case opcode::op_fresh_cell: return "FRESH_CELL";
+            case opcode::op_try_types: return "TRY_TYPES";
             case opcode::op_sleep: return "SLEEP";
             case opcode::op_format_call: return "FORMAT_CALL";
             case opcode::op_c_load_f: return "C_LOAD_F";

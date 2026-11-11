@@ -89,6 +89,7 @@ public:
 		ep_ticks = 0;
 		deaths = 0;
 		player.reset_vitals();
+		player.remember_loadout();
 		begin_map();
 	}
 
@@ -127,6 +128,7 @@ public:
 			mode = 4;
 			mode_t = 0;
 		} else {
+			player.remember_loadout();
 			begin_map();
 		}
 	}
@@ -199,8 +201,8 @@ public:
 			mode_t = mode_t + 1;
 			if (start_pressed && mode_t > 25) {
 				deaths = deaths + 1;
-				player.reset_vitals();
-				begin_map();       // the floor repopulates; the Well remembers nothing
+				player.respawn();
+				begin_map();       // the floor repopulates; you keep the arsenal you brought to it
 			}
 			accumulate_hash();
 			return;

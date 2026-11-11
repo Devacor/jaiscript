@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Host and Runner Reference — JaiScript docs</title>
+<meta name="description" content="The engine API by task, the host-side tables of the embedding chapters, the command-line runner and its host API, performance rules of thumb, and the repository's documents.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Host and Runner Reference — JaiScript docs">
+<meta property="og:description" content="The engine API by task, the host-side tables of the embedding chapters, the command-line runner and its host API, performance rules of thumb, and the repository's documents.">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/reference/host.html">
+<meta property="og:url" content="https://jaiscript.com/reference/host.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html" class="active" aria-current="page">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Reference<span class="sidebar-current">Host and Runner Reference</span></summary><ol class="chapter-list"><li><a href="../reference/rules.html">Language Rules</a></li><li><a href="../reference/errors.html">Errors and Diagnostics</a></li><li><a href="../reference/library.html">Library Reference</a></li><li class="current"><a href="../reference/host.html" aria-current="page">Host and Runner Reference</a><ol class="page-toc" data-page-toc data-toc-h3></ol></li><li><a href="../reference/api.html">Full API Signatures</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Reference</a><span class="sep" aria-hidden="true">/</span>Host and Runner Reference</nav>
+<article class="chapter"><h1 id="host-page">Host and Runner Reference<a class="hlink" href="#host-page" aria-label="link">&#8203;</a></h1>
+<h2 id="engine-api">Engine API quick reference<a class="hlink" href="#engine-api" aria-label="link">&#8203;</a></h2>
+<p>One call per row; the linked <a href="../embedding/index.html">embedding chapter</a> explains it.</p>
+<h3 id="engine-lifecycle">Engine lifecycle &amp; execution: <a href="../embedding/01-embedding-quickstart.html">Quickstart</a><a class="hlink" href="#engine-lifecycle" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>API</th><th>What it does</th></tr></thead><tbody><tr><td><code>jai::engine::make()</code></td><td>An engine, always a <code>shared_ptr&lt;engine&gt;</code>. No global state.</td></tr>
+<tr><td><code>jai::stdlib::register_all(eng)</code></td><td>Opt-in stdlib: formatted <code>print</code>, <code>format</code>, <code>to_string</code>, <code>to_json</code>, <code>time::</code>, reflection, other optional helpers.</td></tr>
+<tr><td>A bare engine</td><td>Engine core (math, array transforms, text and binary primitives), basic <code>print</code>, <code>format_value</code>.</td></tr>
+<tr><td><code>eng-&gt;execute(src)</code></td><td>Runs a script; returns the last expression&#x27;s value, a <code>jai::script_value</code>. A script the checker rejects throws <code>jai::static_check_error</code> before anything runs.</td></tr>
+<tr><td><code>r.as&lt;T&gt;()</code> / <code>as_int()</code> / <code>as_float()</code> / <code>as_string()</code> / <code>as_bool()</code></td><td>Convert a result.</td></tr>
+<tr><td><code>eng-&gt;execute_file(path)</code></td><td>Runs a file under its canonical path (listings, traces, breakpoints). A <code>.jaibite</code> in the <code>.cache</code> folder beside it caches the parse.</td></tr>
+<tr><td><code>eng-&gt;start(src)</code> / <code>start_file(path)</code> / <code>start(callable, args)</code></td><td><a href="../embedding/17-host-api.html#suspendable-runs">Suspendable run</a>: each <code>sleep</code> hands back a <code>jai::script_run</code>; <code>resume()</code> continues it once <code>wake_at()</code> has passed.</td></tr>
+<tr><td><code>eng-&gt;get_variable(name)</code> / <code>has_variable(name)</code> / <code>has_function(name)</code></td><td>Read a global; a function is a value too.</td></tr>
+<tr><td><code>fn.as_function()(args)</code></td><td>Calls a script function; returns <code>checked_result&lt;script_value&gt;</code> (text: <code>eng-&gt;format_error(r)</code>). An uncaught script <code>throw</code> arrives as <code>jai::script_exception</code>.</td></tr>
+<tr><td><code>engine::external_call_guard</code></td><td>Wraps that call only while a script is running.</td></tr>
+<tr><td><code>jai::convert_script_function&lt;Sig&gt;(fn)</code></td><td>Typed <code>std::function</code> over a script function. A script error or uncaught <code>throw</code> throws <code>jai::runtime_error</code> to the C++ caller; a host function called from script returns it as that call&#x27;s error.</td></tr>
+<tr><td><code>v.as&lt;std::vector&lt;T&gt;&gt;()</code> / <code>as&lt;std::map&lt;K, V&gt;&gt;()</code></td><td>Typed arrays and maps copy out.</td></tr>
+<tr><td><code>as_array()</code></td><td>Views an <code>array&lt;var&gt;</code> only.</td></tr>
+<tr><td><code>unchecked_array_node()-&gt;for_each(eng, f)</code></td><td><code>for_each</code> walks any array kind.</td></tr>
+<tr><td><code>eng-&gt;set_backend(jai::backend_type::interpreter)</code></td><td>The tree-walking interpreter; the bytecode VM is the default. <strong>Before</strong> the first execute only, in a program that links <code>jaiscript_interpreter</code>.</td></tr>
+<tr><td><code>eng-&gt;set_output_stream(s)</code></td><td>Redirects <code>print()</code>; <code>nullptr</code> restores <code>std::cout</code>.</td></tr>
+<tr><td><code>eng-&gt;set_script_error_handler(fn)</code></td><td>Sink for script errors nothing can catch (a destructor failing at engine teardown).</td></tr>
+<tr><td><code>eng-&gt;format_stack_trace()</code> / <code>last_stack_trace()</code></td><td>Script stack of the most recent failure.</td></tr>
+</tbody></table></div>
+<h3 id="registering-the-host-surface">Registering the host surface: <a href="../embedding/01-embedding-quickstart.html">Quickstart</a>, <a href="../embedding/02-dynamic-binder.html">dynamic_binder</a><a class="hlink" href="#registering-the-host-surface" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>API</th><th>What it does</th></tr></thead><tbody><tr><td><code>eng-&gt;add_function(name, lambda)</code></td><td>Typed host function. Repeated names form an overload set resolved by argument types.</td></tr>
+<tr><td>Non-const <code>T&amp;</code> parameter</td><td>The callee&#x27;s final value is written back into the script lvalue argument (variable, field, element, map value, static, C++ property, vector component <code>v.x</code>) by that slot&#x27;s store rule. A literal or temporary is a copy.</td></tr>
+<tr><td><code>std::shared_ptr&lt;T&gt;</code> or <code>std::weak_ptr&lt;T&gt;</code> parameter</td><td>Takes <code>null</code> as an empty handle.</td></tr>
+<tr><td><code>std::weak_ptr&lt;T&gt;</code> parameter</td><td>Takes a live <code>shared_ptr</code> or <code>weak_ptr</code> handle as one to the same object.</td></tr>
+<tr><td><code>eng-&gt;add_variadic_function(name, fn)</code></td><td><code>fn(jai::engine&amp;, std::span&lt;const script_value&gt;)</code> takes every argument of the call and returns what a typed function returns, a <code>script_value</code> or a <code>checked_result&lt;script_value&gt;</code>: <code>print</code>-shaped functions, optionals. Alone under its name and unguarded, it has a <a href="../embedding/17-host-api.html#host-direct-entries">direct entry</a>. <code>fn(const std::vector&lt;script_value&gt;&amp;)</code>, returning a <code>checked_result&lt;script_value&gt;</code>, registers too.</td></tr>
+<tr><td><code>add_function(name, fn, jai::nodiscard | jai::serial | jai::filesystem)</code></td><td>The trailing option, also on <code>add_variadic_function</code>, <code>.method</code> and <code>.static_method</code>: a privilege the call requires, <code>jai::nodiscard</code> (a statement that drops the result fails the load: <a href="../embedding/17-host-api.html#nodiscard-host">host [[nodiscard]]</a>) and <code>jai::serial</code> (a parallel body may not call it: <a href="../embedding/02-dynamic-binder.html#parallel-calls">parallel calls</a>), combined with <code>|</code>. <code>eng-&gt;is_nodiscard_function(callable)</code> asks.</td></tr>
+<tr><td><code>eng-&gt;add_host_direct(name, arity, invoke, target)</code></td><td><a href="../embedding/17-host-api.html#host-direct-entries">Direct entry</a> for the function <code>name</code> holds: a VM call site with <code>arity</code> non-reference arguments calls <code>invoke(target, args, arity)</code> over the arguments in place. The function takes every other call.</td></tr>
+<tr><td><code>eng-&gt;add_global(name, value)</code></td><td>Copies a value in.</td></tr>
+<tr><td><code>eng-&gt;add_global_ref(name, var)</code></td><td><strong>Live binding</strong> (cpp_bound) to a C++ primitive or string: script reads and writes the real variable.</td></tr>
+<tr><td><code>eng-&gt;make_value(v)</code> / <code>make_null()</code> / <code>make_array()</code> / <code>make_map()</code></td><td>Value factories; every <code>script_value</code> carries its engine. <code>make_value</code> of a <code>script_value</code> hands it back; <code>as&lt;script_value&gt;()</code> is the value itself.</td></tr>
+<tr><td><code>jai::dynamic_binder&lt;T&gt;(*eng, "Name")</code></td><td>Class binding: <code>.constructor&lt;Args...&gt;()</code> <code>.method(...)</code> <code>.property(...)</code> <code>.static_method(...)</code> <code>.static_property(...)</code> <code>.base_class&lt;B&gt;()</code>. See <a href="#binder-verbs">binder verbs</a>.</td></tr>
+<tr><td><code>.method("+", &amp;T::operator+)</code></td><td>Operator by token name: <a href="#binder-operators">bound operators</a>.</td></tr>
+<tr><td><code>extend(object, Class)</code> (script)</td><td>Gives a host-owned object a script class over its C++ class or a base, in place. Idempotent; re-derives for another class (<a href="../embedding/13-script-extensible.html">Script-Extensible Objects</a>).</td></tr>
+<tr><td><code>eng-&gt;extend(obj, "Class")</code></td><td>The same from C++. <code>add_global</code>, <code>make_object</code> and every other entry hand script the object&#x27;s layer, extended before or after.</td></tr>
+<tr><td><code>eng-&gt;script_layer(*obj)</code> / <code>script_layer_detach(obj)</code></td><td>The object&#x27;s live layer / drop it (fields returned as JSON).</td></tr>
+<tr><td><code>obj-&gt;script_layer_to_json()</code> / <code>script_layer_from_json(s)</code></td><td><code>script_extensible</code> (every <code>property_owner</code>): the layer&#x27;s <code>{"$type", "$script"}</code> state, out and back.</td></tr>
+</tbody></table></div>
+<h3 id="safety-rails">Safety rails: <a href="../embedding/05-safety-rails.html">Safety Rails</a><a class="hlink" href="#safety-rails" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>API</th><th>What it does</th></tr></thead><tbody><tr><td><code>eng-&gt;execution_budget(seconds)</code></td><td>Wall-clock cap per <code>execute()</code>/<code>next()</code>. Default <strong>5.0 s</strong>; 0 disables. Overrun is <strong>terminal</strong>: script <code>catch</code> cannot swallow it.</td></tr>
+<tr><td><code>eng-&gt;execution_step_budget(checks)</code></td><td>Clock-free twin: at most <code>checks</code> budget checks (one per 1024 back-edges and call entries) per host entry, then the same terminal error. Default 0 (off).</td></tr>
+<tr><td><code>eng-&gt;memory_cap(bytes)</code></td><td>Approximate high-water per top-level execute. First raise: catchable, denies in place. Second: terminal. 0 = unlimited.</td></tr>
+<tr><td><code>eng-&gt;max_call_depth(jai::backend_type::vm, n)</code></td><td>Recursion cap per backend; default interpreter 256, VM 250,000. Overrun is the catchable recursion error (<a href="#rails-depth-limits">depth limits</a>).</td></tr>
+<tr><td><code>eng-&gt;throw_on_overflow()</code></td><td>The build&#x27;s integer-overflow policy (checked = default).</td></tr>
+<tr><td><code>jai::debug::listen(*eng, port)</code> / <code>conn-&gt;listening()</code> / <code>conn-&gt;error()</code></td><td>The VS Code (DAP) listener. A taken port does not throw: <code>listening()</code> is false, <code>error()</code> says why.</td></tr>
+<tr><td><code>eng-&gt;add_include_path(dir)</code></td><td>Search root for script <code>include</code>/<code>import</code>; first added wins on collisions.</td></tr>
+<tr><td><code>eng-&gt;confine_paths({dirs})</code></td><td>Opt-in: <code>include</code>, <code>import</code>, <code>resolve_path</code> and <code>file_data</code> open only files under these folders; no <code>.cache</code> is written beside a source outside them. Empty (default) opens any readable path (<a href="../embedding/05-safety-rails.html#confine-paths">Safety Rails</a>).</td></tr>
+<tr><td><code>eng-&gt;reset_import(path)</code> / <code>reset_imports()</code> / <code>is_imported(path)</code> / <code>get_imported_files()</code></td><td>Import-cache management.</td></tr>
+<tr><td><code>eng-&gt;set_import_behavior(mode)</code></td><td><code>file_timestamp</code> (default) / <code>once</code> / <code>always</code>.</td></tr>
+<tr><td><code>eng-&gt;import_recheck_interval(seconds)</code></td><td>A reached <code>import</code> asks the filesystem whether its module changed at most once per window. Default 0.2 s; 0 checks on every reach. Script builtin: <code>import_recheck_interval(s)</code>.</td></tr>
+<tr><td><code>eng-&gt;hot_reload_reporting(true)</code> / <code>hot_reload_reports()</code> / <code>clear_hot_reload_reports()</code></td><td>Off by default. On: each field operation of a class reload on live instances, and each saved value a load converts or cannot fit, aggregates into <code>std::vector&lt;jai::field_migration_report&gt;</code> until cleared.</td></tr>
+<tr><td>Report row</td><td><code>class_name</code>, <code>field_name</code>, <code>old_type</code>, <code>new_type</code>, <code>outcome</code> (<code>preserved</code> / <code>converted</code> / <code>reset</code> / <code>added</code> / <code>removed</code>), <code>count</code> across instances.</td></tr>
+<tr><td><code>eng-&gt;disable(jai::filesystem)</code> / <code>enable(...)</code> / <code>is_enabled(...)</code> / <code>register_privilege("name")</code></td><td>The filesystem privilege (on by default) and custom <a href="#rails-permissions">named permissions</a>.</td></tr>
+<tr><td><code>add_function(name, fn, {"app.edit"})</code></td><td>A final requirement: the call raises <code>Insufficient privilege: app.edit.</code> while it is off.</td></tr>
+</tbody></table></div>
+<h3 id="time-source">Time source: <a href="../embedding/17-host-api.html#the-time-source">Quickstart</a>, <a href="../guide/14-time.html">Time</a><a class="hlink" href="#time-source" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>API</th><th>What it does</th></tr></thead><tbody><tr><td><code>eng-&gt;time().source(monotonic, wall, sleep)</code></td><td>Replaces the clock every <code>time::</code> call reads. An empty provider selects the system one.</td></tr>
+<tr><td>Providers</td><td>Monotonic and wall return <code>std::chrono::nanoseconds</code> (wall = since the Unix epoch, UTC); sleep takes a duration.</td></tr>
+<tr><td>Provider reads</td><td>Only inside a <code>time::</code> call, plus the monotonic one at each host entry once a loaded program names <code>time::execute_elapsed</code>.</td></tr>
+<tr><td><code>eng-&gt;time().monotonic_now()</code> / <code>wall_now()</code> / <code>sleep_for(d)</code></td><td>The providers from C++, one read each. <code>eng-&gt;time()</code> is declared in <code>&lt;jaiscript/core/engine_time.hpp&gt;</code>.</td></tr>
+<tr><td><code>eng-&gt;engine_elapsed()</code> / <code>execute_elapsed()</code></td><td>What <code>time::engine_elapsed()</code> and <code>time::execute_elapsed()</code> answer.</td></tr>
+</tbody></table></div>
+<h3 id="checking-and-precompiled-scripts">Static checking &amp; precompiled scripts: <a href="../embedding/06-static-checking.html">Static Checking</a>, <a href="../embedding/04-jaibite.html">jaibite</a><a class="hlink" href="#checking-and-precompiled-scripts" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>API</th><th>What it does</th></tr></thead><tbody><tr><td><code>eng-&gt;check(src)</code></td><td>Parses (cached) and checks without running; returns <code>jai::check_report</code>.</td></tr>
+<tr><td><code>eng-&gt;last_check_diagnostics()</code></td><td>Report of the last checked execute/bite, warnings included.</td></tr>
+<tr><td><code>eng-&gt;type_proofs(bool)</code></td><td>Default on: type <em>proofs</em> let both backends skip conversions shown to be identities, each behind a run-time guard. <code>type_proofs(false)</code> is observationally identical (same values, output, error text), slower.</td></tr>
+<tr><td><code>eng-&gt;parameter_alias(bool)</code> · <code>eng-&gt;local_alias(bool)</code></td><td>Default on: a by-value parameter or local provably only read binds its argument or source instead of a copy (<a href="../guide/03-value-semantics.html#what-each-strategy-costs">Choosing a strategy</a>). Off copies every time, observationally identical.</td></tr>
+<tr><td><code>eng-&gt;jaibite(src)</code></td><td>Parses once into an engine-bound handle; <code>bite.execute()</code> skips the parse, and the VM caches the compiled chunk. Checked at creation; strict throws there.</td></tr>
+<tr><td><code>bite.checked_clean()</code> / <code>bite.check_diagnostics()</code></td><td>That check&#x27;s result.</td></tr>
+<tr><td><code>bite.save(path)</code> / <code>save_bytes()</code></td><td>The parsed AST as <code>.jaibite</code>, stamped with the build&#x27;s format version (<code>jai::detail::k_jaibite_version</code>).</td></tr>
+<tr><td>Another format version</td><td>The load fails: <code>jaibite: unsupported format version N (expected M)</code>. The automatic disk cache reparses instead.</td></tr>
+<tr><td><code>eng-&gt;jaibite_load(path)</code> / <code>jaibite_load_bytes(b)</code></td><td>Loads into any engine: symbols re-intern, one file serves both backends. A registration fingerprint that differs from this engine&#x27;s re-checks the bite against this engine&#x27;s surface.</td></tr>
+<tr><td><code>bite.registration_mismatch()</code></td><td>Advisory: the registered surface differs between saving and loading engines. Covers every registration form, zero-arg and variadic functions included; a load never fails on it.</td></tr>
+<tr><td><code>eng-&gt;jaibite_cache(bool)</code> / <code>jaibite_cache()</code></td><td>Disk cache for file-based loads, default <strong>ON</strong>: include/import/<code>execute_file</code> keep <code>.cache/foo.jai.jaibite</code> beside <code>foo.jai</code>, making the folder when missing.</td></tr>
+<tr><td>Cache validity</td><td>Loads only for the exact source text it records (size + hash) and a matching registration fingerprint, whatever the mtimes. Anything else reparses and rewrites it.</td></tr>
+<tr><td>Cache writes</td><td>A temporary file renamed into place; silent best-effort, once per source text. <code>jaibite_cache_write_failures()</code> counts them.</td></tr>
+<tr><td><code>eng-&gt;jaibite_cache_directory(dir, root)</code> / <code>jaibite_cache_directory()</code></td><td>Caches go below <code>dir</code> at the source&#x27;s path relative to <code>root</code> (outside it, or with no root, its own path). A valid <code>.cache</code> beside the source still loads, never rewritten. For read-only bundles; empty restores the default.</td></tr>
+<tr><td><code>eng-&gt;jaibite_cache_path(source)</code></td><td>The cache file written for <code>source</code>; empty for a <code>.jaibite</code> source.</td></tr>
+</tbody></table></div>
+<h3 id="serialization-coroutines">Serialization &amp; coroutines: <a href="../embedding/08-serialization.html">Serialization</a>, <a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a><a class="hlink" href="#serialization-coroutines" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>API</th><th>What it does</th></tr></thead><tbody><tr><td><code>to_json(x)</code> / <code>to_json(x, n)</code> / <code>from_json(s)</code> (script)</td><td>JSON round-trip of any script value; <code>n</code> spaces per level pretty-print.</td></tr>
+<tr><td><code>jai::to_json(*eng, v)</code> / <code>jai::to_binary(*eng, v)</code> (C++)</td><td>C++ objects the <a href="#archive-reference">archives</a> know: a <code>property_owner</code>, a type with <code>serialize</code>/<code>save</code>, a handle to one.</td></tr>
+<tr><td><code>jai::script_value</code></td><td>Not one of them: a script value goes through the script builtin <code>to_json</code>.</td></tr>
+<tr><td><code>eng-&gt;execute("co.next()")</code> / native handle <code>e-&gt;next(eng)</code>, <code>e-&gt;next(eng, n)</code> / <code>e-&gt;done()</code></td><td>Drive script coroutines from C++.</td></tr>
+</tbody></table></div>
+<h3 id="thread-pool">Thread pool: <a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a>, <a href="../embedding/17-host-api.html#parallel-worker-count">Parallel worker count</a><a class="hlink" href="#thread-pool" aria-label="link">&#8203;</a></h3>
+<p>Each call with a compiled example: <a href="../embedding/16-thread-pool.html#submitting-work">Thread Pool for Host Work</a>. A task is a <code>thread_pool::task_type</code>, a <code>std::function&lt;void()&gt;</code>.</p>
+<div class="tablewrap"><table><thead><tr><th>Call (<code>&lt;jaiscript/thread_pool.hpp&gt;</code>)</th><th>Does</th></tr></thead><tbody>
+<tr><td><code>thread_pool(n = 0)</code></td><td>Starts <code>n</code> workers and keeps them for the pool's lifetime. Neither copyable nor movable.</td></tr>
+<tr><td><code>thread_pool(0)</code></td><td>0 means <code>thread_pool::default_worker_count()</code>: one less than the hardware threads, never less than one.</td></tr>
+<tr><td><code>worker_count()</code></td><td>The number of workers.</td></tr>
+<tr><td><code>submit(task)</code></td><td>Shared queue: the first free worker runs it.</td></tr>
+<tr><td><code>submit_to(worker, task)</code></td><td>That worker's own queue: only its thread runs the task, in submission order, between the shared tasks it also takes. For thread-affine state.</td></tr>
+<tr><td><code>submit_to</code>, bad index</td><td>An index outside 0 to <code>worker_count() - 1</code> throws <code>std::out_of_range</code>.</td></tr>
+<tr><td><code>submit(task, then, where)</code></td><td>Runs <code>then</code> once after <code>task</code> returns or throws.</td></tr>
+<tr><td><code>submit_batch(tasks, then, where)</code></td><td>Queues a <code>std::vector</code> of tasks under one lock and runs <code>then</code> once after the last finishes. An empty batch continues at once.</td></tr>
+<tr><td><code>submit_batch</code>, queueing throws</td><td>The tasks already queued run, <code>then</code> is dropped and the caller gets the exception.</td></tr>
+<tr><td><code>where</code></td><td><code>then_on::pool</code> (default): on the worker that finished the work. <code>then_on::posted</code>: on the thread that calls <code>run_posted()</code>.</td></tr>
+<tr><td><code>wait_idle()</code></td><td>Blocks until every task submitted so far has finished, pool continuations included, and their captures are destroyed. Does not wait for posted work.</td></tr>
+<tr><td><code>post(task)</code></td><td>Queues a task for the draining thread, from any thread.</td></tr>
+<tr><td><code>run_posted()</code></td><td>Runs the posted queue on the calling thread, in posting order, and returns how many tasks ran.</td></tr>
+<tr><td><code>on_exception(handler)</code></td><td>Installs a <code>std::function&lt;void(std::exception_ptr)&gt;</code>; replaceable at any time from any thread.</td></tr>
+<tr><td><code>spin_budget_ns(ns)</code>, <code>spin_budget_ns()</code></td><td>Sets and reads how long an idle worker spins before it parks (default 1,000,000: 1&nbsp;ms).</td></tr>
+<tr><td><code>thread_pool::performance_core_count()</code></td><td>A hybrid CPU&#x27;s performance cores, between 1 and the hardware threads; detected once.</td></tr>
+<tr><td><code>jai::thread_pool pool{n, jai::thread_pool::fast_threads}</code></td><td>Workers that ask the system not to throttle them to save power (off by default).</td></tr>
+<tr><td><code>spin_budget_ns(0)</code></td><td>Parks at once.</td></tr>
+<tr><td><code>eng-&gt;parallel_thread_count(n)</code> / <code>parallel_thread_count()</code></td><td>Threads of a parallel region, the caller included. Default: the performance cores, at most the hardware threads minus one; 0 restores it.</td></tr>
+</tbody></table></div>
+
+<h2 id="binder-reference">dynamic_binder: <a href="../embedding/02-dynamic-binder.html">Binding C++ Classes</a><a class="hlink" href="#binder-reference" aria-label="link">&#8203;</a></h2>
+<h3 id="binder-copies">When a bound object is copied or shared<a class="hlink" href="#binder-copies" aria-label="link">&#8203;</a></h3>
+<p>The boundary never copies; from there a bound object behaves as a script class instance does (<a href="../embedding/02-dynamic-binder.html#copies-and-handles">chapter</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>Script</th><th>Result</th></tr></thead><tbody>
+<tr><td>A value into a variable, field or element (<code>Turret b = a;</code>, <code>var c = b;</code>), a by-value parameter or return, a container literal element (<code>[a]</code>), a by-value capture (<code>[a]</code>, <code>[=]</code>)</td><td>A separate C++ object made by the copy constructor.</td></tr>
+<tr><td>A call&#x27;s <code>T&amp;</code> result into <code>var c</code>, <code>auto c</code> or <code>Turret c</code></td><td>A copy, as C++ <code>auto</code> drops the reference.</td></tr>
+<tr><td>A <code>T&amp;</code> argument the host passes into a <code>var p</code> or <code>Turret p</code> parameter</td><td>A copy.</td></tr>
+<tr><td>A reference: <code>var&amp; g = gate;</code>, <code>auto&amp; c = owner.child();</code>, <code>C&amp; c</code>, a <code>&amp;</code> parameter</td><td>The same object. <code>c = other;</code> runs the class&#x27;s bound <code>=</code>.</td></tr>
+<tr><td>A handle: <code>new Turret(...)</code>, a <code>shared_ptr&lt;Turret&gt;</code> variable, a <code>std::shared_ptr&lt;Turret&gt;</code> the host returns, passes to a callback, or gives <code>add_global</code> or <code>make_object</code></td><td>Every copy of the handle shares the one object: <code>var g = gate;</code> names the host&#x27;s <code>gate</code>.</td></tr>
+<tr><td>A class with a deleted copy constructor (<code>std::atomic</code>, <code>std::mutex</code>)</td><td>Each copy above raises <code>Cannot copy C++ object of type &#x27;T&#x27;: the type is not copy-constructible. Hold it by reference (auto&amp;/var&amp;) or share it (shared_ptr&lt;T&gt;).</code></td></tr>
+<tr><td>A typed slot the object converts into: <code>int n = obj;</code> as a declaration, assignment, parameter, return or field</td><td>Calls the bound <code>to_int</code> on the object itself, with no copy.</td></tr>
+<tr><td>A <code>float</code>, <code>bool</code>, <code>char</code> or <code>string</code> slot</td><td>Calls <code>to_float</code>, <code>to_bool</code>, <code>to_char</code> or <code>to_string</code>.</td></tr>
+<tr><td>Assigning into a variable, field or element declared <code>C</code> (<code>a = other;</code>)</td><td>Runs the bound <code>=</code> on the held object. With none bound, a copy-constructed object replaces the held one.</td></tr>
+<tr><td>Assigning into a <code>var</code> variable</td><td>Takes a copy of <code>other</code> in place of what it held.</td></tr>
+<tr><td>A bound property passed to a <code>&amp;</code> parameter: <code>gate.level</code>, or <code>this.level</code> or a bare <code>level</code> inside a method of a script class deriving <code>Spawner</code></td><td>Binds the property itself; the callee&#x27;s writes land in the C++ member.</td></tr>
+<tr><td>A bound property in a lambda</td><td>A <code>[=]</code> lambda copies its value at creation; a <code>[&amp;]</code> lambda reads the live property.</td></tr>
+</tbody></table></div>
+<h3 id="binder-verbs">Binder verbs<a class="hlink" href="#binder-verbs" aria-label="link">&#8203;</a></h3>
+<p>Explained in <a href="../embedding/02-dynamic-binder.html#the-fluent-chain-verb-by-verb">The binder chain, verb by verb</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Verb</th><th>What it binds</th></tr></thead><tbody>
+<tr><td><code>.constructor&lt;Args...&gt;()</code></td><td>A constructor overload, resolved by arity and C++ parameter types.</td></tr>
+<tr><td><code>.constructor&lt;&gt;()</code></td><td>Prefers a <code>T(engine*)</code> constructor when the type has one.</td></tr>
+<tr><td><code>.method(name, &amp;T::fn)</code></td><td>A member function, const or not. A member <em>data</em> pointer here is a compile error that points to <code>.property()</code>.</td></tr>
+<tr><td><code>.method(name, lambda)</code></td><td>A lambda whose first parameter is <code>T&amp;</code> or <code>const T&amp;</code> is a method on that object.</td></tr>
+<tr><td>Any other lambda</td><td>A method that ignores its receiver (<code>.method("twice", [](int64_t k) { return k * 2; })</code>).</td></tr>
+<tr><td>A stateful functor</td><td>Keeps one state on every call path.</td></tr>
+<tr><td>Overloads</td><td>Registering a name again with another C++ signature, same arity included, adds an overload.</td></tr>
+<tr><td><code>.static_method(name, fn)</code></td><td>A free function or lambda, called as <code>Vec2::axes()</code>. Bound-class arguments work.</td></tr>
+<tr><td>A static method returning a bound class</td><td>Does not compile: return primitives or strings, and bind a constructor overload or an engine-level function as a factory.</td></tr>
+<tr><td><code>.property(name, &amp;T::member)</code></td><td>Field access. A setter is generated only for a copy-assignable member type. For a class with no serialization route of its own the member is a key of its archive record, written and read in place; a <code>const</code> member stays out (<a href="../embedding/08-serialization.html#binding-records">binding records</a>).</td></tr>
+<tr><td>A <code>std::vector&lt;E&gt;</code> member</td><td>Binds as a live view without a copy (<code>size</code>, <code>push</code>, <code>pop</code>, <code>at</code>, <code>[]</code>).</td></tr>
+<tr><td>A member of a registered class type</td><td>Binds by reference.</td></tr>
+<tr><td>A <code>jai::signal&lt;Sig&gt;</code> or <code>signal_emitter&lt;Sig&gt;</code> member</td><td>Binds as a <a href="../embedding/02-dynamic-binder.html#signals-one-view-every-signature">connect surface</a>.</td></tr>
+<tr><td><code>.property(name, getter, setter)</code></td><td>A computed property from lambdas or a member function pair. A <code>nullptr</code> setter makes it read-only: a store raises <code>Cannot assign to 'x': it is read-only</code>. In a binding record the getter&#x27;s value is written, and a load reads over it and hands it to the setter; a read-only one stays out.</td></tr>
+<tr><td><code>.transient_property(name, &amp;T::member)</code>, <code>.transient_property(name, getter, setter)</code></td><td>The same property, kept out of the class&#x27;s binding record, as <code>JAI_TRANSIENT_PROPERTY</code> is out of a <code>property_owner</code>&#x27;s.</td></tr>
+<tr><td>A member of a class type not registered yet</td><td>Binds; the type may register later, in any order (<code>std::shared_ptr&lt;Node&gt; next</code> inside <code>Node</code>&#x27;s own chain). The first load, check or host call into script raises <code>Bindings are incomplete:</code> with one line per type still missing: the class and member, the C++ type and the registration to write.</td></tr>
+<tr><td><code>.static_property(name, &amp;var)</code>, <code>.static_property(name, getter, setter)</code></td><td>A class-level value, read and written as <code>Class::name</code>. The pointer form binds the live variable.</td></tr>
+<tr><td><code>.base_class&lt;Base&gt;()</code></td><td>An inheritance edge: base methods and properties are callable on the derived with virtual dispatch, and a <code>Base</code> slot may hold this type on a polymorphic load. Diamond inheritance throws. A binding record writes the base&#x27;s binding first, and a polymorphic one takes its <code>$type</code> from the binding&#x27;s name.</td></tr>
+<tr><td><code>.auto_bind(mode)</code></td><td>Everything the declarations know: <code>property_owner</code> schema properties, observables and signals; base classes; and <code>to_string()</code>, <code>size()</code>, <code>empty()</code> and <code>==</code>/<code>!=</code> where the class has them. Modes: <code>all</code>, <code>properties</code>, <code>hierarchy</code>.</td></tr>
+<tr><td><code>static T::jai_auto_bind(dynamic_binder&lt;T&gt;&amp;)</code></td><td>A hook through which a class binds its own private members.</td></tr>
+<tr><td><code>.transparent_wrapper(unwrap)</code></td><td>An operation not found on the wrapper retries on the unwrapped value: <code>gate.threat + 2</code> reads the observable&#x27;s <code>int</code> while <code>.on_change</code> stays on the wrapper.</td></tr>
+<tr><td><code>.post_load_hook(fn)</code></td><td>The class&#x27;s <code>post_load</code>, <code>[](T&amp; self)</code> or <code>[](T&amp; self, int version)</code>, run by a script-side load (<code>from_json</code>, <code>from_binary</code>, <code>from_base64</code>) after it writes the fields, and by a C++ archive after it loads a binding record.</td></tr>
+<tr><td><code>.version(n)</code></td><td>A number (default 1) for the script archives only; the C++ archives never read it (<a href="#archive-versions">versions</a>).</td></tr>
+<tr><td><code>.deserialization_factory(fn)</code></td><td>Constructs a non-default-constructible type on load. The archive-only, context-only and context-plus-archive signatures are detected.</td></tr>
+<tr><td><code>.serial_only_constructor()</code>, <code>.method(name, fn, jai::serial)</code>, <code>.static_method(name, fn, jai::serial)</code></td><td>Keep the constructor or the call out of <a href="../embedding/02-dynamic-binder.html#serial-only-constructors">parallel bodies</a>.</td></tr>
+<tr><td><code>.bound_engine()</code></td><td>The engine this binder targets, for a configure function that calls <code>bind_signal_type</code> or adds globals.</td></tr>
+<tr><td><code>.build()</code></td><td>Optional: commits the registration there and throws what fails. Without it the binding commits when the binder's lifetime ends, or at the engine's first load while the binder is still alive; a failure then joins the <code>Bindings are incomplete:</code> error of the next load. Chain calls after the commit apply to the registered class. A binder moves but does not copy.</td></tr>
+</tbody></table></div>
+<h3 id="binder-operators">Bound operators<a class="hlink" href="#binder-operators" aria-label="link">&#8203;</a></h3>
+<p>Operators are methods named by token and follow the script rules of the <a href="../guide/04-operators.html">operators chapter</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Binding</th><th>Rule</th></tr></thead><tbody>
+<tr><td>Tokens</td><td><code>+ - * / % &amp; | ^ &lt;&lt; &gt;&gt; == != &lt; &lt;= &gt; &gt;= &lt;=&gt;</code>, unary <code>- + ~</code> (a lambda taking only the object), <code>[]</code>, <code>()</code>, <code>=</code>, and <code>to_bool</code> for <code>!v</code> and <code>if (v)</code>.</td></tr>
+<tr><td>Supplied</td><td><code>&lt;=&gt;</code> supplies <code>&lt; &lt;= &gt; &gt;=</code> and <code>==</code>; <code>==</code> supplies <code>!=</code>; <code>5 == m</code> asks <code>m</code>&#x27;s <code>==</code> taking an int.</td></tr>
+<tr><td><code>++</code>, <code>--</code></td><td>C++&#x27;s two forms, which a script class cannot declare: a lambda taking only the object answers <code>++v</code>; one taking the object and an ignored <code>int64_t</code> answers <code>v++</code>.</td></tr>
+<tr><td>A missing <code>++</code> or <code>--</code> form</td><td><code>Cannot apply &#x27;++&#x27; to T</code></td></tr>
+<tr><td>Compound (<code>"+="</code> ...)</td><td>Runs once on the object in place, for a variable, field, element, map value or reference. Nothing is stored back; the expression is what the operator returns.</td></tr>
+<tr><td>Compound, none bound</td><td><code>m += o</code> is <code>m = m + o</code>.</td></tr>
+<tr><td>Reflected</td><td>A lambda whose first parameter is another type and whose second is the class, C++&#x27;s free <code>operator-(int64_t, const Money&amp;)</code>, answers <code>5 - m</code>.</td></tr>
+<tr><td>No reflected form</td><td>Arithmetic never reverses on its own; the checker warns at a number left of a bound class&#x27;s operator that has none.</td></tr>
+<tr><td>Overload choice</td><td>An operator counts for an operand only when one of its overloads takes it.</td></tr>
+<tr><td><code>operator&lt;(const Money&amp;)</code> and <code>operator&lt;=&gt;(int64_t)</code> bound</td><td><code>m &lt; 5</code> runs the <code>&lt;=&gt;</code>.</td></tr>
+<tr><td>Only <code>operator+(const Money&amp;)</code> bound</td><td><code>m + "!"</code> is the builtin concatenation of <code>m</code>&#x27;s text.</td></tr>
+<tr><td>No match</td><td><code>No bound 'Money * int': bind operator "*" taking int on Money, or convert the operand</code></td></tr>
+</tbody></table></div>
+<h3 id="binder-template-names">Template instantiation names<a class="hlink" href="#binder-template-names" aria-label="link">&#8203;</a></h3>
+<p>A bound template instantiation is named the way a script spells its argument (<a href="../embedding/02-dynamic-binder.html#plain-structs-and-templates-static-binders">static binders</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>C++ argument</th><th>Script spelling</th></tr></thead><tbody>
+<tr><td><code>int64_t</code>, <code>double</code></td><td><code>int</code>, <code>float</code> (a script <code>double</code> is the same type)</td></tr>
+<tr><td><code>int32_t</code>, <code>uint8_t</code>, C++ <code>float</code></td><td><code>int32</code>, <code>uint8</code>, <code>float32</code></td></tr>
+<tr><td><code>std::vector&lt;E&gt;</code>, <code>std::map&lt;K, V&gt;</code>, <code>std::shared_ptr&lt;T&gt;</code></td><td><code>array&lt;E&gt;</code>, <code>map&lt;K,V&gt;</code>, <code>shared_ptr&lt;T&gt;</code></td></tr>
+<tr><td>A class</td><td>Its <code>JAI_STATIC_BINDER</code> or template-binder name</td></tr>
+<tr><td>Anything else</td><td>A compile error: specialize <code>jai::type_name_helper&lt;T&gt;</code> with the name scripts write.</td></tr>
+</tbody></table></div>
+<h3 id="binder-atomics">Atomics<a class="hlink" href="#binder-atomics" aria-label="link">&#8203;</a></h3>
+<p>The script surface of a bound <code>std::atomic</code> (<a href="../embedding/02-dynamic-binder.html#atomics">chapter</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>Script</th><th>Types</th><th>Value</th></tr></thead><tbody>
+<tr><td><code>a.load()</code>, <code>int n = a;</code>, <code>float f = a;</code>, <code>bool b = a;</code>, <code>if (a)</code></td><td>all</td><td>The value. A typed slot converts through the atomic&#x27;s own value type; an int or float one is true when non-zero.</td></tr>
+<tr><td><code>a.store(v)</code>, <code>a = v</code></td><td>all</td><td><code>=</code> yields <code>v</code>.</td></tr>
+<tr><td><code>a.exchange(v)</code></td><td>all</td><td>The value before.</td></tr>
+<tr><td><code>a.compare_exchange(expected, desired)</code></td><td>all</td><td>C++&#x27;s <code>compare_exchange_strong</code>: stores <code>desired</code> and yields true when the value equals <code>expected</code>; else writes the value into the variable <code>expected</code> and yields false.</td></tr>
+<tr><td><code>a.fetch_add(n)</code>, <code>a.fetch_sub(n)</code></td><td>int, float</td><td>The value before.</td></tr>
+<tr><td><code>a.fetch_and(bits)</code>, <code>a.fetch_or(bits)</code>, <code>a.fetch_xor(bits)</code></td><td>int</td><td>The value before.</td></tr>
+<tr><td><code>a += n</code>, <code>a -= n</code></td><td>int, float</td><td>The value after.</td></tr>
+<tr><td><code>a &amp;= bits</code>, <code>a |= bits</code>, <code>a ^= bits</code></td><td>int</td><td>The value after.</td></tr>
+<tr><td><code>++a</code>, <code>--a</code> / <code>a++</code>, <code>a--</code></td><td>int</td><td>The value after / the value before.</td></tr>
+<tr><td><code>a == v</code>, <code>a != v</code>, <code>to_string(a)</code>, <code>print(a)</code></td><td>all</td><td>Compare or print the loaded value.</td></tr>
+</tbody></table></div>
+
+<h2 id="rails-reference">Safety rails: <a href="../embedding/05-safety-rails.html">Safety Rails</a><a class="hlink" href="#rails-reference" aria-label="link">&#8203;</a></h2>
+<h3 id="rails-permissions">Named permissions<a class="hlink" href="#rails-permissions" aria-label="link">&#8203;</a></h3>
+<p>Explained in <a href="../embedding/05-safety-rails.html#custom-permissions">Named permissions for your APIs</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Case</th><th>Rule</th></tr></thead><tbody>
+<tr><td><code>register_privilege(name)</code></td><td>Returns nothing. A new name starts disabled.</td></tr>
+<tr><td>Registering a name again, or registering <code>"filesystem"</code> (the built-in flag)</td><td>Leaves the grant as it is.</td></tr>
+<tr><td>An unknown name</td><td>A query is false. Enabling, disabling, requiring or attaching it to a callable is rejected, never auto-registered: register names before binding functions that require them.</td></tr>
+<tr><td>A missing permission</td><td><code>Insufficient privilege: savegame.write.</code></td></tr>
+<tr><td>Several missing</td><td>The text names a built-in first, then the first custom one in registration order, whatever the list order.</td></tr>
+<tr><td>Several engines</td><td>Names are reusable across engines; registration and grants are per engine. There is no global registry.</td></tr>
+<tr><td>Cost</td><td>A binding resolves its requirements once to engine-local slots: a call&#x27;s check looks up no name, allocates nothing and takes no lock or atomic. Registration and binding may allocate.</td></tr>
+</tbody></table></div>
+<h3 id="rails-depth-limits">Depth limits<a class="hlink" href="#rails-depth-limits" aria-label="link">&#8203;</a></h3>
+<p>Only script calls have a counted cap; the errors are catchable, the static listing&#x27;s aside (<a href="../embedding/05-safety-rails.html#4-recursion-and-parse-depth-caps">chapter</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>Depth</th><th>Bound</th><th>Error</th></tr></thead><tbody>
+<tr><td>Script calls</td><td>A per-engine cap for each backend: 256 active calls on the interpreter, 250,000 on the VM.</td><td><code>Maximum recursion depth exceeded - possible infinite recursion</code> (uncaught, the error reads as this text alone)</td></tr>
+<tr><td>Native stack at a call</td><td>Less than 256 KB of stack left, whatever the cap.</td><td><code>Native stack exhausted before the call-depth cap: the host thread's stack bounds this recursion</code></td></tr>
+<tr><td>Which stack</td><td>The host thread&#x27;s, or an <code>engine::start</code> run&#x27;s own fiber stack. Windows, Linux, Android and macOS report its bounds; a stack the OS calls unlimited counts as 1 GB.</td><td></td></tr>
+<tr><td>Source nesting: parser, checker</td><td>Each stops with 192 KB of stack left.</td><td><code>nesting too deep for the host thread's stack</code> in the static listing, one error at the deepest point reached</td></tr>
+<tr><td>Source nesting: VM compiler, interpreter&#x27;s evaluation</td><td>The same margin.</td><td><code>Nesting too deep for the host thread's stack</code> when the code runs</td></tr>
+<tr><td>A platform that cannot report its stack&#x27;s bounds</td><td>The source walks stop 1 MB below where the walk started: give a script-loading thread there more stack.</td><td></td></tr>
+<tr><td>Saved-program nesting</td><td>The <code>.jaibite</code> writer and reader stop at the parser&#x27;s margin: what loads from source also saves and loads as a bite on the same thread.</td><td><code>jaibite: AST nesting too deep</code> or <code>jaibite: type nesting too deep</code></td></tr>
+<tr><td>Nested data</td><td>None but memory: JSON parsing, <code>from_json</code>/<code>from_binary</code>, <code>to_json</code>/<code>to_binary</code> and a deep copy walk a value on work lists.</td><td></td></tr>
+<tr><td>Host record types</td><td>A host type whose own <code>serialize</code>/<code>save</code>/<code>load</code>/<code>load_and_construct</code> recurses natively stops at the stack&#x27;s margin, or at 1024 levels (<code>JAI_MAX_HOST_RECORD_DEPTH</code>) where the stack cannot be asked.</td><td><code>Record nesting depth exceeds the host thread's stack</code> or <code>Maximum record nesting depth (1024) exceeded</code></td></tr>
+</tbody></table></div>
+
+<h2 id="checking-reference">Static checking: <a href="../embedding/06-static-checking.html">Static Checking</a><a class="hlink" href="#checking-reference" aria-label="link">&#8203;</a></h2>
+<h3 id="checking-members">Member checks<a class="hlink" href="#checking-members" aria-label="link">&#8203;</a></h3>
+<p>A member missing from a fully known class is a load error (<a href="../embedding/06-static-checking.html#members">Members</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>Member</th><th>Rule</th></tr></thead><tbody>
+<tr><td>Accessors</td><td>A member a user <code>_get_x</code>/<code>_set_x</code> declares anywhere in the chain is known, and typed when the declaration is unambiguous (<a href="#checking-precision-map">the map</a> lists the ambiguous shapes).</td></tr>
+<tr><td>One parameterless, non-coroutine <code>int _get_hp()</code></td><td>Makes <code>char c = obj.hp</code> an error.</td></tr>
+<tr><td>One by-value <code>void _set_hp(int)</code></td><td>Makes <code>obj.hp = "s"</code> the error <code>cannot assign 'string' to property 'hp' declared 'int'</code>.</td></tr>
+<tr><td>Bare names in a class</td><td>A bare name in a method resolves locals, then members, then globals, the run-time order: a bare <code>x</code> is checked as the field and <code>::x</code> names the global.</td></tr>
+<tr><td>Enum values</td><td>Checked for existence: <code>no value 'zzz' in enum 'Direction'</code>.</td></tr>
+<tr><td>Builtin methods</td><td>A method of a known string, array or map: its name, its argument count and each argument&#x27;s shape (a number, text, an array, a map, a function) as the <a href="api.html">API reference</a> states it.</td></tr>
+<tr><td>Bound methods</td><td>A method the binder bound on a known receiver: its argument count and each argument against the C++ signature, unless a script class below the bound class declares the method or the object was extended.</td></tr>
+<tr><td>Unchecked</td><td>Subscripts, and the handle builtins of a <code>shared_ptr</code> (<code>use_count</code>, <code>cpp_ref_count</code>, <code>unique</code>, <code>same_as</code>, <code>reset</code>).</td></tr>
+<tr><td>A class method named as a builtin</td><td>Wins. Where the program holds that class or a subclass by <code>shared_ptr</code>, the method warns that the builtin is unreachable on its handles; a class held only by value keeps its <code>reset()</code> unwarned.</td></tr>
+<tr><td>Open classes</td><td>An ancestor the checker cannot resolve opens the whole class: no member diagnostics.</td></tr>
+</tbody></table></div>
+<h3 id="checking-precision-map">What still fails at run time (the precision map)<a class="hlink" href="#checking-precision-map" aria-label="link">&#8203;</a></h3>
+<p>The whole list of spots where the checker is silent: a mistake there is a run-time error, never a load error (<a href="../embedding/06-static-checking.html#precision-map">chapter</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>Lenient by design</th><th>Why</th></tr></thead><tbody>
+<tr><td><code>var</code> anywhere, and everything computed from it; a <code>null</code> initializer</td><td>No declared type to check against.</td></tr>
+<tr><td><code>auto</code> without an initializer</td><td><code>auto</code> locks at a store the checker cannot order.</td></tr>
+<tr><td>Stores <em>through</em> an <code>auto&amp;</code>, a <code>var&amp;</code> or a reference to a class</td><td>The referenced variable&#x27;s table runs at run time. A store through a <code>T&amp;</code> of a scalar, text, container or math type is checked as a <code>T</code> slot&#x27;s; binding the reference and member lookup through it are checked too.</td></tr>
+<tr><td>Container elements the checker cannot type: map keys, elements of untyped containers and <code>var</code> receivers, subscripts, builtin container/string method results</td><td>The runtime element boundary is the check.</td></tr>
+<tr><td>Literal elements, pushes and element stores into a declared <code>array&lt;T&gt;</code> or <code>map&lt;K,V&gt;</code></td><td>Checked.</td></tr>
+<tr><td>Engine globals (typed off the value tag; a later retag is invisible), host-object conversions, callables held in variables</td><td>No static signature in view.</td></tr>
+<tr><td>Host parameters that take any value or a bound object, a bound method a script subclass declares again, binder properties, a name declared <code>extern function f;</code></td><td>The C++ signature does not decide them. A host function&#x27;s and a bound method&#x27;s count and primitive, text and container arguments are checked.</td></tr>
+<tr><td>A function or global two units declare, a class-typed global of another unit</td><td>More than one declaration could answer, or the slot may hold a subclass. One unit&#x27;s function signature and typed global are checked in every other unit of the program.</td></tr>
+<tr><td>Dynamic-path <code>import(expr)</code>/<code>include(expr)</code> units (undeclared identifiers drop to warnings, unknown types and namespace members too), untyped <code>extern</code> names, a parent found nowhere</td><td>Such a unit or name can define anything.</td></tr>
+<tr><td>Accessor-bearing members whose declaration is ambiguous: two getter/setter overloads, <code>var</code>/<code>auto</code>/coroutine/parameterized getters, reference or untyped setter parameters, an accessor on a registered-only ancestor</td><td>No single declaration to trust.</td></tr>
+<tr><td>Coroutines: yield and return types, and what a handle's <code>next()</code> returns</td><td>The checker does not model what a coroutine yields. The handle itself is typed: <code>next</code> and <code>done</code> are its only members.</td></tr>
+<tr><td>Mixed-branch ternaries, <code>this</code>/<code>super</code> as values, <code>extend</code>ed classes and everything passed to <code>extend(...)</code></td><td>The shape is decided at run time.</td></tr>
+<tr><td>Hot-reload redefinitions</td><td>Receivers that carry the old shape are open.</td></tr>
+</tbody></table></div>
+
+<h2 id="reload-reference">Hot reload: <a href="../embedding/07-hot-reload.html">Hot Reload</a><a class="hlink" href="#reload-reference" aria-label="link">&#8203;</a></h2>
+<h3 id="reload-migration">Instance migration on a class reload<a class="hlink" href="#reload-migration" aria-label="link">&#8203;</a></h3>
+<p>What a reloaded class does to its live instances (<a href="../embedding/07-hot-reload.html#instance-migration-rules">chapter</a>). The cost is linear in live instances and fields.</p>
+<div class="tablewrap"><table><thead><tr><th>Change</th><th>Live instances</th></tr></thead><tbody>
+<tr><td>Field kept (same name and type)</td><td>Value preserved, even if the initializer changed: an initializer is a new instance&#x27;s default.</td></tr>
+<tr><td>Field added</td><td>Takes the new initializer.</td></tr>
+<tr><td>Field removed</td><td>Gone; access raises <code>Player has no member 'speed'</code>.</td></tr>
+<tr><td>Field retyped</td><td>The value converts as an assignment would (int to string through <code>to_string</code>, int to float). A float truncates into an int as <code>cast&lt;int&gt;</code> does.</td></tr>
+<tr><td>Field retyped, no conversion</td><td>Takes the new initializer.</td></tr>
+<tr><td>Method body changed</td><td>The next call runs the new body, including through a method bound earlier with <code>reflect::bind</code>.</td></tr>
+<tr><td>Static members</td><td>Values preserved, not reset to the initializer. Removed statics are inaccessible. Static method bodies update.</td></tr>
+<tr><td>Constructor overloads</td><td>Replaced with the class; dispatch by arity works as before.</td></tr>
+<tr><td>Base class reloaded</td><td>Derived instances keep their own data and take the base&#x27;s new and retyped fields, converted the same way.</td></tr>
+<tr><td>Script class extending a C++ class</td><td>The live C++ object is carried across, neither destroyed nor rebuilt. Inherited C++ methods stay callable.</td></tr>
+</tbody></table></div>
+
+<h2 id="archive-reference">Serialization archives: <a href="../embedding/08-serialization.html">Serialization</a><a class="hlink" href="#archive-reference" aria-label="link">&#8203;</a></h2>
+<h3 id="archive-calls">Archive calls inside <code>save</code>, <code>load</code> and <code>serialize</code><a class="hlink" href="#archive-calls" aria-label="link">&#8203;</a></h3>
+<p>Named properties are the normal form; the unnamed calls exist for hand-written layouts (<a href="../embedding/08-serialization.html#archive-methods">chapter</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>Writer</th><th>Reader</th></tr></thead><tbody>
+<tr><td><code>ar.serialize("name", value)</code>, <code>ar("name", value)</code>, <code>ar(JAI_NVP(x), JAI_NVP(y))</code>, <code>ar(make_nvp("name", value))</code></td><td>A named property through the <a href="../embedding/08-serialization.html#dispatch-priority-cereal-style-provide-either-serialize-or-save-load">dispatch</a>. <code>JAI_NVP</code> spells the key from the variable&#x27;s name.</td><td>The named property into <code>value</code>. A record without it throws <code>Property 'name' not found during deserialization</code>.</td></tr>
+<tr><td><code>ar(obj)</code></td><td><code>obj</code>&#x27;s own <code>save</code> or <code>serialize</code>, in place.</td><td><code>obj</code>&#x27;s own <code>load</code> or <code>serialize</code>, from the current record.</td></tr>
+<tr><td><code>ar.has_property("name")</code></td><td></td><td>Whether the current record has the property.</td></tr>
+<tr><td><code>ar.seek_property("name")</code></td><td></td><td>The same; <code>seek_property</code> also positions the reader at it (false when absent).</td></tr>
+<tr><td><code>ar.write_element(value)</code> / <code>ar.read_element(value)</code></td><td colspan="2">The next element between <code>begin_array</code> and <code>end_array</code>.</td></tr>
+<tr><td><code>write_int8</code> &hellip; <code>write_int64</code>, <code>write_uint8</code> &hellip; <code>write_uint64</code>, <code>write_float32</code>, <code>write_float64</code>, <code>write_bool</code>, <code>write_string</code>; <code>read_int32()</code>, <code>read_string()</code>, &hellip; in the same widths</td><td colspan="2">One unnamed primitive.</td></tr>
+<tr><td><code>begin_object(type_name, version)</code> / <code>end_object()</code></td><td>Opens a record.</td><td>Fills both arguments.</td></tr>
+<tr><td><code>begin_array</code> / <code>end_array()</code></td><td><code>begin_array(size)</code></td><td><code>size_t n = begin_array()</code></td></tr>
+<tr><td><code>begin_map</code> / <code>end_map()</code></td><td><code>begin_map(size)</code>, <code>write_map_key(key)</code></td><td><code>begin_map()</code>, <code>read_map_key(key)</code></td></tr>
+<tr><td><code>ar.get_version()</code></td><td></td><td>The version of the record opened last (<a href="#archive-versions">versions</a>).</td></tr>
+</tbody></table></div>
+<h3 id="archive-versions">Versions<a class="hlink" href="#archive-versions" aria-label="link">&#8203;</a></h3>
+<p>The archives keep no class version: a reader finds a property by name (<a href="../embedding/08-serialization.html#versions-and-missing-fields">Versions and missing fields</a>). The <code>std::uint32_t</code> version parameter of a member <code>save</code>, <code>load</code> or <code>serialize</code> carries a chosen number only for a record the code opened itself.</p>
+<div class="tablewrap"><table><thead><tr><th>Case</th><th>Version</th></tr></thead><tbody>
+<tr><td>A save</td><td>Always receives 0.</td></tr>
+<tr><td>A load reached through a named read (<code>ar("name", obj)</code>, a <code>JAI_PROPERTY</code>, a non-polymorphic pointer&#x27;s <code>$val</code>)</td><td>Receives the number stored in that record.</td></tr>
+<tr><td>Every other load (<code>ar(obj)</code>, a polymorphic pointer&#x27;s <code>$val</code>)</td><td>Receives 0.</td></tr>
+<tr><td><code>ar.get_version()</code></td><td>Answers the same number for the record opened last.</td></tr>
+<tr><td>A record the archive opens itself</td><td>Stores none: JSON writes no <code>"$type"</code> or <code>"$version"</code> key, which reads back as 1; binary stores an empty type name and 0.</td></tr>
+<tr><td>The root record of <code>to_json</code> / <code>to_binary</code></td><td>Version 1, which JSON leaves unwritten.</td></tr>
+<tr><td><code>begin_object(type_name, version)</code> in a hand-written <code>save</code></td><td>Binary keeps any number. JSON writes <code>"$version"</code> only above 1, so 0 reads back as 1.</td></tr>
+<tr><td>A binder chain&#x27;s <code>.version(n)</code></td><td>Never reaches the C++ archives. A number (1 by default) the engine keeps for the class, used only by the script archives for bound objects inside script values.</td></tr>
+<tr><td>Script <code>to_binary</code> / <code>to_base64</code></td><td>Write it after the class name, beside each bound object.</td></tr>
+<tr><td>Script <code>to_json</code></td><td>Writes no <code>"$version"</code>.</td></tr>
+<tr><td><code>from_binary</code> / <code>from_base64</code></td><td>Hand it to the class&#x27;s <code>.post_load_hook</code> only when the class also has a <code>.deserialization_factory</code>. Without a factory the object is rebuilt by its class name and the hook receives 1.</td></tr>
+<tr><td><code>from_json</code></td><td>Runs the hook with the object&#x27;s <code>"$version"</code> key (beside its <code>"$type"</code>) when it has one, and 1 otherwise.</td></tr>
+</tbody></table></div>
+<h3 id="archive-binary-format">Binary format<a class="hlink" href="#archive-binary-format" aria-label="link">&#8203;</a></h3>
+<p>Both formats run the same calls. JSON writes a record as an object of its properties; a record opened with a type name leads with <code>"$type"</code>, then <code>"$version"</code> when it is above 1. Binary is little-endian.</p>
+<div class="tablewrap"><table><thead><tr><th>Binary value</th><th>Bytes</th></tr></thead><tbody>
+<tr><td>record, opening</td><td><code>0x01</code>, the type name (a <code>uint32</code> length, then the bytes; empty for a record the archive opens itself), a <code>uint32</code> version.</td></tr>
+<tr><td>record, closing</td><td>Its property count, every property name, every property&#x27;s byte size, the values, and <code>0x02</code>.</td></tr>
+<tr><td>property byte sizes</td><td>A reader jumps to a property by name and skips unknown ones unparsed.</td></tr>
+<tr><td>array</td><td><code>0x03</code>, a count, the elements, <code>0x04</code></td></tr>
+<tr><td>map</td><td><code>0x05</code> &hellip; <code>0x06</code></td></tr>
+<tr><td>null</td><td><code>0x00</code></td></tr>
+</tbody></table></div>
+<h3 id="archive-handle-keys">Class and handle keys<a class="hlink" href="#archive-handle-keys" aria-label="link">&#8203;</a></h3>
+<p>The script archives and the C++ archives spell classes and handles with the same keys, in JSON and in binary, numbered by per-save object ids.</p>
+<div class="tablewrap"><table><thead><tr><th>Value</th><th>Written as</th></tr></thead><tbody>
+<tr><td>an object that names its class</td><td><code>{"$type": "Name", "$val": {...}}</code></td></tr>
+<tr><td><code>shared_ptr</code>, first reference to its object</td><td><code>{"$id": N, "$val": {...}}</code>, with <code>"$type"</code> when the object names its class</td></tr>
+<tr><td><code>shared_ptr</code> to an object already written</td><td><code>{"$id": N}</code>, which the load re-aliases, in any order and through cycles</td></tr>
+<tr><td><code>weak_ptr</code></td><td><code>{"$ref": N}</code></td></tr>
+<tr><td><code>weak_ptr</code> as the first reference</td><td>Carries the object&#x27;s <code>"$val"</code> (and <code>"$type"</code>) inline, so a weak pointer that precedes its owner still loads.</td></tr>
+<tr><td><code>unique_ptr</code> (C++ only)</td><td><code>{"$val": {...}}</code> by the pointer&#x27;s static type, with no <code>$type</code>.</td></tr>
+<tr><td>a <code>unique_ptr&lt;Base&gt;</code> holding a derived object</td><td>Writes only the <code>Base</code> fields and loads a <code>Base</code>: a polymorphic owner is a <code>shared_ptr&lt;Base&gt;</code>.</td></tr>
+<tr><td>null pointer, empty handle, expired weak handle</td><td>null</td></tr>
+</tbody></table></div>
+<h3 id="archive-layers">Script archives and C++ archives<a class="hlink" href="#archive-layers" aria-label="link">&#8203;</a></h3>
+<p>The two layers differ only where a static type exists.</p>
+<div class="tablewrap"><table><thead><tr><th></th><th>Script archives</th><th>C++ archives</th></tr></thead><tbody>
+<tr><td>an object&#x27;s class</td><td>named on every object</td><td>named only when a base pointer holds a registered derived class; a nested C++ record carries no <code>$type</code></td></tr>
+<tr><td>the root, a record type</td><td>the value itself</td><td>its properties, flat, with no type name</td></tr>
+<tr><td>the root, anything else (an owning pointer, a container, a number)</td><td>the value itself</td><td>under <code>"value0"</code>, as the <a href="../embedding/02-dynamic-binder.html#serialized">binder chapter</a> shows</td></tr>
+<tr><td>a load that returns <code>T</code> by value</td><td></td><td>needs a default-constructible, movable <code>T</code>; a <code>property_owner</code> is both</td></tr>
+<tr><td>a <code>shared_ptr</code> root</td><td></td><td>keeps identity and a derived object&#x27;s <code>$type</code></td></tr>
+<tr><td>a class name the engine does not know</td><td>the object loads as a plain map</td><td>the load throws <code>Unknown polymorphic type: Name</code></td></tr>
+</tbody></table></div>
+
+<h2 id="signals-threading">Signal threading policies<a class="hlink" href="#signals-threading" aria-label="link">&#8203;</a></h2>
+<p>The policy is the emitter's second template argument: <a href="../embedding/10-signals-properties.html#threads">Signals, Threads</a>.</p>
+<div class="tablewrap"><table><thead><tr><th></th><th>Unsynchronized (default)</th><th>Synchronized</th></tr></thead><tbody>
+<tr><td>Emitter</td><td><code>signal_emitter&lt;Sig&gt;</code> (<code>jai::signal_unsynchronized</code>)</td><td><code>signal_emitter&lt;Sig, jai::signal_synchronized&gt;</code></td></tr>
+<tr><td>View</td><td><code>jai::signal&lt;Sig&gt;</code></td><td><code>jai::signal&lt;Sig, jai::signal_synchronized&gt;</code></td></tr>
+<tr><td>On a <code>property_owner</code></td><td><code>JAI_SIGNAL_PROPERTY</code></td><td><code>JAI_SYNCHRONIZED_SIGNAL_PROPERTY(Sig, name)</code></td></tr>
+<tr><td>Script binding</td><td><code>bind_signal_type&lt;Sig&gt;</code></td><td><code>bind_signal_type&lt;Sig, jai::signal_synchronized&gt;</code></td></tr>
+<tr><td>Locking</td><td>None. One thread at a time uses the emitter and its view, for every call.</td><td>One recursive mutex, held by the whole of an emit (receivers included) and by every other call on the emitter, a save or a load among them.</td></tr>
+<tr><td>Emits from different threads</td><td></td><td>Run one after another.</td></tr>
+<tr><td>A connect from another thread</td><td></td><td>Waits for an emit in progress.</td></tr>
+<tr><td>A receiver while it fires</td><td></td><td>May connect, disconnect or re-emit. Must not wait on another thread that is connecting to or emitting the same signal.</td></tr>
+</tbody></table></div>
+
+<h2 id="lsp-reference">Language server<a class="hlink" href="#lsp-reference" aria-label="link">&#8203;</a></h2>
+<p>The server and its editor extension: <a href="../embedding/14-language-server.html">The Language Server</a>.</p>
+<h3 id="lsp-capabilities">Features<a class="hlink" href="#lsp-capabilities" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Feature</th><th>Covers</th></tr></thead><tbody>
+<tr><td>Diagnostics</td><td>Parse errors and every checker error and warning, in the checker's text, on each change.</td></tr>
+<tr><td>Diagnostics, imported file</td><td>An error in an imported file is reported in that file.</td></tr>
+<tr><td>Diagnostics, unparsed file</td><td>Reports its one parse error. The names it declares stay declared for its importers.</td></tr>
+<tr><td>Definition, references</td><td>Functions, classes, fields, methods, constructors, globals, locals, parameters, enums and their values, namespace members, across imports and includes.</td></tr>
+<tr><td>Definition on a path</td><td>On an <code>import</code> or <code>include</code> path, opens the file.</td></tr>
+<tr><td>Hover</td><td>A variable's declared type, or the type inferred for <code>auto</code>; a function's signatures; a class with its fields and methods; an enum value with its number; a host function with its registered parameter types.</td></tr>
+<tr><td>Completion</td><td>Names in scope, the enclosing class's members, the program's and the host's declarations, keywords.</td></tr>
+<tr><td>Completion after <code>.</code></td><td>The receiver's members (inherited and bound C++ ones included) or the builtin methods of an array, map or string.</td></tr>
+<tr><td>Completion after <code>::</code></td><td>A namespace's members, a class's statics, an enum's values.</td></tr>
+<tr><td>Signature help</td><td>Every overload inside a call's parentheses, the current parameter highlighted.</td></tr>
+<tr><td>Rename</td><td>The declaration and every use across the program (<a href="../embedding/14-language-server.html#rename">rules</a>).</td></tr>
+<tr><td>Symbols</td><td>The document outline, and every declaration in the workspace's <code>.jai</code> files, fuzzy-matched.</td></tr>
+</tbody></table></div>
+<h3 id="lsp-settings">VS&nbsp;Code extension settings<a class="hlink" href="#lsp-settings" aria-label="link">&#8203;</a></h3>
+<p>A settings change restarts the server: <a href="../embedding/14-language-server.html#vs-code">The VS&nbsp;Code extension</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>jaiscript.languageServer.enabled</code></td><td><code>true</code></td><td>Run the server for <code>.jai</code> files.</td></tr>
+<tr><td><code>jaiscript.languageServer.path</code></td><td>empty</td><td>The server executable; <code>${workspaceFolder}</code> expands.</td></tr>
+<tr><td><code>jaiscript.languageServer.host</code></td><td><code>runner</code></td><td>The host profile.</td></tr>
+<tr><td><code>jaiscript.languageServer.includePaths</code></td><td><code>[]</code></td><td>Include paths for <code>import</code> and <code>include</code>.</td></tr>
+<tr><td><code>jaiscript.languageServer.log</code></td><td><code>false</code></td><td>Log requests and timings to the <em>JaiScript Language Server</em> output channel.</td></tr>
+</tbody></table></div>
+
+<h2 id="hostapi-reference">More host calls<a class="hlink" href="#hostapi-reference" aria-label="link">&#8203;</a></h2>
+<p>The calls a host reaches for after the quickstart: <a href="../embedding/17-host-api.html">The Host API</a>.</p>
+<h3 id="hostapi-registration">Registration and engine queries<a class="hlink" href="#hostapi-registration" aria-label="link">&#8203;</a></h3>
+<p>Typed and variadic registration: <a href="../embedding/17-host-api.html#registering-c-functions">Registering C++ functions</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>add_function_with_arity(name, fn, arity)</code></td><td>Registers a raw <code>jai::script_function</code> (it receives the argument vector) of exactly <code>arity</code> arguments; <code>SIZE_MAX</code> takes any count.</td></tr>
+<tr><td><code>add_overloaded_function(name, arg_count, fn)</code></td><td>Adds a raw <code>script_function</code> of <code>arg_count</code> arguments to <code>name</code>'s overload set.</td></tr>
+<tr><td><code>add_custom_conversion&lt;T&gt;(from, to)</code></td><td>Crosses a C++ <code>T</code> with no binding: <code>from(const script_value&amp;) -&gt; T</code> and <code>to(const T&amp;) -&gt; script_value</code>.</td></tr>
+<tr><td><code>add_vector_conversion&lt;T&gt;()</code>, <code>add_map_conversion&lt;K, V&gt;()</code></td><td>Registers the <code>std::vector&lt;T&gt;</code> or <code>std::map&lt;K, V&gt;</code> conversion ahead of the first binding that names it. Bindings register the shapes they name.</td></tr>
+<tr><td><code>registered_class_names()</code></td><td>Every class the engine can name, host-bound and script-declared, sorted.</td></tr>
+<tr><td><code>has_registered_class&lt;T&gt;()</code></td><td>Whether a <code>dynamic_binder</code> bound <code>T</code> on this engine.</td></tr>
+<tr><td><code>get_backend_type()</code>, <code>get_backend_name()</code></td><td>The backend (<code>jai::backend_type::vm</code> unless <code>set_backend</code> chose another) and its name.</td></tr>
+<tr><td><code>text_of(v)</code></td><td>A value's text as <code>print</code> spells it, a class's own <code>to_string()</code> included. A failing <code>to_string()</code>'s error is the result.</td></tr>
+<tr><td><code>app_data_dir(app)</code>, <code>app_cache_dir(app)</code></td><td>The per-user data and cache folders for an app. Queries only; the folders need the filesystem privilege.</td></tr>
+<tr><td><code>app_directory_resolvers(data, cache)</code></td><td>Installs the resolvers the two folder queries answer from.</td></tr>
+<tr><td><code>engine::executable_path()</code></td><td>The running executable; empty when the platform cannot say. A query only.</td></tr>
+<tr><td><code>set_output_stream(stream)</code></td><td>Redirects <code>print()</code>; <code>nullptr</code> restores <code>std::cout</code>.</td></tr>
+</tbody></table></div>
+<h3 id="hostapi-script-run"><code>script_run</code> calls<a class="hlink" href="#hostapi-script-run" aria-label="link">&#8203;</a></h3>
+<p>Where a run suspends, what each resume costs and teardown: <a href="../embedding/17-host-api.html#suspendable-runs">Suspendable runs</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>Does</th></tr></thead><tbody>
+<tr><td><code>eng-&gt;start(source)</code> <code>start_file(path)</code> <code>start_file_source(path, content)</code> <code>start(bite)</code> <code>start(callable, args)</code></td><td>Starts a run and runs it to its first <code>sleep</code> or its end.</td></tr>
+<tr><td>what each start runs</td><td>What <code>execute</code>, <code>execute_file</code>, <code>execute_file_source</code>, a jaibite's run or a call of the function value would be. A jaibite must outlive its run.</td></tr>
+<tr><td><code>run.state()</code></td><td><code>script_run::status::suspended</code>, <code>completed</code> or <code>failed</code>.</td></tr>
+<tr><td><code>run.done()</code></td><td><code>done()</code> is true for <code>completed</code> or <code>failed</code>.</td></tr>
+<tr><td><code>run.wake_at()</code></td><td>When the suspending <code>sleep</code> ends, as a monotonic reading of the time source; zero once done.</td></tr>
+<tr><td><code>run.resume()</code></td><td>Continues to the next <code>sleep</code> or the end and returns the state. Before <code>wake_at()</code> it returns <code>suspended</code> at once, so a host may call it every frame.</td></tr>
+<tr><td><code>run.cancel()</code></td><td>Ends a suspended run: its <code>sleep</code> raises the terminal <code>Run cancelled</code>, no catch runs, every frame unwinds with its destructors, and the run is failed.</td></tr>
+<tr><td><code>run.result()</code></td><td>The run's value once completed, its error once failed (<code>eng-&gt;format_error(run.result())</code>).</td></tr>
+<tr><td><code>~script_run()</code></td><td>Cancels a run still suspended. <code>script_run</code> is move-only.</td></tr>
+</tbody></table></div>
+<h3 id="hostapi-script-run-misuse"><code>script_run</code> misuse<a class="hlink" href="#hostapi-script-run-misuse" aria-label="link">&#8203;</a></h3>
+<p>Each throws <code>jai::runtime_error</code>.</p>
+<div class="tablewrap"><table><thead><tr><th>Misuse</th><th>Throws <code>jai::runtime_error</code></th></tr></thead><tbody>
+<tr><td><code>resume()</code> or <code>cancel()</code> on another thread</td><td><code>A run resumes only on the thread that started it</code></td></tr>
+<tr><td>Resuming or cancelling a run from code that run is running</td><td><code>The run is running: it resumes only while suspended</code></td></tr>
+<tr><td><code>resume()</code>, <code>cancel()</code> or <code>result()</code> on a moved-from <code>script_run</code></td><td><code>The script_run holds no run</code></td></tr>
+<tr><td><code>start</code> of a value that is not a function</td><td><code>Cannot start a run of a value that is not a function</code></td></tr>
+</tbody></table></div>
+<h3 id="hostapi-http-headers">HTTP transport headers<a class="hlink" href="#hostapi-http-headers" aria-label="link">&#8203;</a></h3>
+<p>Opt-in headers that nothing in the library includes: <a href="../embedding/17-host-api.html#http-transport">The HTTP transport</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Header</th><th>Provides</th></tr></thead><tbody>
+<tr><td><code>&lt;jaiscript/net/http_socket_transport.hpp&gt;</code></td><td><code>jai::net::http_socket_transport</code>: HTTP/1.1 over Winsock or POSIX sockets, one connection per call. Every wait is bounded by the timeout, name resolution excepted.</td></tr>
+<tr><td><code>http_socket_transport</code>, https</td><td>An https URL needs a <code>jai::net::tls_layer</code> passed to the constructor. Without one it fails with <code>HTTPS needs a transport with TLS: this one speaks plain HTTP only</code>.</td></tr>
+<tr><td><code>&lt;jaiscript/net/openssl_tls.hpp&gt;</code></td><td><code>jai::net::openssl_tls</code>: that layer on OpenSSL 1.1.1 or 3.x (TLS 1.2 and up, SNI, the chain and host name verified). Include it only where OpenSSL is linked.</td></tr>
+<tr><td><code>openssl_tls</code>, trust setup</td><td>The constructor takes the trust setup, a function of the <code>SSL_CTX*</code>. Without one it uses OpenSSL's default certificate paths.</td></tr>
+<tr><td><code>openssl_tls</code>, platform stores</td><td>On Android and iOS the trust setup fills the store from the platform (SecTrust, <code>/system/etc/security/cacerts</code>); on Windows, from the ROOT store.</td></tr>
+</tbody></table></div>
+
+<h2 id="spider-reference">jai_spider<a class="hlink" href="#spider-reference" aria-label="link">&#8203;</a></h2>
+<p>The web host and its script library <code>lib/spider.jai</code>: <a href="../embedding/19-jai-spider.html">jai_spider</a>.</p>
+<h3 id="spider-options">Command-line options<a class="hlink" href="#spider-options" aria-label="link">&#8203;</a></h3>
+<p>Starting an app: <a href="../embedding/19-jai-spider.html#running">Running an app</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Option</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>--port N</code></td><td>The port (default 8080; 0 picks a free one, named in the spinning line).</td></tr>
+<tr><td><code>--host ADDR</code></td><td>The IPv4 address to listen on (default 127.0.0.1; 0.0.0.0 for every interface).</td></tr>
+<tr><td><code>--root DIR</code></td><td>The static root (default: the app's <code>public/</code> folder when it exists).</td></tr>
+<tr><td><code>--max-body N</code></td><td>The largest request body, with <code>K</code>, <code>M</code> or <code>G</code> (default 2M).</td></tr>
+<tr><td><code>--timeout S</code></td><td>Seconds a request may take to arrive and a response to leave (default 30).</td></tr>
+<tr><td><code>--budget S</code></td><td>The execution budget per request (default 30; 0 is unlimited).</td></tr>
+<tr><td><code>--backend vm|interp</code></td><td>The engine's backend.</td></tr>
+<tr><td><code>--dev</code></td><td>Error pages show the error and its trace, absolute paths included. The library is imported from the source checkout's <code>lib/</code>, so edits to it reload too.</td></tr>
+<tr><td><code>--allow-shutdown TOKEN</code></td><td><code>POST /__spider/shutdown</code> from the same machine with the header <code>X-Spider-Shutdown: TOKEN</code> stops the server; without the token it is 403. A cross-site page cannot send the header without a preflight the server never grants.</td></tr>
+<tr><td><code>--quiet</code></td><td>No banner and no request log.</td></tr>
+</tbody></table></div>
+<h3 id="spider-spin-options"><code>spider::spin</code> options<a class="hlink" href="#spider-spin-options" aria-label="link">&#8203;</a></h3>
+<p>The second argument of <code>spider::spin(handler[, options])</code>: <a href="../embedding/19-jai-spider.html#first-app">A first app</a>. Each overrides the command line from the next request on; any other key raises.</p>
+<div class="tablewrap"><table><thead><tr><th>Key</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>budget</code></td><td>Seconds a request may run.</td></tr>
+<tr><td><code>max_body</code></td><td>The largest request body, in bytes.</td></tr>
+</tbody></table></div>
+<h3 id="spider-request"><code>spider::Request</code><a class="hlink" href="#spider-request" aria-label="link">&#8203;</a></h3>
+<p>A script class in <code>lib/spider.jai</code>: <a href="../embedding/19-jai-spider.html#request-response">Request and Response</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Member</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>method</code>, <code>query_string</code>, <code>version</code></td><td>From the request line.</td></tr>
+<tr><td><code>path</code></td><td>The path, percent-decoded and without the query.</td></tr>
+<tr><td><code>target</code></td><td>The request target as it arrived.</td></tr>
+<tr><td><code>query</code></td><td><code>map&lt;string, string&gt;</code>: the parsed query (<code>+</code> is a space).</td></tr>
+<tr><td><code>cookies</code>, <code>cookie(name)</code></td><td><code>map&lt;string, string&gt;</code> of the Cookie header; <code>cookie(name)</code> is "" when absent.</td></tr>
+<tr><td><code>params</code>, <code>param(name)</code></td><td><code>map&lt;string, string&gt;</code> of the route's captures; <code>param(name)</code> is "" when absent.</td></tr>
+<tr><td><code>headers</code>, <code>header(name)</code></td><td>Names lowercased; <code>header("Content-Type")</code> reads any spelling.</td></tr>
+<tr><td><code>body</code></td><td>The raw body.</td></tr>
+<tr><td><code>form()</code></td><td>The body's urlencoded or multipart fields.</td></tr>
+<tr><td><code>files()</code></td><td>The body's uploads as <code>map&lt;string, spider::Upload&gt;</code> (<code>filename</code>, <code>content_type</code>, <code>data</code>, <code>size()</code>, <code>save(path)</code>).</td></tr>
+<tr><td><code>json()</code></td><td><code>from_json</code> of the body.</td></tr>
+<tr><td><code>remote_addr</code></td><td>The peer's address.</td></tr>
+</tbody></table></div>
+<h3 id="spider-helpers">Response helpers<a class="hlink" href="#spider-helpers" aria-label="link">&#8203;</a></h3>
+<p><code>spider::Response</code> members: <a href="../guide/17-web.html#spider-response">spider::Response</a>. What a handler may return: <a href="../embedding/19-jai-spider.html#first-app">A first app</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Helper</th><th>What it answers</th></tr></thead><tbody>
+<tr><td><code>spider::Response(status, body)</code></td><td>Both optional: 200 and an empty body.</td></tr>
+<tr><td><code>spider::html(text)</code>, <code>spider::plain_text(text)</code>, <code>spider::json(value)</code></td><td>A body with its Content-Type. Each takes an optional status; <code>spider::html</code> takes a <code>web::html</code> too.</td></tr>
+<tr><td><code>spider::redirect(url)</code></td><td>303 See Other by default, the answer to a form post.</td></tr>
+<tr><td><code>spider::file(path, content_type)</code></td><td>A file streamed from disk, relative to the app's folder, typed by its extension unless one is given.</td></tr>
+<tr><td><code>spider::file</code>, the header</td><td>The response names the file by a random token in an <code>X-Sendfile</code> header that the host consumes, so an <code>X-Sendfile</code> header from anywhere else serves nothing.</td></tr>
+<tr><td><code>spider::not_found(text)</code></td><td>A 404.</td></tr>
+</tbody></table></div>
+<h3 id="spider-failures">Failures and limits<a class="hlink" href="#spider-failures" aria-label="link">&#8203;</a></h3>
+<p>What the server answers when a request or a handler fails: <a href="../embedding/19-jai-spider.html#model">Errors and limits</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Failure</th><th>Answer</th></tr></thead><tbody>
+<tr><td>A run-time error or an uncaught throw in a handler</td><td>500. The error and its trace are logged; the page shows them under <code>--dev</code> only.</td></tr>
+<tr><td>A Response with a status outside 200 to 599</td><td>500, logged: <code>Response status 101 is not a final HTTP status (200 to 599)</code></td></tr>
+<tr><td>A header name that is not a token, or a header value holding a line break or NUL</td><td>500, logged: <code>Response header &#x27;N&#x27; is not a header name, or its value holds a line break or NUL</code></td></tr>
+<tr><td>A cookie line holding a line break or NUL</td><td>500, logged: <code>Response cookie &#x27;L&#x27; holds a line break or NUL</code></td></tr>
+<tr><td>An app that never called <code>spider::spin</code></td><td>500 naming the missing call.</td></tr>
+<tr><td>A handler that runs past its budget</td><td>500 through the execution budget (<a href="../embedding/05-safety-rails.html">Safety Rails</a>); the engine serves on.</td></tr>
+<tr><td>A body over the maximum (2 MiB by default)</td><td>413 before the body is read.</td></tr>
+<tr><td>A request head over 64 KiB</td><td>431 (414 for a request line alone).</td></tr>
+<tr><td>A malformed request, both Content-Length and Transfer-Encoding, a header field holding a bare CR, LF or NUL, a dot segment in the path</td><td>400.</td></tr>
+<tr><td>Another HTTP version</td><td>505.</td></tr>
+<tr><td>Another transfer coding</td><td>501.</td></tr>
+<tr><td>A Host header that is not <code>localhost</code>, a <code>127.x</code> address or <code>[::1]</code>, when the server listens on a loopback address</td><td>421, so a page whose own name resolves to 127.0.0.1 (DNS rebinding) cannot reach the app.</td></tr>
+<tr><td>A request that takes longer than <code>--timeout</code> to arrive, or a response to leave</td><td>The connection closes.</td></tr>
+<tr><td>More than 512 open connections, or more than 128 from one address</td><td>503.</td></tr>
+</tbody></table></div>
+<h2 id="command-line-runner">Command-line runner<a class="hlink" href="#command-line-runner" aria-label="link">&#8203;</a></h2>
+<p><code>jaiscript</code>, the reference embedding: the <code>jaiscript_runner</code> target (on by default) builds it into <code>build/bin/</code>. Full notes: <a href="https://github.com/Devacor/jaiscript/blob/main/tools/jaiscript/README.md">tools/jaiscript/README.md</a>. It always registers:</p>
+<ul id="runner-builtins">
+<li>the full stdlib, the <code>web::</code> library</li>
+<li>the <a href="../guide/17-web.html#spider"><code>spider::</code> HTTP client</a> (WinHTTP on Windows, sockets elsewhere, the <code>network</code> permission granted)</li>
+<li>file IO (<code>read_file</code>, <code>write_file</code>, <code>file_exists</code>, <code>delete_file</code>, <code>move_file</code>, <code>dir_exists</code>, <code>make_dirs</code>, <code>list_dir</code>, <code>writable_dir</code>, plus <code>Download</code>, <code>zip_entries</code> and <code>zip_extract</code>)</li>
+<li>a console-game surface (<a href="../guide/20-terminal-games.html">A Terminal Game in One File</a>: <code>read_key</code>, <code>key_down</code>, <code>term_cols</code>, <code>term_rows</code>, <code>env_var</code>, and sound: <code>load_sound</code>, <code>play_sound</code>, <code>stop_sounds</code>; clocks are the standard library&#x27;s <code>time::</code>)</li>
+<li>two socket classes, <code>NetServer</code> and <code>NetChannel</code>, and <code>net_host_name</code> and <code>net_local_addresses</code></li>
+</ul>
+<div class="tablewrap"><table><thead><tr><th>Invocation</th><th>What happens</th></tr></thead><tbody><tr><td><code>jaiscript file.jai [-- args...]</code></td><td>Runs the file as a suspendable run (each <code>sleep</code> returns to the runner, which waits on the engine&#x27;s clock and resumes it), then exits.</td></tr>
+<tr><td>Exit code</td><td>The script&#x27;s trailing int expression if any; 1 on a script error; 2 on a usage error (unknown flag, missing or malformed value).</td></tr>
+<tr><td>Exit code outside 0 to 255</td><td>Its low byte, on every platform: <code>300</code> exits 44, <code>-1</code> exits 255.</td></tr>
+<tr><td><code>--</code></td><td>Everything after it is the global <code>ARGS</code>.</td></tr>
+<tr><td>A <code>.jai</code> dropped onto the executable</td><td>Runs the same and pauses before closing.</td></tr>
+<tr><td><code>jaiscript -e "source" [-e ...] [-- args...]</code></td><td>Runs the source text as a file run runs a file&#x27;s text, then exits. Combines with the flags below.</td></tr>
+<tr><td>Several <code>-e</code></td><td>Run in order in one engine: declarations carry over, the first error stops the run.</td></tr>
+<tr><td><code>-e</code> exit code</td><td>The last source&#x27;s int result; 1 on a script error.</td></tr>
+<tr><td><code>-e</code> output</td><td>Only what the source prints (<code>jaiscript -e "print(1 + 2)"</code>). The REPL is the mode that echoes values (<code>echo 1 + 2 | jaiscript</code>).</td></tr>
+<tr><td><code>-e</code> with <code>include</code>/<code>import</code></td><td>Resolve from the working directory.</td></tr>
+<tr><td><code>-e</code> with a script file or <code>--watch</code></td><td>A usage error.</td></tr>
+<tr><td><code>jaiscript</code></td><td>REPL with a persistent engine: <code>:load</code>, <code>:reset</code>, <code>:backend vm|interp|vm-reference</code>, <code>:time on|off</code>, <code>:help</code>, <code>:quit</code>.</td></tr>
+<tr><td>Piped input (<code>echo 1 + 2 | jaiscript</code>)</td><td>Exits 1 when any input failed, else 0.</td></tr>
+<tr><td><code>jaiscript --watch file.jai</code></td><td>Re-runs the file on every save, in a fresh engine each time. To keep the world, reload with a guarded <code>import</code>: <a href="../guide/10-modules.html#reloading-from-a-running-program">Reloading from a running program</a>.</td></tr>
+</tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>Flag</th><th>Meaning</th></tr></thead><tbody><tr><td><code>--backend=vm|interp|vm-reference</code></td><td>Execution backend, default <code>vm</code>; the backends agree. <code>vm-reference</code>: the VM with every optimization off (<code>engine::vm_reference_mode</code>).</td></tr>
+<tr><td><code>--warnings</code></td><td>Lists the checker&#x27;s warnings on stderr before the run. Typed mistakes and undeclared names always fail the load.</td></tr>
+<tr><td><code>--workers=N</code></td><td>Worker count of <code>parallel_for</code>, <code>parallel_transform</code> and <code>parallel_reduce</code>; default the engine&#x27;s own.</td></tr>
+<tr><td><code>--budget=N</code></td><td>Execution budget in seconds per execute. Default <code>0</code> = unlimited (the embedded default is 5.0 s).</td></tr>
+<tr><td><code>--time</code></td><td>Prints wall time per run.</td></tr>
+<tr><td><code>--debug</code> / <code>--debug-port=N</code></td><td>Starts the DAP debug listener on localhost (VS Code attaches) and names the bound port on stderr. Without either, nothing listens.</td></tr>
+<tr><td>Debug port</td><td><code>--debug-port=N</code> tries port N first. Default 52477, probing upward in steps of 10.</td></tr>
+<tr><td><code>--pause</code> / <code>--no-pause</code></td><td>Force or suppress the &quot;press Enter to close&quot; hold after a file run.</td></tr>
+<tr><td><code>--version</code> / <code>--help</code></td><td></td></tr>
+<tr><td><code>--benchmark-main=N</code></td><td>Runs the file once as a warm-up, then calls its <code>main()</code> N times.</td></tr>
+<tr><td><code>--no-param-alias</code> / <code>--no-local-alias</code></td><td>No read-only copy elision for by-value parameters / locals: every one copies. Results never change.</td></tr>
+<tr><td><code>--no-proofs</code></td><td>No type proofs, typed ops or cell blocks: the general form, same results.</td></tr>
+<tr><td><code>--miss-every=N</code></td><td>The VM misses at every Nth plain cell instruction, exercising the flush at every position (a build configured with <code>JAISCRIPT_MISS_INJECTION</code>).</td></tr>
+<tr><td><code>--disasm=FILE</code> / <code>--manifest=FILE</code></td><td>Every chunk the VM compiles, written to FILE: readable listings, or exact semantic manifests.</td></tr>
+<tr><td><code>--coverage=FILE</code></td><td>The VM's execution-coverage census at exit (a build configured with <code>JAISCRIPT_VM_COVERAGE</code>).</td></tr>
+<tr><td><code>--selftest</code></td><td>Runs the runner's built-in smoke tests and exits.</td></tr>
+</tbody></table></div>
+<p id="runner-ctrl-c"><strong>Ctrl+C.</strong> Ctrl+C or Ctrl+Break on Windows, and SIGINT, SIGTERM or SIGHUP on Linux and macOS, end the runner at once, in every mode the REPL included.</p>
+<ul>
+<li>The script stops where it is, without running its destructors. Exit code 130; on Linux and macOS the signal itself ends the process, so the shell reports 130, 143 or 129.</li>
+<li>A signal the runner was started with ignored (<code>nohup</code>, a background job) stays ignored.</li>
+<li>Before it exits, and when a script ends or fails, the runner gives a terminal back: colours reset, cursor shown, alternate screen left, each only where the script changed it. The input mode, and on Windows the console mode and code pages, come back too. A pipe or a file receives none of it.</li>
+<li>A script that must stop itself has the <a href="../embedding/05-safety-rails.html#1-execution-budget-terminal-uncatchable-by-script">execution budget</a> (<code>--budget=N</code>).</li>
+</ul>
+<h3 id="runner-host-api">The runner's host API<a class="hlink" href="#runner-host-api" aria-label="link">&#8203;</a></h3>
+<p>Registered on every engine the runner builds; a host embedding JaiScript registers its own. Signatures: <a href="api.html">API reference</a>, under the standalone runner.</p>
+<ul>
+<li>Calls that name a file (the file functions, <code>Download.start</code>, <code>load_sound</code>, <code>play_sound</code>) need the engine's <code>filesystem</code> privilege, else <code>Insufficient privilege: filesystem.</code></li>
+<li><code>Download.start</code> needs the <code>network</code> privilege too.</li>
+<li>Locations (<code>executable_dir()</code>, <code>root_script_dir()</code>, <code>current_script_dir()</code>, <code>resolve_path(name)</code>, <code>app_data_dir(name)</code> and the rest) are language builtins on every engine: <a href="../guide/10-modules.html">Modules</a>.</li>
+</ul>
+<div class="tablewrap"><table><thead><tr><th>Files and folders</th><th>Behavior</th></tr></thead><tbody>
+<tr><td>a relative path</td><td>Resolves from the working directory (<code>import</code> and <code>include</code>: from the script&#x27;s folder). A path built from <code>root_script_dir()</code> names the same file from any working directory.</td></tr>
+<tr><td><code>read_file(path) -&gt; string</code></td><td>The file's bytes exactly (binary mode; <code>""</code> for an empty file). Missing or unreadable: <a href="errors.html#err-cannot-read-file"><code>Cannot read file '&lt;path&gt;': &lt;reason&gt;</code></a>.</td></tr>
+<tr><td><code>write_file(path, text) -&gt; bool</code></td><td>Writes the bytes exactly, creating missing folders; <code>false</code> when it cannot.</td></tr>
+<tr><td><code>file_exists(path)</code>, <code>dir_exists(path)</code> <code>-&gt; bool</code></td><td>Whether the path names something, or a folder.</td></tr>
+<tr><td><code>delete_file(path) -&gt; bool</code></td><td><code>false</code> when nothing was removed.</td></tr>
+<tr><td><code>move_file(from, to) -&gt; bool</code></td><td>Replaces <code>to</code>; <code>false</code> when <code>from</code> is not a file. One volume: a single operation, so a reader sees the old file or the new one. Across volumes: copies, then removes the source.</td></tr>
+<tr><td>Safe save</td><td>Write <code>save.tmp</code>, then move it over <code>save.txt</code>.</td></tr>
+<tr><td><code>make_dirs(path) -&gt; bool</code></td><td>Creates the folder and its parents; <code>true</code> when the folder exists afterwards.</td></tr>
+<tr><td><code>list_dir(path) -&gt; array&lt;string&gt;</code></td><td>Entry names, sorted; empty for a folder that cannot be read.</td></tr>
+<tr><td><code>writable_dir(path) -&gt; bool</code></td><td>Creates the folder if missing, then writes and removes a probe file: whether it can take a save.</td></tr>
+<tr><td><code>zip_entries(zip) -&gt; array&lt;string&gt;</code>, <code>zip_extract(zip, entry, dest) -&gt; bool</code></td><td>A zip archive's entry names; one entry written to <code>dest</code>, CRC-32 verified.</td></tr>
+<tr><td><code>Download()</code></td><td>Asynchronous download, polled from the script&#x27;s loop. A failed transfer leaves no partial file.</td></tr>
+<tr><td><code>start(url, path)</code></td><td>Begins it (http or https); <code>false</code> with <code>error()</code> set when it cannot begin.</td></tr>
+<tr><td><code>pump()</code></td><td><code>true</code> once it is done.</td></tr>
+<tr><td><code>success()</code>, <code>error()</code></td><td>The outcome.</td></tr>
+<tr><td><code>received()</code>, <code>total()</code>, <code>fraction()</code></td><td>Progress; <code>total()</code> is <code>-1</code> until known.</td></tr>
+<tr><td><code>cancel()</code></td><td>Stops it.</td></tr>
+</tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>Console games</th><th>Behavior</th></tr></thead><tbody>
+<tr><td><code>read_key() -&gt; string</code></td><td>The next key press, without waiting: <code>""</code> when none is queued, else <code>"up"</code>, <code>"down"</code>, <code>"left"</code>, <code>"right"</code>, <code>"enter"</code>, <code>"esc"</code>, <code>"tab"</code>, <code>"space"</code>, <code>"backspace"</code>, a lowercase letter, a digit or a punctuation character (on Windows also <code>"shift"</code>, <code>"ctrl"</code> and <code>"alt"</code>).</td></tr>
+<tr><td><code>key_down(name) -&gt; bool</code></td><td>Whether the key is held now: a letter, a digit, <code>"space"</code>, an arrow, <code>"enter"</code>, <code>"esc"</code>, <code>"tab"</code>, and on Windows <code>"shift"</code>, <code>"ctrl"</code> and <code>"alt"</code>.</td></tr>
+<tr><td><code>key_down</code>, POSIX terminal</td><td>No key releases arrive: a key reads as held for half a second after its last press or auto-repeat; modifiers never read as held.</td></tr>
+<tr><td><code>term_cols()</code>, <code>term_rows()</code> <code>-&gt; int</code></td><td>Console size in characters; 80 by 25 when it cannot be read.</td></tr>
+<tr><td><code>env_var(name) -&gt; string</code></td><td>An environment variable, <code>""</code> when unset. <code>env_var("COLORTERM")</code> is <code>"truecolor"</code> or <code>"24bit"</code> in a terminal that takes 24-bit colour.</td></tr>
+</tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>Sound</th><th>Behavior</th></tr></thead><tbody>
+<tr><td><code>load_sound(path) -&gt; Sound</code></td><td>Opens a WAV, MIDI or MP3 file and returns at once; it preloads in the background. <code>null</code> for a missing file or another format.</td></tr>
+<tr><td>Format</td><td>Named by the first bytes (<code>RIFF</code>/<code>WAVE</code>, <code>MThd</code>, an <code>ID3</code> tag or an MPEG frame); an unrecognized header falls back to the extension (<code>.wav</code>, <code>.mid</code>, <code>.midi</code>, <code>.mp3</code>).</td></tr>
+<tr><td><code>s.play()</code>, <code>s.play(true)</code> <code>-&gt; bool</code></td><td>Starts from the beginning, looping forever with <code>true</code>; returns at once. A playing Sound restarts. <code>false</code> once the file proved unplayable (its data did not decode).</td></tr>
+<tr><td><code>s.stop()</code>, <code>s.playing() -&gt; bool</code></td><td><code>playing()</code> is <code>true</code> from <code>play()</code> until <code>stop()</code>, <code>stop_sounds()</code> or the end of a sound played once.</td></tr>
+<tr><td><code>s.volume(level)</code></td><td><code>0.0</code> to <code>1.0</code>, clamped; a Sound starts at <code>1.0</code>.</td></tr>
+<tr><td><code>s.format() -&gt; string</code></td><td><code>"wav"</code>, <code>"midi"</code> or <code>"mp3"</code></td></tr>
+<tr><td><code>play_sound(path)</code>, <code>play_sound(path, true)</code> <code>-&gt; Sound</code></td><td><code>load_sound</code> then <code>play</code>. Plays to its end (or forever, looped) even when the result is dropped; the result stops it. <code>null</code> as <code>load_sound</code>.</td></tr>
+<tr><td><code>stop_sounds()</code></td><td>Stops every Sound.</td></tr>
+<tr><td>Voices</td><td>Every Sound is its own voice; several play at once, mixed.</td></tr>
+<tr><td>Lifetime</td><td>A Sound closes when the last variable holding it lets go; a copy of a Sound is the same sound.</td></tr>
+<tr><td>Cost</td><td>Loading costs more than playing: load once, play again. No call waits on the audio device (one audio thread drives the devices).</td></tr>
+<tr><td>Platforms</td><td>Windows, and the site's Play and Sandbox pages. Elsewhere <code>load_sound</code> and <code>play_sound</code> return <code>null</code>: a script that checks for <code>null</code> runs unchanged, silent.</td></tr>
+</tbody></table></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var music = load_sound("theme.mid");
+var hit = load_sound("hit.wav");
+if (music != null) { music.volume(0.6); music.play(true); }   // loops until stopped
+if (hit != null) { hit.play(); }                               // again and again, each restarting it
+play_sound("door.wav");                                        // fire and forget</code></pre></div>
+<div class="tablewrap"><table><thead><tr><th>Networking</th><th>Behavior</th></tr></thead><tbody>
+<tr><td><code>NetChannel()</code></td><td>One framed TCP connection: <code>listen(port)</code> waits for one peer, <code>connect(host, port)</code> dials one, <code>send(bytes)</code> queues a packet, <code>pump()</code> moves the bytes and fires the signals, <code>close()</code> drops the connection.</td></tr>
+<tr><td><code>connected()</code>, <code>status()</code></td><td><code>"idle"</code>, <code>"listening"</code>, <code>"connecting"</code>, <code>"connected"</code>, <code>"closed: &lt;reason&gt;"</code>, <code>"error: &lt;reason&gt;"</code></td></tr>
+<tr><td><code>NetChannel</code> signals</td><td><code>on_connect()</code>, <code>on_packet(bytes)</code> and <code>on_disconnect(reason)</code></td></tr>
+<tr><td><code>NetChannel.connect</code> is asynchronous</td><td><code>false</code> only when the attempt fails at once (the host name does not resolve, the socket cannot be made), reason in <code>status()</code>. Otherwise <code>true</code> while the connection is still being made.</td></tr>
+<tr><td>Connect outcome</td><td>Arrives through <code>pump()</code>: <code>on_connect()</code> when the peer accepts, <code>on_disconnect("connect refused")</code> when not. Packets sent before then wait in the queue.</td></tr>
+<tr><td><code>NetServer()</code></td><td>Many framed TCP clients on one port: <code>listen(port)</code>, <code>send(id, bytes)</code>, <code>broadcast(bytes)</code> (the count of clients it reached), <code>pump()</code>, <code>kick(id)</code>, <code>client_count()</code>, <code>listening()</code>, <code>close()</code>. Client ids count up from 1, never reused by one server.</td></tr>
+<tr><td><code>NetServer</code> signals</td><td><code>on_client_connect(id)</code>, <code>on_client_packet(id, bytes)</code> and <code>on_client_disconnect(id, reason)</code></td></tr>
+<tr><td>Packet</td><td>One <code>send</code>'s bytes, delivered whole and in order. On the wire: a 4-byte big-endian length, then the bytes.</td></tr>
+<tr><td>Threads</td><td>None. The sockets do not block; signals fire only inside <code>pump()</code>, on the script's own call stack. A game calls <code>pump()</code> once a frame.</td></tr>
+<tr><td>Disconnect reason</td><td><code>"closed by peer"</code>, <code>"recv error"</code>, <code>"send error"</code>, <code>"oversized frame"</code> (a length over 64 MiB) or, for a server's client, <code>"kicked"</code>.</td></tr>
+<tr><td>Packets ahead of a close</td><td>Delivered before its disconnect.</td></tr>
+<tr><td><code>net_host_name() -&gt; string</code>, <code>net_local_addresses() -&gt; array&lt;string&gt;</code></td><td>This machine's name and its IPv4 addresses, loopback left out.</td></tr>
+</tbody></table></div>
+
+<h2 id="performance-rules-of-thumb">Performance rules of thumb: <a href="../embedding/03-backends.html">Backends</a>, <a href="../embedding/11-performance.html">Performance</a><a class="hlink" href="#performance-rules-of-thumb" aria-label="link">&#8203;</a></h2>
+<div class="tablewrap"><table><thead><tr><th>Rule</th><th>Why</th></tr></thead><tbody><tr><td><strong>Reuse engines</strong></td><td>Engine creation dwarfs a small script&#x27;s execution.</td></tr>
+<tr><td>Prefer <code>jaibite</code> for anything run more than once</td><td>The handle skips the parse; the VM also caches the compiled chunk.</td></tr>
+<tr><td>Repeated <code>execute(string)</code> is already cheap</td><td>An LRU source cache (64 entries): identical strings skip the parse.</td></tr>
+<tr><td>The VM backend is the fast one for hot loops</td><td>Loops fuse into superinstructions; the interpreter remains the reference for debugging.</td></tr>
+<tr><td>Pass heavy things by <code>&amp;</code></td><td>A by-value copy of a big structure deep-copies it.</td></tr>
+<tr><td>Declare hot containers with an element type</td><td><code>array&lt;int&gt;</code> / <code>array&lt;float&gt;</code> are raw buffers and skip the per-element boxing.</td></tr>
+</tbody></table></div>
+<p>The measurements: <a href="../embedding/11-performance.html">Performance</a>.</p>
+
+<h2 id="documents">Documents<a class="hlink" href="#documents" aria-label="link">&#8203;</a></h2>
+<p>This site is the specification of the language and its embedding API: a rule stated here is the rule, and a disagreement with the code is a bug worth <a href="https://github.com/Devacor/jaiscript/issues">reporting</a>. The repository&#x27;s other documents open on GitHub.</p>
+<div class="tablewrap"><table><thead><tr><th>Document</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><a href="https://github.com/Devacor/jaiscript/blob/main/README.md">README.md</a></td><td>what JaiScript is, the shortest path to a running engine</td></tr>
+<tr><td><a href="https://github.com/Devacor/jaiscript/blob/main/docs/BUILD.md">BUILD.md</a></td><td>requirements, CMake options, where the binaries land</td></tr>
+<tr><td><a href="https://github.com/Devacor/jaiscript/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a></td><td>how to build, test and propose a change</td></tr>
+<tr><td><a href="https://github.com/Devacor/jaiscript/blob/main/tools/jaiscript/README.md">tools/jaiscript/README.md</a></td><td>the runner and REPL</td></tr>
+<tr><td><a href="https://github.com/Devacor/jaiscript/blob/main/tools/jai_spider/README.md">tools/jai_spider/README.md</a></td><td>the web application host (<a href="../embedding/19-jai-spider.html">jai_spider</a>)</td></tr>
+<tr><td><a href="https://github.com/Devacor/jaiscript/blob/main/examples/gloom/README.md">examples/gloom</a> · <a href="https://github.com/Devacor/jaiscript/blob/main/examples/crawler/README.md">examples/crawler</a> · <a href="https://github.com/Devacor/jaiscript/blob/main/examples/demoreel/README.md">examples/demoreel</a></td><td>each game&#x27;s README: flags, keys, the determinism checkpoints</td></tr>
+</tbody></table></div><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../reference/library.html"><span>&larr; previous</span>Library Reference</a><a class="next" rel="next" href="../reference/api.html"><span>next &rarr;</span>Full API Signatures</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

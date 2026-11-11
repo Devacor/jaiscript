@@ -55,6 +55,8 @@ namespace jai::detail {
         i32_add_, i32_sub_, i32_mul_, i32_div_, i32_neg_,
         // Complete scalar library; appended so existing intrinsic ids stay stable.
         trunc_, cbrt_, exp_, exp2_, log_, log2_, log10_, asin_, acos_public_, atan_, sinh_, cosh_, tanh_, sign_, fmod_, hypot_, saturate_, wrap_, is_nan_, is_inf_,
+        // a vec2's direction, the vec2 of a direction, and a vec2 turned about a pivot (eval_geometry)
+        angle_, from_angle_, rotate_around_,
         count,
         none = count
     };
@@ -68,6 +70,7 @@ namespace jai::detail {
                 if (name == "abs") return math_fn::abs_;
                 if (name == "atan2") return math_fn::atan2_;
                 if (name == "angle_between") return math_fn::angle_between_;
+                if (name == "angle") return math_fn::angle_;
                 if (name == "acos$") return math_fn::acos_;
                 return math_fn::none;
             case 'c':
@@ -92,6 +95,7 @@ namespace jai::detail {
             case 'f':
                 if (name == "fmod") return math_fn::fmod_;
                 if (name == "floor") return math_fn::floor_;
+                if (name == "from_angle") return math_fn::from_angle_;
                 if (name == "f32$") return math_fn::f32_;
                 return math_fn::none;
             case 'i':
@@ -152,6 +156,7 @@ namespace jai::detail {
                 if (name == "remap") return math_fn::remap_;
                 if (name == "reflect") return math_fn::reflect_;
                 if (name == "rotate") return math_fn::rotate_;
+                if (name == "rotate_around") return math_fn::rotate_around_;
                 return math_fn::none;
             case 's':
                 if (name == "sinh") return math_fn::sinh_;
@@ -628,8 +633,8 @@ namespace jai::detail {
     // computed in binary64 and lands as binary32, so an ivec argument gives a vec. The integral answers stay exact when
     // every vector argument is an ivec: dot, length_squared, distance_squared, cross and perpendicular, each step with the
     // scalar operator's overflow text (integer policy) and an ivec component narrowed to int32. A zero vector has no
-    // direction: normalize and project onto it give the zero vector, angle_between with it gives 0, rotate about it leaves
-    // the vector as it is.
+    // direction: normalize and project onto it give the zero vector, angle_between with it and angle of it give 0, rotate
+    // about it leaves the vector as it is.
     namespace geometry {
         struct operand {
             bool integral = false;
@@ -677,6 +682,8 @@ namespace jai::detail {
         }
         // angle_between's last step: the cosine clamped to [-1, 1], then acos
         inline double clamped_acos(double c) noexcept { return std::acos(c < -1.0 ? -1.0 : (c > 1.0 ? 1.0 : c)); }
+        // angle: atan2(y, x) in (-pi, pi], so a negative zero y reads as zero; the zero vector gives 0
+        inline double direction(double x, double y) noexcept { return (x == 0.0 && y == 0.0) ? 0.0 : std::atan2(y == 0.0 ? 0.0 : y, x); }
         // a step that overflowed: the error in a checked build, the wrapped value otherwise
         inline bool fails(bool ok) noexcept { return !ok && math::k_checked_overflow; }
 
@@ -704,6 +711,9 @@ namespace jai::detail {
                 case math_fn::angle_between_: return "math::angle_between expects 2 arguments";
                 case math_fn::perpendicular_: return "math::perpendicular expects 1 argument";
                 case math_fn::rotate_: return "math::rotate expects (vec2, angle) or (vec3, axis, angle)";
+                case math_fn::angle_: return "math::angle expects 1 argument";
+                case math_fn::from_angle_: return "math::from_angle expects (angle) or (angle, length)";
+                case math_fn::rotate_around_: return "math::rotate_around expects (vec2, pivot, angle)";
                 case math_fn::distance: return "math::distance expects 2 vectors or 4 arguments (x1, y1, x2, y2)";
                 default: return "math::distance_squared expects 2 vectors or 4 arguments (x1, y1, x2, y2)";
             }
@@ -720,6 +730,9 @@ namespace jai::detail {
                 case math_fn::angle_between_: return "math::angle_between expects two vectors of the same dimensions";
                 case math_fn::perpendicular_: return "math::perpendicular expects a vec2";
                 case math_fn::rotate_: return "math::rotate expects (vec2, angle) or (vec3, axis, angle)";
+                case math_fn::angle_: return "math::angle expects a vec2";
+                case math_fn::from_angle_: return "math::from_angle expects (angle) or (angle, length)";
+                case math_fn::rotate_around_: return "math::rotate_around expects (vec2, pivot, angle)";
                 case math_fn::distance: return "math::distance expects two vectors of the same dimensions";
                 default: return "math::distance_squared expects two vectors of the same dimensions";
             }
@@ -786,9 +799,11 @@ namespace jai::detail {
             case math_fn::mix_hsv_: return {3, 3, 0, "math::mix_hsv expects (math::color, math::color, float)"};
             case math_fn::dot_: case math_fn::cross_: case math_fn::reflect_: case math_fn::project_: case math_fn::angle_between_:
                 return {2, 2, 0, geometry::arity_text(fn)};
-            case math_fn::length_: case math_fn::length_squared_: case math_fn::normalize_: case math_fn::perpendicular_:
+            case math_fn::length_: case math_fn::length_squared_: case math_fn::normalize_: case math_fn::perpendicular_: case math_fn::angle_:
                 return {1, 1, 0, geometry::arity_text(fn)};
             case math_fn::rotate_: return {2, 3, 0, geometry::arity_text(fn)};
+            case math_fn::from_angle_: return {1, 2, 0, geometry::arity_text(fn)};
+            case math_fn::rotate_around_: return {3, 3, 0, geometry::arity_text(fn)};
             default: return {};
         }
     }
@@ -803,24 +818,37 @@ namespace jai::detail {
         return math_arity_accepts(arity, argc);
     }
 
-    // dot, cross, length, length_squared, normalize, reflect, project, angle_between, perpendicular, rotate, and distance /
-    // distance_squared over two vectors
+    // dot, cross, length, length_squared, normalize, reflect, project, angle_between, perpendicular, rotate, angle, from_angle,
+    // rotate_around, and distance / distance_squared over two vectors
     JAI_MATH_COLD inline checked_result<script_value> eval_geometry(math_fn fn, const script_value* const* args, size_t argc, engine* eng) {
         using geometry::operand;
         auto bad_type = [&] { return checked_result<script_value>(make_error_code(runtime_error_code::type_mismatch), geometry::type_text(fn)); };
         size_t want = 2;
         switch (fn) {
-            case math_fn::length_: case math_fn::length_squared_: case math_fn::normalize_: case math_fn::perpendicular_: want = 1; break;
+            case math_fn::length_: case math_fn::length_squared_: case math_fn::normalize_: case math_fn::perpendicular_: case math_fn::angle_: want = 1; break;
             case math_fn::rotate_: want = argc == 3 ? 3 : 2; break;
+            case math_fn::from_angle_: want = argc == 2 ? 2 : 1; break;
+            case math_fn::rotate_around_: want = 3; break;
             default: break;
         }
         if (argc != want) {
             return checked_result<script_value>(make_error_code(runtime_error_code::argument_count_mismatch), geometry::arity_text(fn));
         }
+        if (fn == math_fn::from_angle_) {
+            const math::scalar t = math::read_scalar(*args[0]);
+            const math::scalar l = argc == 2 ? math::read_scalar(*args[1]) : t;
+            if (!t.ok || !l.ok) { return bad_type(); }
+            const double angle = t.is_int ? static_cast<double>(t.i) : t.f;
+            const double cs = std::cos(angle), sn = std::sin(angle);
+            if (argc == 1) { const double out[2] = {cs, sn}; return geometry::vec_of(2, out, eng); }
+            const double length = l.is_int ? static_cast<double>(l.i) : l.f;
+            const double out[2] = {cs * length, sn * length};
+            return geometry::vec_of(2, out, eng);
+        }
         operand a, b;
         if (!geometry::read(*args[0], a, eng)) { return bad_type(); }
         const bool two_vectors = fn != math_fn::length_ && fn != math_fn::length_squared_ && fn != math_fn::normalize_ &&
-                                 fn != math_fn::perpendicular_ && !(fn == math_fn::rotate_ && argc == 2);
+                                 fn != math_fn::perpendicular_ && fn != math_fn::angle_ && !(fn == math_fn::rotate_ && argc == 2);
         if (two_vectors) {
             if (!geometry::read(*args[1], b, eng) || b.dims != a.dims) { return bad_type(); }
         }
@@ -925,6 +953,18 @@ namespace jai::detail {
                 const double out[2] = {-a.f[1], a.f[0]};
                 return geometry::vec_of(2, out, eng);
             }
+            case math_fn::angle_:
+                if (n != 2) { return bad_type(); }
+                return script_value(geometry::direction(a.f[0], a.f[1]), eng);
+            case math_fn::rotate_around_: {
+                const math::scalar t = math::read_scalar(*args[2]);
+                if (n != 2 || !t.ok) { return bad_type(); }
+                const double angle = t.is_int ? static_cast<double>(t.i) : t.f;
+                const double cs = std::cos(angle), sn = std::sin(angle);
+                const double dx = a.f[0] - b.f[0], dy = a.f[1] - b.f[1];
+                const double out[2] = {b.f[0] + (dx * cs - dy * sn), b.f[1] + (dx * sn + dy * cs)};
+                return geometry::vec_of(2, out, eng);
+            }
             default: {   // rotate
                 const math::scalar t = math::read_scalar(*args[argc - 1]);
                 if (!t.ok) { return bad_type(); }
@@ -949,7 +989,8 @@ namespace jai::detail {
     }
 
     // The methods on a vector (never a color): v.length(), length_squared(), normalized(), dot(b), cross(b), distance_to(b),
-    // rotated(angle) on a vec2 and rotated(axis, angle) on a vec3 - the free functions with the receiver first
+    // rotated(angle) on a vec2 and rotated(axis, angle) on a vec3, angle() and rotated_around(pivot, angle) on a vec2 or
+    // ivec2 - the free functions with the receiver first
     inline math_fn vec_method_fn(script_value_type kind, std::string_view name) noexcept {
         if (math::is_color(kind) || name.size() < 3) { return math_fn::none; }
         switch (name[0]) {
@@ -963,7 +1004,10 @@ namespace jai::detail {
                 if (name == "distance_to") return math_fn::distance;
                 return math_fn::none;
             case 'c': return name == "cross" ? math_fn::cross_ : math_fn::none;
-            case 'r': return name == "rotated" ? math_fn::rotate_ : math_fn::none;
+            case 'r':
+                if (name == "rotated") return math_fn::rotate_;
+                return math::dims(kind) == 2 && name == "rotated_around" ? math_fn::rotate_around_ : math_fn::none;
+            case 'a': return math::dims(kind) == 2 && name == "angle" ? math_fn::angle_ : math_fn::none;
             default: return math_fn::none;
         }
     }
@@ -975,13 +1019,16 @@ namespace jai::detail {
             case math_fn::dot_: return "'dot' expects 1 argument";
             case math_fn::cross_: return "'cross' expects 1 argument";
             case math_fn::distance: return "'distance_to' expects 1 argument";
+            case math_fn::angle_: return "'angle' expects 0 arguments";
+            case math_fn::rotate_around_: return "'rotated_around' expects 2 arguments (pivot, angle)";
             default: return math::dims(kind) == 3 ? "'rotated' expects 2 arguments (axis, angle)" : "'rotated' expects 1 argument (angle)";
         }
     }
     inline size_t vec_method_arity(math_fn fn, script_value_type kind) noexcept {
         switch (fn) {
-            case math_fn::length_: case math_fn::length_squared_: case math_fn::normalize_: return 0;
+            case math_fn::length_: case math_fn::length_squared_: case math_fn::normalize_: case math_fn::angle_: return 0;
             case math_fn::rotate_: return math::dims(kind) == 3 ? 2 : 1;
+            case math_fn::rotate_around_: return 2;
             default: return 1;
         }
     }
@@ -1408,6 +1455,9 @@ namespace jai::detail {
             case math_fn::angle_between_:
             case math_fn::perpendicular_:
             case math_fn::rotate_:
+            case math_fn::angle_:
+            case math_fn::from_angle_:
+            case math_fn::rotate_around_:
                 return eval_geometry(fn, args, argc, eng);
             case math_fn::f32_:
             case math_fn::i32_:

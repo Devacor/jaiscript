@@ -500,6 +500,7 @@ namespace detail {
         // and the closures they reach, never a heap scan. A cell an escaped closure keeps is checked again later (a weak
         // list swept as it grows) and at engine teardown (release_deferred_cell_cycles).
         static void gather_shared_cells(const script_value* values, size_t count, std::vector<script_value>& out);
+        static bool is_shared_cell(const script_value& value) noexcept;   // a cell something besides `value` holds too
         static void release_cell_cycles(std::vector<script_value>& cells, engine* eng);
         static bool release_plain_cells(std::vector<script_value>& cells, engine* eng);
         static void release_deferred_cell_cycles(engine* eng);
@@ -2297,7 +2298,7 @@ namespace detail {
         // pointer to an engine-owned container that a parallel region proved read-only.
         // Trivially copyable ON PURPOSE - copying a borrow must never touch a refcount
         // (see make_parallel_borrow). Low bit = kind (0 array, 1 map), the next = sliced, the third = a shared object's
-        // instance; container and instance allocations are 8+ aligned so the bits are free.
+        // instance; the borrowed types are alignas(8) (value.cpp checks it), so the bits are free on 32-bit hosts too.
         // Inside a region no worker touches a shared instance's count: every read through an object borrow yields a borrow
         // or a worker-local copy, never the instance's handle.
         struct parallel_borrow_tag {
@@ -2894,10 +2895,15 @@ namespace detail {
         // Create a weak_ptr from an object (implemented in value.cpp)
         // Returns checked_result to avoid throwing exceptions
         static checked_result<script_value> make_weak_ptr(const script_value& obj, engine* eng);
+        // A weak_ptr to an instance itself, value or handle (a lambda's weak_this)
+        static script_value make_weak_instance(const script_value& instance, engine* eng);
         
         // Set type info for special cases (like weak_ptr creation)
         JAI_FORCEINLINE void set_type_info(type_info_ptr type) {
-            if (!type || storage_.tag() != reinterpret_cast<uintptr_t>(type.get())) { set_stamp(type); }   // an unchanged stamp writes nothing
+            if (!type || storage_.tag() != reinterpret_cast<uintptr_t>(type.get())) {   // an unchanged stamp writes nothing
+                if (type && type->is_enum) [[unlikely]] { type = type->enum_value_type; }   // an enum slot's declared type stamps its value type
+                set_stamp(type);
+            }
             if (raw_storage_index() == TYPEID_ARRAY) [[unlikely]] { demote_after_stamp(type); }
         }
         JAI_NOINLINE void demote_after_stamp(type_info_ptr type) {
@@ -3330,8 +3336,8 @@ namespace detail {
     inline void script_array::set(size_t i, script_value v) {
         switch (kind_) {
             case kind_t::i64:
-                ints_[i] = v.raw_storage_index() == script_value::TYPEID_FLOAT
-                    ? static_cast<script_int>(v.unchecked_as_float()) : v.unchecked_as_int();
+                assert(v.raw_storage_index() == script_value::TYPEID_INT && "int slot store: caller converts first");
+                ints_[i] = v.unchecked_as_int();
                 break;
             case kind_t::f64:
                 floats_[i] = v.raw_storage_index() == script_value::TYPEID_INT
@@ -3367,8 +3373,8 @@ namespace detail {
     inline void script_array::push(script_value pre_converted) {
         switch (kind_) {
             case kind_t::i64:
-                ints_.push_back(pre_converted.raw_storage_index() == script_value::TYPEID_FLOAT
-                    ? static_cast<script_int>(pre_converted.unchecked_as_float()) : pre_converted.unchecked_as_int());
+                assert(pre_converted.raw_storage_index() == script_value::TYPEID_INT && "int slot push: caller converts first");
+                ints_.push_back(pre_converted.unchecked_as_int());
                 break;
             case kind_t::f64:
                 floats_.push_back(pre_converted.raw_storage_index() == script_value::TYPEID_INT

@@ -57,6 +57,21 @@ public:
             });
         });
 
+        test("an_empty_case_shares_the_body_of_the_label_below_it", [this]() {
+            const std::vector<std::pair<std::string, std::string>> cases = {
+                {"string r = \"\"; for (int i = 0; i < 6; ++i) { switch (i) { case 0: r += \"z\"; case 1: case 2: r += \"a\"; case 3: default: r += \"d\"; } } print(r);", "zaaddd"},
+                {"string f(int i) { switch (i) { case 1: case 2: case 3: return \"low\"; case 4: break; case 5: case 6: return \"hi\"; case 7: } return \"none\"; }\n"
+                 "string r = \"\"; for (int i = 0; i < 9; ++i) { r += f(i) + \" \"; } print(r);", "none low low low none hi hi none none "},
+                {"int f(string s) { switch (s) { case \"a\": case \"b\": return 1; default: return 0; } } print(f(\"a\"), f(\"b\"), f(\"c\"));", "110"},
+                {"int n = 0; int bump() { n += 1; return 9; } string r = \"u\"; switch (1) { case 1: case bump(): r = \"body\"; } print(r, n);", "body1"},
+                {"string r = \"u\"; switch (1) { case 1: } switch (1) { case 1: default: } switch (2) { case 1: break; case 2: r += \"2\"; } switch (1) { case 1: break; case 2: r += \"x\"; } print(r);", "u2"},
+                {"switch (1) { default: case 2: print(1); }", "ERROR a label that shares a body with 'default' needs 'default' as the last label of the switch"},
+                {"switch (1) { case 1: default: print(1); case 2: print(2); }", "ERROR a label that shares a body with 'default' needs 'default' as the last label of the switch"},
+                {"switch (3) { default: break; case 2: print(2); } switch (3) { default: print(\"d\"); case 1: case 2: print(2); }", "d"},
+            };
+            check_outputs(cases);
+        });
+
         test("switch_with_expressions", [this]() {
             auto engine = make_engine();
             auto result = engine->execute(R"(

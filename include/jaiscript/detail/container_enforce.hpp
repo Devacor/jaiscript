@@ -68,6 +68,10 @@ namespace jai::detail {
 
 	// A typed map's key boundary: the declared kind, or a char for a string key and a string for a char key (one key either way,
 	// stored as the declared kind); any other kind refuses, since a numeric conversion could merge distinct entries
+	// The kind a declared key type's boundary checks: an enum's values are ints
+	inline script_value_type map_key_kind(const type_info& declared) noexcept {
+		return declared.is_enum ? script_value_type::jai_int_type : declared.base_type;
+	}
 	inline bool map_key_kind_admits(script_value_type key, script_value_type declared) noexcept {
 		return key == declared || (key == script_value_type::jai_char_type && declared == script_value_type::jai_string_type) ||
 		       (key == script_value_type::jai_string_type && declared == script_value_type::jai_char_type);
@@ -94,6 +98,11 @@ namespace jai::detail {
 		auto elem_type = actual_element.type();
 		auto target_type = element_type->base_type;
 
+		if (element_type->is_enum) {   // the enum slot's row: its own enum's value, or an unstamped int that is one of them
+			if (actual_element.raw_storage_index() != script_value::TYPEID_INT) { return false; }
+			const type_info* tag = actual_element.type_info_raw();
+			return tag == element_type->enum_value_type || (!(tag && tag->is_enum) && element_type->enum_holds(actual_element.unchecked_as_int()));
+		}
 		if (target_type == script_value_type::jai_weak_ptr_type && elem_type == script_value_type::jai_shared_ptr_type) {
 			return weak_element_takes_shared(actual_element, element_type, eng);
 		}
@@ -126,9 +135,6 @@ namespace jai::detail {
 			return element_type->type_name.empty() || object_element_admits(actual_element, *element_type, eng);
 		}
 
-		if (target_type == script_value_type::jai_int_type && elem_type == script_value_type::jai_float_type) {
-			return true;
-		}
 		if (target_type == script_value_type::jai_float_type && elem_type == script_value_type::jai_int_type) {
 			return true;
 		}
@@ -138,9 +144,9 @@ namespace jai::detail {
 		    (target_type == script_value_type::jai_bool_type && elem_type == script_value_type::jai_int_type)) {
 			return true;
 		}
-		// math kinds: the other precision of the same dimensions converts, as at a typed slot
+		// math kinds: an ivec widens into the vec of its dimensions, as at a typed slot
 		if (is_math_type(target_type) && is_math_type(elem_type)) {
-			return math::converts(elem_type, target_type);
+			return math::converts(elem_type, target_type) && !math::narrows(elem_type, target_type);
 		}
 		// a char element takes a string (of one character: the conversion raises for any other) and a string element a char
 		if ((target_type == script_value_type::jai_char_type && elem_type == script_value_type::jai_string_type) ||
@@ -307,6 +313,11 @@ namespace jai::detail {
 		if (!element_type || element_type->base_type == script_value_type::jai_any_type) {
 			return actual_element.clone_element();
 		}
+		if (element_type->is_enum) {   // admitted by container_element_compatible: the value under the enum's stamp
+			script_value stamped(actual_element.unchecked_as_int(), eng);
+			stamped.set_type_info(element_type->enum_value_type);
+			return stamped;
+		}
 
 		auto elem_type = actual_element.type();
 		auto target_type = element_type->base_type;
@@ -334,10 +345,6 @@ namespace jai::detail {
 			script_int v = 0;
 			if (elem_type == script_value_type::jai_int_type) {
 				v = actual_element.unchecked_as_int();
-			} else if (elem_type == script_value_type::jai_float_type) {
-				auto converted = checked_float_to_integer(actual_element.unchecked_as_float());
-				if (!converted) { return converted.error_value(); }
-				v = converted.value();
 			} else if (elem_type == script_value_type::jai_bool_type) {
 				v = actual_element.unchecked_as_bool() ? 1 : 0;
 			} else {
@@ -346,13 +353,11 @@ namespace jai::detail {
 			if (!byte_element_fits(element_type->is_signed, v)) { return byte_range_error(eng, element_type->is_signed, v); }
 			return script_value(v, eng);
 		}
-		if (target_type == script_value_type::jai_int_type && elem_type == script_value_type::jai_float_type) {
-			auto converted = checked_float_to_integer(actual_element.unchecked_as_float());
-			if (!converted) { return converted.error_value(); }
-			return script_value(converted.value(), eng);
-		}
 		if (target_type == script_value_type::jai_float_type && elem_type == script_value_type::jai_int_type) {
 			return script_value(static_cast<script_float>(actual_element.unchecked_as_int()), eng);
+		}
+		if (target_type == script_value_type::jai_int_type && elem_type == script_value_type::jai_float_type) {
+			return byte_element_mismatch_error(eng, actual_element, *element_type);   // a host store arrives unchecked
 		}
 		if (target_type == script_value_type::jai_int_type && elem_type == script_value_type::jai_bool_type) {
 			return script_value(static_cast<script_int>(actual_element.unchecked_as_bool() ? 1 : 0), eng);
@@ -373,6 +378,7 @@ namespace jai::detail {
 			return actual_element;   // the handle rows' store: the object travels as the handle, its own tag
 		}
 		if (is_math_type(target_type) && is_math_type(elem_type)) {
+			if (math::narrows(elem_type, target_type)) { return byte_element_mismatch_error(eng, actual_element, *element_type); }   // a host store arrives unchecked
 			auto converted = math::convert(actual_element, target_type, eng);
 			if (!converted) { return converted.error_value(); }
 			script_value out = std::move(converted.value());
@@ -433,7 +439,7 @@ namespace jai::detail {
 			case script_value_type::jai_bool_type: return script_array::kind_t::b8;
 			case script_value_type::jai_char_type: return script_array::kind_t::c8;
 			case script_value_type::jai_string_type: return script_array::kind_t::str;
-			case script_value_type::jai_object_type: return script_array::kind_t::obj;
+			case script_value_type::jai_object_type: return element.is_enum ? script_array::kind_t::hetero : script_array::kind_t::obj;
 			default: return script_array::vec_kind_of(element.base_type);
 		}
 	}
@@ -590,13 +596,13 @@ namespace jai::detail {
 	// The one message both backends raise at a failed boundary (byte-identical errors).
 
 	// A byte buffer on either side of an int, float or byte buffer: the element rows (int into a byte range-checked,
-	// float through the checked float kernel first, a byte widening into int or float) on the raw payloads; any other
+	// a byte widening into int or float) on the raw payloads; any other
 	// pair is the boxed loop's
 	inline std::optional<container_boundary_outcome> convert_byte_buffer(const script_array& src, script_array::kind_t expected,
 	                                                                    const type_info_ptr& element_type, const type_info_ptr& target_type, engine* eng) {
 		using k = script_array::kind_t;
 		const k sk = src.kind();
-		const bool numeric_src = sk == k::i64 || sk == k::f64 || byte_kind(sk);
+		const bool numeric_src = sk == k::i64 || byte_kind(sk);
 		const bool numeric_dst = expected == k::i64 || expected == k::f64 || byte_kind(expected);
 		if (!numeric_src || !numeric_dst || sk == expected) { return std::nullopt; }
 		const size_t count = src.size();
@@ -614,10 +620,6 @@ namespace jai::detail {
 				script_int v = 0;
 				if (sk == k::i64) {
 					v = src.ints()[i];
-				} else if (sk == k::f64) {
-					auto converted = checked_float_to_integer(src.floats()[i]);
-					if (!converted) { out.error = converted.error_value(); return out; }
-					v = converted.value();
 				} else {
 					v = byte_at(i);
 				}
@@ -695,11 +697,10 @@ namespace jai::detail {
 				// typed source elements are one primitive by construction: int/float cross-
 				// convert into numeric targets, everything else is a mismatch
 				const script_value_type src_elem = typed_kind_element_base(src->kind());
-				const bool numeric_pair = (src_elem == script_value_type::jai_int_type || src_elem == script_value_type::jai_float_type) &&
-				                          (target_elem_base == script_value_type::jai_int_type || target_elem_base == script_value_type::jai_float_type);
+				const bool numeric_pair = src_elem == script_value_type::jai_int_type && target_elem_base == script_value_type::jai_float_type;
 				const bool bool_int_pair = (src_elem == script_value_type::jai_bool_type && target_elem_base == script_value_type::jai_int_type) ||
 				                           (src_elem == script_value_type::jai_int_type && target_elem_base == script_value_type::jai_bool_type);
-				const bool math_pair = is_math_type(src_elem) && is_math_type(target_elem_base) && math::converts(src_elem, target_elem_base);
+				const bool math_pair = is_math_type(src_elem) && is_math_type(target_elem_base) && math::converts(src_elem, target_elem_base) && !math::narrows(src_elem, target_elem_base);
 				const bool text_pair = (src_elem == script_value_type::jai_string_type && target_elem_base == script_value_type::jai_char_type) ||
 				                       (src_elem == script_value_type::jai_char_type && target_elem_base == script_value_type::jai_string_type);
 				if (!numeric_pair && !bool_int_pair && !math_pair && !text_pair && src_elem != target_elem_base) {
@@ -726,6 +727,7 @@ namespace jai::detail {
 					     target_elem_base == script_value_type::jai_bool_type || is_math_type(target_elem_base))) {
 						needs_conversion = true;
 					}
+					if (element_type->is_enum && actual.type_info_raw() != element_type->enum_value_type) { needs_conversion = true; }
 					if ((target_elem_base == script_value_type::jai_weak_ptr_type || target_elem_base == script_value_type::jai_object_type) &&
 					    actual.type() == script_value_type::jai_shared_ptr_type) {
 						needs_conversion = true;   // a shared handle downgrades, or a class element copies the object it names
@@ -781,7 +783,7 @@ namespace jai::detail {
 			// the offending key or value, else null; keys never coerce numerically (converting 1.5 -> 1 could merge entries)
 			auto mismatch = [&](const script_map::value_type& entry) -> const script_value* {
 				const script_value& actual_key = entry.first.is_reference() ? entry.first.deref() : entry.first;
-				if (!key_open && !map_key_kind_admits(actual_key.type(), key_type->base_type)) { return &actual_key; }
+				if (!key_open && !map_key_kind_admits(actual_key.type(), map_key_kind(*key_type))) { return &actual_key; }
 				const script_value& actual = entry.second.is_reference() ? entry.second.deref() : entry.second;
 				if (!value_open && !container_element_compatible(actual, value_type, eng)) { return &actual; }
 				return nullptr;
@@ -799,7 +801,7 @@ namespace jai::detail {
 				}
 			}
 			entries.for_each_unordered([&](const script_map::value_type& entry) {
-				if (!key_open && (entry.first.is_reference() ? entry.first.deref() : entry.first).type() != key_type->base_type) {
+				if (!key_open && (entry.first.is_reference() ? entry.first.deref() : entry.first).type() != map_key_kind(*key_type)) {
 					needs_conversion = true;   // a char key of a string map, or the reverse, stores in the declared kind
 				}
 				if (!value_open) {
@@ -812,6 +814,7 @@ namespace jai::detail {
 					     value_base == script_value_type::jai_string_type || is_math_type(value_base))) {
 						needs_conversion = true;
 					}
+					if (value_type->is_enum && actual.type_info_raw() != value_type->enum_value_type) { needs_conversion = true; }
 					if ((value_base == script_value_type::jai_weak_ptr_type || value_base == script_value_type::jai_object_type) &&
 					    actual.type() == script_value_type::jai_shared_ptr_type) {
 						needs_conversion = true;   // a shared handle downgrades, or a class value copies the object it names
@@ -836,8 +839,8 @@ namespace jai::detail {
 					out.error = converted.error_value();
 					return out;
 				}
-				if (!key_open && actual_key.type() != key_type->base_type) {
-					auto key = map_key_in_kind(actual_key, key_type->base_type, eng);
+				if (!key_open && actual_key.type() != map_key_kind(*key_type)) {
+					auto key = map_key_in_kind(actual_key, map_key_kind(*key_type), eng);
 					if (!key) {
 						out.error = key.error_value();
 						return out;

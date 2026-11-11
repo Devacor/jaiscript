@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="jai_spider: a Web Application Host — JaiScript Embedding">
 <meta property="og:description" content="jai_spider serves a JaiScript program over HTTP/1.1: the handler the app hands to spider::spin, Request and a Router in script, spider::Response shared with the spider:: client, SQLite bound as a class, cookie sessions, static files, and modules that reload on the request after they are saved.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/embedding/19-jai-spider.html">
+<meta property="og:url" content="https://jaiscript.com/embedding/19-jai-spider.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,38 +33,48 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding</summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li class="current"><a href="../embedding/19-jai-spider.html" aria-current="page">jai_spider: a Web Application Host</a><ol class="page-toc" data-page-toc></ol></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding<span class="sidebar-current">jai_spider: a Web Application Host</span></summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li class="current"><a href="../embedding/19-jai-spider.html" aria-current="page">jai_spider: a Web Application Host</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/20-foundry.html">Foundry: Testing a Host</a></li><li><a href="../embedding/21-visual-studio.html">Visual Studio, Step by Step</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>19</nav>
 <article class="chapter"><h1 id="jai-spider">jai_spider: a Web Application Host<a class="hlink" href="#jai-spider" aria-label="link">&#8203;</a></h1>
-<p><code>jai_spider</code> serves a JaiScript program as a web application. It is a host like any other on these pages, built from the same engine calls:</p>
+<p><code>jai_spider</code> serves a JaiScript program as a web application. It is a host like any other on these pages:
+an HTTP/1.1 server, SQLite bound as a class, and a script library, in <code>tools/jai_spider</code>.</p>
 <ul>
-<li>an HTTP/1.1 server;</li>
-<li>a request handed to the handler the program spins;</li>
-<li>the program&#x27;s imports reached before every request;</li>
-<li>SQLite bound as a class.</li>
+<li><strong>The app is a program that ends in <code>spider::spin(routes)</code>.</strong> Each request goes to the
+handler it spun.</li>
+<li><strong>Saved edits apply to the next request.</strong> The host reaches the app's imports before every request; an
+edit that fails its check is logged and the app keeps serving the code it had.</li>
+<li><strong>One thread runs the network loop and the script.</strong> Requests reach script one at a time, so a slow
+handler delays the ones behind it.</li>
+<li><strong>SQL text is always a program constant;</strong> values only bind as parameters.</li>
+<li><strong>It speaks no TLS.</strong> Deploy behind a reverse proxy that terminates HTTPS.</li>
 </ul>
-<p>Because the imports are reached per request, a saved edit applies to the next request with no restart. An edit that fails its check is reported while the app keeps serving the code it had. The same program reaches other servers with the <a href="../guide/17-web.html#spider"><code>spider::</code> client</a>, so one web serves and fetches.</p>
-<p>The host lives in <code>tools/jai_spider</code>: the C++ (sockets, HTTP, SQLite) and the script library apps import (<code>lib/spider.jai</code> and <code>lib/session.jai</code>). Everything a script names lives under <code>spider::</code>. The one class the library itself provides is <code>spider::Response</code>, which a handler answers with and a client call returns.</p>
 <h2 id="running">Running an app<a class="hlink" href="#running" aria-label="link">&#8203;</a></h2>
-<p>The <code>jai_spider</code> CMake target builds <code>bin/jai_spider</code> beside the runner (option <code>JAISCRIPT_BUILD_SPIDER</code>, on by default). SQLite is the system&#x27;s (3.37 or newer) when CMake finds one, otherwise the official amalgamation, downloaded at configure time into the build tree and checked against a pinned hash. <code>-DJAI_SPIDER_SQLITE_ZIP=&lt;zip&gt;</code> or <code>-DJAI_SPIDER_SQLITE_DIR=&lt;dir&gt;</code> supply it offline. Point it at the app&#x27;s entry file:</p>
 <div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain">jai_spider tools/jai_spider/examples/guestbook/app.jai
-/\(o.o)/\  jai_spider 0.5.2-beta
+/\(o.o)/\  jai_spider 0.5.3-beta
 jai_spider: spinning tools/jai_spider/examples/guestbook/app.jai on http://127.0.0.1:8080/ (files from .../guestbook/public)
 GET / 200 1.21 ms
 GET /style.css 200 0.31 ms (file)
 POST /sign 303 2.40 ms
 jai_spider: reloaded views.jai
 GET / 200 1.87 ms</code></pre></div>
-<p>Each request logs one line: method, path, status and time (a control byte or a byte past ASCII in the path is written as <code>\xNN</code>, so a request cannot write terminal escapes). Ctrl+C stops the server; the engine is destroyed with it, which closes every database.</p>
+<p>The <code>jai_spider</code> CMake target builds <code>bin/jai_spider</code> beside the runner
+(<code>JAISCRIPT_BUILD_SPIDER</code>, on in a standalone build). SQLite is the system's (3.37 or newer) when CMake finds
+one, otherwise the official amalgamation, downloaded at configure time and checked against a pinned hash;
+<code>-DJAI_SPIDER_SQLITE_ZIP=&lt;zip&gt;</code> or <code>-DJAI_SPIDER_SQLITE_DIR=&lt;dir&gt;</code> supply it offline.
+Ctrl+C stops the server and closes every database. In the request log a control or non-ASCII byte of the path is
+written as <code>\xNN</code>.</p>
+<p id="options">The usual options are <code>--port N</code> (default 8080), <code>--root DIR</code> for the static root and <code>--dev</code> for error pages that show the error. Every option: <a href="../reference/host.html#spider-options">command-line options</a>.</p>
 <h2 id="first-app">A first app<a class="hlink" href="#first-app" aria-label="link">&#8203;</a></h2>
-<p>An app imports <code>spider.jai</code>, builds its routes and hands them to <code>spider::spin</code>. <code>spider::serve</code> is the same call by its plain name.</p>
 <div class="codeblock cb-jai" data-host="jai_spider"><span class="cb-label">jaiscript &mdash; app.jai (under jai_spider)</span><pre><code class="lang-jai">import "spider.jai";
 
 Database db = open_database("notes.db");        // relative to the app's folder
@@ -80,62 +98,55 @@ routes.get("/notes/:id", (spider::Request req) =&gt; {
 });
 
 spider::spin(routes);</code></pre></div>
-<p><code>spider::spin(handler[, options])</code> takes a <code>spider::Router</code> (add its routes first, then spin it) or any function of a <code>spider::Request</code>. A handler answers one of:</p>
-<ul>
-<li>a <code>spider::Response</code>;</li>
-<li>a string or a <code>web::html</code> (an HTML page);</li>
-<li><code>null</code> (204 No Content);</li>
-<li>any other value, which is sent as JSON.</li>
-</ul>
-<p>The app&#x27;s top level runs again on every reload, so the spin that ends it hands the server the new routes. Until an app has spun, every request is a 500 naming the missing call.</p>
-<p>The options are <code>budget</code> (seconds a request may run, over <code>--budget</code>) and <code>max_body</code> (bytes, over <code>--max-body</code>), from the next request on. Any other key raises.</p>
-<p>The checker sees the whole program before anything runs, so a misspelled field or a string passed where an <code>int</code> is declared fails the load with a listing, exactly as in any other host.</p>
+<p><code>spider::spin(handler[, options])</code> (also named <code>spider::serve</code>) takes a
+<code>spider::Router</code> or any function of a <code>spider::Request</code>. The options are <code>budget</code>
+(seconds a request may run) and <code>max_body</code> (bytes), which override the command line from the next request
+on; any other key raises.</p>
+<div class="tablewrap"><table><thead><tr><th>A handler returns</th><th>The client gets</th></tr></thead><tbody>
+<tr><td>a <code>spider::Response</code></td><td>that response</td></tr>
+<tr><td>a string or a <code>web::html</code></td><td>an HTML page</td></tr>
+<tr><td><code>null</code></td><td>204 No Content</td></tr>
+<tr><td>any other value</td><td>the value as JSON</td></tr>
+</tbody></table></div>
+<p>Besides the library in <code>lib/</code>, the host registers the full standard library, the runner's file functions,
+the <a href="../guide/17-web.html"><code>web::</code> library</a>, and <code>parse_cookies</code>,
+<code>parse_multipart</code>, <code>http_date</code> and <code>content_type_for</code>. A page is usually a
+<a href="../guide/19-templates.html">template</a>, whose splices escape every value; a handler may return the
+<code>web::html</code> it produces.</p>
 <h2 id="request-response">Request and Response<a class="hlink" href="#request-response" aria-label="link">&#8203;</a></h2>
-<p><code>spider::Request</code> is a script class in <code>lib/spider.jai</code>, so its source is the reference and an app can read or extend it.</p>
+<p><code>spider::Request</code> is a script class in <code>lib/spider.jai</code>; its source is the reference.</p>
 <div class="tablewrap"><table><thead><tr><th>spider::Request</th><th>What it holds</th></tr></thead><tbody>
-<tr><td><code>method</code>, <code>path</code>, <code>target</code>, <code>query_string</code>, <code>version</code></td><td>the request line: <code>path</code> percent-decoded and without the query, <code>target</code> as it arrived</td></tr>
-<tr><td><code>query</code>, <code>cookies</code>, <code>params</code></td><td><code>map&lt;string, string&gt;</code>: the parsed query (<code>+</code> is a space), the Cookie header, the route&#x27;s captures</td></tr>
-<tr><td><code>headers</code>, <code>header(name)</code></td><td>names lowercased; <code>header("Content-Type")</code> reads any spelling</td></tr>
-<tr><td><code>body</code>, <code>form()</code>, <code>files()</code>, <code>json()</code></td><td>the raw body; its urlencoded or multipart fields; its uploads as <code>map&lt;string, spider::Upload&gt;</code> (<code>filename</code>, <code>content_type</code>, <code>data</code>, <code>size()</code>, <code>save(path)</code>); <code>from_json</code> of it</td></tr>
-<tr><td><code>cookie(name)</code>, <code>param(name)</code>, <code>remote_addr</code></td><td>"" when absent; the peer&#x27;s address</td></tr>
+<tr><td><code>method</code>, <code>path</code></td><td>the request line; <code>path</code> percent-decoded and without the query</td></tr>
+<tr><td><code>query</code>, <code>params</code></td><td><code>map&lt;string, string&gt;</code>: the parsed query, the route's captures</td></tr>
+<tr><td><code>header(name)</code>, <code>cookie(name)</code></td><td>one header, in any spelling; one cookie, "" when absent</td></tr>
+<tr><td><code>body</code>, <code>form()</code>, <code>json()</code></td><td>the raw body; its urlencoded or multipart fields; <code>from_json</code> of it</td></tr>
 </tbody></table></div>
-<p><code>spider::Response</code> is the library&#x27;s class (<a href="../guide/17-web.html#spider-response">its members</a>): <code>status</code>, <code>headers</code> (a <code>map&lt;string, string&gt;</code>), <code>cookies</code> (the Set-Cookie lines) and <code>body</code>, with <code>header(name, value)</code>, <code>set_cookie</code> and <code>clear_cookie</code> for building one. <code>lib/spider.jai</code> adds the helpers that build the usual answers:</p>
-<div class="tablewrap"><table><thead><tr><th>Helper</th><th>What it answers</th></tr></thead><tbody>
-<tr><td><code>spider::Response(status, body)</code></td><td>both optional: 200 and an empty body</td></tr>
-<tr><td><code>spider::html(text)</code>, <code>spider::plain_text(text)</code>, <code>spider::json(value)</code></td><td>a body with its Content-Type; each takes an optional status (<code>spider::html</code> takes a <code>web::html</code> too)</td></tr>
-<tr><td><code>spider::redirect(url)</code></td><td>303 See Other by default, the answer to a form post</td></tr>
-<tr><td><code>spider::file(path, content_type)</code></td><td>a file streamed from disk, relative to the app&#x27;s folder, typed by its extension unless one is given. The response carries a random token for it in an <code>X-Sendfile</code> header. The host serves the file that token names and never sends the header on, so an <code>X-Sendfile</code> header from anywhere else, an upstream answer passed through included, serves nothing.</td></tr>
-<tr><td><code>spider::not_found(text)</code></td><td>a 404</td></tr>
-</tbody></table></div>
-<p>The host registers the <a href="../guide/17-web.html"><code>web::</code> library</a> (<code>web::html_escape</code>, <code>web::url_encode</code>, <code>web::form_encode</code>, <code>web::parse_query</code>, <code>web::build_query</code>, <code>web::parse_url</code> and the rest). It adds what only a web host needs: <code>parse_cookies</code>, <code>parse_multipart</code>, <code>http_date</code> and <code>content_type_for</code>. A session id is <code>crypto::random_hex(32)</code>, from the operating system&#x27;s secure random source (<a href="../guide/18-random.html#crypto">crypto::</a>).</p>
-<p>A page is a template (<a href="../guide/19-templates.html">HTML Templates</a>). The guestbook&#x27;s <code>views.jai</code> renders each page with <code>template(&quot;views/home.spider&quot;, entries, name, flash, views)</code>, whose splices escape every value a visitor wrote. A template edit applies on the next request like an edit to a module. A handler may answer the <code>web::html</code> a template returns as its page.</p>
+<p>Every member, uploads included: <a href="../reference/host.html#spider-request"><code>spider::Request</code></a>.</p>
+<p><code>spider::Response</code> (<a href="../guide/17-web.html#spider-response">its members</a>) is the class a handler
+answers with and a client call returns. <code>lib/spider.jai</code> adds the helpers that build the usual answers:</p>
+<p><code>spider::html(text)</code>, <code>spider::plain_text(text)</code> and <code>spider::json(value)</code> answer a body with its Content-Type, <code>spider::redirect(url)</code> a 303, <code>spider::not_found(text)</code> a 404 and <code>spider::file(path, content_type)</code> a file from disk. Each one's arguments and defaults: <a href="../reference/host.html#spider-helpers">response helpers</a>.</p>
 <h2 id="routing">Routing<a class="hlink" href="#routing" aria-label="link">&#8203;</a></h2>
-<p><code>spider::Router</code> has <code>get</code>, <code>post</code>, <code>put</code>, <code>patch</code>, <code>delete</code>, <code>any</code> and <code>add(method, pattern, handler)</code>. Routes match in the order they were added.</p>
-<ul>
-<li><code>/posts/:id</code> captures one path segment as <code>req.params["id"]</code>.</li>
-<li><code>/files/*rest</code> captures the rest of the path.</li>
-<li>A HEAD request takes the GET route and is answered without its body.</li>
-<li>A path that only other methods match answers 405 with an <code>Allow</code> header.</li>
-<li>No match is a 404.</li>
-</ul>
-<p><code>before(filter)</code> runs a filter ahead of every route: <code>null</code> lets the request through, anything else is the answer, which is where a sign-in check goes.</p>
-<h2 id="client">Reaching other servers<a class="hlink" href="#client" aria-label="link">&#8203;</a></h2>
-<p>jai_spider installs the <a href="../guide/17-web.html#spider"><code>spider::</code> client</a> and grants the <code>network</code> permission, so a handler can fetch from another service and answer with what came back. <code>spider::catch(url)</code> fetches (its plain name is <code>spider::get</code>), <code>spider::sling(content, url)</code> sends (its plain name is <code>spider::post(url, content)</code>), and both answer a <code>spider::Response</code>, the same class a handler returns:</p>
-<div class="codeblock cb-jai" data-host="jai_spider"><span class="cb-label">jaiscript (under jai_spider)</span><pre><code class="lang-jai">routes.get("/weather/:city", (spider::Request req) =&gt; {
-    spider::Response upstream = spider::catch("https://weather.example/v1/now?city=" + web::url_encode(req.param("city")), {"timeout": 5});
-    if (!upstream.ok()) { return spider::json({"error": "the weather service answered " + to_string(upstream.status)}, 502); }
-    return upstream;                              // the upstream answer, passed through as it came
-});</code></pre></div>
-<p><strong>Passing an answer through.</strong> The host writes its own framing: an answer passed through loses its <code>X-Sendfile</code> header and the headers that describe one connection (<code>Connection</code>, <code>Keep-Alive</code>, <code>Proxy-Connection</code>, <code>TE</code>, <code>Trailer</code>, <code>Transfer-Encoding</code>, <code>Upgrade</code>, <code>Content-Length</code>). Its cookies pass through as they came, so a handler that relays another site&#x27;s answer clears <code>cookies</code> when they are not its own to set.</p>
-<p><strong>Blocking and transports.</strong> A call blocks the one script thread until the answer arrives or its timeout passes, and the requests behind it wait too, so keep upstream timeouts short. On Windows the client goes through WinHTTP (the system&#x27;s TLS and certificate store); elsewhere through sockets, with HTTPS when the build found OpenSSL (the <a href="17-host-api.html#http-transport">HTTP transport</a> section has the table).</p>
+<p><code>spider::Router</code> has <code>get</code>, <code>post</code>, <code>put</code>, <code>patch</code>,
+<code>delete</code>, <code>any</code> and <code>add(method, pattern, handler)</code>. Routes match in the order they were
+added.</p>
+<div class="tablewrap"><table><thead><tr><th>Case</th><th>Result</th></tr></thead><tbody>
+<tr><td><code>/posts/:id</code></td><td>captures one path segment as <code>req.params["id"]</code></td></tr>
+<tr><td><code>/files/*rest</code></td><td>captures the rest of the path</td></tr>
+<tr><td>a HEAD request</td><td>takes the GET route and is answered without its body</td></tr>
+<tr><td>a path only other methods match</td><td>405 with an <code>Allow</code> header</td></tr>
+<tr><td>no match</td><td>404</td></tr>
+<tr><td><code>before(filter)</code></td><td>runs ahead of every route: <code>null</code> lets the request through, anything else is the answer (a sign-in check)</td></tr>
+</tbody></table></div>
 <h2 id="sqlite">SQLite, injection-proof by construction<a class="hlink" href="#sqlite" aria-label="link">&#8203;</a></h2>
-<p><code>open_database(path)</code> opens or creates a database file (relative to the app&#x27;s folder; <code>":memory:"</code> for a scratch one) and returns a <code>Database</code>, a C++ class bound with <code>dynamic_binder</code>. Copies of one share its connection, which closes with the last of them.</p>
-<p><strong>The SQL text of every statement is one of the program&#x27;s own constants, and values only ever bind as parameters.</strong> <code>execute</code>, <code>query</code>, <code>query_one</code> and <code>value</code> take the SQL text first and the values after it. The text is a <a href="17-host-api.html#constant-arguments">constant argument</a>: a string literal, a <code>const</code> holding one, a ternary choosing between them, or a <code>+</code> of them.</p>
-<ul>
-<li>Text built from data does not load: <code>argument 1 of &#x27;query&#x27; is not a constant: SQL text must be a constant; pass values as parameters (?)</code>.</li>
-<li>The guarantee does not rest on the checker. The host gathers every constant text the program passes to these methods as each unit loads. A text that is not one of them is refused at run time with <code>SQL text must be a constant; pass values as parameters (?)</code> before SQLite sees it, however it arrived (a <code>var</code>, a <code>[[warn_mode]]</code> region, <code>reflect::invoke</code>).</li>
-</ul>
-<p>There is no escape or quote function, and nothing that splices a value into a statement.</p>
+<p><code>open_database(path)</code> opens or creates a database file (relative to the app's folder;
+<code>":memory:"</code> for a scratch one) and returns a <code>Database</code>. Copies share its connection, which
+closes with the last of them. Files open in WAL mode.</p>
+<p><code>execute</code>, <code>query</code>, <code>query_one</code> and <code>value</code> take the SQL text first and
+the values after it, and the text is a <a href="17-host-api.html#constant-arguments">constant argument</a>. Text built
+from data does not load (<code>argument 1 of &#x27;query&#x27; is not a constant: SQL text must be a constant; pass
+values as parameters (?)</code>), and text that reaches the call some other way is refused at run time with
+<code>SQL text must be a constant; pass values as parameters (?)</code> before SQLite sees it. There is no escape or
+quote function.</p>
 <div class="codeblock cb-jai" data-host="jai_spider"><span class="cb-label">jaiscript (under jai_spider)</span><pre><code class="lang-jai">const string FIND_POST = "SELECT * FROM posts WHERE id = ?";
 var post = db.query_one(FIND_POST, req.param("id"));
 int changed = db.execute("UPDATE posts SET title = ? WHERE id = ?", title, id);
@@ -149,18 +160,27 @@ db.transaction(() =&gt; {
     db.execute("INSERT INTO posts (title) VALUES (?)", title);
     db.execute("INSERT INTO audit (what) VALUES (?)", "post");
 });</code></pre></div>
-<p><strong>Binding values.</strong></p>
+<div class="tablewrap"><table><thead><tr><th>In the text</th><th>Filled by</th></tr></thead><tbody>
+<tr><td><code>?</code></td><td>the next value. An array expands to one placeholder per element, so <code>IN (?)</code> takes a list of any length (an empty one is <code>IN ()</code>, which matches nothing).</td></tr>
+<tr><td><code>:name</code>, <code>@name</code>, <code>$name</code></td><td>one map value, by key</td></tr>
+<tr><td><code>{}</code></td><td><code>sql_choose(value, choices)</code>, for what a parameter cannot be (a sort column, a direction). It answers the choice equal to <code>value</code>; <code>choices</code> must be constants too. Another value raises <code>sql_choose: the value is not one of: created, title, created DESC</code>. A <code>{}</code> takes nothing else, and a choice cannot fill a <code>?</code>.</td></tr>
+</tbody></table></div>
 <ul>
-<li>Each <code>?</code> takes the next value.</li>
-<li>An array value expands its <code>?</code> to one placeholder per element, so <code>IN (?)</code> takes a list of any length (an empty one is <code>IN ()</code>, which matches nothing).</li>
-<li>One map value binds <code>:name</code>, <code>@name</code> and <code>$name</code> instead.</li>
+<li><strong>Types.</strong> Values bind from <code>int</code>, <code>float</code>, <code>bool</code>, <code>string</code> and
+<code>null</code>. Columns come back as <code>int</code>, <code>float</code>, <code>string</code> (TEXT, and a BLOB as
+its bytes) or <code>null</code>.</li>
+<li><strong>Statements</strong> are prepared once and kept until the database closes. A constant text of several
+statements given to <code>execute</code> without values runs them all, which suits a schema.</li>
+<li><strong><code>transaction(fn)</code></strong> commits when <code>fn</code> returns and rolls back when it raises,
+then raises again; inside another transaction it is a savepoint. <code>begin</code>, <code>commit</code>,
+<code>rollback</code>, <code>last_insert_id</code>, <code>changes</code>, <code>in_transaction</code>,
+<code>is_open</code> and <code>close</code> exist too.</li>
+<li><strong>Errors</strong> are catchable and carry SQLite's message: <code>SQLite error: no such table: posts</code>.</li>
 </ul>
-<p><strong>Choosing a fragment.</strong> What a parameter cannot be, a column to sort by or a direction, goes in a <code>{}</code> slot, filled by <code>sql_choose(value, choices)</code>. It answers the choice equal to <code>value</code>, and <code>choices</code> must be constants too (an array literal of strings, or a <code>const</code> of one), so the fragment it puts in the text is the program&#x27;s own.</p>
-<p>A value that is none of them raises <code>sql_choose: the value is not one of: created, title, created DESC</code>. A <code>{}</code> takes nothing else, and a choice cannot fill a <code>?</code>.</p>
-<p><strong>Types and statements.</strong> Values bind from <code>int</code>, <code>float</code>, <code>bool</code>, <code>string</code> and <code>null</code>. Columns come back as <code>int</code>, <code>float</code>, <code>string</code> (TEXT, and a BLOB as its bytes) or <code>null</code>. Each statement is prepared once and kept until the database closes. A constant text of several statements given to <code>execute</code> without values runs them all, which suits a schema.</p>
-<p><strong>Transactions and the rest.</strong> <code>transaction(fn)</code> commits when <code>fn</code> returns and rolls back when it raises, then raises again. Inside another transaction it is a savepoint. <code>begin</code>, <code>commit</code>, <code>rollback</code>, <code>last_insert_id</code>, <code>changes</code>, <code>in_transaction</code>, <code>is_open</code> and <code>close</code> are there too. Every SQLite failure is a catchable error carrying SQLite&#x27;s message: <code>SQLite error: no such table: posts</code>. Files open in WAL mode.</p>
 <h2 id="sessions">Sessions<a class="hlink" href="#sessions" aria-label="link">&#8203;</a></h2>
-<p><code>lib/session.jai</code> keeps sessions in a table of the app&#x27;s database (<code>spider_sessions</code>). The cookie carries only a 256-bit random id; the data stays on the server as JSON.</p>
+<p><code>lib/session.jai</code> keeps sessions in a table of the app's database (<code>spider_sessions</code>). The cookie
+carries only a 256-bit random id (<a href="../guide/18-random.html#crypto"><code>crypto::random_hex(32)</code></a>);
+the data stays on the server as JSON.</p>
 <div class="codeblock cb-jai" data-host="jai_spider"><span class="cb-label">jaiscript (under jai_spider)</span><pre><code class="lang-jai">import "session.jai";
 
 spider::SessionStore sessions = spider::SessionStore(db);
@@ -174,15 +194,44 @@ routes.post("/sign-in", (spider::Request req) =&gt; {
     sessions.save(s, r);                         // the row and the cookie, when the session changed
     return r;
 });</code></pre></div>
-<p><code>spider::Session</code> has <code>get(key, fallback)</code>, <code>has</code>, <code>set</code>, <code>erase</code> and <code>take</code> (read once, for a message shown after a redirect). <code>spider::SessionStore</code> has <code>load</code>, <code>save</code>, <code>rotate</code>, <code>destroy</code> and <code>purge_expired</code>; <code>cookie_name</code>, <code>max_age</code> and <code>secure_cookie</code> are fields.</p>
-<h2 id="hot-reload">Hot reload<a class="hlink" href="#hot-reload" aria-label="link">&#8203;</a></h2>
-<p>Before each request the host executes <code>import("app.jai")</code> with the engine&#x27;s import check on every reach (<a href="../guide/10-modules.html#reloading-from-a-running-program">Reloading from a running program</a>). An unchanged program costs one stamp check per file. When a file has changed, the module is parsed and checked together with everything it imports, then runs as its own unit:</p>
+<p><code>spider::Session</code> has <code>get(key, fallback)</code>, <code>has</code>, <code>set</code>,
+<code>erase</code> and <code>take</code> (read once, for a message shown after a redirect).
+<code>spider::SessionStore</code> has <code>load</code>, <code>save</code>, <code>rotate</code>, <code>destroy</code> and
+<code>purge_expired</code>, and the fields <code>cookie_name</code>, <code>max_age</code> and
+<code>secure_cookie</code> (set it behind an HTTPS proxy).</p>
+<h2 id="client">Reaching other servers<a class="hlink" href="#client" aria-label="link">&#8203;</a></h2>
+<p>jai_spider installs the <a href="../guide/17-web.html#spider"><code>spider::</code> client</a> and grants the
+<code>network</code> permission. <code>spider::catch(url)</code> fetches and <code>spider::sling(content, url)</code>
+sends; both return a <code>spider::Response</code>, which a handler can return as it came:</p>
+<div class="codeblock cb-jai" data-host="jai_spider"><span class="cb-label">jaiscript (under jai_spider)</span><pre><code class="lang-jai">routes.get("/weather/:city", (spider::Request req) =&gt; {
+    spider::Response upstream = spider::catch("https://weather.example/v1/now?city=" + web::url_encode(req.param("city")), {"timeout": 5});
+    if (!upstream.ok()) { return spider::json({"error": "the weather service answered " + to_string(upstream.status)}, 502); }
+    return upstream;                              // the upstream answer, passed through as it came
+});</code></pre></div>
 <ul>
-<li>its functions and classes replace the old ones in place, and live instances migrate (<a href="07-hot-reload.html">Hot Reload</a>);</li>
-<li>its top-level statements run again, so a <code>spider::Router</code> built with an initializer is rebuilt from the new code and the closing <code>spider::spin</code> hands it to the server;</li>
-<li>a variable declared without an initializer (<code>int requests;</code>, <code>map&lt;string, var&gt; cache;</code>) keeps the value it holds.</li>
+<li><strong>A call blocks the script thread,</strong> and the requests behind it, until the answer arrives or its
+timeout passes. Keep upstream timeouts short.</li>
+<li><strong>A passed-through answer loses</strong> its <code>X-Sendfile</code> header and the headers that describe one
+connection (<code>Connection</code>, <code>Keep-Alive</code>, <code>Proxy-Connection</code>, <code>TE</code>,
+<code>Trailer</code>, <code>Transfer-Encoding</code>, <code>Upgrade</code>, <code>Content-Length</code>).
+<strong>Its cookies pass through,</strong> so clear <code>cookies</code> when they are not yours to set.</li>
+<li>Which transport carries the call, and whether it speaks HTTPS, is in
+<a href="17-host-api.html#http-transport">The HTTP transport</a>.</li>
 </ul>
-<p>An edit that fails to parse or check is logged once with its listing, and the app answers every request with the code it had until the file is saved again:</p>
+<h2 id="hot-reload">Hot reload<a class="hlink" href="#hot-reload" aria-label="link">&#8203;</a></h2>
+<p>Before each request the host executes <code>import("app.jai")</code>
+(<a href="../guide/10-modules.html#reloading-from-a-running-program">Reloading from a running program</a>). An
+unchanged program costs one stamp check per file. A changed file is parsed and checked with everything it imports,
+then runs as its own unit:</p>
+<ul>
+<li>its functions and classes replace the old ones in place, and live instances migrate
+(<a href="07-hot-reload.html">Hot Reload</a>);</li>
+<li>its top-level statements run again, so the router is rebuilt and the closing <code>spider::spin</code> hands it to
+the server;</li>
+<li>a variable declared without an initializer (<code>int requests;</code>) keeps its value.</li>
+</ul>
+<p>An edit that fails to parse or check is logged once, and the app serves the code it had until the file is saved
+again:</p>
 <div class="codeblock cb-plain"><span class="cb-label">console</span><pre><code class="lang-plain">jai_spider: the edit was rejected; serving the code the app had:
 static check failed:
 views.jai:7:25: error: cannot initialize 'n' declared 'int' with 'string'
@@ -191,50 +240,28 @@ views.jai:7:25: error: cannot initialize 'n' declared 'int' with 'string'
 GET / 200 0.84 ms
 jai_spider: reloaded views.jai
 GET / 200 1.66 ms</code></pre></div>
-<p>The host imports its library from the <code>jai_spider_lib/</code> folder the build puts beside the executable. Under <code>--dev</code> it imports the source checkout&#x27;s <code>lib/</code> instead, and those files reload the same way: an edit to <code>spider.jai</code> applies to the next request.</p>
 <h2 id="static-files">Static files<a class="hlink" href="#static-files" aria-label="link">&#8203;</a></h2>
-<p>For GET and HEAD, a path that names a file under the static root is served before the app sees the request. The root is <code>--root</code>, or the app&#x27;s <code>public/</code> folder when it exists. A folder serves its <code>index.html</code>.</p>
-<p>A file is sent with a Content-Type from its extension, a weak ETag, Last-Modified and <code>Cache-Control: no-cache</code>, so a browser revalidates each time and sees an edited file on its next load (304 Not Modified otherwise). Files stream from disk in slices.</p>
-<p><strong>What is never served.</strong></p>
+<p>For GET and HEAD, a path that names a file under the static root is served before the app sees the request; a
+folder serves its <code>index.html</code>. A file is sent with a Content-Type from its extension, a weak ETag,
+Last-Modified and <code>Cache-Control: no-cache</code>, so a browser revalidates each time (304 when unchanged).</p>
 <ul>
-<li>A file or folder whose real name starts with a dot is never served, whatever name reaches it (a Windows 8.3 short name such as <code>ENV~1</code> included), and neither is anything outside the root.</li>
-<li>A request path with a <code>.</code> or <code>..</code> segment, or a segment that decodes to one holding <code>/</code>, <code>\</code> or NUL, is answered 400 before the app sees it. So a <code>*rest</code> capture handed to <code>spider::file</code> never climbs out of the folder it names.</li>
+<li>A file or folder whose real name starts with a dot is never served, whatever name reaches it (a Windows 8.3 short
+name such as <code>ENV~1</code> included), nor is anything outside the root.</li>
+<li>A request path with a <code>.</code> or <code>..</code> segment, or a segment that decodes to one holding
+<code>/</code>, <code>\</code> or NUL, is answered 400 before the app sees it, so a <code>*rest</code> capture handed
+to <code>spider::file</code> never climbs out of its folder.</li>
 </ul>
-<h2 id="model">Errors, limits and the threading model<a class="hlink" href="#model" aria-label="link">&#8203;</a></h2>
-<p>One thread runs the network loop and the script. The loop keeps every connection moving (reading, writing, streaming files) and hands complete requests to the script one at a time, so a slow handler delays the requests behind it. HTTP/1.1 and 1.0 are served with keep-alive and pipelining, bodies by Content-Length or chunked, and <code>Expect: 100-continue</code>.</p>
-<div class="tablewrap"><table><thead><tr><th>Failure</th><th>Answer</th></tr></thead><tbody>
-<tr><td>a run-time error or an uncaught throw in a handler</td><td>500; the error and its trace are logged, and the page shows them under <code>--dev</code> only</td></tr>
-<tr><td>a Response with a status outside 200 to 599, a header name that is not a token, or a header value or cookie line holding a line break or NUL</td><td>500, logged: <code>Response status 101 is not a final HTTP status (200 to 599)</code>, <code>Response header &#x27;N&#x27; is not a header name, or its value holds a line break or NUL</code>, <code>Response cookie &#x27;L&#x27; holds a line break or NUL</code></td></tr>
-<tr><td>an app that never called <code>spider::spin</code></td><td>500 naming the missing call</td></tr>
-<tr><td>a handler that runs past <code>--budget</code> (or spin&#x27;s <code>budget</code>)</td><td>500 through the execution budget (<a href="05-safety-rails.html">Safety Rails</a>); the engine serves on</td></tr>
-<tr><td>a body over <code>--max-body</code> (2 MiB by default, or spin&#x27;s <code>max_body</code>)</td><td>413 before the body is read</td></tr>
-<tr><td>a request head over 64 KiB</td><td>431 (414 for a request line alone)</td></tr>
-<tr><td>a malformed request, both Content-Length and Transfer-Encoding, a header field holding a bare CR, LF or NUL, a dot segment in the path</td><td>400; another HTTP version is 505, another transfer coding 501</td></tr>
-<tr><td>a Host header that is not <code>localhost</code>, a <code>127.x</code> address or <code>[::1]</code>, when the server listens on a loopback address</td><td>421, so a page whose own name resolves to 127.0.0.1 (DNS rebinding) cannot reach the app</td></tr>
-<tr><td>a request that takes longer than <code>--timeout</code> to arrive, or a response to leave</td><td>the connection closes</td></tr>
-<tr><td>more than 512 open connections, or more than 128 from one address</td><td>503</td></tr>
-</tbody></table></div>
-<p>A connection holds one response at a time: the next request is read once the last response has left, so a client that never reads cannot pile responses up. The server speaks no TLS; a deployment puts a reverse proxy that terminates HTTPS (Caddy, nginx) in front and sets <code>secure_cookie</code> on the session store.</p>
-<h2 id="options">Options<a class="hlink" href="#options" aria-label="link">&#8203;</a></h2>
-<div class="tablewrap"><table><thead><tr><th>Option</th><th>Meaning</th></tr></thead><tbody>
-<tr><td><code>--port N</code></td><td>the port (default 8080; 0 picks a free one, named in the spinning line)</td></tr>
-<tr><td><code>--host ADDR</code></td><td>the IPv4 address to listen on (default 127.0.0.1; 0.0.0.0 for every interface)</td></tr>
-<tr><td><code>--root DIR</code></td><td>the static root (default: the app&#x27;s <code>public/</code> folder when it exists)</td></tr>
-<tr><td><code>--max-body N</code></td><td>the largest request body, with <code>K</code>, <code>M</code> or <code>G</code> allowed (default 2M)</td></tr>
-<tr><td><code>--timeout S</code></td><td>seconds a request may take to arrive and a response to leave (default 30)</td></tr>
-<tr><td><code>--budget S</code></td><td>the execution budget per request (default 30; 0 is unlimited)</td></tr>
-<tr><td><code>--backend vm|interp</code></td><td>the engine&#x27;s backend, as for the runner</td></tr>
-<tr><td><code>--dev</code></td><td>development: an error page shows the error and its trace (absolute paths included), and the library is imported from the source checkout&#x27;s <code>lib/</code></td></tr>
-<tr><td><code>--allow-shutdown TOKEN</code></td><td><code>POST /__spider/shutdown</code> from the same machine carrying the header <code>X-Spider-Shutdown: TOKEN</code> stops the server, for scripts and tests that drive it; without the token it is 403 (a cross-site page cannot send the header without a preflight the server never grants)</td></tr>
-<tr><td><code>--quiet</code></td><td>no banner and no request log</td></tr>
-</tbody></table></div>
-<p>Every file function of the runner (<code>read_file</code>, <code>write_file</code>, <code>list_dir</code> and the rest) and the full standard library are registered too.</p>
-<p><code>tools/jai_spider/examples/guestbook</code> is a complete app: templates, a form, a session, SQLite storage, a JSON API and a stylesheet. <code>tools/jai_spider/tests/spider_test.py</code> starts the host on a free port and drives every behavior on this page over HTTP, on both backends, then points the runner&#x27;s <code>spider::</code> client at it through each transport the build has.</p>
-<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/18-build-integration.html"><span>&larr; previous</span>Building JaiScript into a Host</a><a class="next" rel="next" href="../examples/index.html"><span>next &middot; examples &rarr;</span>The Example Games</a></nav></article>
+<h2 id="model">Errors and limits<a class="hlink" href="#model" aria-label="link">&#8203;</a></h2>
+<p>HTTP/1.1 and 1.0 are served with keep-alive and pipelining, bodies by Content-Length or chunked, and
+<code>Expect: 100-continue</code>. A connection holds one response at a time: the next request is read once the last
+response has left.</p>
+<p>A run-time error or an uncaught throw in a handler answers 500 and is logged. The limits on bodies, request heads, Host names, timeouts and connections each answer with their own status. Every failure with its status and logged text: <a href="../reference/host.html#spider-failures">failures and limits</a>.</p>
+<p><code>tools/jai_spider/examples/guestbook</code> is a complete app: templates, a form, a session, SQLite storage, a
+JSON API and a stylesheet.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/18-build-integration.html"><span>&larr; previous</span>Building JaiScript into a Host</a><a class="next" rel="next" href="../embedding/20-foundry.html"><span>next &rarr;</span>Foundry: Testing a Host</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

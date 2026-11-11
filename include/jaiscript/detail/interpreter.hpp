@@ -409,6 +409,7 @@ namespace jai {
         checked_result<void> visit_break_stmt(break_stmt* stmt);
         checked_result<void> visit_continue_stmt(continue_stmt* stmt);
         checked_result<void> visit_try_stmt(try_stmt* stmt);
+        void fresh_loop_binding(const for_stmt* stmt);
         checked_result<void> visit_switch_stmt(switch_stmt* stmt);
         checked_result<void> visit_case_stmt(case_stmt* stmt);
         checked_result<void> visit_default_stmt(default_stmt* stmt);

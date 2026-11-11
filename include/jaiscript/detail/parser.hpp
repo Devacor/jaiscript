@@ -159,6 +159,7 @@ namespace jai {
         checked_result<declaration_ptr> inline_variable_declaration();
         // const T x = e; / const x = e; is the declaration, then finish_const marks it and enforces the initializer
         checked_result<declaration_ptr> const_declaration();
+        checked_result<declaration_ptr> destructuring_declaration();
         bool finish_const(const declaration_ptr& decl, const token& at, bool class_constant);
         bool const_method_suffix();   // `) const`: JaiScript has no const methods
         bool untyped_declaration_ahead() const;   // IDENT followed by ';' or '='
@@ -180,6 +181,7 @@ namespace jai {
         checked_result<statement_ptr> case_body_statement();
         checked_result<statement_ptr> expression_statement();
         checked_result<statement_ptr> block_statement();
+        void mark_bare_condition(const expression_ptr& condition, size_t first_token);
         checked_result<statement_ptr> if_statement();
         checked_result<statement_ptr> while_statement();
         checked_result<statement_ptr> for_statement();
@@ -229,11 +231,14 @@ namespace jai {
         checked_result<expression_ptr> parenthesized();
         checked_result<expression_ptr> bracket_expression();
         checked_result<expression_ptr> cast_expression();
+        int infix_precedence() const;
+        checked_result<expression_ptr> instance_test_rest(expression_ptr left);
         
         // Helper parsers
         checked_result<expression_ptr> finish_call(expression_ptr callee);
         checked_result<expression_ptr> finish_member_access(expression_ptr object, bool is_arrow);
-        bool looks_like_map_literal();  // Lookahead to distinguish map literals from blocks
+        bool looks_like_map_literal();
+        bool json_map_key_follows();  // Lookahead to distinguish map literals from blocks
         bool json_map_ahead(size_t offset = 1) const;
         checked_result<expression_ptr> parse_map_literal();
         expression_ptr identifier_map_key();

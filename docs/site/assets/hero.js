@@ -1,5 +1,7 @@
 /* Landing-page hot-reload demo: the sliders and the say toggle edit gator.jai, the shown file reloads, and its
-   hot_reload_migrate hook copies the edited field onto the live gator. */
+   hot_reload_migrate hook copies the edited field onto the live gator. Once the engine (WebAssembly) loads, the shown text
+   is the file it runs: every frame calls stage.jai's frame(), and an edit re-runs gator.jai by its path, a hot reload.
+   Until then, and where the engine cannot load, the same scene runs in JavaScript. */
 (function () {
   "use strict";
   var demo = document.getElementById("hero-demo");
@@ -14,6 +16,8 @@
   var status = document.getElementById("demo-status");
   var label = document.getElementById("demo-label");
   var live = document.getElementById("demo-live");
+  var code = demo.querySelector("pre");
+  var engineNote = document.getElementById("demo-engine");
   var cv = document.getElementById("demo-scene");
   var g = cv && cv.getContext && cv.getContext("2d");
   if (!g || !spdIn || !slicesIn || !sayIns.length) return;
@@ -25,6 +29,7 @@
   var frameNo = 0, nom = 0, lastTs = 0, acc = 0;
   var visible = true, running = false, statusTimer = 0, editTimer = 0;
   var colors = {};
+  var engine = null, IDLE = "running";
   var GATOR = "#3fae5a", GATOR_DARK = "#2a7a3d", BELLY = "#c9e7a1", MOUTH = "#7a2430";
   var HOOKS = {
     spd: 'gator.spd = <span class="tk-fn">Gator</span>().spd;',
@@ -120,8 +125,31 @@
     if (nom > 0 || still) bubble(x + 18, 86, gator.says);
   }
 
+  // stage.jai's state(): "x spd slices chewing words"
+  function adopt(state) {
+    var parts = state.split(" ");
+    gator.x = Number(parts[0]);
+    gator.spd = Number(parts[1]);
+    gator.slices = Number(parts[2]);
+    nom = Number(parts[3]);
+    gator.says = parts.slice(4).join(" ") || gator.says;
+  }
+
+  function engineCall(name, arg) {
+    var reply = engine.ccall(name, "string", ["string"], [arg]);
+    return engine.ccall("jaiweb_live_failed", "number", [], []) ? { error: reply } : { value: reply };
+  }
+
   function tick() {
     frameNo++;
+    if (engine) {
+      var shown = nom;
+      var step = engineCall("jaiweb_live_eval", "frame()");
+      if (step.error) { engine = null; return; }
+      adopt(step.value);
+      if ((nom === 0) !== (shown === 0)) setLabel();
+      return;
+    }
     if (nom > 0) {
       if (--nom === 0) {
         gator.x = START;
@@ -160,18 +188,42 @@
     clearTimeout(statusTimer);
     status.textContent = text;
     status.classList.remove("idle");
-    statusTimer = setTimeout(function () { status.textContent = "running"; status.classList.add("idle"); }, 1800);
+    statusTimer = setTimeout(function () { status.textContent = IDLE; status.classList.add("idle"); }, 1800);
+  }
+
+  // The engine re-runs gator.jai as the page shows it; a field edit reaches the live gator only through the hook
+  function reloadInEngine(field) {
+    engine.FS.writeFile("/gator/gator.jai", code.textContent);
+    var began = performance.now();
+    var result = engineCall("jaiweb_live_file", "/gator/gator.jai");
+    var ms = (performance.now() - began).toFixed(1);
+    if (result.error) return "reload failed: the gator keeps the code it had";
+    adopt(engineCall("jaiweb_live_eval", "state()").value);
+    if (field === "say") return "reloaded in " + ms + " ms · tick() updated, slices kept";
+    return "reloaded in " + ms + " ms · " + (field === "spd" ? "slices kept" : "live gator took slices " + gator.slices);
   }
 
   // The file as the controls show it, reloaded: a field edit goes through the hook, a say edit changes tick() itself.
   function reload(field, fromVisitor) {
     var message;
+    showSpd();
+    showSlices();
+    showSay();
+    if (field !== "say") {
+      hookEl.innerHTML = HOOKS[field];
+      flash(hookEl);
+    }
+    if (engine) {
+      setStatus(reloadInEngine(field));
+      setLabel();
+      if (fromVisitor) live.textContent = "Reloaded: spd " + gator.spd + ", slices " + gator.slices + ", says " + gator.says;
+      if (!running) draw();
+      return;
+    }
     if (field === "say") {
       gator.says = checkedSay();
       message = "reloaded · tick() updated, slices kept";
     } else {
-      hookEl.innerHTML = HOOKS[field];
-      flash(hookEl);
       if (field === "spd") {
         gator.spd = Number(spdIn.value);
         message = "reloaded · slices kept";
@@ -213,6 +265,51 @@
     });
   }
 
+  // The engine is 6 MB of WebAssembly: it loads after the page, and not at all where the visitor asks to save data
+  function loadEngine() {
+    var src = demo.getAttribute("data-engine"), stage = demo.getAttribute("data-stage");
+    var saving = navigator.connection && navigator.connection.saveData;
+    if (!src || !stage || saving || typeof WebAssembly !== "object") return;
+    var script = document.createElement("script");
+    script.src = src;
+    script.onload = function () {
+      var files = ["world.jai", "stage.jai"].map(function (name) {
+        return fetch(stage + name).then(function (response) {
+          if (!response.ok) throw new Error(name + ": " + response.status);
+          return response.text();
+        });
+      });
+      Promise.all([window.createJaiScript({ print: function () {}, printErr: function () {} })].concat(files)).then(function (loaded) {
+        var jai = loaded[0];
+        jai.FS.mkdir("/gator");
+        jai.FS.writeFile("/gator/world.jai", loaded[1]);
+        jai.FS.writeFile("/gator/stage.jai", loaded[2]);
+        jai.FS.writeFile("/gator/gator.jai", code.textContent);
+        engine = jai;
+        var steps = ["/gator/world.jai", "/gator/gator.jai", "/gator/stage.jai"];
+        for (var s = 0; s < steps.length; s++) {
+          var result = engineCall("jaiweb_live_file", steps[s]);
+          if (result.error) throw new Error(result.error);
+        }
+        adopt(engineCall("jaiweb_live_eval", "state()").value);
+        IDLE = "live in WebAssembly";
+        status.textContent = IDLE;
+        if (engineNote) engineNote.hidden = false;
+        setLabel();
+        if (!running) draw();
+      }).catch(function (error) {
+        engine = null;
+        if (window.console) console.warn("gator.jai stays in JavaScript:", error);
+      });
+    };
+    document.head.appendChild(script);
+  }
+
+  function whenIdle() {
+    if (window.requestIdleCallback) requestIdleCallback(loadEngine, { timeout: 3000 });
+    else setTimeout(loadEngine, 500);
+  }
+
   showSpd();
   showSlices();
   showSay();
@@ -229,4 +326,6 @@
     new IntersectionObserver(function (entries) { visible = entries[0].isIntersecting; sync(); }).observe(demo);
   }
   sync();
+  if (document.readyState === "complete") whenIdle();
+  else window.addEventListener("load", whenIdle);
 }());

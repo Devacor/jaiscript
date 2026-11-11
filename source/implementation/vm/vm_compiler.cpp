@@ -1599,7 +1599,7 @@ void vm_compiler::compile_statement_code(const statement_ptr& stmt) {
 		compile_continue();
 		return;
 	case node_type::try_stmt:
-		compile_try(static_cast<try_stmt*>(stmt.get()));
+		compile_try(static_cast<try_stmt*>(stmt.get()), stmt);
 		return;
 	case node_type::switch_stmt:
 		compile_switch(static_cast<switch_stmt*>(stmt.get()));
@@ -1994,6 +1994,7 @@ JAI_NOINLINE void vm_compiler::compile_for(for_stmt* stmt) {
 	for (size_t at : loops_.back().continue_patches) {
 		patch_jump(at, continue_target);
 	}
+	if (stmt->fresh_binding) { emit(opcode::op_fresh_cell, add_node(stmt->initializer)); }
 	if (stmt->update) { compile_hoisted_update(stmt->update); }
 	emit(opcode::op_loop_back, static_cast<uint32_t>(top));
 
@@ -2019,7 +2020,7 @@ JAI_NOINLINE void vm_compiler::compile_for(for_stmt* stmt) {
 // Fast iterations run through op_cfor_prep/op_cfor_back with cached int pointers; when
 // runtime types don't cooperate the SAME loop runs its generic cond/update bytecode.
 JAI_NOINLINE bool vm_compiler::compile_counted_for(for_stmt* stmt) {
-	if (reference_) return false;
+	if (reference_ || stmt->fresh_binding) return false;
 	if (!stmt->initializer || !stmt->condition || !stmt->update) return false;
 	if (detail::const_site_of(stmt->update.get()) || detail::const_site_of(stmt->initializer.get())) return false;
 
@@ -2316,7 +2317,7 @@ bool vm_compiler::compile_entry_half(const expression_ptr& init) {
 	return true;
 }
 
-JAI_NOINLINE void vm_compiler::compile_try(try_stmt* stmt) {
+JAI_NOINLINE void vm_compiler::compile_try(try_stmt* stmt, const statement_ptr& node) {
 	const uint32_t catch_sym = add_symbol(symbolizer_->intern(stmt->catch_var));
 	// The catch variable is a frame-slot local of the catch body (compile_range_for's
 	// slot test); a top-level catch binds it in a scope env pushed at handler entry
@@ -2326,6 +2327,7 @@ JAI_NOINLINE void vm_compiler::compile_try(try_stmt* stmt) {
 		catch_slot = static_cast<uint32_t>(stmt->catch_slot_index);
 	}
 	size_t try_push = emit(opcode::op_try_push, k_invalid_u32, catch_sym, catch_slot);
+	if (!stmt->clause_types.empty()) { emit(opcode::op_try_types, add_node(node)); }
 
 	push_region(region_kind::loop);
 	loops_.back().kind = region_kind::try_block;
@@ -2345,7 +2347,7 @@ JAI_NOINLINE void vm_compiler::compile_try(try_stmt* stmt) {
 	loops_.back().kind = region_kind::catch_block;
 	loops_.back().scope_depth = scope_depth_;
 	const size_t locals = chunk_->debug_locals.size();
-	if (catch_slot != k_invalid_u32) { note_debug_local(catch_slot, stmt->catch_var); }
+	if (catch_slot != k_invalid_u32 && stmt->catch_var.find('#') == std::string::npos) { note_debug_local(catch_slot, stmt->catch_var); }   // typed clauses declare their own
 	compile_statement(stmt->catch_block);
 	close_debug_locals(locals);
 	loops_.pop_back();
@@ -9515,7 +9517,7 @@ JAI_NOINLINE closure_proto vm_compiler::closure_proto_of(const std::shared_ptr<l
 	};
 	for (const auto& cap : expr->captures) {
 		uint64_t id = cap.symbol_id != UINT64_MAX ? cap.symbol_id : symbolizer_->intern(cap.name);
-		proto.captures.push_back({id, cap.by_reference, prologue_slot(id, cap.outer_slot), cap.initializer != nullptr});
+		proto.captures.push_back({id, cap.by_reference, prologue_slot(id, cap.outer_slot), cap.initializer != nullptr, detail::is_weak_this_capture(cap)});
 		if (id == this_id) proto.captures_this = true;
 	}
 	for (const auto& cap : expr->captures) {
@@ -9556,29 +9558,9 @@ JAI_NOINLINE closure_proto vm_compiler::closure_proto_of(const std::shared_ptr<l
 		}
 	}
 
-	{
-		std::unordered_set<uint64_t> param_ids;
-		for (const auto& p : expr->parameters) {
-			param_ids.insert(p.symbol_id != UINT64_MAX ? p.symbol_id : symbolizer_->intern(p.name));
-		}
-		std::unordered_set<uint64_t> seen;
-		body_walker walker;
-		walker.symbolizer = symbolizer_;
-		walker.on_identifier = [&](identifier_expr* ident) {
-			if (ident->global_qualified || declared.count(ident->symbol_id)) return;
-			if (seen.insert(ident->symbol_id).second) {
-				proto.used_variables.push_back(ident->symbol_id);
-			}
-		};
-		walker.on_instance = [&]() {
-			if (seen.insert(this_id).second) { proto.used_variables.push_back(this_id); }
-		};
-		walker.stmt(proto.body);
-		proto.uses_instance = seen.count(this_id) != 0;
-		for (uint64_t sym : expr->chained_outer_names) {
-			if (!param_ids.count(sym) && seen.insert(sym).second) proto.used_variables.push_back(sym);
-		}
-	}
+	auto free = detail::free_names_of(*expr, symbolizer_);
+	proto.used_variables = std::move(free.names);
+	proto.uses_instance = free.uses_instance;
 	return proto;
 }
 

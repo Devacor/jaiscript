@@ -119,7 +119,7 @@ function main() -> int {
 		if (spent > worst) { worst = spent; }
 		if (LEVEL_DONE || (limit > 0 && GAME_TIC >= limit)) { break; }
 	}
-	int wall = run.elapsed() * 1000;
+	int wall = cast<int>(run.elapsed() * 1000);
 	if (wall < 1) { wall = 1; }
 	int played = GAME_TIC;
 	float mspt = 1.0 * wall / imax(1, played);

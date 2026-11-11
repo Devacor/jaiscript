@@ -51,7 +51,7 @@ public:
 		jai::dynamic_binder<host_node>(*a_engine, "HostNode")
 			.constructor<int64_t>()
 			.property("value", &host_node::value)
-			.property("left", &host_node::left, jai::skip_type_check)
+			.property("left", &host_node::left)
 			.build();
 		jai::dynamic_binder<host_gauge>(*a_engine, "HostGauge")
 			.constructor<int64_t>()

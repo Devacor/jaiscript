@@ -23,6 +23,7 @@
 #include <chrono>
 #include <memory>
 #include <deque>
+#include <exception>
 #include <new>
 #include <optional>
 #include <unordered_map>
@@ -1036,6 +1037,7 @@ namespace jai::vm {
             int call_depth = 0;                    // the depth at the try (no graft encloses a try): the handler restores it
             std::shared_ptr<environment> entry_env;
             std::shared_ptr<caught_error_scope> caught_scope;   // the handler's bound error: its thrown value dies with the record
+            const std::vector<std::string>* clause_types = nullptr;   // typed clauses only (op_try_types): what the handler takes
             size_t trace_grafts_below = SIZE_MAX;   // trace_grafts_through's sum under the owner frame, which cannot change while the record lives
         };
         std::vector<try_record> try_records_;
@@ -1742,6 +1744,13 @@ namespace jai::vm {
                 }
             }
             return nullptr;
+        }
+
+        // A caller frame asked while a call is being set up: environment_ may already be the callee's chain, so a frame with an
+        // environment of its own answers from the caller's
+        const class_definition* caller_access_context(const frame* caller_frame, const environment* caller_env) const {
+            if (caller_env && (!caller_frame || caller_frame->entry_env)) { return caller_env->find_access_context(); }
+            return caller_frame ? frame_access_context(*caller_frame) : nullptr;
         }
 
         // Caller context for builtins (reflect::set/invoke enforcement): a builtin call
@@ -2836,6 +2845,7 @@ namespace jai::vm {
         op_status exec_try_push(frame& f, const vm_instruction& ins);
         op_status exec_try_pop(frame& f, const vm_instruction& ins);
         op_status exec_catch_end(frame& f, const vm_instruction& ins);
+        op_status exec_fresh_cell(frame& f, const vm_instruction& ins);
         op_status exec_case_eq(frame& f, const vm_instruction& ins);
         void exec_switch_table(frame& f, const vm_instruction& ins);
         bool build_switch_table(frame& f, const chunk::switch_table& t);

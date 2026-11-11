@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="From JavaScript — JaiScript Language Bridges">
 <meta property="og:description" content="JavaScript beside JaiScript, idiom by idiom: what carries over, the habits that get a different answer (copies, ==, integer division, closures, map keys, array helpers), and a complete program.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/bridges/01-from-javascript.html">
+<meta property="og:url" content="https://jaiscript.com/bridges/01-from-javascript.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,96 +33,246 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html" class="active" aria-current="page">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges</summary><ol class="chapter-list"><li class="current"><a href="../bridges/01-from-javascript.html" aria-current="page">From JavaScript</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Language Bridges<span class="sidebar-current">From JavaScript</span></summary><ol class="chapter-list"><li class="current"><a href="../bridges/01-from-javascript.html" aria-current="page">From JavaScript</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../bridges/02-from-cpp.html">From C++</a></li><li><a href="../bridges/03-from-csharp.html">From C#</a></li></ol></details><details class="sidebar-box" open><summary class="sidebar-title">Code Migrations</summary><ol class="chapter-list" style="counter-reset: ch 3"><li><a href="../bridges/04-from-cereal.html">From Cereal</a></li><li><a href="../bridges/05-from-boost-signals2.html">From Boost.Signals2</a></li><li><a href="../bridges/06-from-chaiscript.html">From ChaiScript Bindings</a></li><li><a href="../bridges/07-from-sol2.html">From sol2 (Lua) Bindings</a></li><li><a href="../bridges/08-from-squirrel.html">From Squirrel Bindings</a></li><li><a href="../bridges/09-from-pybind11.html">From pybind11 and Boost.Python</a></li><li><a href="../bridges/10-from-nlohmann-json.html">From nlohmann::json</a></li><li><a href="../bridges/11-from-qt-properties.html">From Qt Properties, RTTR and refl-cpp</a></li><li><a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>01</nav>
 <article class="chapter"><h1 id="from-javascript">From JavaScript<a class="hlink" href="#from-javascript" aria-label="link">&#8203;</a></h1>
-<p class="lead">JaiScript takes two words from JavaScript: <code>var</code> for a variable that holds anything, and <code>function</code> for declaring one. Template strings with <code>${...}</code>, <code>null</code>, <code>?.</code>, array literals and <code>try</code>/<code>catch</code>/<code>throw</code> of any value read the same as well.</p>
-<p>Underneath, the contract is C++'s:</p>
-<ul>
-<li>Assignment copies (arrays and objects included).</li>
-<li><code>int</code> and <code>float</code> are separate types.</li>
-<li>A class declares its fields.</li>
-<li>A lambda names what it captures.</li>
-<li>A static checker reads the whole program before its first statement runs.</li>
-</ul>
-<p>This page sets the two languages side by side, then lists the places where a JavaScript habit gets a different answer. Every JaiScript line on it was run on both backends, and the output under each sample is what they printed.</p>
-<h2 id="side-by-side">Side by side<a class="hlink" href="#side-by-side" aria-label="link">&#8203;</a></h2>
-<h3 id="variables-and-types">Variables and types<a class="hlink" href="#variables-and-types" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>JavaScript</th><th>JaiScript</th></tr></thead><tbody><tr><td>holds anything</td><td><code>let x = 5; x = "five";</code></td><td><code>var x = 5; x = "five";</code>, or <code>let x = 5;</code>: <code>let</code> is the same word as <code>var</code></td></tr><tr><td>inferred once, then fixed</td><td>(TypeScript) <code>let n = 5;</code></td><td><code>auto n = 5;</code> is an <code>int</code> from then on</td></tr><tr><td>spelled out</td><td>(TypeScript) <code>let hp: number = 10;</code></td><td><code>int hp = 10;</code> <code>float speed = 2.5;</code> <code>string name = "Ada";</code> <code>bool alive = true;</code></td></tr><tr><td>numbers</td><td>one <code>number</code> type</td><td><code>int</code> (64-bit) and <code>float</code> (64-bit) are separate types: <code>7 / 2</code> is <code>3</code></td></tr><tr><td>constant</td><td><code>const MAX = 10;</code></td><td><code>const MAX = 10;</code> or <code>const int MAX = 10;</code>; assigning to it is a load error, <code>cannot assign to const 'MAX' (declared at 1:7)</code></td></tr><tr><td>what is it?</td><td><code>typeof x</code></td><td><code>type_of(x)</code>: <code>"int"</code>, <code>"float"</code>, <code>"string"</code>, <code>"array"</code>, <code>"map"</code>, <code>"null"</code>, or a class's name</td></tr><tr><td>nothing</td><td><code>null</code> and <code>undefined</code></td><td><code>null</code> only</td></tr><tr><td>destructuring</td><td><code>const [a, b] = arr;</code></td><td><code>auto [a, b] = arr;</code> or <code>const auto [a, b] = arr;</code> (extra elements ignored, missing ones null); <code>for (auto [k, v] : m)</code> over a map</td></tr><tr><td>spread</td><td><code>[...a, 3]</code>, <code>f(...args)</code></td><td>none: <code>array::concat(a, [3])</code> builds the array, and a call takes its arguments one by one</td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var x = 5;
-x = "five";                  // var holds anything
-auto n = 5;                  // inferred once: an int from here on
-int hp = 10;
-float speed = 2.5;
-string name = "Ada";
-print(type_of(x), " ", type_of(n), " ", type_of(speed), " ", type_of(null));
-print(7 / 2, " ", 7.0 / 2, " ", 7 / 2.0);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">string int float null
-3 3.5 3.5</code></pre></div>
-<p><code>auto n = 5; n = "five";</code> is a load error, the checker's answer to a type change it can see. The ladder from <code>var</code> to <code>int</code> is the subject of <a href="../guide/02-type-ladder.html">The Type Ladder</a>.</p>
-<h3 id="functions-and-closures">Functions and closures<a class="hlink" href="#functions-and-closures" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>JavaScript</th><th>JaiScript</th></tr></thead><tbody><tr><td>declaration</td><td><code>function add(a, b) { return a + b; }</code></td><td>the same; types are optional: <code>function add(int a, int b) -&gt; int</code>, or C++'s <code>int add(int a, int b)</code></td></tr><tr><td>default parameter</td><td><code>function hit(dmg = 5)</code></td><td><code>function hit(int dmg = 5)</code></td></tr><tr><td>arrow function</td><td><code>x =&gt; x * 2</code></td><td>the same: <code>x =&gt; x * 2</code>, <code>(int a, int b) =&gt; a + b</code>, <code>(x) =&gt; { return x * 2; }</code>; it shares the variables around it, as <code>function(...)</code> does</td></tr><tr><td>closure over a local</td><td><code>() =&gt; count++</code></td><td><code>() =&gt; { count++; }</code>, <code>function() { count++; }</code> or <code>[&amp;]() { count++; }</code> shares the variable; <code>[=]</code> or <code>[count]</code> copies it</td></tr><tr><td>top-level variable in a function</td><td>read when the function runs</td><td>the same: functions and lambdas read program-scope variables when they run</td></tr><tr><td>function value</td><td><code>const f = add; f(1, 2);</code></td><td><code>const f = add; f(1, 2);</code> or <code>var f = add;</code></td></tr><tr><td>rest parameters</td><td><code>function f(...xs)</code></td><td>none in script; a host (C++) function can take any number of arguments</td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function add(a, b) { return a + b; }
-int add_ints(int a, int b) { return a + b; }
-function hit(int dmg = 5) { return dmg; }
-var f = add;
-auto twice = x =&gt; x * 2;
-
-int total = 0;                                    // a program-scope variable
-function bank(int n) { total += n; }              // read and written when bank runs
-
-function make_counter() {
-    int count = 0;
-    return [&amp;]() { count += 1; return count; };   // [&amp;] shares count with the closure
+<p class="lead">JaiScript shares JavaScript's surface: <code>var</code>, <code>let</code> and <code>function</code>, arrow functions, template strings with <code>${...}</code>, <code>null</code>, <code>?.</code> and <code>??</code>, array literals, and <code>try</code>/<code>catch</code>/<code>throw</code> of any value.</p>
+<p>Underneath, the contract is C++'s, and five differences account for most surprises:</p>
+<ul><li><strong>Assignment copies,</strong> arrays and objects included. Sharing is explicit: a handle (<code>new</code>) or a reference (<code>auto&amp;</code>).</li><li><strong><code>int</code> and <code>float</code> are separate types,</strong> and nothing converts between text and numbers on its own.</li><li><strong>A method changes its receiver.</strong> <code>a.sort()</code>, <code>a.filter(f)</code> and <code>s.to_upper()</code> work in place and return nothing; <code>array::filter(a, f)</code> and <code>string::to_upper(s)</code> return copies.</li><li><strong>A class declares its fields, and a map is not an object:</strong> a key is read with <code>m["key"]</code>, never <code>m.key</code>.</li><li><strong>A static checker reads the whole program before its first statement runs,</strong> so many mistakes stop the load instead of surfacing later.</li></ul>
+<h2 id="ported">Ported side by side<a class="hlink" href="#ported" aria-label="link">&#8203;</a></h2>
+<p>Five small JavaScript programs and their JaiScript ports. Each pair was run, with Node and on both JaiScript backends, and printed the output shown. The ports use the JavaScript spellings JaiScript shares (<code>let</code>, <code>const</code>, <code>function</code>, arrow functions, <code>??</code>); <a href="../guide/06-functions.html#declaration-forms">Functions</a> sets them beside the C++ ones.</p>
+<h3 id="port-a">An array pipeline<a class="hlink" href="#port-a" aria-label="link">&#8203;</a></h3>
+<div class="tabs" id="port-a-tabs">
+<div class="tab-list" role="tablist" aria-label="JavaScript and its JaiScript port" hidden>
+<button type="button" role="tab" id="port-a-tab-js" aria-controls="port-a-js" aria-selected="true">JavaScript</button>
+<button type="button" role="tab" id="port-a-tab-jai" aria-controls="port-a-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="port-a-js" role="tabpanel" aria-labelledby="port-a-tab-js" tabindex="0">
+<div class="codeblock cb-plain"><span class="cb-label">javascript</span><pre><code class="lang-plain">const scores = [72, 95, 40, 88, 61];
+const passed = scores.filter(s =&gt; s &gt;= 60).map(s =&gt; s + 5);
+passed.sort((a, b) =&gt; b - a);
+const total = passed.reduce((sum, s) =&gt; sum + s, 0);
+console.log(`passed: ${passed.join(", ")}`);
+console.log(`average: ${(total / passed.length).toFixed(1)}`);
+console.log(`best: ${passed[0]}, any perfect: ${passed.some(s =&gt; s === 100)}`);</code></pre></div>
+</div>
+<div class="tab-panel" id="port-a-jai" role="tabpanel" aria-labelledby="port-a-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">const scores = [72, 95, 40, 88, 61];
+let passed = array::map(array::filter(scores, s =&gt; s &gt;= 60), s =&gt; s + 5);
+passed.sort((a, b) =&gt; a &gt; b);
+const total = passed.reduce((sum, s) =&gt; sum + s, 0);
+print(`passed: ${passed.join(", ")}`);
+print(`average: ${1.0 * total / passed.size():.1f}`);
+print(`best: ${passed[0]}, any perfect: ${passed.some(s =&gt; s == 100)}`);</code></pre></div>
+</div>
+</div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">passed: 100, 93, 77, 66
+average: 84.0
+best: 100, any perfect: true</code></pre></div>
+<ul><li><code>filter</code> and <code>map</code> as methods work in place, so a pipeline that builds new arrays calls <code>array::filter</code> and <code>array::map</code>.</li><li>A sort comparator answers "does a go first?" with a bool. <code>/</code> on two ints is integer division, hence <code>1.0 *</code>, and a format spec replaces <code>toFixed</code>.</li></ul>
+<h3 id="port-b">A class and a list of instances<a class="hlink" href="#port-b" aria-label="link">&#8203;</a></h3>
+<div class="tabs" id="port-b-tabs">
+<div class="tab-list" role="tablist" aria-label="JavaScript and its JaiScript port" hidden>
+<button type="button" role="tab" id="port-b-tab-js" aria-controls="port-b-js" aria-selected="true">JavaScript</button>
+<button type="button" role="tab" id="port-b-tab-jai" aria-controls="port-b-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="port-b-js" role="tabpanel" aria-labelledby="port-b-tab-js" tabindex="0">
+<div class="codeblock cb-plain"><span class="cb-label">javascript</span><pre><code class="lang-plain">class Monster {
+  constructor(name, hp) { this.name = name; this.hp = hp; }
+  hit(damage) { this.hp = Math.max(0, this.hp - damage); }
 }
-auto next = make_counter();
-next();
-bank(5);
-bank(2);
-print(f(1, 2), " ", add_ints(2, 3), " ", hit(), " ", hit(9), " ", twice(21), " ", next(), " ", total);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 5 5 9 42 2 7</code></pre></div>
-<p>A shared (<code>[&amp;]</code>) capture outlives the function that made it, so the counter is safe to return. Capture lists are exhaustive: <a href="../guide/06-functions.html#lambdas-and-captures">Functions &amp; Lambdas</a> has the whole set.</p>
-<h3 id="arrays-and-maps">Arrays and maps<a class="hlink" href="#arrays-and-maps" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>JavaScript</th><th>JaiScript</th></tr></thead><tbody><tr><td>array literal</td><td><code>[1, 2, 3]</code></td><td><code>[1, 2, 3]</code>; <code>array&lt;int&gt;</code> pins the element type</td></tr><tr><td>length</td><td><code>a.length</code></td><td><code>a.size()</code> (a method; <code>a.length()</code> is the same)</td></tr><tr><td>add, remove</td><td><code>a.push(x)</code>, <code>a.pop()</code></td><td><code>a.push(x)</code>, <code>a.pop()</code>, <code>a.remove(i)</code> by index</td></tr><tr><td>search</td><td><code>a.indexOf(x)</code>, <code>a.includes(x)</code></td><td><code>a.index_of(x)</code> (-1 when absent), <code>a.contains(x)</code></td></tr><tr><td>copy a range</td><td><code>a.slice(1, 3)</code></td><td><code>array::slice(a, 1, 3)</code>; end defaults to size. <code>a.slice</code> changes the input</td></tr><tr><td>filter</td><td><code>a.filter(x =&gt; x &gt; 2)</code></td><td><code>array::filter(a, x =&gt; x &gt; 2)</code> returns a copy; <code>a.filter</code> changes the input</td></tr><tr><td>sort</td><td><code>a.sort((x, y) =&gt; x - y)</code></td><td><code>a.sort()</code> orders numbers by value; <code>a.sort((x, y) =&gt; x &lt; y)</code> takes a comparator that answers "does x go first?"</td></tr><tr><td>map, reduce, forEach</td><td><code>a.map(f)</code>, <code>a.reduce(f, 0)</code>, <code>a.forEach(f)</code></td><td><code>array::map(a, f)</code> returns a copy; <code>a.map(f)</code> changes the input. <code>a.reduce(f, 0)</code> and <code>a.for_each(f)</code> match their JS roles</td></tr><tr><td>find, findIndex</td><td><code>a.find(f)</code>, <code>a.findIndex(f)</code></td><td><code>a.find(f)</code> (null when none matches), <code>a.find_index(f)</code> (-1 when none does)</td></tr><tr><td>some, every</td><td><code>a.some(f)</code>, <code>a.every(f)</code></td><td>the same</td></tr><tr><td>concat, splice</td><td><code>a.concat(b)</code>, <code>a.splice(i, 0, x)</code></td><td><code>array::concat(a, b)</code> returns a new array; <code>a.concat(b)</code> appends in place; <code>a.insert(i, x)</code> inserts in place</td></tr><tr><td>join</td><td><code>a.join(", ")</code></td><td><code>a.join(", ")</code></td></tr><tr><td>object literal</td><td><code>{hp: 10, name: "Ada"}</code></td><td>a map: <code>{"hp": 10, "name": "Ada"}</code></td></tr><tr><td>read, write a key</td><td><code>o.hp</code>, <code>o.hp = 5</code></td><td><code>m["hp"]</code>, <code>m["hp"] = 5</code></td></tr><tr><td>has, delete</td><td><code>"hp" in o</code>, <code>delete o.hp</code></td><td><code>m.contains("hp")</code>, <code>m.erase("hp")</code></td></tr><tr><td>keys</td><td><code>Object.keys(o)</code></td><td><code>m.keys()</code>, in key order</td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto nums = [5, 3, 8, 1];
-nums.push(4);
-print(nums.size(), " ", nums.index_of(8), " ", nums.contains(7), " ", to_json(array::slice(nums, 1, 3)));
-auto big = array::filter(nums, x =&gt; x &gt; 3);
-big.sort();
-print(to_json(big), " ", big.join("-"));
-int dbl(int v) { return v * 2; }
-print(to_json(array::map(nums, dbl)));
+const pack = [new Monster("orc", 30), new Monster("bat", 8)];
+const boss = pack[0];
+for (const m of pack) { m.hit(10); }
+boss.hit(5);
+for (const m of pack) { console.log(`${m.name}: ${m.hp}`); }</code></pre></div>
+</div>
+<div class="tab-panel" id="port-b-jai" role="tabpanel" aria-labelledby="port-b-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Monster {
+    string name;
+    int hp = 0;
+    Monster(string n, int h) { name = n; hp = h; }
+    function hit(int damage) { hp = math::max(0, hp - damage); }
+}
+let pack = [new Monster("orc", 30), new Monster("bat", 8)];   // new: shared objects, as in JavaScript
+let boss = pack[0];
+for (let m : pack) { m.hit(10); }
+boss.hit(5);
+for (let m : pack) { print(`${m.name}: ${m.hp}`); }</code></pre></div>
+</div>
+</div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">orc: 15
+bat: 0</code></pre></div>
+<ul><li>Fields are declared with their types, the constructor is named after the class, and a method reads <code>hp</code> without <code>this</code>.</li><li><code>new Monster(...)</code> makes a shared object, as every JavaScript object is, so <code>pack</code> and <code>boss</code> reach the same orc. Without <code>new</code> an array holds values and assignment copies:</li></ul>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Monster {
+    string name;
+    int hp = 0;
+    Monster(string n, int h) { name = n; hp = h; }
+    function hit(int damage) { hp = math::max(0, hp - damage); }
+}
+let values = [Monster("orc", 30), Monster("bat", 8)];         // without new: the array holds values
+let copy = values[0];                                         // a copy of the orc
+for (auto&amp; m : values) { m.hit(10); }                         // auto&amp; reaches the elements
+copy.hit(5);
+print(`${values[0].hp} ${copy.hp}`);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">20 25</code></pre></div>
+<h3 id="port-c">Closures and callbacks<a class="hlink" href="#port-c" aria-label="link">&#8203;</a></h3>
+<div class="tabs" id="port-c-tabs">
+<div class="tab-list" role="tablist" aria-label="JavaScript and its JaiScript port" hidden>
+<button type="button" role="tab" id="port-c-tab-js" aria-controls="port-c-js" aria-selected="true">JavaScript</button>
+<button type="button" role="tab" id="port-c-tab-jai" aria-controls="port-c-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="port-c-js" role="tabpanel" aria-labelledby="port-c-tab-js" tabindex="0">
+<div class="codeblock cb-plain"><span class="cb-label">javascript</span><pre><code class="lang-plain">function makeCounter(step = 1) {
+  let count = 0;
+  return () =&gt; { count += step; return count; };
+}
+const next = makeCounter();
+const byTen = makeCounter(10);
+next(); next();
+const callbacks = [];
+for (let i = 0; i &lt; 3; i++) { callbacks.push(() =&gt; i * i); }
+console.log(next(), byTen(), callbacks.map(cb =&gt; cb()).join(" "));</code></pre></div>
+</div>
+<div class="tab-panel" id="port-c-jai" role="tabpanel" aria-labelledby="port-c-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function make_counter(step = 1) {
+    let count = 0;
+    return () =&gt; { count += step; return count; };
+}
+const next = make_counter();
+const by_ten = make_counter(10);
+next(); next();
+let callbacks = [];
+for (let i = 0; i &lt; 3; i++) { callbacks.push(() =&gt; i * i); }
+print(next(), " ", by_ten(), " ", array::map(callbacks, cb =&gt; cb()).join(" "));</code></pre></div>
+</div>
+</div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 10 0 1 4</code></pre></div>
+<ul><li>Nothing changes but the names and <code>print</code>: an arrow function shares the variables around it, and the loop's <code>i</code> is each iteration's own, as with <code>let</code> in JavaScript.</li></ul>
+<h3 id="port-d">A dictionary<a class="hlink" href="#port-d" aria-label="link">&#8203;</a></h3>
+<div class="tabs" id="port-d-tabs">
+<div class="tab-list" role="tablist" aria-label="JavaScript and its JaiScript port" hidden>
+<button type="button" role="tab" id="port-d-tab-js" aria-controls="port-d-js" aria-selected="true">JavaScript</button>
+<button type="button" role="tab" id="port-d-tab-jai" aria-controls="port-d-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="port-d-js" role="tabpanel" aria-labelledby="port-d-tab-js" tabindex="0">
+<div class="codeblock cb-plain"><span class="cb-label">javascript</span><pre><code class="lang-plain">const stock = new Map([["arrow", 20], ["potion", 3]]);
+stock.set("rope", 1);
+stock.set("arrow", stock.get("arrow") - 5);
+for (const [item, count] of stock) { console.log(`${item} x${count}`); }
+console.log(stock.get("sword") ?? 0, stock.has("rope"), stock.size);
 
-var hero = {"hp": 10, "name": "Ada"};
-hero["hp"] = 15;
-hero["level"] = 2;
-hero.erase("name");
-print(to_json(hero), " ", hero.contains("hp"), " ", to_json(hero.keys()));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">5 2 false [3,8]
-[4,5,8] 4-5-8
-[10,6,16,2,8]
-{"hp":15,"level":2} true ["hp","level"]</code></pre></div>
-<p><code>hero</code> is a <code>var</code>: an <code>auto</code> map literal must hold one value type, and <code>{"hp": 10, "name": "Ada"}</code> holds two. <a href="../guide/09-containers-strings.html">Containers &amp; Strings</a> lists every array, map and string method.</p>
-<h3 id="control-flow">Control flow<a class="hlink" href="#control-flow" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>JavaScript</th><th>JaiScript</th></tr></thead><tbody><tr><td>for-of</td><td><code>for (const x of xs)</code></td><td><code>for (const auto x : xs)</code> or <code>for (auto x : xs)</code>; <code>for (auto&amp; x : xs)</code> changes the elements</td></tr><tr><td>entries</td><td><code>for (const [k, v] of Object.entries(o))</code></td><td><code>for (auto [k, v] : m)</code>; <code>for (auto&amp; [k, v] : m)</code> makes <code>v</code> the entry's value</td></tr><tr><td>if, while, classic for</td><td>the same</td><td>the same</td></tr><tr><td>do ... while</td><td><code>do { ... } while (c);</code></td><td>the same: <code>do { ... } while (c);</code></td></tr><tr><td>switch</td><td>falls through without <code>break</code></td><td>breaks by default; <code>fallthrough;</code> continues into the next case</td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var inventory = {"potion": 3, "arrow": 20};
-for (auto [item, count] : inventory) { print(item, " x", count); }
-var names = ["ada", "bo"];
-for (auto&amp; n : names) { n = n + "!"; }
-print(names.join(" "));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">arrow x20
+const seen = {};
+for (const word of "the cat and the hat".split(" ")) { seen[word] = (seen[word] ?? 0) + 1; }
+console.log(Object.keys(seen).sort().map(w =&gt; `${w}=${seen[w]}`).join(" "));</code></pre></div>
+</div>
+<div class="tab-panel" id="port-d-jai" role="tabpanel" aria-labelledby="port-d-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">let stock = {"arrow": 20, "potion": 3};
+stock["rope"] = 1;
+stock["arrow"] = stock["arrow"] - 5;
+for (let [item, count] : stock) { print(`${item} x${count}`); }
+print(stock.get("sword") ?? 0, " ", stock.has("rope"), " ", stock.size());
+
+let seen = {};
+for (let word : "the cat and the hat".split(" ")) { seen[word] = (seen.get(word) ?? 0) + 1; }
+print(array::map(seen.keys(), w =&gt; `${w}=${seen[w]}`).join(" "));</code></pre></div>
+</div>
+</div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">arrow x15
 potion x3
-ada! bo!</code></pre></div>
-<h3 id="classes">Classes<a class="hlink" href="#classes" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>JavaScript</th><th>JaiScript</th></tr></thead><tbody><tr><td>fields</td><td>assigned in the constructor</td><td>declared with a type and an initializer: <code>int hp = 10;</code></td></tr><tr><td>constructor</td><td><code>constructor(name) { this.name = name; }</code></td><td>a method named after the class: <code>Hero(string n) { name = n; }</code></td></tr><tr><td>new instance</td><td><code>new Hero("Ada")</code></td><td><code>Hero("Ada")</code> is a value; <code>new Hero("Ada")</code> is a shared handle</td></tr><tr><td>inheritance</td><td><code>class Mage extends Hero</code></td><td><code>class Mage : Hero</code></td></tr><tr><td>base constructor</td><td><code>super(name);</code></td><td><code>Mage(string n) : super(n) {}</code></td></tr><tr><td>override</td><td>implicit</td><td>required: <code>string describe() override { ... }</code></td></tr><tr><td>call the base</td><td><code>super.describe()</code></td><td><code>super::describe()</code></td></tr><tr><td>this</td><td><code>this.hp</code>, always</td><td><code>this.hp</code>, or just <code>hp</code></td></tr><tr><td>private</td><td><code>#gold</code></td><td>a <code>private:</code> section, reachable from the class and its subclasses</td></tr><tr><td>getter, setter</td><td><code>get wealth() {}</code>, <code>set wealth(v) {}</code></td><td><code>_get_wealth()</code> and <code>_set_wealth(v)</code>; <code>obj.wealth</code> goes through them</td></tr><tr><td>static</td><td><code>static count = 0;</code> and <code>Hero.count</code></td><td><code>static int count = 0;</code> and <code>Hero::count</code></td></tr><tr><td>method as a value</td><td><code>const f = hero.heal.bind(hero);</code></td><td><code>var f = reflect::bind(hero, "heal");</code>, or a lambda; <code>hero.heal</code> without a call is an error</td></tr><tr><td>operators</td><td>none</td><td>a class declares them: <code>Vec operator+(Vec o)</code>, <code>bool operator==(Vec o)</code></td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Hero {
+rope x1
+0 true 3
+and=1 cat=1 hat=1 the=2</code></pre></div>
+<ul><li>A map literal with <code>[]</code> access replaces both <code>Map</code> and the object used as a dictionary. It iterates in key order, where a <code>Map</code> iterates in insertion order (here the two coincide).</li><li><code>stock["sword"]</code> on a missing key raises <code>Key "sword" not found in map</code> where JavaScript gives <code>undefined</code>; <code>get</code> answers null, so <code>get(k) ?? 0</code> reads a default.</li></ul>
+<h3 id="port-e">A generator and a thrown class<a class="hlink" href="#port-e" aria-label="link">&#8203;</a></h3>
+<div class="tabs" id="port-e-tabs">
+<div class="tab-list" role="tablist" aria-label="JavaScript and its JaiScript port" hidden>
+<button type="button" role="tab" id="port-e-tab-js" aria-controls="port-e-js" aria-selected="true">JavaScript</button>
+<button type="button" role="tab" id="port-e-tab-jai" aria-controls="port-e-jai" aria-selected="false" tabindex="-1">JaiScript</button>
+</div>
+<div class="tab-panel" id="port-e-js" role="tabpanel" aria-labelledby="port-e-tab-js" tabindex="0">
+<div class="codeblock cb-plain"><span class="cb-label">javascript</span><pre><code class="lang-plain">class ParseError extends Error {
+  constructor(line, text) { super(`line ${line}: ${text}`); this.line = line; }
+}
+function* numbers(lines) {
+  let n = 0;
+  for (const text of lines) {
+    n++;
+    if (isNaN(Number(text))) { throw new ParseError(n, `"${text}" is not a number`); }
+    yield Number(text);
+  }
+}
+let sum = 0;
+try {
+  for (const value of numbers(["4", "8", "x", "15"])) { sum += value; }
+} catch (e) {
+  if (!(e instanceof ParseError)) { throw e; }
+  console.log(`parse error, ${e.message}`);
+}
+console.log(`sum so far: ${sum}`);</code></pre></div>
+</div>
+<div class="tab-panel" id="port-e-jai" role="tabpanel" aria-labelledby="port-e-tab-jai" tabindex="0">
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class ParseError {
+    int line;
+    string message;
+    ParseError(int l, string text) { line = l; message = `line ${l}: ${text}`; }
+}
+coroutine numbers(lines) {
+    let n = 0;
+    for (let text : lines) {
+        n++;
+        if (text.to_int() == null) { throw ParseError(n, `"${text}" is not a number`); }
+        yield text.to_int();
+    }
+}
+let sum = 0;
+try {
+    for (let value : numbers(["4", "8", "x", "15"])) { sum += value; }
+} catch (ParseError e) {
+    print(`parse error, ${e.message}`);
+}
+print(`sum so far: ${sum}`);</code></pre></div>
+</div>
+</div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">parse error, line 3: "x" is not a number
+sum so far: 12</code></pre></div>
+<ul><li><code>function*</code> becomes <code>coroutine</code>, and a range-<code>for</code> drives it. Any value can be thrown, so the error class extends nothing.</li><li><code>catch (ParseError e)</code> selects by type, which replaces the <code>instanceof</code> test and the rethrow. <code>to_int()</code> answers null for text that is not a number.</li><li><code>e instanceof ParseError</code> is JaiScript too, for a class or any class derived from it.</li></ul>
+<h2 id="side-by-side">Feature by feature<a class="hlink" href="#side-by-side" aria-label="link">&#8203;</a></h2>
+<h3 id="variables-and-types">Variables, types and functions</h3>
+<div class="tablewrap"><table><thead><tr><th></th><th>JavaScript</th><th>JaiScript</th></tr></thead><tbody><tr><td>holds anything</td><td><code>let x = 5; x = "five";</code></td><td>the same, or <code>var x = 5;</code>: <code>let</code> and <code>var</code> are one word</td></tr><tr><td>inferred once, then fixed</td><td>(TypeScript) <code>let n = 5;</code></td><td><code>auto n = 5;</code> is an <code>int</code> from then on; <code>n = "five"</code> is a load error</td></tr><tr><td>spelled out</td><td>(TypeScript) <code>let hp: number = 10;</code></td><td><code>int hp = 10;</code> <code>float speed = 2.5;</code> <code>string name = "Ada";</code> <code>bool alive = true;</code></td></tr><tr><td>numbers</td><td>one <code>number</code> type</td><td><code>int</code> and <code>float</code>, both 64-bit: <code>7 / 2</code> is <code>3</code>, <code>7 / 2.0</code> is <code>3.5</code></td></tr><tr><td>constant</td><td><code>const MAX = 10;</code></td><td><code>const MAX = 10;</code> or <code>const int MAX = 10;</code>; assigning to it is a load error</td></tr><tr><td>what is it?</td><td><code>typeof x</code></td><td><code>type_of(x)</code>: <code>"int"</code>, <code>"float"</code>, <code>"string"</code>, <code>"array"</code>, <code>"map"</code>, <code>"null"</code>, or a class's name</td></tr><tr><td>nothing</td><td><code>null</code> and <code>undefined</code></td><td><code>null</code> only</td></tr><tr><td>destructuring</td><td><code>const [a, b] = arr;</code></td><td><code>auto [a, b] = arr;</code> (extra elements ignored, missing ones null)</td></tr><tr><td>spread, rest</td><td><code>[...a, 3]</code>, <code>f(...args)</code>, <code>function f(...xs)</code></td><td>none: <code>array::concat(a, [3])</code>; a call passes its arguments one by one</td></tr><tr><td>function</td><td><code>function add(a, b) { return a + b; }</code></td><td>the same; types are optional: <code>function add(int a, int b) -&gt; int</code>, or C++'s <code>int add(int a, int b)</code></td></tr><tr><td>default parameter</td><td><code>function hit(dmg = 5)</code></td><td><code>function hit(int dmg = 5)</code></td></tr><tr><td>arrow function</td><td><code>x =&gt; x * 2</code></td><td>the same: <code>x =&gt; x * 2</code>, <code>(int a, int b) =&gt; a + b</code>, <code>(x) =&gt; { return x * 2; }</code></td></tr><tr><td>closure</td><td><code>() =&gt; count++</code></td><td>an arrow function or <code>function() { ... }</code> shares the variables around it; a C++ lambda names its captures: <code>[&amp;]</code> shares, <code>[=]</code> or <code>[count]</code> copies</td></tr><tr><td>function value</td><td><code>const f = add; f(1, 2);</code></td><td>the same</td></tr></tbody></table></div>
+<h3 id="arrays-and-maps">Arrays, maps and strings</h3>
+<div class="tablewrap"><table><thead><tr><th></th><th>JavaScript</th><th>JaiScript</th></tr></thead><tbody><tr><td>array literal</td><td><code>[1, 2, 3]</code></td><td><code>[1, 2, 3]</code>; <code>array&lt;int&gt;</code> pins the element type</td></tr><tr><td>length</td><td><code>a.length</code>, <code>s.length</code></td><td><code>a.size()</code>, <code>s.size()</code> (bytes; a <code>utf8_string</code> counts characters)</td></tr><tr><td>add, remove</td><td><code>a.push(x)</code>, <code>a.pop()</code>, <code>a.splice(i, 1)</code></td><td><code>a.push(x)</code>, <code>a.pop()</code>, <code>a.remove(i)</code>, <code>a.insert(i, x)</code>; there is no <code>shift</code></td></tr><tr><td>search</td><td><code>a.indexOf(x)</code>, <code>a.includes(x)</code></td><td><code>a.index_of(x)</code> (-1 when absent), <code>a.contains(x)</code></td></tr><tr><td>slice, filter, map, concat</td><td><code>a.slice(1, 3)</code>, <code>a.filter(f)</code>, <code>a.map(f)</code>, <code>a.concat(b)</code></td><td><code>array::slice(a, 1, 3)</code>, <code>array::filter(a, f)</code>, <code>array::map(a, f)</code>, <code>array::concat(a, b)</code>. The dot forms change <code>a</code> and return nothing.</td></tr><tr><td>sort</td><td><code>a.sort((x, y) =&gt; x - y)</code></td><td><code>a.sort()</code> orders numbers by value; a comparator answers "does x go first?": <code>a.sort((x, y) =&gt; x &lt; y)</code></td></tr><tr><td>reduce, forEach, find, findIndex, some, every</td><td><code>a.reduce(f, 0)</code>, <code>a.forEach(f)</code>, ...</td><td><code>a.reduce(f, 0)</code>, <code>a.for_each(f)</code>, <code>a.find(f)</code> (null when none), <code>a.find_index(f)</code> (-1), <code>a.some(f)</code>, <code>a.every(f)</code></td></tr><tr><td>join</td><td><code>a.join(", ")</code></td><td>the same</td></tr><tr><td>object literal</td><td><code>{hp: 10, name: "Ada"}</code></td><td>a map: <code>{"hp": 10, "name": "Ada"}</code>; a bare name before the colon is the key's text</td></tr><tr><td>read, write a key</td><td><code>o.hp</code>, <code>o.hp = 5</code></td><td><code>m["hp"]</code>, <code>m["hp"] = 5</code>; reading a missing key raises, <code>m.get("hp")</code> answers null</td></tr><tr><td>has, delete, keys</td><td><code>"hp" in o</code>, <code>delete o.hp</code>, <code>Object.keys(o)</code></td><td><code>m.contains("hp")</code>, <code>m.erase("hp")</code>, <code>m.keys()</code> (in key order, as iteration is)</td></tr><tr><td>upper case</td><td><code>s.toUpperCase()</code> returns a new string</td><td><code>s.to_upper()</code> changes <code>s</code>; <code>string::to_upper(s)</code> returns a new one</td></tr><tr><td>to number, to string</td><td><code>Number("42")</code>, <code>String(x)</code></td><td><code>"42".to_int()</code>, <code>"2.5".to_float()</code> (null when the text is not a number); <code>to_string(x)</code></td></tr><tr><td>template string</td><td><code>`${name} has ${n}`</code></td><td>the same, with format specs: <code>`${hp:.1f}`</code></td></tr><tr><td>regular expression</td><td><code>/(\d+)-(\d+)/g</code>, <code>s.match(re)</code>, <code>s.replace(re, "$2")</code></td><td><code>regex(R"((\d+)-(\d+))")</code>; <code>r.search(s)</code> for one match, <code>r.find_all(s)</code> for all (no <code>g</code> flag), <code>r.replace(s, "$2")</code>. Matching is linear-time, so lookaround and backreferences are errors (<a href="../guide/09-containers-strings.html#regular-expressions">Regular expressions</a>).</td></tr><tr><td>JSON</td><td><code>JSON.stringify(o)</code>, <code>JSON.parse(s)</code></td><td><code>to_json(v)</code>, <code>from_json(s)</code></td></tr><tr><td>log</td><td><code>console.log(a, b)</code></td><td><code>print(a, b)</code> joins with no separator and shows a container's contents; <code>print("{} {}", a, b)</code> formats. Only a string literal written first is a format string.</td></tr><tr><td>Math</td><td><code>Math.floor(x)</code>, <code>Math.PI</code></td><td><code>math::floor(x)</code>, <code>math::PI</code></td></tr></tbody></table></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto nums = [5, 3, 8, 1];
+nums.push(4);
+auto big = array::filter(nums, x =&gt; x &gt; 3);      // a copy; nums.filter(f) would change nums
+big.sort();
+print(nums.size(), " ", nums.index_of(8), " ", big, " ", array::map(big, x =&gt; x * 2), " ", big.reduce((sum, x) =&gt; sum + x, 0));
+var hero = {hp: 10, name: "Ada"};                // var: the values are of two types
+hero["hp"] = 15;
+hero.erase("name");
+print(hero, " ", hero.contains("hp"), " ", hero.get("mana"), " ", hero.keys());
+string name = "ada";
+name.to_upper();                                 // changes name, returns nothing
+print(name, " ", string::to_lower(name), " ", "42".to_int() + 1, " ", `hp ${72.25:.1f}`);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">5 2 [4, 5, 8] [8, 10, 16] 17
+{"hp": 15} true null ["hp"]
+ADA ada 43 hp 72.2</code></pre></div>
+<h3 id="control-flow">Control flow, errors and null</h3>
+<div class="tablewrap"><table><thead><tr><th></th><th>JavaScript</th><th>JaiScript</th></tr></thead><tbody><tr><td>for-of</td><td><code>for (const x of xs)</code></td><td><code>for (const x : xs)</code>, or <code>for (auto x : xs)</code>; <code>for (auto&amp; x : xs)</code> changes the elements. Over an array of <code>new</code> objects <code>for (const m : pack) { m.hit(10); }</code> behaves as JavaScript&#x27;s does: <code>m</code> cannot be rebound and its object changes. Over an array of values <code>m</code> is a read-only copy</td></tr>
+<tr><td>is it a T?</td><td><code>x instanceof T</code></td><td>the same, for a class and the classes derived from it; false for a value that is no object</td></tr><tr><td>entries</td><td><code>for (const [k, v] of Object.entries(o))</code></td><td><code>for (const [k, v] : m)</code> or <code>for (auto [k, v] : m)</code>; with <code>auto&amp;</code>, <code>v</code> is the entry's value</td></tr><tr><td>if, while, classic for, do-while</td><td></td><td>the same</td></tr><tr><td>switch</td><td>falls through without <code>break</code></td><td>breaks by default; <code>fallthrough;</code> continues into the next case, and <code>case 1: case 2:</code> share a body</td></tr><tr><td>throw</td><td><code>throw new Error("bad")</code></td><td><code>throw "bad";</code> (any value: a string, a number, an instance)</td></tr><tr><td>catch</td><td><code>catch (e) { e.message; e.stack; }</code></td><td><code>catch (e)</code>: <code>e</code> is the thrown value, with <code>e.message</code>, <code>e.line</code> and <code>e.stack</code>. <code>catch (Type e)</code> takes one type, and <code>catch (error e)</code> the engine's own errors, with <code>e.kind</code>.</td></tr><tr><td>finally</td><td><code>finally { ... }</code></td><td>none: a destructor, <code>~Guard()</code>, runs when its scope ends, a throw included</td></tr><tr><td>optional chaining</td><td><code>o?.f()</code>, <code>a?.b.c</code></td><td>the same; a null <code>o</code> skips the rest of the chain</td></tr><tr><td>nullish default</td><td><code>x ?? "none"</code>, <code>x ??= v</code></td><td>the same</td></tr><tr><td>generator</td><td><code>function* countdown() { yield 3; }</code></td><td><code>coroutine countdown() { yield 3; }</code>, driven by <code>h.next()</code> or a range-<code>for</code></td></tr><tr><td>async, await</td><td><code>await load()</code></td><td>none: a coroutine that the host advances with <code>next()</code></td></tr><tr><td>module</td><td><code>import { area } from "./geometry.js";</code></td><td><code>import "geometry.jai";</code>: its functions and classes join the program, and nothing is exported. An <code>import</code> reached again re-runs a module whose file changed. <code>include "part.jai";</code> runs a file's text where it stands.</td></tr></tbody></table></div>
+<h3 id="classes">Classes</h3>
+<div class="tablewrap"><table><thead><tr><th></th><th>JavaScript</th><th>JaiScript</th></tr></thead><tbody><tr><td>fields</td><td>assigned in the constructor</td><td>declared with a type and an initializer: <code>int hp = 10;</code></td></tr><tr><td>constructor</td><td><code>constructor(name) { this.name = name; }</code></td><td>a method named after the class: <code>Hero(string n) { name = n; }</code></td></tr><tr><td>new instance</td><td><code>new Hero("Ada")</code></td><td><code>Hero("Ada")</code> is a value, copied on assignment; <code>new Hero("Ada")</code> is a shared handle (<code>shared_ptr&lt;Hero&gt;</code>)</td></tr><tr><td>inheritance</td><td><code>class Mage extends Hero</code>, <code>super(name);</code></td><td><code>class Mage : Hero</code>, <code>Mage(string n) : super(n) {}</code></td></tr><tr><td>override</td><td>implicit; <code>super.describe()</code></td><td>required: <code>string describe() override { ... }</code>; <code>super::describe()</code></td></tr><tr><td>this</td><td><code>this.hp</code>, always</td><td><code>this.hp</code>, or just <code>hp</code></td></tr><tr><td>private</td><td><code>#gold</code></td><td>a <code>private:</code> section, reachable from the class and its subclasses</td></tr><tr><td>getter, setter</td><td><code>get wealth() {}</code>, <code>set wealth(v) {}</code></td><td><code>_get_wealth()</code> and <code>_set_wealth(v)</code>; <code>obj.wealth</code> goes through them</td></tr><tr><td>static</td><td><code>static count = 0;</code>, <code>Hero.count</code></td><td><code>static int count = 0;</code>, <code>Hero::count</code></td></tr><tr><td>method as a value</td><td><code>hero.heal.bind(hero)</code></td><td><code>reflect::bind(hero, "heal")</code>, or a lambda; <code>hero.heal</code> without a call is an error</td></tr><tr><td>operators</td><td>none</td><td>a class declares them: <code>Vec operator+(Vec o)</code>, <code>bool operator==(Vec o)</code></td></tr><tr><td>alias a variable, cast</td><td>none; <code>Number(x)</code></td><td><code>auto&amp; r = x;</code>, <code>int&amp;</code> and <code>var&amp;</code> parameters; <code>cast&lt;int&gt;(2.7)</code>, <code>cast&lt;Mage&amp;&gt;(h)</code></td></tr></tbody></table></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Hero {
 private:
     int gold = 0;
 public:
@@ -122,6 +280,7 @@ public:
     string name;
     int hp = 10;
     Hero(string n) { name = n; Hero::count += 1; }
+    ~Hero() { print(name, " leaves"); }
     string describe() { return `${name} (${hp} hp)`; }
     int _get_wealth() { return gold; }
     void _set_wealth(int v) { gold = v &lt; 0 ? 0 : v; }
@@ -131,280 +290,65 @@ class Mage : Hero {
     Mage(string n) : super(n) {}
     string describe() override { return `${super::describe()} with ${mana} mana`; }
 }
-auto a = Hero("Ada");
-auto m = Mage("Merlin");
-a.wealth = 120;
-m.wealth = -5;
-print(a.describe());
-print(m.describe());
-print(a.wealth, " ", m.wealth, " ", Hero::count);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Ada (10 hp)
-Merlin (10 hp) with 30 mana
-120 0 2</code></pre></div>
-<p><a href="../guide/07-classes.html">Classes</a> covers constructors, accessors, statics and hot reload.</p>
-<h3 id="errors-strings-and-null">Errors, strings and null<a class="hlink" href="#errors-strings-and-null" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>JavaScript</th><th>JaiScript</th></tr></thead><tbody><tr><td>throw</td><td><code>throw new Error("bad")</code></td><td><code>throw "bad";</code> (any value: a string, a number, an instance)</td></tr><tr><td>catch</td><td><code>catch (e) { e.message; e.stack; }</code></td><td><code>catch (e) { e.message; e.stack; e.value; }</code>; <code>e</code> itself reads as the message</td></tr><tr><td>finally</td><td><code>finally { ... }</code></td><td>none: a destructor, <code>~Guard()</code>, runs when its scope ends, a throw included</td></tr><tr><td>template string</td><td><code>`${name} has ${n}`</code></td><td>the same, with format specs: <code>`${hp:.1f}`</code></td></tr><tr><td>length</td><td><code>s.length</code></td><td><code>s.size()</code> counts bytes; a <code>utf8_string</code> counts characters</td></tr><tr><td>upper case</td><td><code>s.toUpperCase()</code> returns a new string</td><td><code>s.to_upper()</code> changes <code>s</code>; <code>string::to_upper(s)</code> returns a new one</td></tr><tr><td>to number</td><td><code>Number("42")</code></td><td><code>"42".to_int()</code>, <code>"2.5".to_float()</code>: null when the text is not a number</td></tr><tr><td>to string</td><td><code>String(x)</code></td><td><code>to_string(x)</code></td></tr><tr><td>regular expression</td><td><code>/(\d+)-(\d+)/g</code>, <code>s.match(re)</code>, <code>s.replace(re, "$2")</code></td><td><code>regex(R"((\d+)-(\d+))")</code>; <code>r.search(s)</code> for one match, <code>r.find_all(s)</code> for every one (there is no <code>g</code> flag), <code>r.replace(s, "$2")</code>; matching is linear-time, so lookaround and backreferences are errors (<a href="../guide/09-containers-strings.html#regular-expressions">Regular expressions</a>)</td></tr><tr><td>optional chaining</td><td><code>o?.f()</code>, <code>a?.b.c</code></td><td><code>o?.f()</code>; a null <code>o</code> skips the rest of the chain, so <code>o?.a.b</code> is null too</td></tr><tr><td>nullish default</td><td><code>x ?? "none"</code></td><td>the same: <code>x ?? "none"</code>; <code>x ??= v</code> assigns only when <code>x</code> is null</td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Guard {
-    string what;
-    Guard(string w) { what = w; }
-    ~Guard() { print("released ", what); }
+function quest() {
+    auto m = Mage("Merlin");
+    m.wealth = -5;
+    print(m.describe(), ", wealth ", m.wealth, ", heroes ", Hero::count);
+    throw "ambush";                      // m's destructor runs on the way out: the finally
 }
-function load(string path) {
-    Guard g = Guard(path);
-    throw "missing " + path;
-}
-try { load("level.dat"); } catch (e) {
-    print("caught: ", e, " (line ", e.line, ", value ", e.value, ")");
-}
-var hp = 72.25;
-var who = null;
-print(`hp ${hp:.1f}`, " ", "42".to_int() + 1, " ", "ten".to_int() == null, " ", who?.size() == null);
-print(who ?? "none", " ", string::to_upper("quiet"));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">released level.dat
-caught: missing level.dat (line 8, value missing level.dat)
-hp 72.2 43 true true
-none QUIET</code></pre></div>
-<h3 id="modules-and-more">Modules, coroutines, references and JSON<a class="hlink" href="#modules-and-more" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th></th><th>JavaScript</th><th>JaiScript</th></tr></thead><tbody><tr><td>module</td><td><code>import { area } from "./geometry.js";</code></td><td><code>import "geometry.jai";</code>: its functions and classes join the program, nothing is exported</td></tr><tr><td>reload</td><td>a bundler's hot reload</td><td>an <code>import</code> reached again re-runs a module whose file changed</td></tr><tr><td>paste a file</td><td>none</td><td><code>include "part.jai";</code> runs the file's text where it stands</td></tr><tr><td>generator</td><td><code>function* countdown() { yield 3; }</code></td><td><code>coroutine countdown() { yield 3; }</code>, driven by <code>h.next()</code> or range-<code>for</code></td></tr><tr><td>async, await</td><td><code>await load()</code></td><td>none: a coroutine that the host advances with <code>next()</code> every frame</td></tr><tr><td>shared object</td><td>every object is a reference</td><td><code>new Hero(...)</code>, typed <code>shared_ptr&lt;Hero&gt;</code>: copies of the handle share one object</td></tr><tr><td>alias a variable</td><td>none</td><td><code>auto&amp; r = x;</code>, and <code>int&amp;</code> or <code>var&amp;</code> parameters</td></tr><tr><td>cast</td><td><code>Number(x)</code>, <code>String(x)</code></td><td><code>cast&lt;int&gt;(2.7)</code>, <code>cast&lt;string&gt;('c')</code>, <code>cast&lt;Mage&amp;&gt;(h)</code></td></tr><tr><td>JSON</td><td><code>JSON.stringify(o)</code>, <code>JSON.parse(s)</code></td><td><code>to_json(v)</code>, <code>from_json(s)</code></td></tr><tr><td>log</td><td><code>console.log(a, b)</code></td><td><code>print(a, b)</code> joins with no separator; <code>print("{} {}", a, b)</code> formats</td></tr><tr><td>Math</td><td><code>Math.floor(x)</code>, <code>Math.PI</code></td><td><code>math::floor(x)</code>, <code>math::PI</code></td></tr></tbody></table></div>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">import "geometry.jai";
-
-coroutine countdown(int from) {
-    for (int i = from; i &gt; 0; i--) { yield i; }
-}
-for (auto n : countdown(3)) { print("T-", n); }
-
-var data = from_json("{\"name\": \"Ada\", \"tags\": [\"fast\", \"kind\"]}");
-print(data["tags"][1], " ", area(3, 4), " ", math::floor(2.7), " ", cast&lt;int&gt;(2.7));
-print(to_json({"w": 3, "h": 4}));</code></pre></div>
-<p>with <code>geometry.jai</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript — geometry.jai</span><pre><code class="lang-jai">int area(int w, int h) { return w * h; }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">T-3
-T-2
-T-1
-kind 12 2.0 2
-{"h":4,"w":3}</code></pre></div>
-<p><a href="../guide/10-modules.html">Modules</a> covers reloading and the include/import split, <a href="../guide/08-coroutines.html">Coroutines</a> the handles.</p>
+try { quest(); } catch (e) { print("caught: ", e, " (line ", e.line, ")"); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Merlin (10 hp) with 30 mana, wealth 0, heroes 1
+Merlin leaves
+caught: ambush (line 23)</code></pre></div>
 <h2 id="watch-out">Watch out<a class="hlink" href="#watch-out" aria-label="link">&#8203;</a></h2>
-<p>The differences below are the ones a JavaScript habit runs into first. Each sample shows what JaiScript does.</p>
-<h3 id="assignment-copies">Assignment copies arrays and objects<a class="hlink" href="#assignment-copies" aria-label="link">&#8203;</a></h3>
-<p>In JavaScript, <code>b = a</code> makes two names for one array. In JaiScript it makes a second array, and the same holds for class instances and for by-value parameters. Share on purpose with a handle (<code>new</code>, <code>shared_ptr&lt;T&gt;</code>), or alias with a reference (<code>auto&amp;</code>, a <code>var&amp;</code> parameter):</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var a = [1, 2, 3];
-var b = a;                     // a copy
+<h3 id="habits">JavaScript habits that fail<a class="hlink" href="#habits" aria-label="link">&#8203;</a></h3>
+<p>Some of these messages name the fix, and some are a parse error far from the cause.</p>
+<div class="tablewrap"><table><thead><tr><th>Habit</th><th>What happens</th><th>Write</th></tr></thead><tbody><tr><td><code>o.hp = 5</code> on a map</td><td><code>Cannot assign to member of non-object type</code></td><td><code>o["hp"] = 5</code></td></tr><tr><td><code>o.hp</code> on a map</td><td><code>map has no member 'hp'; read the key as ["hp"]</code></td><td><code>o["hp"]</code></td></tr><tr><td><code>o["mana"]</code> for a missing key</td><td><code>Key "mana" not found in map</code></td><td><code>o.get("mana")</code> (null) or <code>o.get("mana", 0)</code></td></tr><tr><td><code>for (var x of xs)</code>, <code>for (var k in m)</code></td><td>parse error: <code>expected ';' after for loop initializer</code></td><td><code>for (auto x : xs)</code>, <code>for (auto [k, v] : m)</code></td></tr><tr><td><code>typeof x</code></td><td>parse error: <code>expected ')' after arguments</code> or <code>expected ';' after variable declaration</code></td><td><code>type_of(x)</code></td></tr><tr><td><code>a.length</code>, <code>s.length</code></td><td><code>'length' is a method of array; call it with a.length() or wrap the call in a lambda</code></td><td><code>a.size()</code></td></tr><tr><td><code>try { } catch (e) { } finally { }</code></td><td>parse error: <code>expected '}' after constructor arguments</code></td><td>a destructor</td></tr><tr><td><code>var b = a.sort();</code>, <code>a.filter(f).map(g)</code></td><td><code>sort changes a in place and returns nothing; array::sort(a) returns a sorted copy</code></td><td><code>array::sort(a)</code>, <code>array::map(array::filter(a, f), g)</code></td></tr><tr><td><code>a.sort((x, y) =&gt; x - y)</code></td><td><code>sort() comparator must return bool</code></td><td><code>a.sort((x, y) =&gt; x &lt; y)</code></td></tr><tr><td><code>a.forEach(f)</code>, <code>a.includes(x)</code>, <code>s.toUpperCase()</code></td><td><code>no member 'forEach' on 'array' (did you mean 'for_each'?)</code></td><td>snake_case: <code>for_each</code>, <code>contains</code>, <code>to_upper</code></td></tr><tr><td><code>"hp: " + n</code></td><td><code>cannot apply '+' to 'string' and 'int': stringify it with to_string(x) or `${x}`</code></td><td><code>`hp: ${n}`</code>, <code>"hp: " + to_string(n)</code></td></tr><tr><td><code>a === b</code></td><td><code>JaiScript has no '===': == never converts between types, so a == b already compares without coercion</code></td><td><code>a == b</code></td></tr><tr><td><code>throw new Error("bad")</code></td><td><code>No constructor found for class 'Error'</code></td><td><code>throw "bad"</code>, or an instance of your own class</td></tr><tr><td><code>undefined</code>, <code>console.log</code>, <code>Math.floor</code>, <code>parseInt</code></td><td><code>use of undeclared identifier 'console'</code></td><td><code>null</code>, <code>print</code>, <code>math::floor</code>, <code>s.to_int()</code></td></tr><tr><td>calling a function above its declaration at top level</td><td><code>'double_it' is called before its declaration (line 2): top-level code runs in order, so declare it above the call or make the call after it</code></td><td>declare first; a function body may call one declared further down</td></tr></tbody></table></div>
+<h3 id="assignment-copies">Assignment copies; == compares contents<a class="hlink" href="#assignment-copies" aria-label="link">&#8203;</a></h3>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var a = [1, 2, 3];
+var b = a;                     // a copy: b = a makes a second array
 b.push(4);
-
 class Hero { int hp = 10; }
 Hero h = Hero();
 Hero other = h;                // a copy too
 other.hp = 1;
-
 shared_ptr&lt;Hero&gt; s = new Hero();
 auto alias = s;                // a handle: both names reach one object
 alias.hp = 99;
-
-function add_item(var&amp; list, string item) { list.push(item); }
-var bag = [];
-add_item(bag, "rope");         // a reference parameter reaches the caller's array
-print(a.size(), " ", b.size(), " ", h.hp, " ", s.hp, " ", bag.size());</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 4 10 99 1</code></pre></div>
-<p><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> is the chapter to read first.</p>
-<h3 id="equality">== compares contents, and never converts<a class="hlink" href="#equality" aria-label="link">&#8203;</a></h3>
-<p>Two arrays, maps or instances are equal when their contents are; <code>same_object(x, y)</code> asks whether they are one object. There is no <code>===</code> (writing one is an error that points to <code>==</code>) and nothing to need it: <code>==</code> never turns a string into a number. Comparing an <code>int</code> with a <code>string</code> the checker can see is a load error (<a href="../guide/13-strict-checking.html#comparisons">Types That Fail Early</a>); through <code>var</code> it is simply false.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print([1, 2] == [1, 2], " ", {"a": 1} == {"a": 1});
-var a = [1, 2];
-var b = a;
-print(same_object(a, b));      // b is a separate array with equal contents
+print(a.size(), " ", b.size(), " ", h.hp, " ", s.hp);
+print([1, 2] == [1, 2], " ", {"a": 1} == {"a": 1}, " ", same_object(a, b), " ", 1 == 1.0);
 var one = "1";
-print(1 == one, " ", 1 == 1.0);   // a var operand: false, never a conversion</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true true
-false
-false true</code></pre></div>
-<h3 id="numbers">Integers and floats are different numbers<a class="hlink" href="#numbers" aria-label="link">&#8203;</a></h3>
-<p>An <code>int</code> divided by an <code>int</code> is an <code>int</code>. Integer overflow and division by zero raise errors that <code>catch</code> sees, instead of producing <code>Infinity</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(7 / 2, " ", 7 / 2.0, " ", 0.1 + 0.2);
-int big = 9223372036854775807;
-try { big += 1; } catch (e) { print("caught: ", e); }
-try { print(1 / 0); } catch (e) { print("caught: ", e); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 3.5 0.30000000000000004
-caught: Integer overflow in '+='
-caught: Division by zero</code></pre></div>
-<h3 id="plus-and-plus-equals">+ never converts a number to text<a class="hlink" href="#plus-and-plus-equals" aria-label="link">&#8203;</a></h3>
-<p>Unlike JavaScript, <code>+</code> joins text only, as <code>std::string</code>&#x27;s does: a number, bool or <code>null</code> beside a string is an error, in either order (a char joins as its character). A template string or <code>to_string(n)</code> spells the text, and <code>+=</code> onto a string likewise takes only strings and chars:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var n = 10;
-print(`hp: ${n}`, " / ", "hp: " + to_string(n));
-try { print("hp: " + n); } catch (e) { print("caught: ", e); }
-string label = "hp: ";
-try { label += n; } catch (e) { print("caught: ", e); }
-label += to_string(n);
-print(label);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">hp: 10 / hp: 10
-caught: cannot apply '+' to 'string' and 'int': stringify it with to_string(x) or `${x}`
-caught: Cannot apply '+=' to string and int
-hp: 10</code></pre></div>
-<p>Written with literals or typed variables (<code>"hp: " + 10</code>, <code>label += 10;</code>), the same mistakes are load errors.</p>
-<h3 id="truthiness">Empty containers are false<a class="hlink" href="#truthiness" aria-label="link">&#8203;</a></h3>
-<p><code>0</code>, <code>0.0</code>, <code>""</code>, <code>null</code> and an empty array or map are false in a condition; everything else is true. JavaScript treats <code>[]</code> and <code>{}</code> as true. A class instance is true unless its class declares <code>bool to_bool()</code>, which <code>if (v)</code> calls and <code>!v</code> negates:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var values = [0, 0.0, "", [], {}, null, "0", [0]];
-for (var v : values) { print("{} {}", to_json(v), v ? "true" : "false"); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">0 false
-0.0 false
-"" false
-[] false
-{} false
-null false
-"0" true
-[0] true</code></pre></div>
-<h3 id="switch">switch breaks by default<a class="hlink" href="#switch" aria-label="link">&#8203;</a></h3>
-<p>A case ends at the next case. <code>fallthrough;</code> is how a case continues into the one below:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function ranks(int level) {
-    string t = "";
-    switch (level) {
-        case 1: t += "novice ";
-        case 2:
-            t += "adept ";
-            fallthrough;
-        case 3: t += "master";
-    }
-    return t;
-}
-print("[", ranks(1), "] [", ranks(2), "]");</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[novice ] [adept master]</code></pre></div>
-<h3 id="string-methods-change-the-string">Some string methods change the string<a class="hlink" href="#string-methods-change-the-string" aria-label="link">&#8203;</a></h3>
-<p><code>to_upper</code>, <code>to_lower</code>, <code>trim</code>, <code>replace</code>, <code>pad_left</code> and the other mutators change the string they are called on and return nothing, so <code>string shout = name.to_upper();</code> is an error. The <code>string::</code> functions are the versions that return a new string:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string name = "ada";
-name.to_upper();                         // changes name, returns nothing
-print(name);
-string quiet = "BOB";
-print(string::to_lower(quiet), " ", quiet);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ADA
-bob BOB</code></pre></div>
-<h3 id="map-keys">Map keys<a class="hlink" href="#map-keys" aria-label="link">&#8203;</a></h3>
-<p>A bare name before a colon is the key's text, as in JavaScript; a computed key goes through <code>[]</code>. A map walks its keys in key order, whatever order they were added in.</p>
-<p>Reading a missing key raises <code>Key "k" not found in map</code> where JavaScript gives <code>undefined</code>, and adds nothing. <code>m.get(k)</code> answers null and <code>m.get(k, fallback)</code> the fallback.</p>
-<p>Unlike JavaScript, a dot names only a map&#x27;s methods: a key is always read and written with <code>[]</code>, and <code>stats.hp</code> fails the load when the checker sees a map there, or raises when it runs:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var key = "speed";
-var stats = {speed: 3, hp: 10};          // the keys "speed" and "hp"
-stats[key] = 4;
-print(to_json(stats), " ", stats.get("mana") == null, " ", stats.size());
-print(stats["hp"]);
-try { print(stats["mana"]); } catch (e) { print("caught: ", e); }
-try { print(stats.hp); } catch (e) { print("caught: ", e); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{"hp":10,"speed":4} true 2
-10
-caught: Key &quot;mana&quot; not found in map
-caught: map has no member &#x27;hp&#x27;; read the key as [&quot;hp&quot;]</code></pre></div>
-<h3 id="array-helpers">The array helpers<a class="hlink" href="#array-helpers" aria-label="link">&#8203;</a></h3>
-<p>Arrays have JavaScript's helpers, spelled in snake_case: <code>map</code>, <code>reduce</code>, <code>for_each</code>, <code>find</code>, <code>find_index</code>, <code>some</code>, <code>every</code>, <code>concat</code> and <code>filter</code>, with <code>index_of</code> and <code>contains</code> for <code>indexOf</code> and <code>includes</code>, and <code>insert(i, x)</code> for an insert by <code>splice</code>. A callback takes the element, or the element and its index; a predicate answers with <code>true</code>. There is no <code>shift</code> or <code>splice</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var a = [1, 2, 3, 4];
-print(to_json(array::map(a, x =&gt; x * 2)), " ", a.reduce((sum, x) =&gt; sum + x, 0), " ", a.find(x =&gt; x &gt; 2));
-print(a.find_index(x =&gt; x &gt; 9), " ", a.some(x =&gt; x &gt; 3), " ", a.every(x =&gt; x &gt; 0));
-a.for_each((x, i) =&gt; print(i, "=", x));
-var b = array::concat(a, [5]);
-b.insert(0, 0);
-print(to_json(b), " ", to_json(a));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[2,4,6,8] 10 3
--1 true true
-0=1
-1=2
-2=3
-3=4
-[0,1,2,3,4,5] [1,2,3,4]</code></pre></div>
-<p>Dot <code>map</code>, <code>filter</code>, <code>concat</code> and <code>slice</code> change the array and return nothing, so <code>a.filter(f).map(g)</code> is an error; the matching <code>array::</code> functions return new arrays. A map&#x27;s <code>filter</code> pairs the same way: <code>m.filter(f)</code> keeps the entries in <code>m</code>, <code>map::filter(m, f)</code> returns a new map. <code>insert</code>, <code>sort</code> and <code>remove_if</code> also mutate.</p>
-<p>Dot <code>map</code> retains the input element type; <code>array::map</code> returns an <code>array&lt;T&gt;</code> when its callback declares return type <code>T</code>, and an array of anything otherwise. A callback whose element parameter is <code>T&amp;</code> gets the live element, so <code>a.for_each([](int&amp; x) { x *= 2; })</code> doubles every element, as <code>std::for_each</code> does in C++.</p>
-<h3 id="closures">A function expression closes over its scope; a lambda names what it captures<a class="hlink" href="#closures" aria-label="link">&#8203;</a></h3>
-<p>A <code>function(...)</code> expression is JavaScript's closure: it shares the variables of the function around it, and they outlive that function, so the counter is safe to return. In lambda terms it is <code>[&amp;]</code>. An arrow function, <code>() =&gt; { ... }</code>, closes over its scope the same way:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function make_counter() {
+print(1 == one, " ", 7 / 2, " ", 0.1 + 0.2);
+try { print(1 / 0); } catch (e) { print("caught: ", e); }
+var values = [0, 0.0, "", [], {}, null, "0", [0]];
+for (var v : values) { print(v ? "T" : "F", skip_newline); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 4 10 99
+true true false true
+false 3 0.30000000000000004
+caught: Division by zero
+FFFFFFTT</code></pre></div>
+<ul><li><strong>Copies.</strong> <code>b = a</code> copies an array, a map or a class instance, and so does passing one by value; a <code>var&amp;</code> parameter reaches the caller's. <a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> is the chapter to read first.</li><li><strong>Equality.</strong> <code>==</code> compares arrays, maps and instances by contents, and <code>same_object(x, y)</code> asks whether they are one object. <code>==</code> never converts: an <code>int</code> compared with a <code>string</code> is a load error when the checker sees it (<a href="../guide/13-strict-checking.html#comparisons">Types That Fail Early</a>) and false through a <code>var</code>.</li><li><strong>Numbers.</strong> Integer overflow and integer division by zero raise errors that <code>catch</code> sees; float division by zero gives <code>inf</code>.</li><li><strong>Truthiness.</strong> <code>0</code>, <code>0.0</code>, <code>""</code>, <code>null</code> and an <em>empty array or map</em> are false; JavaScript treats <code>[]</code> and <code>{}</code> as true. An instance is true unless its class declares <code>bool to_bool()</code>.</li></ul>
+<h3 id="closures">Closures<a class="hlink" href="#closures" aria-label="link">&#8203;</a></h3>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function make_counter() {
     int count = 0;
-    return function() { count += 1; return count; };
+    return () =&gt; { count += 1; return count; };     // shares count, which outlives make_counter
 }
-var next = make_counter();
+auto next = make_counter();
 next();
-print(next());</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2</code></pre></div>
-<p>A lambda names what it captures, as C++ does: <code>[]</code> captures nothing, and using a local of the function around it is a load error that names it; <code>[&amp;]</code> shares the variable, <code>[=]</code> or <code>[count]</code> copies it:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function broken() {
-    int count = 0;
-    return []() { return count; };
-}</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: parse failed:
-&lt;script&gt;:3:26: error: lambda capture list does not capture enclosing local 'count'; name it or use [=] or [&amp;]
-        return []() { return count; };
-                             ^</code></pre></div>
-<p>A copy is taken when the lambda is made, so a loop that collects callbacks sees each iteration's value, as <code>let</code> does in JavaScript:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var callbacks = [];
-for (int i = 0; i &lt; 3; i++) { callbacks.push([i]() { return i; }); }
-for (auto cb : callbacks) { print(cb()); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">0
-1
-2</code></pre></div>
-<h3 id="declare-before-use">Declare before use<a class="hlink" href="#declare-before-use" aria-label="link">&#8203;</a></h3>
-<p>Top-level code runs from the top down, and nothing is hoisted: a function is defined when execution reaches its declaration. A function body may call one declared further down, because the body runs later:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(double_it(4));
-function double_it(int x) { return x * 2; }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">== error: Undefined variable 'double_it'</code></pre></div>
-<h3 id="print">print shows a container's contents<a class="hlink" href="#print" aria-label="link">&#8203;</a></h3>
-<p><code>print(a, b)</code> joins its arguments with no separator, and a container prints its contents with the strings inside quoted, much as <code>console.log</code> does; <code>to_json</code> writes the JSON text. An instance prints its class's <code>to_string()</code>, as <code>"text" + x</code> does, or else its class name and fields. Only a string literal written first is a format string, as in C++20, so data that holds braces prints as it is:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var a = [1, "two"];
-print(a);
-print(to_json(a));
-print("{} and {}", 1, "two");
-print(1, 2, 3);
-var empty = {};
-print(to_json(empty), " entries");         // run-time text: its "{}" prints as it is
-print("{} entries", to_json(empty));
-class Tag { string to_string() { return "&lt;tag&gt;"; } }
-print(Tag());</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[1, &quot;two&quot;]
-[1,&quot;two&quot;]
-1 and two
-123
-{} entries
-{} entries
-&lt;tag&gt;</code></pre></div>
-<h2 id="complete-program">A complete program<a class="hlink" href="#complete-program" aria-label="link">&#8203;</a></h2>
-<p>A small quest log in the shape a JavaScript program would take: a shared object holding a map, listeners registered as closures, a generator feeding events, and JSON out.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class QuestLog {
-    var quests = {};                          // quest name -&gt; progress
-    array&lt;function&gt; listeners = [];
-
-    void on_change(function f) { listeners.push(f); }
-
-    void advance(string name, int by) {
-        int now = quests.contains(name) ? quests[name] + by : by;
-        quests[name] = now;
-        for (auto&amp; f : listeners) { f(name, now); }
-    }
-}
-
-shared_ptr&lt;QuestLog&gt; journal = new QuestLog();      // one shared object, like a JavaScript object
-array&lt;string&gt; messages = [];
-journal.on_change([](string name, int progress) {
-    messages.push(`${name}: ${progress}%`);         // messages is program scope: read when the listener runs
-});
-
-coroutine events() {
-    yield ["rats", 50];
-    yield ["relic", 25];
-    yield ["rats", 50];
-}
-for (auto ev : events()) { journal.advance(ev[0], ev[1]); }
-
-var done = [];
-for (auto kv : journal.quests) {
-    if (kv.second &gt;= 100) { done.push(kv.first); }
-}
-print(messages.join(" | "));
-print("done: ", done.join(", "));
-print(to_json(journal.quests));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">rats: 50% | relic: 25% | rats: 100%
-done: rats
-{"rats":100,"relic":25}</code></pre></div>
+var callbacks = [];
+for (int i = 0; i &lt; 3; i++) { callbacks.push(() =&gt; i); }
+int total = 0;                                      // program scope
+auto bank = [](int n) { total += n; };              // read and written when the lambda runs
+bank(5);
+print(next(), " ", callbacks[0](), callbacks[1](), callbacks[2](), " ", total);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 012 5</code></pre></div>
+<ul><li>An arrow function or a <code>function(...)</code> expression is JavaScript's closure: it shares the variables around it.</li><li>A C-style <code>for</code> variable is each iteration's own for the closures that share it, as <code>let</code> is in JavaScript: the loop above gives 0 1 2.</li><li>A C++-style lambda names what it captures. <code>[]</code> captures nothing, and using an enclosing function's local in one is a parse error: <code>lambda capture list does not capture enclosing local 'count'; name it or use [=] or [&amp;]</code>. Program-scope variables need no capture (<a href="../guide/06-functions.html#lambdas-and-captures">Lambdas and captures</a>).</li></ul>
 <h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
-<p><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> is the one chapter to read before writing anything large. <a href="../guide/02-type-ladder.html">The Type Ladder</a> explains <code>var</code>, <code>auto</code> and typed slots, <a href="../guide/06-functions.html">Functions &amp; Lambdas</a> the capture lists, and <a href="../guide/09-containers-strings.html">Containers &amp; Strings</a> every method. The <a href="../tour/index.html">ten-minute tour</a> builds a small game with all of it.</p>
-<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../guide/01-hello.html"><span>next &middot; the guide &rarr;</span>Hello &amp; Basics</a></nav></article>
+<p>Read <a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> before writing anything large, then <a href="../guide/02-type-ladder.html">The Type Ladder</a> for <code>var</code>, <code>auto</code> and typed variables. The <a href="../tour/index.html">ten-minute tour</a> builds a small game.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../guide/01-hello.html"><span>next &middot; the guide &rarr;</span>Hello &amp; Basics</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

@@ -535,6 +535,7 @@ std::vector<completion_item> workspace::completion(unit& u, text_pos pos) {
 	}
 	add_host_names(view, items);
 	for (auto word : language_keywords()) { items.add(std::string(word), 14, "keyword", 6); }
+	items.add("instanceof", 14, "keyword", 6);   // an operator after an operand, a name anywhere else
 	items.add("make_shared", 14, "make_shared<T>(args): the same expression as new T(args)", 6);
 	return items.take();
 }

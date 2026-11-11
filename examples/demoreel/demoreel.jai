@@ -15,6 +15,7 @@
 //   jaiscript demoreel.jai -- frames 60           headless self-test: N smoke frames (100x40,
 //                                                 seed 20260705, fixed dt 1/30), sizes, a stream
 //                                                 hash and timing
+//   jaiscript demoreel.jai -- frames 60 scene I at T   scene I at its real length from scene time T
 //   jaiscript demoreel.jai -- frames 60 dump P    also write frames 0/N-2/N-1 to P_<i>.txt
 //                                                 (+ P_<i>.bmp, the pixel grid) for byte diffing
 //   jaiscript demoreel.jai -- bench 60            per-scene ms/frame + bytes/frame
@@ -89,7 +90,7 @@ class Rng {
 // the jai adapter's kSceneFiles order: base classes before derived, main.jai last
 // (it reads ESC at import time, so the host API above must already exist).
 
-// where the scene files live: the FINALE imports a module from there while it runs
+// where the scene files live: EIGHT imports a module from there while it runs
 var SCENES_DIR = current_script_dir() + "/scenes";
 import "scenes/util.jai";
 import "scenes/music.jai";
@@ -106,6 +107,7 @@ import "scenes/chrome.jai";
 import "scenes/skull.jai";
 import "scenes/fluid.jai";
 import "scenes/show.jai";
+import "scenes/eight.jai";
 import "scenes/finale.jai";
 import "scenes/intro.jai";
 import "scenes/main.jai";
@@ -163,14 +165,15 @@ demo_pixels(OPT_ASCII ? "half" : OPT_PIX);
 
 // ---------------------------------------------------------------- headless ---
 // Mirrors the host's run_smoke: 100x40, fixed dt 1/30, smoke=true, hud off,
-// key "" and zeroed timing args every frame. The rolling hash makes runs
+// key "" and zeroed timing args every frame (`at` plays the scene at its real
+// length instead of smoke's three seconds). The rolling hash makes runs
 // comparable across runner backends (vm vs interp) without keeping frames.
 
 function run_headless(int frames) -> int {
 	int w = OPT_W > 0 ? OPT_W : 100;
 	int h = OPT_H > 0 ? OPT_H : 40;
 	float dt = 1.0 / 30.0;
-	demo_boot(w, h, OPT_SEED, "vm", true, false);
+	demo_boot(w, h, OPT_SEED, "vm", !OPT_AT_GIVEN, false);
 	if (OPT_SCENE >= 0) { demo_jump(OPT_SCENE, OPT_AT_GIVEN ? OPT_AT : 5.0); }
 	HB_WORKERS = OPT_WORKERS > 0 ? 1 : 0;
 	print(format("demoreel shim headless: {0} frames @ {1}x{2}, seed {3}, dt {4}", frames, w, h, OPT_SEED, dt));
@@ -196,7 +199,7 @@ function run_headless(int frames) -> int {
 			write_bmp(OPT_DUMP + "_" + to_string(f) + ".bmp");
 		}
 	}
-	int elapsed = run.elapsed() * 1000;
+	int elapsed = cast<int>(run.elapsed() * 1000);
 	print(format("frames {0} | bytes {1} (len {2}..{3}) | stream hash {4} | {5} ms total, {6} ms/frame incl. hashing, {7} ms/frame render",
 		frames, total_bytes, min_len, max_len, hash, elapsed, (elapsed * 1.0) / frames, render.elapsed() * 1000 / frames));
 	print(`rows ${HB_WORKERS != 0 ? "parallel" : "serial"} | pixels ${HB_SEXT ? "sext" : "half"} | text in ${text_frames} frames | live reloads ${LIVE_RELOADS}`);

@@ -26,6 +26,8 @@
 # A test change also takes the android gate: the Debug suites build with MSVC alone, whose template parsing accepts what
 # Clang and GCC reject (a dependent `.as<T>()` without `template` in a generic lambda), and the NDK's Clang is the cheapest
 # build of the suites with another compiler.
+# A library change also takes the wasm gate: the WebAssembly build is the one 32-bit libc++ target the gates run, so it catches
+# layout assumptions the 64-bit builds hide (a field placed in tail padding, a tag in a 4-aligned pointer's low bits).
 #
 # --lanes declares a change confined to the VM's optimized lanes (fused, typed, cell, graft and cache code) inside the
 # general files: the general-path reason is dropped and the VM against VM-reference fuzz is the change's oracle. --interp
@@ -79,7 +81,7 @@ vm_tier() {
 classify() {
 	local p="$1"
 	case "$p" in
-		include/jaiscript/* | tools/ci/host_warnings.cpp | docs/site_tools/check_sample_includes.py | source/tests/integration/doc_samples_tests.cpp | docs/site/embedding/01-embedding-quickstart.html | docs/site/embedding/02-dynamic-binder.html)
+		include/jaiscript/* | tools/ci/host_warnings.cpp | tools/ci/must_not_compile.cpp | docs/site_tools/check_sample_includes.py | source/tests/integration/doc_samples_tests.cpp | docs/site/embedding/01-embedding-quickstart.html | docs/site/embedding/02-dynamic-binder.html | docs/site/embedding/21-visual-studio.html)
 			pick headers "the public headers compile alone and warning-free, and the whole-program samples show their includes ($p)" ;;
 	esac
 	case "$p" in
@@ -95,6 +97,7 @@ classify() {
 		tools/install/*) pick ci-scripts "the installers' build script ($p)" ;;
 		tools/jaiscript/*) pick gatorquest "the runner ($p)"; pick selftest "the runner's smoke tests ($p)"; pick site "the runner runs the site's samples ($p)"; pick spider "jai_spider shares the runner's file IO, sockets and HTTP transport ($p)" ;;
 		tools/jai_spider/*) pick spider "the web host ($p)" ;;
+		tools/jaiscript_web/*) pick wasm "the WebAssembly engine ($p)"; pick site "the Play pages load it ($p)" ;;
 		examples/gloom/*) pick gloom "the GLOOM example ($p)" ;;
 		examples/demoreel/*) pick demoreel "the demoreel ($p)" ;;
 		examples/crawler/*) pick crawler "the crawler ($p)"; interp_tier "an example's script runs on both backends ($p)" ;;
@@ -106,23 +109,23 @@ classify() {
 		source/tests/*) pick debug-suites "a test ($p)"; pick android "Clang compiles the suites ($p)" ;;
 		source/implementation/vm/vm_backend.cpp | source/implementation/vm/vm_compiler.cpp | \
 		include/jaiscript/vm/vm_backend.hpp | include/jaiscript/vm/vm_compiler.hpp | include/jaiscript/vm/chunk.hpp | include/jaiscript/vm/opcode.hpp)
-			vm_tier "the VM or its compiler ($p)"; pick fuzz-order "the VM or its compiler ($p)"; pick android "libc++ and 32-bit compile the library ($p)"
+			vm_tier "the VM or its compiler ($p)"; pick fuzz-order "the VM or its compiler ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)"
 			[ "$LANES" = 1 ] || interp_tier "the VM's general path or its compiler's front end ($p)" ;;
-		include/jaiscript/vm/* | source/implementation/vm/*) vm_tier "the VM's optimized lanes or its tools ($p)"; pick fuzz-order "the VM's optimized lanes ($p)"; pick android "libc++ and 32-bit compile the library ($p)" ;;
+		include/jaiscript/vm/* | source/implementation/vm/*) vm_tier "the VM's optimized lanes or its tools ($p)"; pick fuzz-order "the VM's optimized lanes ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		source/interpreter/* | include/jaiscript/detail/interpreter.hpp)
-			vm_tier "the interpreter ($p)"; interp_tier "the interpreter ($p)"; pick android "libc++ and 32-bit compile the library ($p)" ;;
+			vm_tier "the interpreter ($p)"; interp_tier "the interpreter ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		include/jaiscript/detail/* | source/implementation/parser.cpp | source/implementation/lexer.cpp | source/implementation/type_checker.cpp | \
 		source/implementation/builtin_methods.cpp)
-			vm_tier "a kernel both backends share ($p)"; interp_tier "a kernel both backends share ($p)"; pick android "libc++ and 32-bit compile the library ($p)"
+			vm_tier "a kernel both backends share ($p)"; interp_tier "a kernel both backends share ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)"
 			pick selftest "the runner's REPL retries on the parser's missing-';' text ($p)" ;;
 		include/jaiscript/properties/* | include/jaiscript/properties.hpp | include/jaiscript/serialization/* | source/implementation/serialization/* | \
 		source/implementation/properties.cpp | source/implementation/schema_binding.cpp)
-			vm_tier "the property system or the archives ($p)"; HOST_ARCHIVES=1; pick android "libc++ and 32-bit compile the library ($p)" ;;
+			vm_tier "the property system or the archives ($p)"; HOST_ARCHIVES=1; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		source/implementation/stdlib/spider.cpp | include/jaiscript/stdlib/spider.hpp | include/jaiscript/core/http_transport.hpp | include/jaiscript/net/*)
-			vm_tier "the spider:: client ($p)"; pick spider "the spider:: client against a live server ($p)"; pick android "libc++ and 32-bit compile the library ($p)" ;;
-		include/* | source/implementation/*) vm_tier "the library ($p)"; pick android "libc++ and 32-bit compile the library ($p)" ;;
+			vm_tier "the spider:: client ($p)"; pick spider "the spider:: client against a live server ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
+		include/* | source/implementation/*) vm_tier "the library ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		CMakeLists.txt | */CMakeLists.txt | cmake/* | source/jaiscript.cpp | CMakePresets.json)
-			vm_tier "the build ($p)"; pick amalgamation "the build's file lists ($p)"; pick android "libc++ and 32-bit compile the library ($p)" ;;
+			vm_tier "the build ($p)"; pick amalgamation "the build's file lists ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		*) vm_tier "a path no rule names ($p)" ;;
 	esac
 }

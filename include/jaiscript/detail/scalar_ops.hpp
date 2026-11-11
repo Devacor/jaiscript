@@ -61,14 +61,8 @@ namespace jai::detail {
 			case token_type::plus: out = a + b; return scalar_fault::none;
 			case token_type::minus: out = a - b; return scalar_fault::none;
 			case token_type::star: out = a * b; return scalar_fault::none;
-			case token_type::slash:
-				if (b == 0.0) { return scalar_fault::division_by_zero; }
-				out = a / b;
-				return scalar_fault::none;
-			default:
-				if (b == 0.0) { return scalar_fault::modulo_by_zero; }
-				out = std::fmod(a, b);
-				return scalar_fault::none;
+			case token_type::slash: out = a / b; return scalar_fault::none;   // IEEE: a zero divisor gives an infinity or NaN
+			default: out = std::fmod(a, b); return scalar_fault::none;
 		}
 	}
 

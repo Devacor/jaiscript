@@ -82,7 +82,7 @@ public:
             
             const char* script = R"(
                 class Point3D {
-                    Vector2D position = null;
+                    Vector2D position = Vector2D(0, 0);
                     int z = 0;
                     
                     Point3D(double x, double y, int z) {
@@ -431,7 +431,7 @@ public:
 
         test("a_method_bodys_returns_and_scalar_stores_follow_its_receivers_layout", [this]() {
             // bare int, float and var fields stored from arithmetic in a loop (a var field holding an int taking a float, one holding a float
-            // taking an int), an int field taking a float's conversion, bare fields and a program-scope name returned, on the class and on a subclass that takes the name as a field;
+            // taking an int), an int field taking a float's cast, bare fields and a program-scope name returned, on the class and on a subclass that takes the name as a field;
             // then a reload that moves the fields and makes the name a field of the class itself
             auto e = make_engine();
             stdlib::register_all(*e);
@@ -439,7 +439,7 @@ public:
                 int G = 7;
                 class Acc { int n = 0; float f = 0.5; var v = 1; var u = 1.5;
                     void step(int k) { for (int i = 0; i < k; ++i) { n = n + 2; f = f + 1.5; v = v + 1; } }
-                    void blend() { for (int i = 0; i < 2; ++i) { v = v + 0.25; n = f * 2.0; u = i + 3; } }
+                    void blend() { for (int i = 0; i < 2; ++i) { v = v + 0.25; n = cast<int>(f * 2.0); u = i + 3; } }
                     int get() { return n; } float getf() { return f; } var getv() { return v; } int glob() { return G; } }
                 class Sub : Acc { int G = 70; }
                 Acc a = Acc(); Sub b = Sub();
@@ -635,7 +635,7 @@ public:
                 auto count_after_scope = get_destructor_count();
 
                 // Test 2: Destruction on reassignment
-                auto r = Resource("temp");
+                var r = Resource("temp");
                 r = Resource("replacement"); // Should destroy "temp"
                 auto count_after_reassign = get_destructor_count();
 
@@ -1011,6 +1011,86 @@ public:
             check_eq(std::string("CBA"), result.as_string());
         });
 
+        test("instanceof_tests_the_run_time_class", [this]() {
+            struct HostBase { int id = 1; };
+            struct HostDerived : HostBase { int extra = 2; };
+            const auto engine_with_host = [] {
+                auto e = make_engine();
+                jai::stdlib::register_all(*e);
+                dynamic_binder<HostBase>(*e, "HostBase").constructor<>().property("id", &HostBase::id).build();
+                dynamic_binder<HostDerived>(*e, "HostDerived").constructor<>().base_class<HostBase>().property("extra", &HostDerived::extra).build();
+                return e;
+            };
+            const std::string classes = R"(
+                class Unit { int hp = 1; }
+                class Hero : Unit { }
+                class Paladin : Hero { string smite() { return "smite"; } }
+                class Healer { }
+                class Cleric : Unit, Healer { }
+                class Squire : HostDerived { }
+                namespace game { class Boss : Unit { } }
+                enum Dir { north, south }
+            )";
+            auto e = engine_with_host();
+            check_eq(std::string(
+                "Unit:TFFF Hero:TTFF Paladin:TTTF smiteCleric:TFFT |TTTFTF|TTFF|FFFFFFFFF|TTT|TTTF|TF|"
+                "reflect::is_a: unknown class 'Nope'|TTFF"),
+                e->execute(classes + R"(
+                    string flag(bool b) { return b ? "T" : "F"; }
+                    string out;
+                    array<shared_ptr<Unit>> party = [new Unit(), new Hero(), new Paladin(), new Cleric()];
+                    for (auto u : party) {
+                        out += type_of(u) + ":" + flag(u instanceof Unit) + flag(u instanceof Hero) + flag(u instanceof Paladin) + flag(u instanceof Healer) + " ";
+                        if (u instanceof Paladin) { out += cast<Paladin&>(u).smite(); }
+                    }
+                    // a value, a reference, a var, a null handle, a live and an expired weak handle
+                    Paladin p;
+                    Unit& r = p;
+                    var v = p;
+                    shared_ptr<Hero> none = null;
+                    weak_ptr<Unit> live = party[2];
+                    weak_ptr<Unit> dead;
+                    { shared_ptr<Unit> gone = new Hero(); dead = gone; }
+                    out += "|" + flag(p instanceof Hero) + flag(r instanceof Paladin) + flag(v instanceof Unit) + flag(none instanceof Hero) + flag(live instanceof Hero) + flag(dead instanceof Unit);
+                    // a namespace's class, and the class named at run time
+                    game::Boss boss;
+                    out += "|" + flag(boss instanceof game::Boss) + flag(boss instanceof Unit) + flag(boss instanceof Hero) + flag(reflect::is_a(p, "Healer"));
+                    // a var that holds no object is no instance, and never an error
+                    var things = [null, 5, 2.5, "s", [1], {"a": 1}, [](){ return 1; }, math::vec2(1, 2), Dir::north];
+                    out += "|";
+                    for (var t : things) { out += flag(t instanceof Unit || reflect::is_a(t, "Unit")); }
+                    // a relational operator: tighter than && and ==, looser than a unary's operand
+                    out += "|" + flag(!(p instanceof Healer)) + flag(p instanceof Hero && v instanceof Paladin) + flag(true == p instanceof Unit);
+                    // host classes by the bases their binders name, a script class over one, and a host object in a var
+                    HostDerived hd; var held = hd; Squire squire;
+                    out += "|" + flag(hd instanceof HostBase) + flag(held instanceof HostDerived) + flag(squire instanceof HostBase) + flag(held instanceof Unit);
+                    // a parallel body may ask
+                    array<Hero> heroes = [Hero(), Hero()];
+                    array<int> answers = [0, 0];
+                    parallel_for (int i = 0; i < 2; i++) { answers[i] = heroes[i] instanceof Unit ? 1 : 0; }
+                    out += "|" + flag(answers[0] + answers[1] == 2) + flag(reflect::is_a(5, "Unit"));
+                    try { reflect::is_a(p, "Nope"); } catch (err) { out += "|" + err; }
+                    class Holder { int instanceof = 3; }
+                    Holder holder;
+                    out += "|" + flag(holder.instanceof == 3) + flag(reflect::is_a(squire, "HostDerived")) + flag(reflect::is_a("Hero", "Unit")) + flag(reflect::is_a(none, "Hero"));
+                    out;
+                )").as_string());
+            const auto load_error = [&](const std::string& code) {
+                auto fresh = engine_with_host();
+                try { fresh->execute(classes + "Hero h; int n = 5;\n" + code); } catch (const std::exception& ex) { return std::string(ex.what()); }
+                return std::string("loaded");
+            };
+            check_true(load_error("bool b = h instanceof Nope;").find("error: unknown type 'Nope'") != std::string::npos);
+            check_true(load_error("bool b = h instanceof int;").find("error: 'instanceof' tests a class, and 'int' is a builtin type: compare type_of(x) == \"int\"") != std::string::npos);
+            check_true(load_error("bool b = h instanceof Dir;").find("error: 'instanceof' tests a class, and 'Dir' is an enum: compare the value with one of its values (x == Dir::value)") != std::string::npos);
+            check_true(load_error("bool b = n instanceof Unit;").find("error: 'instanceof Unit' is always false: the operand is 'int', never an object of a class") != std::string::npos);
+            check_true(load_error("bool b = h instanceof;").find("error: expected a class name after 'instanceof'") != std::string::npos);
+            check_eq(std::string("loaded"), load_error("bool up = h instanceof Unit; bool down = h instanceof Paladin; bool side = h instanceof Healer; h instanceof Hero;"));
+            auto warned = engine_with_host()->check(classes + "Hero h; bool side = h instanceof Healer;");
+            check_eq((size_t)1, warned.diagnostics.size());
+            check_true(!warned.has_errors() && warned.diagnostics[0].message == "'instanceof Healer' is false for every 'Hero' but one whose class derives from 'Healer' too", warned.format(""));
+        });
+
         test("diamond_inheritance_should_fail", [this]() {
             auto js_engine = make_engine();
 
@@ -1277,6 +1357,49 @@ public:
             }
             check_eq(expected, outputs[0], "interp statics/ref access");
             check_eq(outputs[0], outputs[1], "statics/ref access parity");
+        });
+
+        test("member_access_private_field_by_reference_beside_lambda", [this]() {
+            // A T& argument binds in the calling method's class, whatever else the method holds (a lambda gives it a frame env)
+            const char* src = R"(
+                class Cave {
+                    Cave() {}
+                    Cave(int& a_seed) { a_seed += 100; }
+                    void dig(int& a_dice) { a_dice += 1; }
+                    static void digStatic(int& a_dice) { a_dice += 10; }
+                }
+                class Game {
+                    int arrow() { cave.dig(dice); var f = x => x + 1; return f(dice); }
+                    int bracket() { openCave.dig(dice); var f = []() { return 1; }; return dice + f(); }
+                    int viaThis() { cave.dig(this.dice); var f = x => x; return f(dice); }
+                    int staticCallee() { Cave::digStatic(dice); var f = x => x; return f(dice); }
+                    int constructed() { Cave made(dice); var f = x => x; return f(dice); }
+                    int inLambda() { var f = [this]() { cave.dig(dice); return dice; }; return f(); }
+                    int noLambda() { cave.dig(dice); return dice; }
+                    Cave openCave;
+                private:
+                    Cave cave;
+                    int dice = 0;
+                }
+                Game game;
+                string out = "";
+                try { out += `${game.arrow()}`; } catch (e) { out += e; }
+                try { out += `|${game.bracket()}`; } catch (e) { out += "|" + e; }
+                try { out += `|${game.viaThis()}`; } catch (e) { out += "|" + e; }
+                try { out += `|${game.staticCallee()}`; } catch (e) { out += "|" + e; }
+                try { out += `|${game.constructed()}`; } catch (e) { out += "|" + e; }
+                try { out += `|${game.inLambda()}`; } catch (e) { out += "|" + e; }
+                try { out += `|${game.noLambda()}`; } catch (e) { out += "|" + e; }
+                out;
+            )";
+            std::string outputs[2];
+            for (bool use_vm : {false, true}) {
+                auto e = jai::foundry::make_default_engine();
+                e->set_backend(use_vm ? jai::backend_type::vm : jai::backend_type::interpreter);
+                outputs[use_vm ? 1 : 0] = e->execute(src).as<std::string>();
+            }
+            check_eq(std::string("2|3|3|13|113|114|115"), outputs[0], "interp private field by reference beside a lambda");
+            check_eq(outputs[0], outputs[1], "private field by reference beside a lambda parity");
         });
 
         // ------------------------------------------------- bare-name resolution order

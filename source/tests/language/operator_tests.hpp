@@ -190,9 +190,7 @@ public:
                 eng->execute("5 / 0");
             }, "Integer division by zero should throw");
             
-            check_throws([&]() {
-                eng->execute("5.0 / 0.0");
-            }, "Float division by zero should throw");
+            check_true(std::isinf(eng->execute("5.0 / 0.0").as_float()), "Float division by zero is IEEE");
         });
         
         // Regression: identifier+literal binary fast path fed the engine-less AST literal to the
@@ -320,7 +318,7 @@ public:
             jai::stdlib::register_all(eng);
             auto r = eng->execute(R"(
                 class Inner { int z = 0; Inner() {} Inner(int v) { z = v; } }
-                class P { int a = 1; string s = "x"; array<int> xs = [1, 2]; Inner in = Inner(3); P child = null; P() {} P(int v) { a = v; } }
+                class P { int a = 1; string s = "x"; array<int> xs = [1, 2]; Inner in = Inner(3); shared_ptr<P> child = null; P() {} P(int v) { a = v; } }
                 class D : P { int extra = 0; D() {} }
                 class Cmp { int a = 1; Cmp() {} Cmp(int v) { a = v; } bool operator==(Cmp other) { return true; } }
                 nocopy class Ledger { int total = 5; Ledger() {} }
@@ -331,7 +329,7 @@ public:
                 var h1 = new P(); var h2 = h1; var h3 = new P();
                 var& rp = p1;
                 return [p1 == p2, p1 == p3, p1 == p4, p1 == p5, p1 == d, p1 != p2, c1 == c2, l1 == l2,
-                        h1 == h2, h1 == h3, h1 != h3, rp == p1, rp == p2, p1 == null, p1.child == p2.child];
+                        h1 == h2, h1 == h3, h1 != h3, rp == p1, rp == p2, h1 == null, p1.child == p2.child];
             )");
             const auto& v = r.as_array();
             const bool expected[] = {true, false, false, false, false, false, true, true, true, false, true, true, true, false, true};
@@ -396,7 +394,7 @@ public:
                 array<int> xs = [1]; array<int> ys = [1]; var& rxs = xs;
                 map<string, int> m = {"a": 1}; map<string, int> m2 = {"a": 1};
                 string s = "ab"; string t = "a" + "b";
-                P n = null;
+                shared_ptr<P> n = null;
                 return [same_object(p, p), same_object(p, rp), same_object(p, q), same_object(p, copy),
                         same_object(h, h2), same_object(h, h3), same_object(xs, rxs), same_object(xs, ys),
                         same_object(m, m), same_object(m, m2), same_object(s, t), same_object(1, 1), same_object(1, 2),

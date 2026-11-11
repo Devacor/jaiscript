@@ -51,6 +51,26 @@ public:
             check_values(rows);
         });
 
+        test("execute_as_a_type_converts_the_result_or_throws", [this]() {
+            auto eng = make_engine();
+            check_eq(std::int64_t{4}, eng->execute<std::int64_t>("2 + 2"));
+            check_eq(std::int32_t{4}, eng->execute<std::int32_t>("2 + 2"));
+            check_eq(4, eng->execute<int>(std::string("2 + 2")));
+            check_eq(4, eng->execute<int>(script_source("2 + 2")));
+            check_eq(std::string("ab"), eng->execute<std::string>("\"a\" + \"b\""));
+            instance_variables vars{{"n", script_value(script_int(40), eng.get())}};
+            check_eq(42, eng->execute<int>("n + 2", vars));
+            std::string out_of_range;
+            try {
+                eng->execute<std::int32_t>("3000000000");
+            } catch (const std::exception& ex) {
+                out_of_range = ex.what();
+            }
+            check_eq(std::string("Integer value out of range for int"), out_of_range);
+            check_throws([&]() { eng->execute<int>("\"four\""); });
+            check_eq(script_int{4}, eng->execute("2 + 2").as_int());
+        });
+
         test("top_level_declarations_persist_across_executes", [this]() {
             // each step runs on the session's engine; a step with a value checks the execute's result
             struct step { const char* code; std::optional<int> value; };

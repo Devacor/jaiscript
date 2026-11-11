@@ -251,21 +251,23 @@ private:
 	// a C++ callback runs script (or changes script state) while a loop is inside a block
 	void host_callbacks_mid_loop() {
 		test("a_host_callback_writes_the_array_the_loop_is_reading", [this]() {
-			every_config("callback write", "116|10|33|9", [](engine& e) {
+			every_config("callback write", "116|10|33|10.5|3 Cannot assign float to 's' (declared int)", [](engine& e) {
 				engine* raw = &e;
 				e.add_function("poke", [raw](script_int i) -> script_int { if (i == 2) { raw->execute("GA[4] = 100;"); } return i; });
 				e.add_function("shrink", [raw](script_int i) -> script_int { if (i == 1) { raw->execute("GB.pop(); GB.pop();"); } return i; });
 				e.add_function("setk", [raw](script_int i) -> script_int { if (i == 3) { raw->execute("K = 10;"); } return i; });
 				e.add_function("retype", [raw](script_int i) -> script_int { if (i == 3) { raw->execute("KF = 2.5;"); } return i; });
+				e.add_function("retype_g", [raw](script_int i) -> script_int { if (i == 3) { raw->execute("KG = 2.5;"); } return i; });
 				return e.execute(R"(
 					array<int> GA = [1, 2, 3, 4, 5, 6];
 					array<int> GB = [1, 2, 3, 4, 5, 6];
-					var K = 1; var KF = 1;
+					var K = 1; var KF = 1; var KG = 1;
 					function r1() -> int { int s = 0; for (int i = 0; i < 6; i++) { poke(i); s += GA[i]; } return s; }
 					function r2() -> int { int s = 0; for (int i = 0; i < GB.size(); i++) { shrink(i); s += GB[i]; } return s; }
 					function r3() -> int { int s = 0; for (int i = 0; i < 6; i++) { setk(i); s += K; } return s; }
-					function r4() -> int { int s = 0; for (int i = 0; i < 6; i++) { retype(i); s += KF; } return s; }
-					`${r1()}|${r2()}|${r3()}|${r4()}`;
+					function r4() -> float { float s = 0.0; for (int i = 0; i < 6; i++) { retype(i); s += KF; } return s; }
+					function r5() -> string { int s = 0; try { for (int i = 0; i < 6; i++) { retype_g(i); s += KG; } } catch (err) { return `${s} ${err}`; } return `${s}`; }
+					`${r1()}|${r2()}|${r3()}|${r4()}|${r5()}`;
 				)").as_string();
 			});
 		});
@@ -446,7 +448,7 @@ private:
 		});
 	}
 
-	// docs/site/guide/04-operators.html shifts, the count's text in docs/site/reference/index.html "Run-time errors";
+	// docs/site/guide/04-operators.html shifts, the count's text in docs/site/reference/errors.html "Run-time errors";
 	// docs/site/guide/05-control-flow.html "Terminal errors": a budget overrun is terminal
 	void shifts_and_budget() {
 		test("shift_counts_out_of_range_raise_inside_a_counted_loop", [this]() {

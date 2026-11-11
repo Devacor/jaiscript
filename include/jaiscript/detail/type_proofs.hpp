@@ -19,12 +19,18 @@ namespace jai::detail {
     // mirrors the typed-slot table's identity rows (detail::convert_for_typed_slot_core: same-base
     // scalars/strings, the exact class-name tag) as every site consumes them. tag_agrees reproduces
     // defined_type(): a non-any tag must name the base.
+    // an enum's value entering a slot, or any value entering an enum slot: the table's enum rows decide (a stamp goes or comes)
+    inline bool enum_store(const script_value& v, const type_info& target) noexcept {
+        const type_info* tag = v.type_info_raw();
+        return target.is_enum || (tag && tag->is_enum);
+    }
+
     inline bool same_type_payload(const script_value& v, const type_info* target) noexcept {
-        if (!target) return false;
+        if (!target || target->is_enum) return false;   // an enum slot's row decides (it stamps)
         const size_t ri = v.raw_storage_index();
         const type_info* tag = v.get_type_info().get();
         const bool tag_agrees = !tag || tag->base_type == script_value_type::jai_any_type ||
-                                tag->base_type == target->base_type;
+                                (tag->base_type == target->base_type && !tag->is_enum);   // an enum's value sheds its stamp in the int row
         switch (target->base_type) {
             case script_value_type::jai_int_type:    return ri == script_value::TYPEID_INT && tag_agrees;
             case script_value_type::jai_float_type:  return ri == script_value::TYPEID_FLOAT && tag_agrees;

@@ -10,7 +10,7 @@ namespace jai::detail {
 // What an object borrow names (shared objects): the shared instance a worker reached through a host
 // call, and the worker's own view of its C++ object (null when it holds none). parallel_object_borrow mints one per instance; the
 // worker's slot keeps it until the join swaps every escaped borrow for a handle.
-struct object_borrow_record {
+struct alignas(8) object_borrow_record {
     const class_instance* source = nullptr;
     engine* eng = nullptr;
     script_value view{std::monostate{}, nullptr};

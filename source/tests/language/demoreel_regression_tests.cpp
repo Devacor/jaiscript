@@ -185,9 +185,9 @@ public:
 		test("typed_local_initializer_converts", [this]() {
 			for (bool use_vm : {false, true}) {
 				auto e = demoreel_engine(use_vm);
-				auto r = e->execute("int d = 4.7; d");
-				check_true(r.is_int(), backend_tag(use_vm) + "int local from float literal is int");
-				check_eq((int64_t)4, r.as_int(), backend_tag(use_vm) + "int local from 4.7 truncates");
+				auto r = e->execute("int d = true; d");
+				check_true(r.is_int(), backend_tag(use_vm) + "int local from a bool literal is int");
+				check_eq((int64_t)1, r.as_int(), backend_tag(use_vm) + "int local from true is 1");
 				auto f = e->execute("float fv = 3; fv");
 				check_true(f.is_float(), backend_tag(use_vm) + "float local from int literal is float");
 				check_near(3.0, f.as<double>(), 1e-12);
@@ -196,13 +196,16 @@ public:
 
 		test("typed_local_and_field_assignments_convert", [this]() {
 			const std::tuple<const char*, const char*, expected_value> cases[] = {
-				{"typed_local_assignment_converts", "int d = 1; d = 6.9; d", int64_t{6}},
+				{"typed_local_assignment_converts", "int d = 5; d = true; d", int64_t{1}},
+				{"typed_local_assignment_widens", "float d = 1.5; d = 6; to_string(d)", std::string("6.0")},
 				{"typed_field_assignment_converts_parity", R"(
-					class F { int a = 0; }
+					class F { int a = 0; float w = 0.5; }
 					var f = F();
-					f.a = 4.7;
-					f.a
-				)", int64_t{4}},
+					var yes = true;
+					f.a = yes;
+					f.w = 4;
+					to_string(f.a) + " " + to_string(f.w) + " " + type_of(f.a)
+				)", std::string("1 4.0 int")},
 			};
 			check_both_backends(cases);
 		});
@@ -213,12 +216,13 @@ public:
 			for (bool use_vm : {false, true}) {
 				auto e = demoreel_engine(use_vm);
 				auto r = e->execute(R"(
-					class P5 { int add(int r, int g, int b) { return r + g + b; } }
+					class P5 { float add(float r, float g, float b) { return r / 2 + g / 2 + b / 2; } }
 					var p = P5();
-					var c = [1.5, 2.5, 3.5];
+					var c = [1, 3, 5];
 					p.add(c[0], c[1], c[2])
 				)");
-				check_eq((int64_t)6, r.as_int(), backend_tag(use_vm) + "float array elements into int params");
+				check_true(r.is_float(), backend_tag(use_vm) + "a float");
+				check_near(4.5, r.as_float(), 1e-12);
 			}
 		});
 

@@ -218,6 +218,22 @@ bool binary_archive_writer::begin_value(const script_value& given, std::vector<v
         (tag == script_value_type::jai_shared_ptr_type && !value.get_object_holder())) {
         tag = script_value_type::jai_null_type;
     }
+    // For script classes, type_info->type_name may be "any" - use the actual class name
+    strong_ptr<class_instance> instance;
+    std::shared_ptr<class_definition> bound;
+    class_definition* class_def = nullptr;
+    if (tag == script_value_type::jai_object_type) {
+        try {
+            instance = value.as<strong_ptr<class_instance>>();
+        } catch (...) {
+            // not a class_instance: a C++ object's bound class, else an empty object under its type's name
+        }
+        bound = instance ? nullptr : bound_class_of(value);
+        class_def = instance ? instance->get_class_definition() : bound.get();
+        if (class_def && class_def->archive_form()) {
+            return begin_value(class_def->archive_form()(value, *class_def, engine_ref_), frames);
+        }
+    }
     write_uint8(static_cast<uint8_t>(tag));
 
     switch (tag) {
@@ -295,7 +311,7 @@ bool binary_archive_writer::begin_value(const script_value& given, std::vector<v
         case script_value_type::jai_weak_ptr_type: {
             // the object rides with the archive's first reference to it, weak or shared
             auto shared = value.get_weak_ptr().lock();
-            auto [id, is_new] = track_shared_ptr(shared.get());
+            auto [id, is_new] = track_handle(shared.get());
             write_uint32(id);
             if (is_new) {
                 frames.emplace_back(frame_shape::values, script_value(std::monostate{}, engine_ref_)).values.push_back(weak_target_value(shared));
@@ -306,7 +322,7 @@ bool binary_archive_writer::begin_value(const script_value& given, std::vector<v
         case script_value_type::jai_shared_ptr_type: {
             // A shared handle: the object once under its id, every later handle the id alone (identity survives the load)
             auto holder = value.get_object_holder();
-            auto [id, is_new] = track_shared_ptr(holder.get());
+            auto [id, is_new] = track_handle(holder.get());
             write_uint32(id);
             if (is_new) {
                 frames.emplace_back(frame_shape::values, script_value(std::monostate{}, engine_ref_)).values.push_back(weak_target_value(holder));
@@ -318,18 +334,8 @@ bool binary_archive_writer::begin_value(const script_value& given, std::vector<v
             // Self-describing binary format: type name + version + property names array + values in order
             auto type_info = value.get_type_info();
             std::string type_name = type_info ? type_info->type_name : "unknown";
-
-            // For script classes, type_info->type_name may be "any" - use the actual class name
-            strong_ptr<class_instance> instance;
-            try {
-                instance = value.as<strong_ptr<class_instance>>();
-            } catch (...) {
-                // not a class_instance: an empty object under its type's name
-            }
-            if (instance) {
-                if (auto class_def = instance->get_class_definition()) {
-                    type_name = class_def->get_name();
-                }
+            if (class_def) {
+                type_name = class_def->get_name();
             }
 
             // Write type name first
@@ -355,16 +361,13 @@ bool binary_archive_writer::begin_value(const script_value& given, std::vector<v
             // Collect properties and values
             std::vector<std::string> property_names;
             std::vector<script_value> property_values;
-            if (instance) {
-                auto class_def = instance->get_class_definition();
-                if (class_def) {
-                    auto eng = class_def->get_engine();
-                    if (eng && !for_each_serialized_property(value, class_def, eng, [&](const auto& prop_name, script_value&& prop_value) {
-                            property_names.push_back(std::string(prop_name));
-                            property_values.push_back(std::move(prop_value));
-                        })) {
-                        return false;
-                    }
+            if (class_def) {
+                auto eng = class_def->get_engine();
+                if (eng && !for_each_serialized_property(value, class_def, eng, [&](const auto& prop_name, script_value&& prop_value) {
+                        property_names.push_back(std::string(prop_name));
+                        property_values.push_back(std::move(prop_value));
+                    })) {
+                    return false;
                 }
             }
 

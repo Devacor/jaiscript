@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="Coroutine Hosting — JaiScript Embedding">
 <meta property="og:description" content="Driving script coroutines from C++: next, completion, and the shapes that fit per-entity behavior and cutscenes.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/embedding/09-coroutine-hosting.html">
+<meta property="og:url" content="https://jaiscript.com/embedding/09-coroutine-hosting.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,24 +33,29 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding</summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li class="current"><a href="../embedding/09-coroutine-hosting.html" aria-current="page">Coroutine Hosting</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding<span class="sidebar-current">Coroutine Hosting</span></summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li class="current"><a href="../embedding/09-coroutine-hosting.html" aria-current="page">Coroutine Hosting</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li><a href="../embedding/14-language-server.html">Editor Support: the Language Server</a></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li><li><a href="../embedding/20-foundry.html">Foundry: Testing a Host</a></li><li><a href="../embedding/21-visual-studio.html">Visual Studio, Step by Step</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>09</nav>
 <article class="chapter"><h1 id="coroutine-hosting">Coroutine Hosting<a class="hlink" href="#coroutine-hosting" aria-label="link">&#8203;</a></h1>
-<p>Script coroutines are the built-in answer to per-entity behaviors, cutscenes, and multi-frame AI.
-Calling a <code>coroutine</code> function returns a <strong>handle</strong> and runs nothing yet: <code>next()</code> runs to
-the next <code>yield</code>, <code>next(n)</code> advances <code>n</code> yields, <code>done()</code> reports completion.</p>
-<p>Each backend owns its continuation representation behind that one interface. The interpreter saves
-an environment and replays an AST continuation, the VM parks a fiber
-(<code>include/jaiscript/core/coroutine.hpp</code>). Nothing you write has to know which.</p>
+<p>A script coroutine is how a host runs behavior that spans frames: per-entity AI, cutscenes, spawners. This page is the host&#x27;s side; the language side is the guide&#x27;s <a href="../guide/08-coroutines.html">Coroutines</a> chapter. The model:</p>
+<ul>
+<li><strong>Calling a <code>coroutine</code> function returns a handle and runs nothing.</strong> <code>next()</code> runs to the next <code>yield</code> and returns its value, <code>next(n)</code> advances <code>n</code> yields and returns the last one&#x27;s value, and <code>done()</code> asks without advancing.</li>
+<li><strong>The <code>next()</code> that finishes the body returns the <code>return</code> value</strong> (null when the body runs off its end). One more <code>next()</code> raises <code>Cannot resume a completed coroutine</code>, so test <code>done()</code> first. A range-<code>for</code> over a handle sees only the yielded values.</li>
+<li><strong>A handle is an ordinary value.</strong> Stored in a global it persists across <code>execute()</code> calls, and C++ can hold and drive it directly.</li>
+<li><strong>Both backends behave identically</strong>; nothing a host writes depends on which one runs.</li>
+</ul>
+<p>A coroutine yields values to whoever drives it. A whole program that waits on <code>sleep</code> and is resumed by the host&#x27;s clock is a different tool: <code>eng-&gt;start(...)</code> and <code>jai::script_run</code>, in <a href="17-host-api.html#suspendable-runs">Host API: suspendable runs</a>.</p>
 <h2 id="script-surface">Script surface<a class="hlink" href="#script-surface" aria-label="link">&#8203;</a></h2>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int countdown(int from) {
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int countdown(int from) {
     for (int i = from; i &gt; 0; --i) { yield i; }
     return 0;
 }
@@ -58,48 +71,18 @@ print(to_json(seen));                                  // yielded values only</c
 1
 0
 [4,3,2,1]</code></pre></div>
-<p>Two things to read off that: the final <code>next()</code> hands you the <code>return</code> value
-(the <code>0</code>), and a range-<code>for</code> consumes only what the coroutine <em>yields</em>: the
-return value never lands in <code>seen</code>.</p>
-
-<h3 id="how-to-spell-one">How to spell one<a class="hlink" href="#how-to-spell-one" aria-label="link">&#8203;</a></h3>
-<p><code>coroutine</code> is a prefix on the function spellings you already have, so a script you ship can
-declare one however the rest of the file reads:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">coroutine int ticks()                { yield 1; return 0; }
-coroutine function names() -&gt; string { yield "a"; return ""; }
-coroutine function guess() -&gt; auto   { yield 2.5; return 0.0; }
-coroutine function plain()           { yield true; }
-
-print(to_string(ticks().next()) + " " + names().next() + " " +
-      to_string(guess().next()) + " " + to_string(plain().next()));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 a 2.5 true</code></pre></div>
-<p>The bare form drops <code>function</code> as well (<code>coroutine g() { … }</code> and
-<code>coroutine g() -&gt; int { … }</code>). The same prefix works on methods, static ones
-included, and inside a namespace body. Coroutines cannot return references (a parse error).</p>
-<p>Every spelling is listed in the guide&#x27;s
-<a href="../guide/08-coroutines.html#spellings">Spellings</a>. The language-side tour is
-the guide&#x27;s <a href="../guide/08-coroutines.html">Coroutines</a> chapter, covering independent instances per call, receiver pinning (a method coroutine keeps its object alive while suspended) and the edges. Hosts moving from Lua coroutines or a C++20 scheduler have a mapping in
-<a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a>.</p>
-<p>Coroutine <strong>methods</strong> work too. The handle pins the receiver alive across suspension, <code>this</code> stays bound, and mutations through the receiver are visible to the outside world while the coroutine is parked (<code>examples/crawler</code>&#x27;s boss is built this way):</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Boss {
-    int phase = 0;
-    coroutine int fight() { phase = 1; yield 10; phase = 2; yield 20; return 99; }
-}
-auto b = Boss();
-auto c = b.fight();
-print(to_string(c.next()) + " phase=" + to_string(b.phase));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">10 phase=1</code></pre></div>
-<p>All of it (yield/next sequencing, <code>done()</code> transitions, multiple simultaneous handles, range-for driving) behaves identically on both backends. The test suite holds them to it.</p>
-<p><strong>Types.</strong> The checker types a coroutine call; the declared yield and return types are enforced at run time:</p>
 <ul>
-<li>The checker types a coroutine call as a handle whose <code>next()</code> returns an unknown type. A member other than <code>next</code> or <code>done</code> is a load error.</li>
-<li>The checker does not check yield or return types (see the <a href="06-static-checking.html">Static Checking</a> precision map).</li>
-<li>A <code>return</code> the declared type rejects is a run-time error at the final <code>next()</code> (<code>Cannot return string from 'k' (declared -&gt; int)</code>), never a load error.</li>
-<li>A <code>yield</code> takes the declared type the same way, at the <code>next()</code> that runs it. <code>coroutine int</code> hands out 2 for <code>yield 2.9</code>, and a value it rejects raises <code>Cannot yield string from 'k' (declared -&gt; int)</code>, catchable around the <code>yield</code>.</li>
-<li>A bare <code>yield;</code> hands out nothing.</li>
+<li id="how-to-spell-one"><strong>Spelling.</strong> <code>coroutine</code> prefixes any function spelling, methods and static methods included (<code>coroutine int f()</code>, <code>coroutine function f() -&gt; int</code>, <code>coroutine f()</code>); the guide lists <a href="../guide/08-coroutines.html#spellings">every form</a>. A coroutine cannot return a reference (a parse error).</li>
+<li><strong>Methods.</strong> A method coroutine&#x27;s handle keeps its receiver alive while suspended, <code>this</code> stays bound, and its writes to the object are visible while it is parked.</li>
+<li><strong>Parameters bind by value</strong>, reference-shaped arguments included. Captures behave as a lambda&#x27;s do.</li>
+<li><strong>Nothing can be sent in.</strong> <code>next()</code> takes only its count and <code>done()</code> takes no arguments.</li>
+<li><strong>Types.</strong> The checker types a coroutine call as a handle whose <code>next()</code> returns an unknown type; a member other than <code>next</code> or <code>done</code> is a load error. Declared yield and return types are enforced at run time, at the <code>next()</code> that runs them: <code>coroutine float</code> hands out 2.0 for <code>yield 2</code>, and a value the type rejects raises <code>Cannot yield string from 'k' (declared -&gt; int)</code> (catchable around the <code>yield</code>) or <code>Cannot return string from 'k' (declared -&gt; int)</code>. A bare <code>yield;</code> hands out nothing.</li>
+<li><strong>Budget.</strong> The <a href="05-safety-rails.html">execution budget</a> applies to each <code>execute()</code> or <code>next()</code> call. An overrun inside a coroutine is terminal: a <code>catch</code> around the <code>yield</code> does not catch it.</li>
+<li><strong>Hot reload.</strong> A suspended coroutine keeps the body it started with until it finishes; new calls get the new definition (<a href="07-hot-reload.html">Hot Reload</a>).</li>
 </ul>
-<h2 id="driving-from-c-pattern-1-through-executes-the-simple-way">Driving from C++, pattern 1: through executes (the simple way)<a class="hlink" href="#driving-from-c-pattern-1-through-executes-the-simple-way" aria-label="link">&#8203;</a></h2>
-<p>A handle stored in an engine global persists <strong>across separate <code>execute()</code> calls</strong>. Each execute continues exactly where the last left off. This is the frame-loop pattern: create behaviors once, tick them per frame with tiny <code>next()</code> scripts. (The strict checker is happy with this: <code>c</code> is declared by the first execute, and later executes on the same engine see it as a declared global.)</p>
+<p>Hosts moving from Lua coroutines or a C++20 scheduler have a mapping in <a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a>.</p>
+<h2 id="driving-from-c-pattern-1-through-executes-the-simple-way">Driving from C++ through executes<a class="hlink" href="#driving-from-c-pattern-1-through-executes-the-simple-way" aria-label="link">&#8203;</a></h2>
+<p>The frame-loop pattern: create the behavior once in a global, then tick it each frame with a small <code>next()</code> script. Each execute continues where the last left off. Running the declaring line again redeclares <code>c</code> with a fresh handle, and the same pattern works through a <code>jaibite</code>.</p>
 <div class="codeblock cb-cpp" data-sample="coroutine-drive-script"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;execute(R&quot;( coroutine int spawner(int n) {
                      for (int i = 1; i &lt;= n; ++i) { yield i * 10; }
                      return -1;
@@ -110,9 +93,8 @@ for (int i = 0; i &lt; 4; ++i) {
     auto v = eng-&gt;execute(&quot;c.next();&quot;);                   // 10, 20, 30, -1
     bool finished = eng-&gt;execute(&quot;c.done()&quot;).as&lt;bool&gt;();  // false ×3, then true
 }</code></pre></div>
-<p>This survives re-executing the declaring line in between (which redeclares <code>c</code>), and running the whole pattern through a <code>jaibite</code> instead of raw strings.</p>
-<h2 id="driving-from-c-pattern-2-the-native-handle">Driving from C++, pattern 2: the native handle<a class="hlink" href="#driving-from-c-pattern-2-the-native-handle" aria-label="link">&#8203;</a></h2>
-<p>The script value <em>is</em> a <code>jai::coroutine_handle</code> in an object holder. You can pull it out once and drive it with zero script round-trips:</p>
+<h2 id="driving-from-c-pattern-2-the-native-handle">Driving from C++ with the native handle<a class="hlink" href="#driving-from-c-pattern-2-the-native-handle" aria-label="link">&#8203;</a></h2>
+<p>The script value holds a <code>jai::coroutine_handle</code>. Take the <code>shared_ptr</code> out once and drive it with no script in between:</p>
 <div class="codeblock cb-cpp" data-sample="coroutine-native-handle"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/core/coroutine.hpp&gt;
 
 eng-&gt;execute(&quot;var c2 = spawner(2);&quot;);
@@ -127,14 +109,16 @@ while (!handle-&gt;done()) {
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">C++ next -&gt; 10
 C++ next -&gt; 20
 C++ next -&gt; -1</code></pre></div>
-<p>API notes (<code>coroutine.hpp</code>):</p>
-<ul><li><code>next(engine*)</code> returns <code>checked_result&lt;script_value&gt;</code>. Test it before using the value; a failed coroutine reports <code>status::failed</code>. <code>next(engine*, n)</code> is the script's <code>next(n)</code>: <code>n</code> steps, the last one's value.</li><li><code>done()</code> == <code>completed || failed</code>; <code>get_status()</code> exposes <code>created/running/suspended/completed/failed</code>.</li><li>The <code>shared_ptr</code> you extracted keeps the coroutine (and, for method coroutines, its receiver) alive. This is the supported way to own a behavior from C++.</li></ul>
-<h2 id="semantics-worth-knowing-before-you-build-on-them">Semantics worth knowing before you build on them<a class="hlink" href="#semantics-worth-knowing-before-you-build-on-them" aria-label="link">&#8203;</a></h2>
-<ul><li><strong>The <code>next()</code> that finishes the body delivers the <code>return</code> value</strong> (the <code>-1</code> / <code>99</code> above), and typed coroutine returns convert to the declared type. A <code>next()</code> after that raises <code>Cannot resume a completed coroutine</code>, so test <code>done()</code> first; <code>done()</code> only asks and never advances. <code>next()</code> takes only its count and <code>done()</code> takes no arguments: a value cannot be sent in. Range-for consumes only the <em>yielded</em> values.</li><li><strong>Running off the end of a coroutine with no <code>return</code></strong> completes with null, exactly like a function falling off the end, identical on both backends.</li><li><strong>Budget interaction</strong>: the execution budget applies per <code>execute()</code>/<code>next()</code> call, and a budget overrun inside a coroutine is terminal like everywhere else: a <code>catch</code> around the <code>yield</code> cannot swallow it.</li><li>Coroutine parameters bind <strong>by value</strong> on both backends, even reference-shaped arguments; captures and closure state behave like lambdas.</li><li>Hot reload: a suspended coroutine keeps its old body until it finishes; new invocations get the new definition (see <a href="07-hot-reload.html">Hot Reload</a> and the crawler&#x27;s boss brain).</li></ul><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/08-serialization.html"><span>&larr; previous</span>Serialization</a><a class="next" rel="next" href="../embedding/10-signals-properties.html"><span>next &rarr;</span>Signals &amp; Observable Properties</a></nav></article>
+<ul>
+<li><code>next(engine*)</code> returns <code>checked_result&lt;script_value&gt;</code>: test it before reading the value. <code>next(engine*, n)</code> is the script&#x27;s <code>next(n)</code>.</li>
+<li><code>get_status()</code> is one of <code>created</code>, <code>running</code>, <code>suspended</code>, <code>completed</code>, <code>failed</code>; <code>done()</code> is true for the last two.</li>
+<li>The <code>shared_ptr</code> keeps the coroutine alive, and with it a method coroutine&#x27;s receiver. This is how C++ owns a behavior.</li>
+</ul>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/08-serialization.html"><span>&larr; previous</span>Serialization</a><a class="next" rel="next" href="../embedding/10-signals-properties.html"><span>next &rarr;</span>Signals &amp; Observable Properties</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

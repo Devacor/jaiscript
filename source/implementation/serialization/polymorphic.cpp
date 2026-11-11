@@ -36,6 +36,14 @@ void polymorphic_registry::register_entry(std::type_index ti, type_entry entry, 
     by_name_[it->second.name] = &it->second;
 }
 
+void polymorphic_registry::register_binding_entry(std::type_index ti, type_entry entry) {
+    std::unique_lock guard(mutex_);
+    entry.type = ti;
+    entry.implicit = true;
+    entry.named_by_binding = true;
+    by_rtti_.try_emplace(ti, std::move(entry));
+}
+
 auto polymorphic_registry::find(std::type_index ti) const -> const type_entry* {
     std::shared_lock guard(mutex_);
     auto it = by_rtti_.find(ti);

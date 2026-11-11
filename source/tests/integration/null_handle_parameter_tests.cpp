@@ -33,7 +33,7 @@ public:
         dynamic_binder<node>(*eng, "Node")
             .constructor<>()
             .property("value", &node::value)
-            .property("next", &node::next, skip_type_check)
+            .property("next", &node::next)
             .method("attach", [](node& self, std::shared_ptr<node> n) { self.next = n; return std::string("node"); })
             .method("attach", [](node& self, int64_t v) { self.value = v; return std::string("int"); })
             .build();

@@ -173,20 +173,85 @@ public:
 
         test("exception_with_numeric_values", [this]() {
             auto engine = make_engine();
+            jai::stdlib::register_all(*engine);
 
-            // the caught error reads as its message; the thrown value is e.value
-            script_value message = engine->execute("try { throw 42; } catch (e) { return e; }");
-            check_true(message.is_string());
-            check_eq(std::string("42"), message.as_string());
-            script_value result = engine->execute("try { throw 42; } catch (e) { return e.value; }");
+            // the catch variable is the thrown value
+            script_value result = engine->execute("try { throw 42; } catch (e) { return e; }");
             check_eq(result.is_int(), true);
             check_eq(result.as<int>(), 42);
+            check_eq(std::string("int true 43 42"), engine->execute("try { throw 42; } catch (e) { return type_of(e) + \" \" + to_string(e == 42) + \" \" + to_string(e + 1) + \" \" + to_string(e); }").as_string());
+        });
+
+        test("catch_clauses_take_a_thrown_value_by_type_and_a_run_time_error_by_kind", [this]() {
+            const std::string prelude =
+                "class Oops { int code = 7; string to_string() { return \"oops!\"; } }\n"
+                "class Sub : Oops { }\n"
+                "class Other { }\n"
+                "int copies = 0;\n"
+                "class Counted { int n = 1; Counted() {} Counted(const Counted& o) { n = o.n; copies += 1; } }\n"
+                "string which(var thrower) {\n"
+                "    try { thrower(); }\n"
+                "    catch (Other o) { return \"other\"; }\n"
+                "    catch (Oops o) { return \"oops \" + to_string(o.code) + \" \" + type_of(o); }\n"
+                "    catch (int n) { return \"int \" + to_string(n + 1); }\n"
+                "    catch (string s) { return \"string \" + s; }\n"
+                "    catch (array<int> a) { return \"array \" + to_string(a.size()); }\n"
+                "    catch (error e) { return \"error \" + e.kind + \": \" + e.message; }\n"
+                "    catch (e) { return \"all \" + type_of(e); }\n"
+                "    return \"none\";\n"
+                "}\n";
+            const std::vector<std::pair<std::string, std::string>> cases = {
+                {"print(which(() => { throw Oops(); }), \"|\", which(() => { throw Sub(); }), \"|\", which(() => { throw Other(); }));", "oops 7 Oops|oops 7 Sub|other"},
+                {"print(which(() => { throw 41; }), \"|\", which(() => { throw \"text\"; }), \"|\", which(() => { throw 1.5; }), \"|\", which(() => { throw [1, 2]; }), \"|\", which(() => { }));",
+                 "int 42|string text|all float|array 2|none"},
+                {"print(which(() => { array<int> a = [1]; return a[3]; }));", "error bounds: Array index 3 out of bounds for array of size 1"},
+                {"print(which(() => { map<string, int> m = {}; return m[\"k\"]; }));", "error key_not_found: Key \"k\" not found in map"},
+                {"print(which(() => { int z = 0; return 1 / z; }), \"|\", which(() => { int big = 9223372036854775807; return big + 1; }));",
+                 "error arithmetic: Division by zero|error arithmetic: Integer overflow in '+'"},
+                {"print(which(() => { var v = null; return v.x; }), \"|\", which(() => { var p = Oops(); return p.nope; }));",
+                 "error null_receiver: Cannot access 'x' on null ('v' is null)|error no_member: Oops has no member 'nope'"},
+                {"print(which(() => { var n = 5; return n(); }), \"|\", which(() => { var f = (a, b) => a; return f(1); }));",
+                 "error not_callable: Cannot call 'n': it is an int, not a function|error arguments: lambda expects 2 arguments, got 1"},
+                {"print(which(() => { var v = \"seven\"; int n = v; return n; }), \"|\", which(() => { array<int> a = []; return a.pop(); }));",
+                 "error type: Cannot initialize 'n' (declared int) with string|error container: Cannot pop from empty array"},
+                {"print(which(() => { return to_char(999); }));", "error host: to_char expects 0..255, got 999"},
+                // the catch-all's variable is the thrown value; a value with a node also answers its place while the handler runs
+                {"try { throw {\"k\": 5}; } catch (e) { print(type_of(e), \" \", e[\"k\"], \" \", e.line); }", "map 5 17"},
+                {"try { throw [1, 2]; } catch (e) { print(type_of(e), \" \", e.size(), \" \", e[1], \" \", e.line); }", "array 2 2 17"},
+                {"try { throw Oops(); } catch (e) { print(type_of(e), \" \", e.code, \" \", e.line, \" \", e.message, \" \", e, \" \", e.value.code, \" \", e.stack.size()); }", "Oops 7 17 oops! oops! 7 1"},
+                {"try { throw \"s\"; } catch (e) { print(type_of(e), \" \", e, \" \", e.line, \" \", e.value); }", "string s 17 s"},
+                {"try { var v = [1]; v[9]; } catch (e) { print(type_of(e), \" \", e, \"|\", e.kind, \" \", e.kind == error_kind::bounds, \" \", e.line, \" \", e.value); }",
+                 "error Array index 9 out of bounds for array of size 1|bounds true 17 null"},
+                {"try { var v = [1]; v[9]; } catch (e) { string m = e; print(type_of(m), \" \", m.size(), \" \", e + \"!\"); }", "string 47 Array index 9 out of bounds for array of size 1!"},
+                // a thrown number answers .value and .message through its catch variable, a lambda's copy of it included
+                {"int h() { try { throw 3; } catch (e) { var f = [=]() { return e.value * 2; }; return f() + e.value; } return 0; } print(h());\ntry { throw 2.5; } catch (e) { print(e.message + \"!\", \" \", e.value); }", "9\n2.5! 2.5"},
+                // the variable is the thrown instance: no copy is made, and a write reaches e.value
+                {"try { throw Counted(); } catch (Counted c) { c.n = 5; print(copies, \" \", c.n); }\ntry { throw Counted(); } catch (const Counted& c) { print(copies, \" \", c.n); }\n"
+                 "try { throw Counted(); } catch (e) { e.n = 9; print(copies, \" \", e.value.n); }", "0 5\n0 1\n0 9"},
+                {"try { throw new Oops(); } catch (Oops o) { print(o.code, \" \", type_of(o)); }", "7 Oops"},
+                // no clause takes it: the error goes on to the next handler from where it was raised
+                {"void typed_only() { try { throw \"nope\"; } catch (int n) { print(\"int\"); } }\ntry { typed_only(); } catch (e) { print(\"propagated \", e, \" \", e.line); }", "propagated nope 17"},
+                // a try none of whose clauses takes the error is passed without entering a handler: the stack is the raise's
+                {"int inner(array<int> a) { return a[5]; } int middle() { return inner([1]); } int outer() { try { return middle(); } catch (int k) { return k; } return -1; }\ntry { outer(); } catch (e) { print(e.line, \" \", e.stack.size()); }", "17 4"},
+                {"try { try { var v = [1]; v[9]; } catch (string s) { print(\"wrong\"); } } catch (error e) { print(\"outer \", e.kind, \" \", e.line); }", "outer bounds 17"},
+                {"void typed_only() { try { throw 3; } catch (string s) { } }\ntyped_only();", "ERROR 3"},
+                {"try { throw \"e\"; } catch (string e) { try { throw 1; } catch (int n) { print(n); } print(e, \" \", e.line); }", "1\ne 17"},
+                // a parallel body's handlers take an error by kind too
+                {"string bounds = error_kind::bounds; array<int> xs = [1, 2, 3, 4];\nparallel_for (auto& x : xs) { try { var a = [1]; a[x + 5]; } catch (string s) { x = -1; } "
+                 "catch (error e) { x = e.kind == bounds ? 100 + x : -2; } }\nprint(xs);", "[101, 102, 103, 104]"},
+                {"try { throw 1; } catch (var e) { print(e); }\ntry { throw 2; } catch (auto e) { print(e); }\ntry { throw 3; } catch { print(\"bare\"); }", "1\n2\nbare"},
+                {"try { throw 1; } catch (e) { } catch (int n) { }", "ERROR a catch with no type catches everything: it is the last handler of its try"},
+                {"try { throw 1; } catch (int n) { } catch { } catch (string s) { }", "ERROR a catch with no type catches everything: it is the last handler of its try"},
+                {"try { throw 1; } catch (Nope n) { }", "ERROR unknown type 'Nope'"},
+                {"try { throw 1; } catch (int n) { n = \"s\"; }", "ERROR "},
+            };
+            check_outputs(cases, prelude, true);
         });
 
         test("a_caught_error_is_its_message_with_its_place_and_stack", [this]() {
-            // catch (e) binds the error's message as a string (every string operation reads it unchanged) that also answers
-            // e.message, e.file, e.line, e.column, e.stack (file:line per frame, innermost first) and e.value (a throw's
-            // value, null for a run-time error); a copy keeps the answers, a new string made from it does not
+            // catch (e) binds a run-time error as its message (every string operation reads it unchanged), of type "error", that
+            // answers e.kind, e.message, e.file, e.line, e.column, e.stack (file:line per frame, innermost first) and e.value
+            // (null); a copy keeps the answers, a new string made from it does not. A thrown value is the variable itself
             const std::string path = (jai::foundry::test_temp_directory() / "caught_probe.jai").generic_string();
             const std::string runtime_src =
                 "int inner(array<int> a) {\n"                                             // 1
@@ -198,7 +263,7 @@ public:
                 "    outer();\n"                                                          // 7
                 "} catch (err) {\n"                                                       // 8
                 "    var copy = err;\n"                                                   // 9
-                "    info = err + \"|\" + err.message + \"|\" + to_string(err.line) + \"|\" + err.stack.join(\",\") + \"|\" + type_of(err) +\n"
+                "    info = err + \"|\" + err.message + \"|\" + to_string(err.line) + \"|\" + err.stack.join(\",\") + \"|\" + type_of(err) + \":\" + err.kind +\n"
                 "           \"|\" + to_string(err == \"Array index 5 out of bounds for array of size 1\") + \"|\" + to_string(err.value == null) +\n"
                 "           \"|\" + to_string(copy.line) + \"|\" + to_string(err.file == \"" + path + "\") + \"|\" + to_string(err.column > 0);\n"
                 "    string made = err + \"\";\n"
@@ -214,7 +279,7 @@ public:
                 "try { boom(); } catch (e) {\n"                                           // 6
                 "    r = to_string(e.code) + \"|\" + to_string(e.line) + \"|\" + to_string(e.value.code) + \"|\" + to_string(e.stack.size()) + \"|\" + e.stack[0];\n"
                 "}\n"
-                "try { throw 42; } catch (e2) { r = r + \"|\" + e2 + \"|\" + to_string(e2.value + 1); }\n"   // 9
+                "try { throw 42; } catch (e2) { r = r + \"|\" + to_string(e2) + \"|\" + to_string(e2 + 1); }\n"   // 9
                 "try { try { throw \"deep\"; } catch (a) { throw; } } catch (b) { r = r + \"|\" + b.value + \"|\" + to_string(b.line); }\n"   // 10
                 "r;\n";
             std::string first_runtime, first_throw;
@@ -224,7 +289,7 @@ public:
                 jai::stdlib::register_all(*e);
                 const std::string runtime = e->execute_file_source(path, runtime_src).to_string();
                 check_eq(std::string("Array index 5 out of bounds for array of size 1|Array index 5 out of bounds for array of size 1|2|") +
-                         path + ":2," + path + ":4," + path + ":7|string|true|true|2|true|true|string has no member 'file'", runtime);
+                         path + ":2," + path + ":4," + path + ":7|error:bounds|true|true|2|true|true|string has no member 'file'", runtime);
                 const std::string thrown = e->execute_file_source(path, throw_src).to_string();
                 check_eq(std::string("7|3|7|2|") + path + ":3|42|43|deep|10", thrown);
                 if (!use_vm) { first_runtime = runtime; first_throw = thrown; }

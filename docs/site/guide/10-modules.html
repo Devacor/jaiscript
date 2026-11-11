@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="Modules: include vs import — JaiScript Guide">
 <meta property="og:description" content="include reruns a file; import caches it. Path resolution, host-controlled filesystem access, and what the checker sees across units.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/guide/10-modules.html">
+<meta property="og:url" content="https://jaiscript.com/guide/10-modules.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,222 +33,128 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li class="current"><a href="../guide/10-modules.html" aria-current="page">Modules: include vs import</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Modules: include vs import</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li class="current"><a href="../guide/10-modules.html" aria-current="page">Modules: include vs import</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>10</nav>
 <article class="chapter"><h1 id="modules-include-vs-import">Modules: <code>include</code> vs <code>import</code><a class="hlink" href="#modules-include-vs-import" aria-label="link">&#8203;</a></h1>
-<p>Split your scripts into files without inventing a build system. There are two ways to bring in a file:</p>
-<ul>
-<li><strong><code>include</code></strong> is textual composition. It runs the file&#x27;s contents in your scope <em>every time</em>, may return a value, and accepts dynamic path expressions.</li>
-<li><strong><code>import</code></strong> is a module declaration, cached per engine and re-run only when its file changed. The statement form yields nothing. The call form <code>import("f.jai")</code> is an expression that says whether the module ran. That timestamp check is exactly the hook hot reload hangs off.</li>
-</ul>
-<p>Both resolve through one ladder: the asking file&#x27;s folder, then the host&#x27;s <code>add_include_path</code> roots, then the working directory. A host can confine it to chosen folders (<a href="../embedding/05-safety-rails.html#confine-paths">Safety Rails</a>). And both are visible to the <a href="13-strict-checking.html">checker</a> before anything runs, so a multi-file program is checked as one program (<a href="#what-the-checker-sees-across-files">below</a>).</p>
-<h2 id="include-runs-every-single-time">include: runs every single time<a class="hlink" href="#include-runs-every-single-time" aria-label="link">&#8203;</a></h2>
-<div class="callout cpp"><p><code>include</code> is <code>#include</code>: the file's text runs where it is written, in that scope, every time. <code>import</code> is the module: it runs once at program scope and again only when its file changes.</p></div>
-<p><code>include "file.jai"</code> (or <code>include &lt;file.jai&gt;</code>) executes the file&#x27;s contents <strong>in the current scope, every time it is evaluated</strong>. Definitions land in your scope; side effects repeat on every include:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">include "mod_math.jai";
-print("mod_add(2, 3) = {}", mod_add(2, 3));
-print("MOD_PI = {}", MOD_PI);
+<p>Two statements bring in another file. <code>include</code> is C++&#x27;s <code>#include</code>: the file&#x27;s text runs where it is written. <code>import</code> is a module: it runs once at program scope and again only when its file changes, which is what hot reload is built on.</p>
+<div class="tablewrap"><table><thead><tr><th></th><th><code>include "f.jai"</code></th><th><code>import "f.jai"</code></th></tr></thead><tbody>
+<tr><td>Runs</td><td>every time it is reached</td><td>the first time it is reached, then only after one of the module&#x27;s files changed</td></tr>
+<tr><td>Declares into</td><td>the scope where it is written</td><td>program scope, wherever it is written; the module is a unit of its own</td></tr>
+<tr><td>Value</td><td>in expression position, the file&#x27;s last top-level expression</td><td>the statement has none; the call form <code>import("f.jai")</code> is a <code>bool</code>, whether a module ran</td></tr>
+<tr><td>Path</td><td>a literal, <code>&lt;f.jai&gt;</code>, or the call form <code>include(expr)</code> with any string expression</td><td>a literal, or the call form <code>import(expr)</code>, which also takes several paths, an array of them, and <code>jai::force</code></td></tr>
+<tr><td>Allowed</td><td>wherever a statement may stand: a function or lambda body, a block, a loop, a conditional, a coroutine</td><td>the same places, except directly in a class or namespace body (a parse error)</td></tr>
+</tbody></table></div>
+<p><strong>An error in an included or imported file is an error at the line that reached it</strong>, catchable by a <code>try</code> around that line. A <code>throw</code> arrives as the thrown value, a run-time error with its own text, and a file that does not parse or check raises its listing, named by the file&#x27;s path. Uncaught, the stack trace lists the file&#x27;s own frames first, then the frame of each <code>include</code> or <code>import</code> that reached it.</p>
+<h2 id="include-runs-every-single-time">include: runs every time<a class="hlink" href="#include-runs-every-single-time" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto libname = "mod_" + "math" + ".jai";
+include(libname);                 // the call form
+print("mod_add(2, 3) = {}, MOD_PI = {}", mod_add(2, 3), MOD_PI);
 auto load_count = 0;
 include "mod_count.jai";
 include "mod_count.jai";
-include "mod_count.jai";
-print("include runs EVERY time: load_count = {}", load_count);</code></pre></div>
+print("load_count = {}", load_count);</code></pre></div>
 <p>with <code>mod_math.jai</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function mod_add(int a, int b) -&gt; int { return a + b; }
+<div class="codeblock cb-jai" data-file="mod_math.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function mod_add(int a, int b) -&gt; int { return a + b; }
 auto MOD_PI = 3.14159;</code></pre></div>
 <p>and <code>mod_count.jai</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">load_count = load_count + 1;</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">mod_add(2, 3) = 5
-MOD_PI = 3.14159
-include runs EVERY time: load_count = 3</code></pre></div>
-<p>Includes nest (an included file can include another), and C++ muscle memory works: <code>#include "x.jai";</code> is <code>include "x.jai";</code>.</p>
-<p><strong>include in expression position returns the file&#x27;s value</strong>: <code>var cfg = include "config.jai";</code> evaluates to the included file&#x27;s result (its last top-level expression), which makes data-file configs a one-liner. Statement-position include still discards the value.</p>
-<p><strong>An error in an included or imported file is an error at the line that reached it.</strong></p>
-<ul>
-<li>A <code>throw</code> arrives with its value and type (as <code>e.value</code>).</li>
-<li>A run-time error arrives with its own text.</li>
-<li>A file that does not parse or check raises its listing, named by the file&#x27;s path.</li>
-</ul>
-<p>A <code>try</code> around an <code>include</code> catches every one of them, and the program goes on. Uncaught, the stack trace lists the file&#x27;s own frames first, then the frame of each <code>include</code> or <code>import</code> that reached it.</p>
-<h2 id="dynamic-paths">Dynamic paths<a class="hlink" href="#dynamic-paths" aria-label="link">&#8203;</a></h2>
-<p>Both may appear wherever a statement may: in a function or lambda body, a block, a loop, a conditional, a coroutine. An <code>include</code> runs where it is written (its declarations are that scope&#x27;s). An <code>import</code> takes no scope: wherever it stands, the module&#x27;s declarations are program-scope declarations. Directly in a class or a namespace body an import is a parse error, since there it would read as scoped.</p>
-<p>The two differ in where the declarations land. An include is text pasted where it stands, so it runs in the current scope under the current file: inside a function its names are that function&#x27;s and end with it. An import is a file of its own, one unit however many places import it, so its names are the program&#x27;s wherever the statement stands:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">void load_rules() {
-    include "tuning.jai";     // textual: SPEED is a local of load_rules
+<div class="codeblock cb-jai" data-file="mod_count.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">load_count = load_count + 1;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">mod_add(2, 3) = 5, MOD_PI = 3.14159
+load_count = 2</code></pre></div>
+<p>Includes nest. <code>#include "x.jai";</code> is accepted as <code>include "x.jai";</code>. A data-file config is <code>var cfg = include "config.jai";</code>.</p>
+<h2 id="dynamic-paths">Where the declarations land<a class="hlink" href="#dynamic-paths" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">void load_rules() {
+    include "tuning.jai";     // SPEED is a local
     print("inside load_rules: SPEED = {}", SPEED);
 }
 load_rules();
 
 void load_physics() {
-    import "physics.jai";     // its own unit: gravity() is declared at program scope
+    import "physics.jai";     // gravity() is declared at program scope
 }
 load_physics();
 print("after load_physics: gravity() = {}", gravity());</code></pre></div>
 <p>with <code>tuning.jai</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int SPEED = 3;</code></pre></div>
+<div class="codeblock cb-jai" data-file="tuning.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int SPEED = 3;</code></pre></div>
 <p>and <code>physics.jai</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">float gravity() { return 9.81; }</code></pre></div>
+<div class="codeblock cb-jai" data-file="physics.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">float gravity() { return 9.81; }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">inside load_rules: SPEED = 3
 after load_physics: gravity() = 9.81</code></pre></div>
-<p><strong>An include inside a function body is that function&#x27;s own text.</strong> A literal path is pasted in when the function is parsed, the way C++ pastes an <code>#include</code>. So:</p>
+<p><strong>An include inside a function body is that function&#x27;s own text</strong>, pasted in when the function is parsed (for a literal path). It is not a reload; to replace program-scope functions and classes from inside a function, import the file.</p>
 <ul>
 <li>The file reads and writes the function&#x27;s parameters and locals, and the variables it declares are locals.</li>
-<li>A function it declares is a nested function of the body, callable below the include and gone when the body returns. Like every nested named function it captures nothing: the body&#x27;s locals are a parse error inside it.</li>
-<li>A program-scope function of the same name is hidden inside the body and stays as it was everywhere else. The strict checker warns about that one, since a reload is usually what was meant (<code>function &#x27;helper&#x27; from the include in function &#x27;reload&#x27; is local to it and hides the program-scope &#x27;helper&#x27; there without replacing it; import the file to replace program-scope functions</code>).</li>
-<li>A class is always a program-scope type. One written in a function, method or lambda body is a parse error (<code>a class cannot be declared inside a function body (a class is a program-scope type); declare it at program scope or import its file</code>), and so is one a file included inside a function body declares: <code>an include inside a function body cannot declare class &#x27;Rules&#x27; (a class is a program-scope type and the included text is the function&#x27;s own); import &#x27;rules.jai&#x27; instead</code>.</li>
+<li>A function it declares is a nested function of the body: callable below the include, gone when the body returns, and capturing nothing (the body&#x27;s locals are a parse error inside it).</li>
+<li>A program-scope function of the same name is hidden inside the body and unchanged elsewhere. The checker warns: <code>function &#x27;helper&#x27; from the include in function &#x27;reload&#x27; is local to it and hides the program-scope &#x27;helper&#x27; there without replacing it; import the file to replace program-scope functions</code>.</li>
+<li>A class written in a function, method or lambda body is a parse error, and so is one that a file included there declares: <code>an include inside a function body cannot declare class &#x27;Rules&#x27; (a class is a program-scope type and the included text is the function&#x27;s own); import &#x27;rules.jai&#x27; instead</code>.</li>
 </ul>
-<p>To replace program-scope functions and classes from inside a function, import the file: an import is program scope wherever it stands.</p>
-<p>The call form takes any string expression, both for include and import:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto libname = "mod_" + "math" + ".jai";
-include(libname);
-mod_add(20, 22);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">== result: 42</code></pre></div>
-<h2 id="import-cached-module-declaration">import: cached module declaration<a class="hlink" href="#import-cached-module-declaration" aria-label="link">&#8203;</a></h2>
-<p><code>import "file.jai"</code> executes the file <strong>at most once</strong> per engine (subject to the mode below). Repeating the import is free:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto load_count = 0;
+<h2 id="import-cached-module-declaration">import: a module, run once<a class="hlink" href="#import-cached-module-declaration" aria-label="link">&#8203;</a></h2>
+<p>The call form is <code>true</code> when the module, or a module it imports, ran on this reach. The statement form yields nothing: <code>auto x = import "mod_math.jai";</code> does not parse.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto load_count = 0;
 import "mod_count.jai"
 import "mod_count.jai"
-import "mod_count.jai"
-print("import caches (default: re-run only if the file changed): load_count = {}", load_count);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">import caches (default: re-run only if the file changed): load_count = 1</code></pre></div>
-<p>The statement form yields nothing (<code>auto x = import "mod_math.jai";</code> does not parse). The call form <code>import("file.jai")</code> is an expression: <code>true</code> when the module, or a module it imports, ran on this reach, <code>false</code> when it had nothing to do:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">bool first = import("mod_math.jai");
+print("load_count = {}", load_count);
+bool first = import("mod_math.jai");
 bool again = import("mod_math.jai");
 print("first reach ran it: {}, the next one: {}", first, again);</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">first reach ran it: true, the next one: false</code></pre></div>
-<p>Imports may form cycles. An import of a module that is still running (one that imported this file directly or through others) does nothing. The file the program started with counts as one: a module that imports the root file never runs it a second time. Code after an import sees everything the module declared, whichever way the cycle closes.</p>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">load_count = 1
+first reach ran it: true, the next one: false</code></pre></div>
+<p>Imports may form cycles. An import of a module that is still running does nothing, and the file the program started with counts as one. Code after an import sees everything the module declared, whichever way the cycle closes.</p>
 <h3 id="reloading-from-a-running-program">Reloading from a running program<a class="hlink" href="#reloading-from-a-running-program" aria-label="link">&#8203;</a></h3>
-<p>A running program reloads its modules by reaching their imports again. The loop that does it guards the import: <strong>a rejected reload raises a catchable error at the import, and the program keeps its old code.</strong> An unguarded import in a loop ends the run at the first mistake in an edited file. This is the guarded reload a game loop makes once per frame (the group form is described below):</p>
+<p>An import acts only when it is reached, so a running program reloads its modules by reaching their imports again, once per frame or tick. <strong>A rejected reload raises a catchable error at the import, and the program keeps its old code</strong>, so the loop guards the import:</p>
 <div class="codeblock cb-jai" data-host="the game&#x27;s loop (DEV_MODE, step_world)"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;string&gt; MODULES = ["rules.jai", "monsters.jai", "items.jai"];
 void tick() {
     if (DEV_MODE) {
         try {
             if (import(MODULES)) { print("reloaded"); }
         } catch (e) {
-            print("reload failed: {}", e);   // the program keeps the code it had
-        }
-    }
-    step_world();
-}</code></pre></div>
-<p>An import re-checks its file each time it is reached, so a running program reloads the modules it is working on by reaching their imports again. A game loop that keeps its module list in one file includes that list where the reload should happen:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript &mdash; modules.jai</span><pre><code class="lang-jai">import "rules.jai";
-import "monsters.jai";</code></pre></div>
-<div class="codeblock cb-jai" data-host="the game&#x27;s loop (DEV_MODE, step_world)"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">void tick() {
-    if (DEV_MODE) {
-        try {
-            include "modules.jai";   // each import re-runs only a module whose file changed
-        } catch (e) {
             print("reload failed: {}", e);
         }
     }
     step_world();
 }</code></pre></div>
-<p>An import re-runs its module only when one of the module&#x27;s files changed, and only after the change checks clean.</p>
-<p><strong>What an import checks.</strong> An unchanged module costs its stamp check: one per file of its closure, the module and every file its last run included (at the top level, nested, or spliced into a function body). So editing only an included file re-runs the module.</p>
-<ul>
-<li>The check goes on through the modules that module imported, and the modules they imported, each checked once per pass with its own includes. A changed one re-runs on its own, with the same checks first, and the module that imported it does not. So <code>while (running) { import("game.jai"); }</code> picks up an edit anywhere in the program.</li>
-<li>The modules checked this way are the ones the importing module&#x27;s last run actually imported, by the file each path resolved to. An import inside an <code>if</code> counts only when its branch ran. A computed <code>import(p)</code> counts as the file <code>p</code> named.</li>
-<li>When the module itself re-runs, the list is rebuilt from that run. A module it no longer imports stops being checked from there (it stays loaded, since imports never unload).</li>
-<li>A loaded module whose file disappears raises <code>Failed to open import file</code> once. It then waits quietly, keeping the code it had, until a check finds the file again and re-runs it with the usual checks first. A file that never loaded raises every time it is reached.</li>
-</ul>
-<p><strong>The checks before a re-run.</strong> A touched module is parsed and checked, together with the modules it imports, before any of it runs. A mistake raises a catchable error naming the file and line, and the program keeps the code it had. The check covers the code that uses it too:</p>
-<ul>
-<li>Every unit the program has loaded (the root file, the other modules, an executed string that declared functions, classes or variables) is checked again against the new declarations, never run again.</li>
-<li>A reload that would break code which is not changing is rejected the same way, the listing naming that code&#x27;s file and line (<code>root.jai:12:41: error: no member &#x27;a&#x27; in class &#x27;C&#x27;</code>). One such break is a field dropped while a function elsewhere still reads it (through a value or a reference: that code runs only after the reload has migrated every live instance).</li>
-<li>Code that is changing counts with its new text. When the file that reads the field has been edited too and its import is not reached yet, the reload is checked against that edit, and each module still re-runs at its own import.</li>
-<li>A rejected reload waits until a file it involved changes: the module, a file it includes, or the code it would break. So editing either side tries it again.</li>
-</ul>
-<p><strong>The re-run.</strong> When the checks pass the module runs as its own unit. Its functions and classes replace the old ones in place (live instances migrate, callers see the new bodies), and its top-level statements run again.</p>
-<p>A variable it declares with an initializer (<code>int spawn_rate = 3;</code>) takes the new value. One declared without (<code>int kills;</code>, <code>array&lt;Item&gt; pack;</code>) keeps the value it holds, unless its declared type changed, which resets it to the new type&#x27;s default. So state lives in a reloaded module simply by being declared without an initializer.</p>
-<p><strong>An import in a game loop costs nanoseconds, and a frame sees all of its edits or none.</strong> Asking the filesystem for a module&#x27;s stamp takes microseconds, so imports check in passes:</p>
-<ul>
-<li>At most once per <code>import_recheck_interval</code> (0.2 seconds by default) the first import reached opens a check pass. Every import reached during the pass asks for its modules&#x27; stamps, each module once.</li>
-<li>The pass closes when an import reaches a module it already checked in this pass (the frame loop came around) or when the call from the host returns.</li>
-<li>Between passes an import does nothing. It reads no clock and asks the filesystem nothing: it compares the engine&#x27;s clock sample against the window and branches.</li>
-<li>A module that has never run loads when it is first reached, pass or not.</li>
-</ul>
-<p>One frame therefore checks every import it reaches and the frames after it check none. So a touched file is picked up within about 0.2 seconds, and never half of a set of edits in one frame and the rest in the next.</p>
-<p><strong>The clock sample.</strong> The engine samples the clock where it reads it anyway:</p>
-<ul>
-<li>at each call from the host;</li>
-<li>every 1024 loop iterations and calls (the execution budget&#x27;s check, budget or not);</li>
-<li>whenever a <code>time::</code> function reads the system clock, so a frame loop that waits with a blocking <code>sleep</code> refreshes it every frame, as does every resume of a suspended run.</li>
-</ul>
-<p>The window runs on the real clock: a host&#x27;s virtual time source never moves it. A loop that keeps reaching its imports inside one long run sees an edit once the window has passed. The engine&#x27;s clock sample moves with every <code>time::</code> read of the system clock and with the execution budget&#x27;s periodic samples.</p>
-<p><strong>Setting the window.</strong> <code>import_recheck_interval(seconds)</code> sets the window from a script (the host spells it <code>engine::import_recheck_interval</code>), and <code>import_recheck_interval()</code> reads it. An interval of 0 checks on every reach, whichever import reaches the module, so an edit is seen at the next reach even inside the same run.</p>
-<p>Modules that must change together go in one import: <code>import("rules.jai", "monsters.jai")</code>, or <code>import(MODULES)</code> with an array of paths. The group is one decision:</p>
-<ul>
-<li>Every changed module is read, parsed and checked, together with the modules it imports and knowing the names the others declare, before any of them runs.</li>
-<li>A mistake anywhere is one catchable error and nothing is applied. The edits then wait until a file involved in the failure changes again.</li>
-<li>When every check passes the changed modules run in the listed order. The value is <code>true</code> when any of them ran, which is what the <a href="#reloading-from-a-running-program">guarded loop</a> at the top of this section prints on.</li>
-</ul>
-<p>A reload trigger that fires now and then (an F5 key, an editor&#x27;s ping) asks for a pass at once with the <code>jai::force</code> directive, the last argument of the call form:</p>
-<div class="codeblock cb-jai" data-host="the game&#x27;s input (key_pressed)"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">if (key_pressed(F5)) { import(MODULES, jai::force); }   // checks now: touched files re-run, unchanged ones do nothing</code></pre></div>
-<p>A forced import opens a pass whatever the window: a moved stamp re-runs its module with the usual checks first, an unchanged file does not re-run. <code>import("rules.jai")</code> loads exactly like <code>import "rules.jai";</code> and also yields whether the file ran (<code>true</code> when it ran, <code>false</code> when the import had nothing to do). A directive other than <code>jai::force</code> fails the load with a parse error naming it.</p>
+<div class="tablewrap"><table><thead><tr><th>Question</th><th>Rule</th></tr></thead><tbody>
+<tr><td>When is an edit noticed?</td><td>At most once per <code>import_recheck_interval</code> (0.2 seconds by default) the imports that are reached check their files; in between, a reached import costs nanoseconds. One frame checks every import it reaches and the frames after it check none, so a frame sees all of a set of edits or none. A module that has never run loads when first reached, whatever the window.</td></tr>
+<tr><td>What counts as changed?</td><td>The module&#x27;s file, or any file its last run included (at the top level, nested, or in a function body), by modification time and size. The check continues through the modules that run imported, and theirs, each once: an import inside an <code>if</code> counts when its branch ran, a computed <code>import(p)</code> as the file <code>p</code> named. A changed inner module re-runs alone; its importer does not.</td></tr>
+<tr><td>What is checked before the re-run?</td><td>The changed module is parsed and checked, with the modules it imports, before any of it runs. Every other loaded unit (the root file, other modules, an executed string that declared something) is checked again against the new declarations, never run again. An edited file whose import is not reached yet counts with its new text.</td></tr>
+<tr><td>What rejects a reload?</td><td>A mistake in the module, or a break in code that is not changing, such as a field dropped while a function elsewhere still reads it. The error names the file and line (<code>root.jai:12:41: error: no member &#x27;a&#x27; in class &#x27;C&#x27;</code>). The rejected reload then waits until a file it involved changes: the module, a file it includes, or the code it would break.</td></tr>
+<tr><td>What does the re-run apply?</td><td>Its functions and classes replace the old ones in place (live instances migrate, callers see the new bodies) and its top-level statements run again. A variable declared with an initializer (<code>int spawn_rate = 3;</code>) takes the new value. One declared without (<code>int kills;</code>) keeps its value, unless its declared type changed, which resets it to the new type&#x27;s default. So state survives a reload by being declared without an initializer.</td></tr>
+<tr><td>A module is no longer imported?</td><td>It stops being checked and stays loaded: imports never unload.</td></tr>
+<tr><td>A loaded module&#x27;s file disappears?</td><td>The import raises <code>Failed to open import file</code> once, then waits quietly with the code it had until the file is back, and re-runs it then. A file that never loaded raises every time it is reached.</td></tr>
+</tbody></table></div>
+<p><strong>The window.</strong> <code>import_recheck_interval(seconds)</code> sets it from a script and <code>import_recheck_interval()</code> reads it (the host spells it <code>engine::import_recheck_interval</code>). At 0 every reach checks. The window runs on the real clock, never a host&#x27;s virtual time source, and a loop that keeps reaching its imports inside one long run sees an edit once the window has passed.</p>
+<p><strong>Groups.</strong> Modules that must change together go in one import: <code>import("rules.jai", "monsters.jai")</code>, or <code>import(MODULES)</code> with an array of paths. Every changed module is parsed and checked, knowing the names the others declare, before any runs. A mistake anywhere is one catchable error and nothing is applied. Otherwise the changed modules run in the listed order, and the value is <code>true</code> when any ran.</p>
+<p><strong><code>jai::force</code></strong> as the last argument of the call form, <code>import(MODULES, jai::force)</code>, checks at once, whatever the window. It suits an occasional trigger (an F5 key, an editor&#x27;s ping). Unchanged files still do not re-run. Any other directive is a parse error naming it.</p>
 <h3 id="a-files-own-reload-hook">A file&#x27;s own reload hook<a class="hlink" href="#a-files-own-reload-hook" aria-label="link">&#8203;</a></h3>
-<p>A file may declare, at its top level, <code>void hot_reload_migrate(map&lt;string, var&gt; previous)</code>.</p>
-<ul>
-<li>The hook runs when that same file runs again: an import that re-runs it, <code>execute_file</code> of the same file, the same string executed again, a file included again by the same unit.</li>
-<li>It runs once, after the re-run&#x27;s top-level code, with every program-scope variable the file declared as it was <em>before</em> the re-run, including one the new text removed, retyped or initializes again.</li>
-<li>It never runs on a first load.</li>
-</ul>
-<p>This is how a reload converts data whose shape changed:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript &middot; scores.jai, edited while running</span><pre><code class="lang-jai">map&lt;string, int&gt; scores = {};             // was: array&lt;int&gt; scores = [12, 40, 7];
+<p>A file may declare <code>void hot_reload_migrate(map&lt;string, var&gt; previous)</code> at its top level to convert data whose shape changed:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript &middot; scores.jai, edited while running</span><pre><code class="lang-jai">map&lt;string, int&gt; scores = {};             // was: array&lt;int&gt; scores = [12, 40, 7];
 
 void hot_reload_migrate(map&lt;string, var&gt; previous) {
-    array&lt;int&gt; old = previous["scores"];  // the array the last run left
+    array&lt;int&gt; old = previous["scores"];
     for (int i = 0; i &lt; old.size(); i++) { scores["player" + to_string(i)] = old[i]; }
 }</code></pre></div>
-<p>The hook belongs to its file, not to the program:</p>
-<ul>
-<li>It is no global function, and nothing can call it: a call to <code>hot_reload_migrate</code> is an undefined name, at load and at run time.</li>
-<li>Two files each have their own, and each run takes it from that run&#x27;s text, so a run whose text no longer declares it has none.</li>
-<li>At a file&#x27;s top level the name is reserved for the hook, and any other declaration of it there is a load error naming the signature.</li>
-</ul>
-<p>An error inside the hook is caught like a run-time error in the re-run: the program stays as the re-run left it. The snapshot is taken only when the new text declares a hook.</p>
-<h3 id="import-modes-engine-import-behavior">Import modes (<code>engine::import_behavior</code>)<a class="hlink" href="#import-modes-engine-import-behavior" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th>Mode</th><th>Behavior</th></tr></thead><tbody><tr><td><code>file_timestamp</code> (<strong>default</strong>)</td><td>Re-imports only when the file, or a file its last run included, changed (mtime or size) since it was last imported. The hot-reload-friendly default.</td></tr><tr><td><code>once</code></td><td>Import exactly once; ignore later file changes.</td></tr><tr><td><code>always</code></td><td>Treat <code>import</code> as <code>include</code> (runs every time).</td></tr></tbody></table></div>
-<p>Set with <code>engine-&gt;set_import_behavior(engine::import_behavior::once);</code>.</p>
-<h3 id="invalidation-and-tracking-host-api">Invalidation and tracking (host API)<a class="hlink" href="#invalidation-and-tracking-host-api" aria-label="link">&#8203;</a></h3>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;add_include_path(&quot;scripts/&quot;);        // search roots; FIRST added path wins on collisions
-eng-&gt;reset_import(canonical_path);        // forget one module -&gt; next import re-runs it
-eng-&gt;reset_imports();                     // forget all
-eng-&gt;is_imported(canonical_path);         // query (canonical/absolute path)
-eng-&gt;get_imported_files();                // list</code></pre></div>
-<p>With filesystem access enabled (the default), a path resolves the same way everywhere a file is named: <code>import</code>, <code>include</code>, the checker&#x27;s gather across files, and the <code>resolve_path</code> builtin all walk one ladder. An absolute path stands or falls as given. A relative one is tried in order:</p>
-<ol>
-<li>first against the folder of the file doing the asking (a module imports its sibling by bare name, wherever the program was started from);</li>
-<li>then against each include path, in the order they were added;</li>
-<li>then against the working directory.</li>
-</ol>
-<p>The first hit wins, and its canonical spelling is the key the unit is cached and re-imported under. When no rung has the file:</p>
-<ul>
-<li>the <code>include</code> or <code>import</code> raises the catchable <code>Failed to open include file: helpers.jai</code> (<code>Failed to open import file: ...</code> for an import, the path as written) when it is reached;</li>
-<li>a file the checker cannot find is simply not part of its gather;</li>
-<li><code>resolve_path</code> instead returns <code>""</code>.</li>
-</ul>
+<p>The hook runs once whenever the same file runs again, after the re-run&#x27;s top-level code and never on a first load. <code>previous</code> holds every program-scope variable the file declared as it was before the re-run, including one the new text removed, retyped or initializes again. The hook belongs to its file and nothing can call it; an error inside it leaves the program as the re-run left it. <a href="../embedding/07-hot-reload.html#a-files-reload-hook">Hot Reload</a> has the exact rules.</p>
+<h3 id="invalidation-and-tracking-host-api">Import modes and tracking (host API)<a class="hlink" href="#invalidation-and-tracking-host-api" aria-label="link">&#8203;</a></h3>
+<p>The host adds search roots with <code>add_include_path</code>, forgets modules with <code>reset_import(path)</code> and <code>reset_imports()</code> so their next import re-runs them, and queries with <code>is_imported(path)</code> and <code>get_imported_files()</code>. <code>set_import_behavior</code> replaces the default <code>file_timestamp</code> policy described here with <code>once</code> or <code>always</code> (<a href="../reference/rules.html#import-modes">Import modes</a>, <a href="../reference/host.html#engine-api">Engine API</a>, <a href="../embedding/07-hot-reload.html">Hot Reload</a>). <code>reset_import</code> is an escape hatch, for a file regenerated with an unchanged timestamp or a re-run under <code>once</code>; it is not the reload mechanism.</p>
+<p>The jaibite disk cache (<code>.cache/foo.jai.jaibite</code> beside <code>foo.jai</code>, <a href="../embedding/04-jaibite.html#the-automatic-disk-cache">the automatic disk cache</a>) only makes loads cheaper: it never changes whether a file runs.</p>
 <h2 id="program-scope-redeclarations">Program-scope redeclarations<a class="hlink" href="#program-scope-redeclarations" aria-label="link">&#8203;</a></h2>
-<p>An engine runs many sources over its life: files, imports, strings from the host, a hook line every frame. Each is a <strong>unit</strong>: a file by its path, a string by its content (the same string executed every frame is one unit), a jaibite object by itself. A program-scope variable belongs to the unit that declared it.</p>
+<p>Each source an engine runs is a <strong>unit</strong>: a file by its path, a string by its content (the same string executed every frame is one unit), a jaibite object by itself. Included text belongs to its includer&#x27;s unit; an imported file is its own. A program-scope variable belongs to the unit that declared it.</p>
 <ul>
-<li><strong>Another unit's declaration gets its own cell.</strong> When a second unit declares a name the first one declared, the new declaration shadows the old one the way a nested block shadows in C++.
-<ul>
-<li>Code reads its own unit's cell when its unit declared the name.</li>
-<li>Otherwise it reads the newest cell declared no later than the code was compiled (top-level code: the start of its current run; a function: the run that declared it). Code compiled before the redeclaration keeps its binding, and nothing is rewritten under running code.</li>
-<li>A name only a later unit declares resolves to the newest cell, so a function may read a global a later file declares.</li>
-</ul></li>
-<li><strong>The same unit run again writes in place.</strong> A file reloaded at its path, a module an import re-runs, the same string executed again: the declaration writes the existing cell. One that assigns (<code>int kills = 0;</code>) runs its initializer again. One written without an initializer (<code>int kills;</code>, <code>var loose;</code>) keeps the value it holds, unless its declared type changed, which resets it to the new type's default.</li>
-<li><strong>Functions and classes replace in place</strong> whatever the unit: a redefinition reaches every caller and every live instance, which is what hot reload is.</li>
-<li><strong><code>{ }</code> blocks scope as in C++, at program scope too.</strong> A declaration inside a bare block, an <code>if</code>, a loop body or a <code>try</code> shadows the outer name for the block and vanishes at its end. A function called from inside the block still sees the binding of the scope it was declared in. Only a declaration at the unit's own top level binds the name for the unit.</li>
+<li><strong>Another unit&#x27;s declaration of the same name gets its own cell</strong> and shadows the old one, as a nested block does in C++. Code reads its own unit&#x27;s cell when its unit declared the name. Otherwise it reads the newest cell declared no later than the code was compiled (top-level code: the start of its current run; a function: the run that declared it), so code compiled before a redeclaration keeps its binding. A name only a later unit declares resolves to the newest cell.</li>
+<li><strong>The same unit run again writes in place</strong>, with the initializer rule of a <a href="#reloading-from-a-running-program">re-run</a>.</li>
+<li><strong>One run of a unit declares a top-level variable once</strong>: a second declaration in the same text is <code>redeclaration of 'x' in the same scope</code>, except an <code>extern</code>&#x27;s definition and an <code>inline</code> declaration.</li>
+<li><strong>Functions and classes replace in place</strong> whatever the unit.</li>
+<li><strong><code>{ }</code> blocks scope as in C++, at program scope too.</strong> A declaration inside a bare block, an <code>if</code>, a loop body or a <code>try</code> shadows the outer name until the block ends. A function called from inside the block still sees the binding of the scope it was declared in.</li>
 </ul>
-<p>An include is textual, so what it declares is the includer's own; an import is a unit of its own. Here <code>rival.jai</code> is imported, so its <code>G</code> is a second cell:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int G = 1;
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int G = 1;
 int main_g() { return G; }
 import "rival.jai";           // another unit: its G is a cell of its own
 print(main_g(), " ", rival_g(), " ", G);
@@ -248,129 +162,80 @@ print(main_g(), " ", rival_g(), " ", G);
 int hp = 10;
 void show() { print("show: {}", hp); }
 {
-    int hp = 99;              // shadows for the block only
+    int hp = 99;
     print("block: {}", hp);
-    show();                   // a callee keeps the outer binding
+    show();
 }
 print("after: {}", hp);</code></pre></div>
 <p>with <code>rival.jai</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int G = 5;
+<div class="codeblock cb-jai" data-file="rival.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int G = 5;
 int rival_g() { return G; }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 5 1
 block: 99
 show: 10
 after: 10</code></pre></div>
-<p>The host reads and assigns the newest cell (<code>add_global</code> after a redeclaration writes it), and a reference bound before a redeclaration stays on the cell it bound. A unit that should use a global rather than own one declares it <code>extern</code>; one variable shared by every unit that declares it is <code>inline int score;</code>, the C++17 inline variable (<a href="../reference/index.html#extern">extern and inline</a>).</p>
+<p>The host reads and assigns the newest cell (<code>add_global</code> after a redeclaration writes it), and a reference bound before a redeclaration stays on the cell it bound. A unit that uses a global without owning one declares it <code>extern</code>; one variable shared by every unit that declares it is <code>inline</code> (<a href="#three-escape-valves">below</a>).</p>
 <h2 id="where-files-are">Where files are<a class="hlink" href="#where-files-are" aria-label="link">&#8203;</a></h2>
-<p>A program that reads or writes files beyond its own imports should not depend on the working directory. A script dropped onto the runner, launched from a shortcut or started by another program gets whatever directory the shell chose. Every engine carries these builtins. Location queries use absolute paths with forward slashes and no trailing separator; <code>file_name</code> returns just the last component, and the documented empty results remain empty:</p>
-<p>All of these queries require <code>jai::filesystem</code>, including the lexical <code>file_name</code> operation. A host that calls <code>eng-&gt;disable(jai::filesystem)</code> makes them, <code>include</code> and <code>import</code> raise the catchable error <code>Insufficient privilege: filesystem.</code>. Script can inspect the flag with <code>reflect::is_enabled(jai::filesystem)</code> or <code>reflect::is_enabled("filesystem")</code>, but only the host can enable it. Hosts can additionally require <a href="../embedding/05-safety-rails.html#custom-permissions">custom named permissions</a> on their own file APIs; those do not replace the built-in filesystem requirement. See <a href="../embedding/05-safety-rails.html#filesystem-privilege">Filesystem access is a host choice</a>.</p>
+<p><strong>The path ladder.</strong> <code>import</code>, <code>include</code>, the checker&#x27;s gather across files and <code>resolve_path</code> resolve a path the same way. An absolute path stands or falls as given. A relative one is tried, first hit wins:</p>
+<ol>
+<li>against the folder of the file doing the asking (a module imports its sibling by bare name, wherever the program was started from);</li>
+<li>against each <code>add_include_path</code> root, in the order added;</li>
+<li>against the working directory.</li>
+</ol>
+<p>The hit&#x27;s canonical spelling is the key the unit is cached and re-imported under. When no rung has the file, the statement raises the catchable <code>Failed to open include file: helpers.jai</code> (<code>Failed to open import file: ...</code> for an import, the path as written) when it is reached, and the checker leaves the file out of its gather. A host can confine the ladder to chosen folders (<a href="../embedding/05-safety-rails.html#confine-paths">Safety Rails</a>).</p>
+<p><strong>Location builtins.</strong> The working directory is whatever the launching shell chose, so a program builds its file paths from these queries, which every engine carries. Locations are absolute, with forward slashes and no trailing separator:</p>
 <div class="tablewrap"><table><thead><tr><th>builtin</th><th>answers</th></tr></thead><tbody>
-<tr><td><code>resolve_path(name)</code></td><td>the file <code>import name</code> would load, asked from the calling file; <code>""</code> when no rung has it. The load-side question.</td></tr>
-<tr><td><code>current_script_dir()</code>, <code>current_script_path()</code></td><td>the folder and file whose code is executing. A module calling it finds files beside itself; its caller finds its own. This changes with every import, which is why it is a function and not a global.</td></tr>
-<tr><td><code>root_script_dir()</code>, <code>root_script_path()</code></td><td>the file the program started with, fixed for the run. A REPL or an inline program answers the working directory and <code>""</code>.</td></tr>
-<tr><td><code>executable_dir()</code> (alias <code>bin_dir()</code>), <code>executable_path()</code></td><td>the running executable&#x27;s folder and file, fixed for the process.</td></tr>
-<tr><td><code>app_data_dir(name)</code>, <code>app_cache_dir(name)</code></td><td>the platform&#x27;s per-user folders for an app called <code>name</code>: <code>%LOCALAPPDATA%\name</code> (its cache below it), <code>~/Library/Application Support/name</code> and <code>~/Library/Caches/name</code>, <code>$XDG_DATA_HOME/name</code> and <code>$XDG_CACHE_HOME/name</code>. Queries only; a host on a platform these do not fit (Android) installs its own resolvers with <code>engine::app_directory_resolvers</code>.</td></tr>
-<tr><td><code>working_dir()</code>, <code>parent_dir(p)</code>, <code>file_name(p)</code></td><td>the working directory; a normalized parent path (weakly canonicalized, so it can consult the filesystem); and the lexical last component of a path, respectively.</td></tr>
-<tr><td><code>file_data(p)</code></td><td>what the filesystem says about the file or folder the ladder finds for <code>p</code> (resolved like <code>resolve_path</code>), as a <code>map&lt;string, var&gt;</code>: <code>path</code> (canonical, absolute), <code>filename</code> (with its extension), <code>extension</code> (with its dot, <code>".jai"</code>; empty for a folder or a name without one), <code>created</code> and <code>modified</code> (int milliseconds since the Unix epoch; <code>created</code> is <code>null</code> where the platform does not report it, as on Linux), <code>size</code> (int bytes, 0 for a folder) and <code>is_directory</code>. Nothing there answers <code>null</code>, so a watcher polls <code>file_data(p)["modified"]</code> without a <code>try</code>.</td></tr>
+<tr><td><code>current_script_dir()</code></td><td>the folder of the file whose code is executing, so a module finds files beside itself</td></tr>
+<tr><td><code>root_script_dir()</code></td><td>the folder of the file the program started with, fixed for the run: the anchor for a save beside the program</td></tr>
+<tr><td><code>app_data_dir(name)</code></td><td>the platform&#x27;s per-user folder for an app called <code>name</code>, for per-user saves</td></tr>
+<tr><td><code>file_data(p)</code></td><td>a map of what the filesystem says about <code>p</code> (<code>null</code> when nothing is there), so a watcher polls <code>file_data(p)["modified"]</code> without a <code>try</code></td></tr>
 </tbody></table></div>
-<p>Loading is one question, so it gets one ladder. Saving is a choice, so the builtins hand you the anchors and leave the choice explicit:</p>
-<ul>
-<li>a save beside the program goes under <code>root_script_dir()</code>;</li>
-<li>a per-user save under <code>app_data_dir(name)</code>;</li>
-<li>a regenerable cache under <code>app_cache_dir(name)</code>;</li>
-<li>a dump for whoever is watching under <code>working_dir()</code>.</li>
-</ul>
-<p>JaiDoom chooses its folder this way: the folder above <code>scripts/</code> when it is writable, otherwise <code>app_data_dir("JaiDOOM")</code>.</p>
-<p>The core engine does filesystem work for source loading, path queries and disk caching. General file operations such as <code>read_file</code>, <code>write_file</code>, <code>list_dir</code> and <code>writable_dir</code> are host functions. The standalone runner provides them and attaches the same filesystem privilege requirement. An embedding host chooses which to expose and must check or register the requirement for its own bindings.</p>
-<p><strong>A missing file raises.</strong> The runner&#x27;s <code>read_file(path)</code> returns the file&#x27;s bytes exactly (<code>""</code> for an existing empty file). It raises a catchable error when the file is missing or cannot be read: <code>Cannot read file 'saves/world.gqw': not found</code>, and <code>not a file</code> (a folder), <code>permission denied</code>, <code>cannot be opened</code> or <code>read failed</code> in the same shape. A program that expects absence either asks first or catches:</p>
-<ul>
-<li>asks first: <code>if (file_exists(path)) { text = read_file(path); }</code></li>
-<li>catches: <code>try { text = read_file(path); } catch (e) { text = ""; }</code></li>
-</ul>
-<p>An uncaught error ends the program with the usual trace, naming the path.</p>
+<p>Every location builtin and each <code>file_data</code> key: <a href="../reference/library.html#location-builtins">location builtins</a>.</p>
+<p>All of these (the lexical <code>file_name</code> too), <code>include</code> and <code>import</code> require the <code>jai::filesystem</code> privilege and raise the catchable <code>Insufficient privilege: filesystem.</code> on an engine whose host disabled it (<a href="../embedding/05-safety-rails.html#filesystem-privilege">Filesystem access is a host choice</a>).</p>
+<p><strong>File operations are host functions.</strong> <code>read_file</code>, <code>write_file</code>, <code>list_dir</code> and <code>writable_dir</code> come from the host: the standalone runner provides them under the same privilege, and an embedding host chooses which to expose. The runner&#x27;s <code>read_file(path)</code> returns the file&#x27;s bytes exactly (<code>""</code> for an existing empty file) and raises a catchable <code>Cannot read file</code> error naming the path and the reason when it cannot (<a href="../reference/errors.html#errors-files">Files</a>). A program that expects absence asks <code>file_exists(path)</code> first, or catches.</p>
 <h2 id="what-the-checker-sees-across-files">What the checker sees across files<a class="hlink" href="#what-the-checker-sees-across-files" aria-label="link">&#8203;</a></h2>
-<p>The checker runs before anything executes, and it does not stop at the file boundary. A unit (one file, or one string handed to <code>execute()</code>) whose top-level <code>import</code> and <code>include</code> lines carry literal paths is the root of a <strong>program</strong>. With filesystem access enabled, before the root runs:</p>
+<p>A unit (a file, or a string handed to <code>execute()</code>) whose top-level <code>import</code> and <code>include</code> lines carry literal paths is the root of a <strong>program</strong>. Before the root runs, every file those paths reach is gathered (recursively, each once, cycles included), the top-level names of all of them (functions, globals, classes, enums, namespaces) are pooled, and every unit is checked against the pool.</p>
 <ul>
-<li>every file those paths reach is gathered (recursively, each file once, cycles included);</li>
-<li>the top-level names of all of them (functions, globals, classes, enums, namespaces) are pooled;</li>
-<li>every unit is then checked against the pool.</li>
+<li><strong>Import order does not matter for names.</strong> A function may use a global that a file imported later declares. Order still matters for values: a top-level statement that read that global before its import ran would find it undefined at run time.</li>
+<li><strong>A mistake anywhere fails the root</strong> before any unit runs, the listing named by the file&#x27;s resolved path. A file that does not parse stops the program there: nothing is checked until it parses.</li>
+<li><strong>Class knowledge crosses files.</strong> A subclass whose parent lives in another unit resolves inherited fields and methods, and a typed mismatch against a cross-file field is the error the same-file case reports.</li>
+<li><strong>Function signatures and global types cross files.</strong> A call of a function one other file declares checks its argument count, its arguments and the use of its result, and a read or store of a typed global checks against its declaration: with <code>int twice(int n)</code> in <code>lib.jai</code>, <code>string s = twice("x");</code> fails the importer's load. A name two files declare, or a file reached through a computed path, leaves the call to run time.</li>
+<li><strong>A reload is checked against its users.</strong> An edit that changes a function's signature or a global's type while another loaded file's calls no longer fit does not load: the listing names those calls in their own file, and the old code keeps running until the edit and its callers agree (saved together, they load together).</li>
+<li><strong>Without filesystem access</strong> the checker checks only the source it was given in memory.</li>
 </ul>
-<p>Two consequences follow.</p>
-<p>When filesystem access is disabled, the checker skips discovery on disk. It still checks the source supplied in memory, but cannot gather declarations from those files; an attempted runtime <code>include</code> or <code>import</code> raises the privilege error. Neither a filename label for an in-memory program nor an <code>extern</code> declaration grants file access.</p>
-<p>First, <strong>import order does not matter for names</strong>. A function in one file may use a global another file declares, even a file imported after it:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">import "rules.jai";
-import "config.jai";        // imported AFTER rules.jai, which reads its names
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">import "rules.jai";
+import "config.jai";        // rules.jai reads its names
 print("damage = {}", damage(3));</code></pre></div>
 <p>with <code>rules.jai</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function damage(int hits) -&gt; int { return hits * BASE_DAMAGE; }</code></pre></div>
+<div class="codeblock cb-jai" data-file="rules.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function damage(int hits) -&gt; int { return hits * BASE_DAMAGE; }</code></pre></div>
 <p>and <code>config.jai</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int BASE_DAMAGE = 7;</code></pre></div>
+<div class="codeblock cb-jai" data-file="config.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int BASE_DAMAGE = 7;</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">damage = 21</code></pre></div>
-<p><code>rules.jai</code> reads <code>BASE_DAMAGE</code>, which is declared in a file imported <em>after</em> it. The checker knew the name from the pool. The runtime finds the value because <code>damage()</code> is not called until both imports have run. (Execution order still matters for <em>values</em>: a top-level statement in <code>rules.jai</code> that read <code>BASE_DAMAGE</code> would find it undefined at run time. The checker is a superset by design: it never fails a program that runs clean, and it cannot see the clock.)</p>
-<p>Second, <strong>a mistake anywhere fails the root</strong>. Misspell the name in <code>rules.jai</code> and the root&#x27;s load fails before any unit runs, with the listing named by the file&#x27;s resolved path (shortened here):</p>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
-scripts/rules.jai:1:50: error: use of undeclared identifier &#x27;BASE_DAMGE&#x27;
-    function damage(int hits) -&gt; int { return hits * BASE_DAMGE; }
-                                                     ^</code></pre></div>
-<p>A file that does not parse stops the program at that file. The load fails with its parse error, named by its path, line and column exactly as running the file directly reports it. Nothing is checked until it parses (the names it would declare are unknown, so checking the other files would only call them undeclared).</p>
-<p>Class knowledge crosses files the same way: a subclass whose parent lives in another unit resolves inherited fields and methods. A typed mismatch against a cross-file field is the same error the same-file case reports.</p>
+<p>Misspell the name in <code>rules.jai</code> and the root&#x27;s load fails with <code>scripts/rules.jai:1:50: error: use of undeclared identifier &#x27;BASE_DAMGE&#x27;</code> (path shortened here).</p>
 <h3 id="three-escape-valves">Three escape valves<a class="hlink" href="#three-escape-valves" aria-label="link">&#8203;</a></h3>
-<p>Sometimes a name genuinely is not in the program. It comes from the host, from a file whose path is computed at run time, or from a module only some programs import. Three spellings tell the checker so, each as narrow as its case:</p>
-<ul><li><strong>A dynamic path.</strong> <code>import(expr)</code> and <code>include(expr)</code> cannot be followed at check time, so a unit that contains one drops <em>undeclared identifier</em> from error to warning for that unit. It can define anything; the checker admits that and stays quiet.</li>
-<li><strong><code>extern</code>.</strong> Declare the name without defining it:
-<ul>
-<li><code>extern function net_relay;</code> (a callable of unknown signature)</li>
-<li><code>extern int tick_rate;</code> (typed: checked as an int)</li>
-<li><code>extern config;</code> (untyped, behaves like <code>var</code>)</li>
-</ul>
-The program&#x27;s pool carries it to every unit. At run time it declares nothing: the name resolves when it is used. A name nothing has defined by then raises <code>'net_relay' is declared extern but never defined</code> (for a variable, with <code>(an 'inline' declaration creates it)</code> after it). This is also how a shared leaf calls into a module only some programs import: in a program that does import it, the <code>extern</code> is inert and the real definition wins.</li>
-<li><strong><code>[[warn_mode]]</code> at the top of a unit.</strong> The whole file is checked but reported as warnings, and a warn-mode leaf never fails its program. Coarser than <code>extern</code>; reach for it when a file is deliberately dynamic.</li></ul>
-<p>The <code>extern</code> shape, in a leaf that waits for a host-registered function:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">import "leaf.jai";
-print("loaded; on_packet waits for the host: {}", leaf_value());</code></pre></div>
-<p>with <code>leaf.jai</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">extern function net_relay;          // registered by the host before any packet arrives
-function leaf_value() -&gt; int { return 1; }
-function on_packet(var p) { return net_relay(p); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">loaded; on_packet waits for the host: 1</code></pre></div>
-<p>A variable that several files declare, each wanting it to exist whichever of them a program imports, is an <code>inline</code> variable, as in C++17. The first <code>inline</code> declaration to run creates it (from its initializer, or its type&#x27;s default), and every later one adopts it without running its initializer. A plain declaration and an <code>inline</code> one of the same name never mix: the checker reports <code>'frags' is already defined inline; declare it 'inline int frags;' to share it</code> at load when it sees both.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">import "hud.jai";
+<p>A name that is not in the program comes from the host, from a file whose path is computed at run time, or from a module only some programs import. Three spellings tell the checker so:</p>
+<ul><li><strong>A dynamic path.</strong> <code>import(expr)</code> and <code>include(expr)</code> cannot be followed at check time, so a unit that contains one drops <em>undeclared identifier</em> from error to warning for that unit.</li>
+<li><strong><code>extern</code></strong> declares a name without defining it: <code>extern function net_relay;</code>, <code>extern int tick_rate;</code> (checked as an int), <code>extern config;</code> (untyped). The pool carries it to every unit. At run time it declares nothing: the name resolves when it is used, and raises if nothing has defined it by then. Where a real definition exists the <code>extern</code> is inert, so a shared leaf can call into a module only some programs import.</li>
+<li><strong><code>[[warn_mode]]</code> at the top of a unit.</strong> The whole file is checked but reported as warnings, and a warn-mode leaf never fails its program.</li></ul>
+<p>A variable that several files declare, each wanting it to exist whichever of them a program imports, is an <code>inline</code> variable, as in C++17: the first declaration to run creates it and the others adopt it.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">import "hud.jai";
 import "netplay.jai";
 award_frag();
-award_frag();
-print("frags = {}", frags);</code></pre></div>
+print("frags = {}, relay waits for the host: {}", frags, relay_ready());</code></pre></div>
 <p>with <code>hud.jai</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">inline int frags;                   // exists whether or not netplay.jai is imported
+<div class="codeblock cb-jai" data-file="hud.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">inline int frags;
 void award_frag() { frags += 1; }</code></pre></div>
 <p>and <code>netplay.jai</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">inline int frags = 100;             // adopts hud.jai's variable: this initializer does not run</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">frags = 2</code></pre></div>
-<p>All three, plus <code>inline</code>, <code>[[strict_mode]]</code> and the diagnostic format, are covered in <a href="13-strict-checking.html">Types That Fail Early</a>.</p>
-<h2 id="which-one-do-i-want-the-real-world-idiom">Which one do I want? (the real-world idiom)<a class="hlink" href="#which-one-do-i-want-the-real-world-idiom" aria-label="link">&#8203;</a></h2>
-<p>A program declares its module graph with <code>import</code> lines at program scope, and reloads by reaching those imports again. The dungeon crawler&#x27;s entry point (examples/crawler/scripts/main.jai, abridged) is one import per module:</p>
-<div class="codeblock cb-jai" data-host="excerpt of examples/crawler/scripts/main.jai"><span class="cb-label">jaiscript &middot; excerpt</span><pre><code class="lang-jai">// GRUBWELL entry point. The host executes: import "main.jai"; crawler_main();
-import "state.jai";     // the persistent globals; the live reload leaves this file out
-import "util.jai";
-import "data.jai";
-// ... one import per module ...</code></pre></div>
-<p>An <code>include</code> written inside a function body is not a reload. Its text becomes part of that function (<a href="#dynamic-paths">Dynamic paths</a>), so the functions it declares are that function&#x27;s nested functions, a class there is a parse error, and the program&#x27;s own definitions stay as they were. Reaching an <code>import</code> again is what re-runs a changed module at program scope, with its checks first. The crawler&#x27;s dev-mode reload is one group import inside a function, <code>import(&quot;util.jai&quot;, &quot;data.jai&quot;, ...)</code>, parsed and checked as a whole before any of it runs.</p>
-<p><strong>Reload is pull-based: it flows through normal execution.</strong> An <code>import</code> acts only when it is <em>reached</em>, so the canonical host pattern is to reach the imports every frame or tick, from the entry point or a function the loop calls. In each check pass (above) every import reached asks for its file&#x27;s stamp once: a changed file re-imports and an unchanged one does nothing more.</p>
-<p>There is no watcher thread and no out-of-band reload sweep, <em>deliberately</em>. Re-running a module has side effects, and pull-based reload means those side effects land exactly where control flow puts them, never asynchronously under your feet. <code>engine::reset_import(s)</code> is a narrow escape hatch for a file regenerated with an unchanged mtime (timestamp granularity), or for forcing a re-run under <code>once</code> mode. It is not the reload mechanism.</p>
-<p>Below all of this sits the <strong>jaibite disk cache</strong>, and it is parse-level and side-effect-free. Every file-based load keeps <code>.cache/foo.jai.jaibite</code> (pre-parsed AST) beside <code>foo.jai</code>. It never changes <em>whether</em> a file runs (the import gate and include semantics above decide that), only how cheaply its text turns back into an AST.</p>
-<ul>
-<li>A load uses the cache, loading it instead of parsing, only when the source it records (its size and a hash of its bytes) is exactly the text just read and the host registrations match.</li>
-<li>Any other text reparses (and refreshes the cache), whatever its mtime. A revision copied into place with an older timestamp, or a file restored with its old one, runs its own code.</li>
-<li>A cache is written to a temporary file and renamed over the old one, so no reader sees part of one.</li>
-<li>A module re-runs only from text read whole, its stamp queried before and after the read agreeing (a save that lands mid-read waits for the next pass).</li>
-<li>Writes are silent best-effort (a read-only script dir just skips them). <code>engine-&gt;jaibite_cache(false)</code> disables it.</li>
-<li>Disabling <code>jai::filesystem</code> also skips automatic disk-cache reads, writes and metadata checks. Explicitly loading or saving a file is refused instead. In-memory source and jaibite bytes remain usable.</li>
-</ul>
-<p>Rules of thumb:</p>
-<ul><li><strong>Declaring your module graph</strong>: <code>import</code> at the top of each file: cached, cheap to repeat, mtime-aware by default; edits are picked up the next time the import executes.</li><li><strong>Reloading while running</strong>: reach the imports again, from wherever the reload belongs (a function the loop calls, a dev-mode branch). Only touched modules re-run.</li><li><strong>Forcing a re-run</strong> (mtime aside): <code>include</code>. It always executes, in the scope where it is written.</li><li><strong>Persistent state</strong> in a module you reload: declare it without an initializer, and a re-run keeps it; an initializer resets it on every re-run.</li></ul><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/09-containers-strings.html"><span>&larr; previous</span>Containers &amp; Strings</a><a class="next" rel="next" href="../guide/11-kitchen-sink.html"><span>next &rarr;</span>Enums, Namespaces, Destructuring &amp; Friends</a></nav></article>
+<div class="codeblock cb-jai" data-file="netplay.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">inline int frags = 100;             // adopts hud.jai's variable: no initializer runs
+extern function net_relay;          // the host registers it later
+function on_packet(var p) { return net_relay(p); }
+function relay_ready() -&gt; bool { return true; }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">frags = 1, relay waits for the host: true</code></pre></div>
+<p><a href="13-strict-checking.html">Types That Fail Early</a> and the reference&#x27;s <a href="../reference/rules.html#extern">extern and inline</a> have the full rules and error texts for all of these.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/09-containers-strings.html"><span>&larr; previous</span>Containers &amp; Strings</a><a class="next" rel="next" href="../guide/11-kitchen-sink.html"><span>next &rarr;</span>Enums, Namespaces, Destructuring &amp; Friends</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

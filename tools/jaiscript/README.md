@@ -54,7 +54,7 @@ jaiscript
 A persistent engine: globals, functions and classes accumulate across lines.
 
 ```
-JaiScript 0.5.2-beta - vm backend, stdlib loaded, budget off. :help for commands.
+JaiScript 0.5.3-beta - vm backend, stdlib loaded, budget off. :help for commands.
 jai> int hp = 100
 jai> hp - 58
 42
@@ -159,7 +159,7 @@ error below), and the opt-in `web::` library (`jai::stdlib::register_web`: `web:
 `spider::Response`) with the `network` permission granted and the transport of `tools/jaiscript/http_transport.hpp`:
 WinHTTP on Windows, sockets elsewhere with HTTPS through OpenSSL when the build found it (plain HTTP otherwise);
 `JAISCRIPT_HTTP_TRANSPORT=socket` picks the socket transport on Windows. (A bare engine has far less, listed in the reference's "What a bare engine has"
-(`docs/site/reference/index.html#bare-engine`); the runner opts into everything.) On top, the host binds file IO so scripts can actually save things:
+(`docs/site/reference/library.html#bare-engine`); the runner opts into everything.) On top, the host binds file IO so scripts can actually save things:
 
 ```
 read_file(path) -> string      write_file(path, text) -> bool   (creates missing folders)

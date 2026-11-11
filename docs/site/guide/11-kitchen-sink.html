@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="Enums, Namespaces, Destructuring &amp; Friends — JaiScript Guide">
 <meta property="og:description" content="Enums, namespaces, destructuring, and the smaller conveniences that did not need a chapter of their own.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/guide/11-kitchen-sink.html">
+<meta property="og:url" content="https://jaiscript.com/guide/11-kitchen-sink.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,217 +33,135 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide</summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li class="current"><a href="../guide/11-kitchen-sink.html" aria-current="page">Enums, Namespaces, Destructuring &amp; Friends</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Enums, Namespaces, Destructuring &amp; Friends</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li class="current"><a href="../guide/11-kitchen-sink.html" aria-current="page">Enums, Namespaces, Destructuring &amp; Friends</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>11</nav>
 <article class="chapter"><h1 id="enums-namespaces-destructuring-friends">Enums, Namespaces, Destructuring &amp; Friends<a class="hlink" href="#enums-namespaces-destructuring-friends" aria-label="link">&#8203;</a></h1>
-<p>The kitchen sink. This chapter collects the smaller conveniences, the things you reach for daily that don&#x27;t need a chapter of their own: enums, namespaces, destructuring, the ternary operator, and null-safe access. Each behaves the way a C++ developer would guess, with the differences called out.</p>
+<p>The smaller pieces of the language: enums, namespaces and <code>using</code>, destructuring, the conditional operator and null-safe access. Each works as a C++ developer would guess; the differences are stated.</p>
 <h2 id="enums">Enums<a class="hlink" href="#enums" aria-label="link">&#8203;</a></h2>
-<p><code>enum Name { a, b, c }</code> declares integer constants, counted from 0 as in C++. They compare naturally and work as <code>switch</code> cases:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">enum Direction { north, south, east, west }
-print("east = {}", Direction.east);
-auto d = Direction.south;
-print("d == south: {}", d == Direction.south);
+<p><strong>An enum is a type.</strong> <code>enum Dir { north, south, east, west }</code> declares <code>Dir</code> and its values, written <code>Dir::south</code> (the dot form <code>Dir.south</code> names the same value).</p>
+<ul>
+<li>A <code>Dir</code> slot (variable, parameter, return, field, element, map key or value) holds only <code>Dir</code> values and starts at the first one. <code>auto d = Dir::north;</code> is a <code>Dir</code>.</li>
+<li><strong>Enum to int is implicit</strong>: <code>int n = d + 1;</code>.</li>
+<li><strong>Int to enum needs <code>cast&lt;Dir&gt;(n)</code></strong>, which raises for a number the enum lacks. A bare int or another enum's value into a <code>Dir</code> slot is a load error, and so are <code>d += 1</code> and <code>d++</code>.</li>
+<li>A <code>var</code> holds the integer: <code>type_of</code> reports <code>"int"</code>, and it enters a <code>Dir</code> slot when it is one of the values.</li>
+<li><code>print</code>, <code>to_string</code>, <code>format</code>, <code>to_json</code> and <code>to_binary</code> show or write the integer; a load restores the enum.</li>
+<li>Overloads tell <code>f(Dir)</code> from <code>f(int)</code>, <code>catch (Dir e)</code> takes a thrown <code>Dir</code>, and a map literal takes values as keys.</li>
+<li>A value that does not exist fails the load: <code>no value 'zzz' in enum 'Dir'</code>.</li>
+</ul>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">enum Dir { north, south, east, west }
+Dir d = Dir::south;
+int n = d + 1;                               // enum to int: implicit
+string name(Dir where) { return where == Dir::east ? "east" : "elsewhere"; }
+print("{} {} {} {}", d, type_of(d), n, name(cast&lt;Dir&gt;(n)));
 switch (d) {
-    case Direction.north: print("going up");
-    case Direction.south: print("going down");
+    case Dir::north: print("up");
+    case Dir::south: print("down");
     default: print("sideways");
 }
-Direction.west;</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">east = 2
-d == south: true
-going down
-== result: 3</code></pre></div>
-<p>Enum members are plain ints at runtime (<code>Direction.east</code> prints <code>2</code>). Membership, though, is checked at load: <code>Direction.zzz</code> is not a run-time lookup that returns null, it fails the load before anything runs:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">enum Direction { north, south, east, west }
-print("{}", Direction.zzz);</code></pre></div>
+map&lt;Dir, string&gt; short_names = {Dir::north: "N", Dir::south: "S"};
+var v = d;
+print("{} {}", short_names[d], type_of(v));
+try { d = cast&lt;Dir&gt;(9); } catch (e) { print("caught: {}", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 Dir 2 east
+down
+S int
+caught: Cannot cast 9 to 'Dir': not one of its values</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">enum Dir { north, south, east, west }
+Dir d = 2;</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
-&lt;script&gt;:2:23: error: no value &#x27;zzz&#x27; in enum &#x27;Direction&#x27; (declared at 1:6)
-    print(&quot;{}&quot;, Direction.zzz);
-                          ^</code></pre></div>
-<p>Members are reached with a dot (<code>Direction.east</code>) or, as in C++, with <code>::</code> (<code>Direction::east</code>); both name the same constant.</p>
-<p>The enum&#x27;s name alone is its value table: a <code>map&lt;string,int&gt;</code> from each value&#x27;s name to its number, which is how a script reflects over an enum. A <code>var</code>, an <code>auto</code> or a <code>map&lt;string,int&gt;</code> takes it, and a range-<code>for</code> walks it in key order:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">enum Direction { north, south, east, west }
-var table = Direction;                       // the enum&#x27;s value table, a map&lt;string,int&gt;
-print("{} values; west = {}", table.size(), table["west"]);
-for (auto [name, n] : Direction) { print("{} = {}", name, n); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">4 values; west = 3
-east = 2
-north = 0
-south = 1
-west = 3</code></pre></div>
-<p>A slot that cannot hold that map refuses it at load, as it refuses any map: an <code>int</code> wants one of the values.</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">enum Direction { north, south, east, west }
-int d = Direction;</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
-&lt;script&gt;:2:5: error: cannot initialize &#x27;d&#x27; declared &#x27;int&#x27; with &#x27;enum Direction&#x27;: an enum&#x27;s name is its value table, a map&lt;string,int&gt;; name one of its values (Direction.north)
-    int d = Direction;
+&lt;script&gt;:2:5: error: cannot initialize 'd' declared 'Dir' with 'int': cast&lt;Dir&gt;(n) converts an int that is one of its values
+    Dir d = 2;
         ^</code></pre></div>
-<p>A value may take an initializer, as in C++. A value without one is the value before it plus one, and two values may share a number. An initializer is a constant integer built from:</p>
-<ul>
-<li>integer and char literals,</li>
-<li>the enum&#x27;s earlier values (bare or qualified),</li>
-<li>and the integer operators (<code>+ - * / % &amp; | ^ &lt;&lt; &gt;&gt; ~</code>).</li>
-</ul>
-<p>The load computes every value. A name that is not an earlier value, a shift outside 0 to 63 or an overflow fails it (<code>enum value 'b' names 'c', which is not an earlier value of 'F'</code>):</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">enum Flag { none, read = 1 &lt;&lt; 0, write = 1 &lt;&lt; 1, exec = 1 &lt;&lt; 2, all = read | write | exec, next }
-enum Level { low = -2, mid, high = Level::mid + 10 }
-print("{} {} {} {}", Flag.write, Flag.all, Flag.next, Flag.all &amp; Flag.exec);
-print("{} {} {}", Level.low, Level.mid, Level.high);</code></pre></div>
+<p><strong>Values.</strong> Values count from 0. A value may take a constant integer initializer built from integer and char literals, the enum's earlier values and the integer operators; a value without one is the one before it plus one, and two values may share a number. A name that is not an earlier value, a shift outside 0 to 63 or an overflow fails the load.</p>
+<p><strong>The value table.</strong> The enum's name alone, used as a value, is a <code>map&lt;string,int&gt;</code> from each value's name to its number, walked in key order. An <code>int</code> slot refuses it at load (<code>an enum's name is its value table, a map&lt;string,int&gt;; name one of its values (Dir::north)</code>).</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">enum Flag { none, read = 1 &lt;&lt; 0, write = 1 &lt;&lt; 1, exec = 1 &lt;&lt; 2, all = read | write | exec, next }
+print("{} {} {} {}", Flag::write, Flag::all, Flag::next, Flag::all &amp; Flag::exec);
+for (auto [name, n] : Flag) { print("{} = {}", name, n); }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 7 8 4
--2 -1 9</code></pre></div>
-<p>An enum declared inside a function or a block is local to it, like a C++ local enum: its values resolve there and it vanishes with the scope. The same holds for an enum in a file that an <code>include</code> runs inside a function. An enum of the same name at program scope keeps its values, and the checker warns when a local declaration hides one (<code>enum 'Color' declared in function 'reload' is local to it: the program-scope 'Color' keeps its values</code>).</p>
+all = 7
+exec = 4
+next = 8
+none = 0
+read = 1
+write = 2</code></pre></div>
+<p>An enum declared inside a function or block is local to it. A program-scope enum of the same name keeps its values, and the checker warns when a local one hides it.</p>
 <h2 id="namespaces">Namespaces<a class="hlink" href="#namespaces" aria-label="link">&#8203;</a></h2>
-<p>Namespaces group functions, variables, and classes behind <code>::</code>. They are <strong>flat</strong>. <code>namespace my::nested::deep { }</code> is a single namespace whose name contains <code>::</code>, and &quot;nesting&quot; blocks composes the same way; its code still searches each enclosing namespace for a bare name (<a href="#bare-names-in-a-namespace">below</a>). Functions overload by parameter types and count, by the rules in <a href="06-functions.html#redefinition-and-the-duplicate-warning">Functions</a>; redefining an existing signature requires the <code>override</code> keyword (mirrors hot-reload discipline):</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">namespace utils {
-    auto add(a, b) { return a + b; }
-    auto add(a, b, c) { return a + b + c; }    // overload by arity
-    auto VERSION = 3;
-    class Vec2 {
-        int x = 0; int y = 0;
-        Vec2(int px, int py) { x = px; y = py; }
-        auto len2() { return x * x + y * y; }
-    }
-}
-namespace my::nested::deep {                    // flat name with :: in it
-    auto answer() { return 42; }
-}
-print("utils::add(1, 2) = {}", utils::add(1, 2));
-print("utils::add(1, 2, 3) = {}", utils::add(1, 2, 3));
-print("version {}", utils::VERSION);
-auto v = utils::Vec2(3, 4);
-print("len2 = {}", v.len2());
-my::nested::deep::answer();</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">utils::add(1, 2) = 3
-utils::add(1, 2, 3) = 6
-version 3
-len2 = 25
-== result: 42</code></pre></div>
-<p>Extra wrinkles:</p>
-<ul><li>Redefining an existing signature without <code>override</code> is an error (<code>Function 'f' already exists in namespace 'n'. Use 'override' keyword to replace it.</code>); <code>auto func(x) override { ... }</code> replaces the existing definition. Overloads that differ only by reference are an error, as for free functions.</li><li>A namespace can share a name with a <strong>class</strong>, and its functions then <em>override the class&#x27;s static methods</em> of matching arity when they say <code>override</code> (<code>namespace Tool { int make() override { ... } }</code>). Without it the collision is an error naming the keyword. <code>Tool::make()</code> then runs the namespace function, and the class's other statics still answer.</li><li>A class a namespace declares is named by its qualified name, as in C++: <code>ns::Box</code> names it from any file (one that imports the module declaring it included). It is the name <code>type_of</code> reports and a saved <code>$type</code> carries. Inside the namespace's blocks, and a nested namespace's, the bare <code>Box</code> reads as <code>ns::Box</code> (in a later reopening of the namespace too); outside, the bare name reaches it only through <code>using ns::Box;</code>. Two namespaces that each declare a <code>Box</code> declare two classes, and a global <code>Box</code> is a third.</li><li>Keywords like <code>string</code> are usable as namespace names, and any reserved word but <code>this</code> and <code>super</code> names a namespace member or an enum value, reached qualified (<code>spider::catch(url)</code>, <code>Mode::default</code>; <a href="07-classes.html#reference-returns-and-keyword-names">keyword member names</a>).</li><li>A qualified name its namespace does not declare fails the load, as in C++: <code>math::sqroot(x)</code> is <code>no member &#x27;sqroot&#x27; in namespace &#x27;math&#x27;</code>. Every declaration of the namespace counts, wherever it stands: any unit of the program, an earlier run, the host&#x27;s registrations, so a script&#x27;s own <code>namespace math { ... }</code> adds to <code>math::</code> for every file. A dynamic-path include can declare anything, so in a unit that has one the <a href="13-strict-checking.html">checker</a> warns instead. A wrong argument count through <code>::</code> is a catchable run-time error.</li></ul>
-<h3 id="a-namespace-is-a-scope">A namespace is a scope<a class="hlink" href="#a-namespace-is-a-scope" aria-label="link">&#8203;</a></h3>
-<p>A namespace variable is one variable in the namespace&#x27;s own scope, layered over the globals.</p>
-<ul>
-<li><code>ns::x = v</code>, <code>ns::x op= v</code> and <code>++ns::x</code> store it under its declared type&#x27;s rules.</li>
-<li>A function declared in the namespace reads and writes it by its bare name (a global of the same name stays separate).</li>
-<li>An initializer sees the members declared before it.</li>
-<li>Reopening the namespace redeclares in place.</li>
-</ul>
-<p>The namespace&#x27;s top-level code runs in order, as a file&#x27;s does. A bare name it declares only further down is not its member yet, so the name reaches an enclosing namespace&#x27;s member or the global of that name. With neither, the load fails with the <a href="../reference/index.html#rule-top-level-order">top-level order</a> error (<code>'f' is called before its declaration (line 3): top-level code runs in order, so declare it above the call or make the call after it</code>).</p>
-<p>The host&#x27;s namespace entries (<code>string::to_lower</code>, <code>time::now</code>) are read-only from script:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int hits = 100;                      // a global of the same name stays separate
-namespace stats {
-    int hits = 0;
-    int base = 10;
-    int limit = base * 2;            // an initializer sees the members declared before it
-    void record() { hits += 1; }     // a namespace function reads and writes its variables by bare name
-}
-stats::record();
-stats::record();
-stats::hits += 5;
-print("stats::hits {} hits {} limit {}", stats::hits, hits, stats::limit);
-var bad = "many";
-try { stats::hits = bad; } catch (e) { print("caught: {}", e); }
-try { string::to_lower = 3; } catch (e) { print("caught: {}", e); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">stats::hits 7 hits 100 limit 20
-caught: Cannot assign string to &#x27;hits&#x27; (declared int)
-caught: Cannot assign to &#x27;to_lower&#x27;: it is read-only</code></pre></div>
-<h3 id="bare-names-in-a-namespace">Bare names in a namespace<a class="hlink" href="#bare-names-in-a-namespace" aria-label="link">&#8203;</a></h3>
-<p>A bare name in a namespace&#x27;s code is looked up as in C++. That code is its functions, the lambdas and coroutines they make, and its classes&#x27; methods, constructors and field initializers. The lookup tries, in order:</p>
-<ol>
-<li>the locals,</li>
-<li>then the namespace&#x27;s own members (its variables and functions, and the entries the host registers in it),</li>
-<li>then each enclosing namespace&#x27;s, innermost first (<code>a::b</code> searches <code>a::b</code>, then <code>a</code>),</li>
-<li>then the globals.</li>
-</ol>
-<p>A member hides a global of the same name, and <code>::name</code> reaches the global. Lookup happens when the code runs. So a function declared later in the namespace, in a reopening or by another unit, is found, and a reload that replaces a namespace function is what its siblings call next:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int limit = 100;
-int clamp_to(int v) { return v; }
+<p><code>namespace name { ... }</code> groups functions, variables, classes and enums behind <code>name::</code>. Blocks reopen: every <code>namespace utils { }</code> in the program, in any file, adds to the one namespace. <code>namespace a::b { }</code> and a block nested in <code>namespace a</code> declare the same <code>a::b</code>.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int limit = 100;                              // a global of the same name stays separate
 namespace game {
     int limit = 10;
-    int scale(int v) { return clamp_to(v * 2); }            // game::clamp_to, declared below
+    int bonus = limit * 2;                    // an initializer sees the members above it
+    int scale(int v) { return clamp_to(v * 2); }            // declared below: found when called
     int clamp_to(int v) { return v &gt; limit ? limit : v; }   // game::limit hides the global
-    namespace ai {
-        int think(int v) { return scale(v) + 1; }           // game::scale, from the enclosing namespace
-    }
     int global_limit() { return ::limit; }                  // ::name reaches the global
+    class Unit { int hp = 5; }
+    namespace ai {
+        int think(int v) { return scale(v) + 1; }           // from the enclosing namespace
+    }
 }
-print(&quot;{} {} {}&quot;, game::scale(7), game::ai::think(2), game::global_limit());</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">10 5 100</code></pre></div>
-<p>The checker resolves the same way: outside a namespace, or in another one, the member&#x27;s bare name is <code>use of undeclared identifier</code>, and a bare call inside it is checked against the namespace&#x27;s declaration.</p>
-<h3 id="using-declarations">Using declarations: <code>using ns::name;</code><a class="hlink" href="#using-declarations" aria-label="link">&#8203;</a></h3>
-<p><code>using ns::name;</code>, or a comma list (<code>using math::vec3, math::dot;</code>), makes <code>name</code> stand for <code>ns::name</code> in the rest of the file it appears in, wherever the name stands: a type, a call, a value. Any namespace works, a nested path too (<code>using a::b::c;</code>). There is no <code>using namespace</code>.</p>
+game::limit += 1;
+game::Unit u;
+print("{} {} {} {} {}", game::scale(7), game::ai::think(2), game::global_limit(), game::bonus, type_of(u));
+try { string::to_lower = 3; } catch (e) { print("caught: {}", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">11 5 100 20 game::Unit
+caught: Cannot assign to 'to_lower': it is read-only</code></pre></div>
+<p id="bare-names-in-a-namespace"><strong>Bare names.</strong> Code in a namespace (its functions, their lambdas and coroutines, its classes' methods and field initializers) looks a bare name up in this order: locals, the namespace's own members, each enclosing namespace innermost first, then globals. The lookup happens when the code runs, so a function declared later, in a reopening or by a reload is found. Outside the namespace a member's bare name is <code>use of undeclared identifier</code>.</p>
+<p id="a-namespace-is-a-scope"><strong>Rules.</strong></p>
 <ul>
-<li>It is a parse-time rewrite of that file&#x27;s text, so the checker and both backends see only the qualified name and nothing runs for it.</li>
-<li>It is file-local and not transitive: a file that includes or imports this one does not inherit it, and a file this one includes does not see it.</li>
-<li>After a dot, <code>?.</code>, <code>::</code> or <code>-&gt;</code> the name is a member name and stays as written.</li>
-<li>The name cannot be declared again in that file: a variable, parameter, member, function, class or enum of that name, or a second using of it, is a parse error.</li>
+<li>A namespace variable is one variable; <code>ns::x = v</code> stores under its declared type. The namespace's top-level code runs in order, as a file's does (<a href="../reference/rules.html#rule-top-level-order">top-level order</a>).</li>
+<li>Functions overload as anywhere (<a href="06-functions.html#redefinition-and-the-duplicate-warning">Functions</a>). Redefining an existing signature needs <code>override</code>: <code>Function 'f' already exists in namespace 'n'. Use 'override' keyword to replace it.</code></li>
+<li>A class declared in a namespace is named <code>ns::Box</code> from every file; that is what <code>type_of</code> reports and a saved <code>$type</code> carries. Inside the namespace the bare <code>Box</code> works. Two namespaces that each declare a <code>Box</code> declare two classes.</li>
+<li>A namespace may share a class's name. Its functions replace the class's static methods of matching arity when they say <code>override</code>; without it the collision is an error.</li>
+<li>A qualified name the namespace does not declare fails the load: <code>no member 'sqroot' in namespace 'math'</code>. Every declaration counts (any file, an earlier run, the host), so a script's <code>namespace math { }</code> adds to <code>math::</code>. A file with a dynamic-path include gets a warning instead.</li>
+<li>The host's entries (<code>string::to_lower</code>, <code>time::now</code>) are read-only.</li>
+<li>Any reserved word but <code>this</code> and <code>super</code> names a namespace member or an enum value, reached qualified: <code>spider::catch(url)</code>, <code>Mode::default</code> (<a href="07-classes.html#reference-returns-and-keyword-names">keyword member names</a>).</li>
 </ul>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">namespace geo {
-    float scale = 2.0;
-    float twice(float v) { return v * scale; }
+<h3 id="using-declarations"><code>using ns::name;</code><a class="hlink" href="#using-declarations" aria-label="link">&#8203;</a></h3>
+<p><code>using geo::twice, geo::Pt;</code> makes each name stand for its qualified form in the rest of that file, as a type, a call or a value. There is no <code>using namespace</code>. It is a rewrite of that file's text: files that include or import this one do not inherit it, a name after <code>.</code>, <code>?.</code>, <code>::</code> or <code>-&gt;</code> is left alone, and declaring the name again in the file is a parse error.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">namespace geo {
+    float twice(float v) { return v * 2.0; }
     class Pt { int x = 1; int y = 2; }
 }
-using geo::twice, geo::Pt;           // the rest of this file reads twice as geo::twice, Pt as geo::Pt
+using geo::twice, geo::Pt;
 Pt p;
 print("{} {}", twice(3.0), p.x + p.y);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">6.0 3</code></pre></div>
 <h2 id="destructuring">Destructuring<a class="hlink" href="#destructuring" aria-label="link">&#8203;</a></h2>
-<p><code>auto [a, b, c] = array;</code> unpacks positionally. Extra elements are ignored; missing ones bind <code>null</code>:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto [x, y, z] = [1, 2, 3];
-print("{} {} {}", x, y, z);
-auto [a, b] = [10, 20, 30];       // extras ignored
-print("{} {}", a, b);
-auto [p, q, r] = [10, 20];        // missing become null
-print("{} {} {}", p, q, r == null ? "null" : to_string(r));
-auto pos = [4, 7];
-auto [px, py] = pos;
-px + py;</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 2 3
-10 20
-10 20 null
-== result: 11</code></pre></div>
-<h2 id="ternary">Ternary<a class="hlink" href="#ternary" aria-label="link">&#8203;</a></h2>
-<p>Right-associative, so the classic cascade reads top-down without parentheses:</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto health = 40;
-auto status = health &gt; 0 ? "alive" : "dead";
-auto level = health &gt; 75 ? "healthy" :
-             health &gt; 25 ? "wounded" : "critical";
-print("{} and {}", status, level);
-health &gt; 50 ? 1 : 0;</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">alive and wounded
-== result: 0</code></pre></div>
+<p><code>auto [a, b, c] = arr;</code> unpacks an array by position. Extra elements are ignored and missing ones bind <code>null</code>. In a range-for over a map, <code>auto [key, value]</code> binds each entry.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto [x, y] = [10, 20, 30];
+auto [p, q, r] = [1, 2];
+print("{} {} {} {} {}", x, y, p, q, r);
+map&lt;string, int&gt; stock = {"ore": 4, "gem": 1};
+for (auto [name, count] : stock) { print("{}: {}", name, count); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">10 20 1 2 null
+gem: 1
+ore: 4</code></pre></div>
+<h2 id="ternary">The conditional operator<a class="hlink" href="#ternary" aria-label="link">&#8203;</a></h2>
+<p><code>c ? a : b</code> is right-associative, so a cascade reads top-down without parentheses: <code>hp &gt; 75 ? "healthy" : hp &gt; 25 ? "wounded" : "critical"</code>. With an int arm and a float arm the result is a float. When both arms are lvalues of one type the whole expression is one (<a href="03-value-semantics.html#reference-declarations">Value Semantics</a>).</p>
 <h2 id="null-safe-access">Null-safe access: <code>?.</code><a class="hlink" href="#null-safe-access" aria-label="link">&#8203;</a></h2>
-<p><code>x?.member</code> and <code>x?.method(...)</code> evaluate to <code>null</code> when <code>x</code> is null instead of erroring; the call&#x27;s arguments are not evaluated then. On a non-null <code>x</code> it is the ordinary member access, a store included (<code>x?.hp = 5</code>):</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">auto obj = null;
-auto a = obj?.length();          // null-safe: short-circuits to null
-print("obj?.length() = {}", a == null ? "null" : to_string(a));
-auto s = "hello";
-print("s?.length() = {}", s?.length());</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">obj?.length() = null
-s?.length() = 5</code></pre></div>
-<p>A null in front of a <code>?.</code> skips the rest of the chain, as in JavaScript and C#: <code>a?.b.c</code>, <code>a?.items[0]</code> and <code>a?.f().g()</code> are null when <code>a</code> is. Only the value in front of the <code>?.</code> is tested, so <code>a?.b.c</code> still raises when <code>a</code> is not null and <code>b</code> is. Put a <code>?.</code> on every link that may be null. <code>??</code> supplies the default (<a href="04-operators.html#null-chains-and-defaults">Operators</a>):</p>
-<div class="codeblock cb-jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Node { int v = 3; shared_ptr&lt;Node&gt; next; }
+<p><code>x?.member</code> and <code>x?.method(...)</code> are <code>null</code> when <code>x</code> is null, and the call's arguments are not evaluated. A null in front of a <code>?.</code> skips the rest of the chain, as in JavaScript and C#. Only the value in front of each <code>?.</code> is tested, so put one on every link that may be null. <code>??</code> supplies a default (<a href="04-operators.html#null-chains-and-defaults">Operators</a>).</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Node { int v = 3; shared_ptr&lt;Node&gt; next; }
 auto head = new Node();
-print("{} {}", head?.v, head?.next?.v);      // next is null: the second ?. yields null
 shared_ptr&lt;Node&gt; none;
-print("{}", none?.next?.v);
-try { print("{}", head?.next.v); } catch (e) { print("caught: {}", e); }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 null
-null
-caught: Cannot access &#x27;v&#x27; on null (&#x27;next&#x27; is null)</code></pre></div>
-<p>Related conveniences documented elsewhere: <code>weak_ptr</code>/<code>shared_ptr</code> (<a href="03-value-semantics.html">Value Semantics</a>), statics via <code>::</code> (<a href="07-classes.html">Classes</a>), <code>#include</code>/<code>#import</code> hash-prefix tolerance (<a href="10-modules.html">Modules</a>), <code>cast&lt;T&gt;(e)</code> / <code>cast&lt;T&amp;&gt;(e)</code> / <code>cast&lt;shared_ptr&lt;T&gt;&gt;(e)</code> (<a href="02-type-ladder.html">Type Ladder</a> and <a href="13-strict-checking.html#casts">Types That Fail Early</a>), <code>extern</code> declarations and the <code>[[warn_mode]]</code> / <code>[[strict_mode]]</code> attributes (<a href="13-strict-checking.html#escape-hatches">Types That Fail Early</a>).</p>
+print("{} {} {} {}", head?.v, head?.next?.v, none?.next.v, none?.v ?? -1);
+try { print(head?.next.v); } catch (e) { print("caught: {}", e); }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 null null -1
+caught: Cannot access 'v' on null ('next' is null)</code></pre></div>
 <nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/10-modules.html"><span>&larr; previous</span>Modules: include vs import</a><a class="next" rel="next" href="../guide/12-reflection.html"><span>next &rarr;</span>Reflection: reflect::</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

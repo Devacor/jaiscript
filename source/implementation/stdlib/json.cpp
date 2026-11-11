@@ -38,6 +38,9 @@ namespace stdlib {
         const std::string& base_name = base.get_name();
         std::shared_ptr<void> object;
         const auto* entry = serialization::polymorphic_registry::instance().find(base_name);
+        if (!entry) {
+            entry = serialization::binding_entry_named(eng, base_name);
+        }
         if (entry && entry->load_fn) {
             script_value host_part = script_value::make_map(detail::engine_access::get_type_info_string(*eng), nullptr, eng);
             auto& host_map = const_cast<script_map&>(host_part.as_map());
@@ -85,10 +88,12 @@ namespace stdlib {
         const uint64_t member_id = field.id;
         if (const script_value* stored = inst.find_script_field_value(member_id)) {
             const type_info_ptr declared = def.get_field_declared_type(member_id);
-            // a saved null is a handle field's empty handle, as `= null` makes it (an expired weak handle saves as null)
-            const bool handle_field = declared && (declared->base_type == script_value_type::jai_weak_ptr_type ||
-                                                   declared->base_type == script_value_type::jai_shared_ptr_type);
-            if (declared && declared->base_type != script_value_type::jai_any_type && (!v.is_null() || handle_field)) {
+            // a saved null is a handle field's empty handle, as `= null` makes it (an expired weak handle saves as null); a class
+            // value field holds no null and keeps its constructed object
+            const bool null_decided = declared && (declared->base_type == script_value_type::jai_weak_ptr_type ||
+                                                   declared->base_type == script_value_type::jai_shared_ptr_type ||
+                                                   declared->base_type == script_value_type::jai_object_type);
+            if (declared && declared->base_type != script_value_type::jai_any_type && (!v.is_null() || null_decided)) {
                 auto converted = detail::field_store_convert_no_script(v, declared, eng);
                 if (!converted) {
                     record_load_retype(eng, def, member_id, field_migration_outcome::reset, v, stored);
@@ -555,9 +560,7 @@ namespace stdlib {
     // Register JSON and binary serialization functions with an engine
     void register_json_functions(engine& eng_ref) {
         engine* eng = &eng_ref;
-        // an archive reaches the engine's class registry and the objects a value holds
-        for (const char* name : {"to_json", "from_json", "to_binary", "from_binary", "to_base64", "from_base64"}) { eng_ref.serial_function(name); }
-
+        // serial: an archive reaches the engine's class registry and the objects a value holds
         eng_ref.add_variadic_function("to_json", [eng](const std::vector<script_value>& args) -> script_value {
             if (args.size() == 1) {
                 serialization::json_archive_writer writer(-1, eng); // No indentation, with engine ref
@@ -572,7 +575,7 @@ namespace stdlib {
             } else {
                 throw runtime_error("to_json expects 1 or 2 arguments, got " + std::to_string(args.size()));
             }
-        });
+        }, serial);
         
 		eng_ref.add_function("from_json", [eng](const std::string& json) -> script_value {
 			detail::engine_access::load_session session(eng);
@@ -582,7 +585,7 @@ namespace stdlib {
 			script_value result = reader.has_archive_keys() ? load_archive_value(eng, parsed, true) : std::move(parsed);
 			session.complete();
 			return result;
-		});
+		}, serial);
         
         eng_ref.add_variadic_function("to_binary", [eng](const std::vector<script_value>& args) -> script_value {
             if (args.size() != 1) {
@@ -595,7 +598,7 @@ namespace stdlib {
             const auto& data = writer.data();
             script_string binary_str(data.begin(), data.end());
             return script_value(binary_str, eng);
-        });
+        }, serial);
 
         eng_ref.add_variadic_function("from_binary", [eng](const std::vector<script_value>& args) -> script_value {
             if (args.size() != 1) {
@@ -614,7 +617,7 @@ namespace stdlib {
 			script_value result = load_archive_value(eng, reader.read_value(), false);
 			session.complete();
 			return result;
-        });
+        }, serial);
 
         eng_ref.add_variadic_function("to_base64", [eng](const std::vector<script_value>& args) -> script_value {
             if (args.size() != 1) {
@@ -627,7 +630,7 @@ namespace stdlib {
             const auto& data = writer.data();
             std::string binary_str(data.begin(), data.end());
             return script_value(base64_encode(binary_str), eng);
-        });
+        }, serial);
 
         eng_ref.add_function("from_base64", [eng](const std::string& base64_str) -> script_value {
             std::string binary_str = base64_decode(base64_str);
@@ -638,7 +641,7 @@ namespace stdlib {
 			script_value result = load_archive_value(eng, reader.read_value(), false);
 			session.complete();
 			return result;
-        });
+        }, serial);
 
         eng_ref.add_function("base64_encode", [eng](const std::string& input) -> script_value {
             return script_value(base64_encode(input), eng);

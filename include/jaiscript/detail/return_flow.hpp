@@ -20,6 +20,7 @@ namespace jai::detail {
 			case script_value_type::jai_bool_type: case script_value_type::jai_char_type:
 			case script_value_type::jai_string_type: case script_value_type::jai_utf8_string_type:
 			case script_value_type::jai_reference_type:
+			case script_value_type::jai_object_type:
 				return true;
 			default:
 				return false;

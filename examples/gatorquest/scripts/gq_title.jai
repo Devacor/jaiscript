@@ -438,7 +438,7 @@ string title_screen(bool has_save, int auto_frames) {
 	int frames = 0;
 	TM_F0 = FRAME;
 	while (true) {
-		int frame_start = time::now() * 1000;
+		int frame_start = cast<int>(time::now() * 1000);
 		NOW_MS = loop_clock_ms();
 		int dt = imin(250, NOW_MS - last);
 		last = NOW_MS;

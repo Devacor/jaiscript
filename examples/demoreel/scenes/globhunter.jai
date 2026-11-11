@@ -1,44 +1,50 @@
-// GLOBHUNTER — a Wolfenstein-style grid raycaster: one DDA ray per screen
-// column over an authored 24x24 keep, perpendicular-distance slices (no fisheye
-// by construction), TEXTURED: the ray's hit coordinate along the wall picks a
-// texel column and each pixel of the slice steps down it (16x16 textures grown
-// in script: coursed stone, mossy stone, fluted gold, and a banner of animated
-// rainbow fire). Floor and ceiling are cast per pixel (flagstones below, oak
-// planks above). LIT: torches flicker along the route and a light map rebuilt
-// every frame from them (and from the muzzle on each shot) lights walls, floor,
-// ceiling and monsters, warm where the fire reaches and cold blue in the gloom
-// between, under a vignette. Billboard Grublins and Orglis brutes garrison the
-// route, occluded per column by the wall z-buffer, lit as spheres per pixel,
-// with eyes and grins. The scripted camera HUNTS them: it swings onto a mark in
-// clear sight, bobs as it walks, and when the mark sits in the crosshair the gun
-// fires — recoil kicking the view, muzzle flash lighting the hall, a rainbow
-// hitscan tracer, a hit-flash, a hit-stop, goo that bursts in 3D and bounces off
-// the flagstones, a callout (DOUBLE KILL on a quick second), a kill counter in
-// pixel letters. Enemies respawn each lap. It plays to its cue: the gun fires
-// only on a beat (on the eighths through the bar after the big hit), footfalls
-// land on the beat, the torches flare with the kick, the big hit on bar five's
-// downbeat floods the hall with light, and the bar after the boss slows the walk and holds
-// fire on the corridor ahead. Every burst lights the hall around it, the view quakes
-// with each kill, the big hit drops into bullet time for two beats (the walk crawls,
-// the goo hangs in the air), and on bar seven a boss glob twice a brute's size rises
-// in the corridor ahead, eyes burning, swelling on every kick: two bars of fight, a
-// hit on every beat flashing it, until it bursts on bar nine's downbeat in bullet
-// time, flooding the hall with goo, and the camera walks on through the aftermath.
+// GLOBHUNTER — a Wolfenstein-style grid raycaster: one DDA ray per screen column
+// over an authored 24x27 keep of three-wide halls under a two-unit vault,
+// perpendicular-distance slices (no fisheye by construction), TEXTURED: the ray's
+// hit coordinate along the wall picks a texel column and each pixel of the slice
+// steps down it (16x32 wall textures grown in script: coursed stone, mossy stone,
+// fluted gold, and a banner of animated rainbow fire). Floor and ceiling are cast
+// per pixel across the spans the walls leave open (flagstones below, oak planks
+// above), plain but for their joints where a texel is under two pixels tall. LIT:
+// torches flicker along the route and a light map rebuilt every frame from them
+// (and from the muzzle on each shot) lights walls, floor, ceiling and monsters,
+// warm where the fire reaches and cold blue in the gloom between, under a
+// vignette. Billboard Grublins and Orglis brutes garrison the route, lit as
+// spheres per pixel, with eyes and grins. Each stands farther from every wall
+// than its billboard reaches (a half-width capped in world units per kind) and
+// shorter than the vault, so the per-column wall z-buffer only ever hides a
+// monster that is behind a wall. The scripted camera HUNTS them: it swings onto a
+// mark in clear sight, bobs as it walks, and when the mark sits in the crosshair
+// the gun fires — recoil kicking the view, muzzle flash lighting the hall, a
+// rainbow hitscan tracer, a hit-flash, a hit-stop, goo that bursts in 3D and
+// bounces off the flagstones, a callout (DOUBLE KILL on a quick second), a kill
+// counter in pixel letters. Enemies respawn each lap. It plays to its cue: the
+// gun fires only on a beat (on the eighths through the bar after the big hit),
+// footfalls land on the beat, the torches flare with the kick, the big hit on bar
+// five's downbeat floods the hall with light, and the bar after the boss slows
+// the walk and holds fire on the hall ahead. Every burst lights the hall around
+// it, the view quakes with each kill, the big hit drops into bullet time for two
+// beats (the walk crawls, the goo hangs in the air), and on bar seven a boss glob
+// twice a brute's size rises in the open floor of a nine-by-nine arena before its
+// north gate, eyes burning, swelling on every kick: two bars of fight, a hit on
+// every beat flashing it, until it bursts on bar nine's downbeat in bullet time,
+// flooding the arena with goo, and the camera walks on through the aftermath.
 // Then the keep falls: on bar ten it calls RUN, the torches gutter low and strobe
 // back up on every kick, the view trembles, stone shakes loose from the vault on
-// every snare, an ambush rises in the mid hall and the gun fires on the eighths as
-// the camera sprints (just fast enough to arrive on time) for the east wall, whose
-// cracks glow hotter with daylight the closer it gets. On bar twelve's downbeat
-// the wall blows in, stone flying at the lens, the frame whites out, KEEP CLEARED,
-// and the last bar walks out through the breach as daylight blooms over the frame.
-// The ray fan comes from the camera-plane vector: no per-column trig.
+// every snare, an ambush rises along the way out and the gun fires on the eighths
+// as the camera sprints (just fast enough to arrive on time) for the east wall,
+// whose cracks glow hotter with daylight the closer it gets. On bar twelve's
+// downbeat the wall blows in, stone flying at the lens, the frame whites out,
+// KEEP CLEARED, and the last bar walks out through the breach as daylight blooms
+// over the frame. The ray fan comes from the camera-plane vector: no per-column
+// trig.
 
 array<int> BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
 class GlobHunter : Scene {
 	array<int> wmap = [];
 	int mw = 24;
-	int mh = 24;
+	int mh = 27;
 	array<float> wpx = [];
 	array<float> wpy = [];
 	array<float> seglen = [];
@@ -53,7 +59,7 @@ class GlobHunter : Scene {
 	float planey = 0.0;
 	float aim = 0.0;         // the eased swing of the view toward the current mark
 	float pitch = 0.0;       // the horizon's offset in pixels: walk bob and recoil
-	array<int> tex = [];     // 3 wall textures + floor + ceiling, 16x16 texel indices 0..7
+	array<int> tex = [];     // 3 wall textures (16x32) + floor + ceiling (16x16) + their plain copies, texel indices 0..7
 	int wall_base = 0;       // ((type*2 + side)*8 + light)*8 + texel
 	int banner_base = 0;     // (side*8 + light)*16 + hue
 	int floor_base = 0;      // light*8 + texel
@@ -71,7 +77,14 @@ class GlobHunter : Scene {
 	array<float> sty = [];
 	array<int> drawn = [];
 	array<float> zcol = [];  // per-column wall depth from the last wall pass
-	var gun = [];
+	array<int> wall_top = [];   // per column: the slice's first row and the row past its last
+	array<int> wall_foot = [];
+	array<int> wall_hit = [];   // ((cell*2 + side)*16 + texel column)*8 + light
+	array<int> ceil_lo = [];    // per row: the first and last column whose slice starts there (its ceiling ends)
+	array<int> ceil_hi = [];
+	array<int> floor_lo = [];   // and whose slice ends there (its floor begins)
+	array<int> floor_hi = [];
+	array<int> gun = [];     // 16 texels a row: a sprite palette offset, 0 where the sprite is clear
 	int ne = 18;             // seventeen of the garrison (three wait in ambush for the escape), and the boss in the last slot
 	float boss_flash = 0.0;  // the boss shrugs off each hit with a flash until bar nine
 	int kills = 0;
@@ -93,8 +106,10 @@ class GlobHunter : Scene {
 	array<float> toy = [];
 	array<float> still = [];
 	array<int> owner = [];
-	array<int> lmap = [];    // 48x48: two cells per map cell, light levels 0..5
-	int lres = 48;
+	array<int> lmap = [];    // two cells per map cell each way, light levels 0..5
+	int lw = 48;
+	int lh = 54;
+	float vault = 2.0;       // the walls' height; the eye rides at 0.5
 	// goo: a pool of particles in world space (z up, 0 = floor, 1 = ceiling)
 	array<float> gx = [];
 	array<float> gy = [];
@@ -109,8 +124,8 @@ class GlobHunter : Scene {
 	array<int> vigx = [];    // the vignette: light levels lost toward the edges
 	array<int> vigy = [];
 	int rubble_base = 0;     // falling stone, 12 levels
-	int breach_x = 22;       // the wall the escape blows open, east at the end of the mid hall
-	int breach_y = 12;
+	int breach_x = 23;       // the wall the escape blows open, east at the end of the mid hall
+	int breach_y = 13;
 	float last_snare = 0.0;
 
 	void build() override {
@@ -120,28 +135,31 @@ class GlobHunter : Scene {
 		// # stone  M moss  G gold pillar  B banner (rainbow-fire, animated)
 		var rows = [
 			"##################BBBB##",
-			"#......##########......#",
+			"#.......#########......#",
 			"#......................#",
-			"#......MMMMMMMMMM......#",
-			"#...G..##########......#",
-			"##.##############......#",
-			"##.##################.##",
-			"#M.M#################.##",
-			"##...B###############.##",
-			"##.#################M.M#",
-			"##.#######MMMMMM#####.##",
-			"##.#######......#####.##",
-			"##.#######............##",
-			"##.#######...G..########",
-			"##.#######......########",
-			"##.#######MM.MMM########",
-			"##.#########.###########",
-			"##.#########.###########",
-			"#......#####.###########",
-			"#..G.G.#####.###########",
-			"#......#####.###########",
-			"#............###########",
-			"#......#################",
+			"#......................#",
+			"#.....G................#",
+			"#.......MMMMMMMMM......#",
+			"##...###############...#",
+			"#M...M##############...#",
+			"##...B##############...#",
+			"##...##############M...M",
+			"##...####MMMMMMMMM##...#",
+			"##...####.........##...#",
+			"##...####..............#",
+			"##...####..............#",
+			"##...####..............#",
+			"##...####.........######",
+			"##...####MMM...MMM######",
+			"##...####.........######",
+			"##...####.........######",
+			"##...####.........######",
+			"#.......#.........######",
+			"#.................######",
+			"#.................######",
+			"#.................######",
+			"#.G..G..#.........######",
+			"#.......#.........######",
 			"##BBBB##################"
 		];
 		for (int y = 0; y < mh; ++y) {
@@ -227,22 +245,29 @@ class GlobHunter : Scene {
 		rubble_base = pal.size();
 		pal.ramp(12, 22.0, 20.0, 28.0, 196.0, 186.0, 172.0);
 		grow_textures();
-		gun = ["......dlhd......", "......dlmd......", "......dlmd......", ".....ddlmdd.....", ".....dlhmmd.....",
+		var gun_rows = ["......dlhd......", "......dlmd......", "......dlmd......", ".....ddlmdd.....", ".....dlhmmd.....",
 			"....ddlmmmdd....", "....dlhmmmmd....", "...kdlmmmmmdk...", "..kkdmmmmmmdkk..", ".kkkkdmmmmdkkkk.",
 			"skkkkkddddkkkkks", "sskkkkkkkkkkkkss"];
-		// the flight loop: west corridor, bottom hall, mid room, east corridor
-		wpx = [2.5, 2.5, 12.5, 12.5, 21.5, 21.5];
-		wpy = [2.5, 21.5, 21.5, 12.5, 12.5, 2.5];
+		for (int gr = 0; gr < gun_rows.size(); ++gr) {
+			string gun_row = gun_rows[gr];
+			for (int gc = 0; gc < 16; ++gc) {
+				string ch2 = gun_row.substr(gc, 1);
+				gun.push(ch2 == "." ? 0 : (ch2 == "d" ? 27 : (ch2 == "m" ? 28 : (ch2 == "l" ? 29 : (ch2 == "h" ? 30 : (ch2 == "k" ? 46 : 47))))));
+			}
+		}
+		// the flight loop down the middle of each hall: west hall, south room and arena, mid room, east hall
+		wpx = [3.5, 3.5, 13.5, 13.5, 22.5, 22.5];
+		wpy = [3.5, 22.5, 22.5, 13.5, 13.5, 3.5];
 		for (int i = 0; i < nwp; ++i) {
 			float ddx = wpx[(i + 1) % nwp] - wpx[i];
 			float ddy = wpy[(i + 1) % nwp] - wpy[i];
 			seglen.push(math::sqrt(ddx * ddx + ddy * ddy));
 			path_len += seglen[i];
 		}
-		// garrison, posted along the route (a couple wait around corners)
-		// (three more hold the bottom hall for the frenzy, three wait in the mid hall for the escape)
-		ex = [2.5, 2.5, 2.5, 4.5, 5.5, 12.5, 12.5, 14.5, 18.5, 21.5, 20.5, 9.0, 11.0, 12.5, 11.5, 16.5, 19.5, 0.0];
-		ey = [6.5, 12.5, 16.5, 19.5, 21.5, 18.5, 13.5, 12.5, 12.5, 8.5, 2.5, 21.5, 21.3, 19.0, 11.5, 12.5, 12.3, 0.0];
+		// garrison along the route (three hold the south room for the frenzy, three wait along the escape);
+		// every post stands farther from the nearest wall than its kind's reach, the boss in the arena's open floor
+		ex = [3.5, 3.0, 4.0, 3.0, 7.0, 15.5, 13.5, 14.5, 19.0, 21.5, 20.5, 10.0, 11.5, 12.0, 11.0, 17.5, 21.0, 13.5];
+		ey = [7.5, 13.5, 17.5, 21.2, 21.0, 21.0, 14.0, 12.5, 13.5, 8.5, 3.0, 22.5, 23.5, 21.8, 12.5, 13.5, 13.0, 18.5];
 		et = [0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1];
 		for (int i2 = 0; i2 < ne; ++i2) {
 			es.push(0);
@@ -259,27 +284,34 @@ class GlobHunter : Scene {
 		}
 		zcol = gfx.make_fgrid(w);
 		for (int i3 = 0; i3 < w; ++i3) { zcol[i3] = 99.0; }
+		wall_top = gfx.make_grid(w);
+		wall_foot = gfx.make_grid(w);
+		wall_hit = gfx.make_grid(w);
+		ceil_lo = gfx.make_grid(h + 1);
+		ceil_hi = gfx.make_grid(h + 1);
+		floor_lo = gfx.make_grid(h + 1);
+		floor_hi = gfx.make_grid(h + 1);
 		// torches hang beside the walls along the route; each keeps its falloff over the light map
-		var spots = [[1.2, 2.5], [6.8, 1.6], [2.2, 8.0], [2.8, 14.5], [1.2, 19.5], [9.5, 20.2], [12.2, 17.5],
-			[10.2, 12.5], [15.8, 13.5], [21.8, 7.5], [22.8, 2.5], [17.2, 1.4]];
+		var spots = [[1.2, 3.5], [7.5, 1.3], [2.2, 9.5], [4.8, 15.5], [1.2, 22.5], [7.5, 20.3], [9.3, 19.5],
+			[17.7, 22.5], [11.4, 17.3], [15.6, 17.3], [9.3, 13.5], [15.5, 11.2], [20.5, 14.8], [22.8, 7.5], [22.8, 2.5], [17.2, 1.4]];
 		for (int k = 0; k < spots.size(); ++k) {
 			var sp = spots[k];
 			float px = sp[0];
 			float py = sp[1];
-			if (wmap[itrunc(py) * mw + itrunc(px)] != 0) { continue; }
+			if (wmap[math::itrunc(py) * mw + math::itrunc(px)] != 0) { continue; }
 			tox.push(px);
 			toy.push(py);
 		}
 		array<float> best = [];
-		for (int c5 = 0; c5 < lres * lres; ++c5) {
+		for (int c5 = 0; c5 < lw * lh; ++c5) {
 			still.push(0.0);
 			owner.push(0);
 			best.push(0.0);
 		}
 		for (int k3 = 0; k3 < tox.size(); ++k3) {
-			for (int c6 = 0; c6 < lres * lres; ++c6) {
-				float lx = (c6 % lres + 0.5) * 0.5 - tox[k3];
-				float ly = (c6 / lres + 0.5) * 0.5 - toy[k3];
+			for (int c6 = 0; c6 < lw * lh; ++c6) {
+				float lx = (c6 % lw + 0.5) * 0.5 - tox[k3];
+				float ly = (c6 / lw + 0.5) * 0.5 - toy[k3];
 				float f = 1.0 / (1.0 + (lx * lx + ly * ly) * 1.7);
 				still[c6] = still[c6] + f * 5.6 * 0.82;
 				if (f > best[c6]) {
@@ -288,7 +320,7 @@ class GlobHunter : Scene {
 				}
 			}
 		}
-		lmap = gfx.make_grid(lres * lres);
+		lmap = gfx.make_grid(lw * lh);
 		for (int g = 0; g < ngoo; ++g) {
 			gx.push(0.0);
 			gy.push(0.0);
@@ -303,11 +335,11 @@ class GlobHunter : Scene {
 		vigy = gfx.make_grid(h);
 		for (int vx = 0; vx < w; ++vx) {
 			float e = 2.0 * vx / (w - 1.0) - 1.0;
-			vigx[vx] = itrunc(e * e * e * e * 2.4);
+			vigx[vx] = math::itrunc(e * e * e * e * 2.4);
 		}
 		for (int vy = 0; vy < h; ++vy) {
 			float e2 = 2.0 * vy / (h - 1.0) - 1.0;
-			vigy[vy] = itrunc(e2 * e2 * e2 * e2 * 1.6);
+			vigy[vy] = math::itrunc(e2 * e2 * e2 * e2 * 1.6);
 		}
 	}
 
@@ -329,9 +361,10 @@ class GlobHunter : Scene {
 	}
 
 	void grow_textures() {
-		// 0 coursed stone, 1 mossy stone, 2 fluted gold, 3 flagstones, 4 oak planks
+		// 0 coursed stone, 1 stone mossy toward its foot, 2 fluted gold (16 wide, the vault's 32 tall), 3 flagstones, 4 oak planks
 		for (int t = 0; t < 5; ++t) {
-			for (int v = 0; v < 16; ++v) {
+			int tall = t < 3 ? 32 : 16;
+			for (int v = 0; v < tall; ++v) {
 				for (int u = 0; u < 16; ++u) {
 					int c = 0;
 					if (t <= 1) {
@@ -345,9 +378,9 @@ class GlobHunter : Scene {
 						if (bu == 0 || bv == 0) { c = 0; }
 						if (t == 1 && c != 0) {
 							int m = hash2(u * 3 + v, v * 5 + 11) % 100;
-							if (m < v * 5) { c = 4 + m % 3; }
+							if (m < (v - 13) * 5) { c = 4 + m % 3; }
 						}
-						if (t == 1 && c == 0 && hash2(u, v) % 3 == 0) { c = 7; }
+						if (t == 1 && c == 0 && v > 12 && hash2(u, v) % 3 == 0) { c = 7; }
 					} else if (t == 2) {
 						int fl = u % 4;
 						c = fl == 0 ? 7 : (fl == 1 ? 5 : (fl == 2 ? 4 : 2));
@@ -374,6 +407,12 @@ class GlobHunter : Scene {
 				}
 			}
 		}
+		// plain copies of the floor and the ceiling for their far rows: the joints over one shade
+		for (int i = 1536; i < 2048; ++i) {
+			int texel = tex[i];
+			bool joint = texel == 0 || (i >= 1792 && texel == 7);
+			tex.push(joint ? texel : 3);
+		}
 	}
 
 	var path_at(float s) {
@@ -392,8 +431,8 @@ class GlobHunter : Scene {
 
 	// DDA toward (dx, dy) in parameter space: true if no wall before frac of the way
 	bool los_clear(float dx, float dy, float frac) {
-		int mx = itrunc(posx);
-		int my = itrunc(posy);
+		int mx = math::itrunc(posx);
+		int my = math::itrunc(posy);
 		float adx = dx < 0.0 ? -dx : dx;
 		float ady = dy < 0.0 ? -dy : dy;
 		float ddx = adx < 0.00000001 ? 100000000.0 : 1.0 / adx;
@@ -417,6 +456,9 @@ class GlobHunter : Scene {
 	array<float> hit_times() override { return [MUSIC_BAR * 3.0, MUSIC_BAR * 5.0, MUSIC_BAR * 7.0, MUSIC_BAR * 9.0, MUSIC_BAR * 10.0, MUSIC_BAR * 12.0]; }
 	array<int> hit_levels() override { return [1, 2, 1, 2, 1, 2]; }
 
+	// the route's distance from which the walk faces the arena floor where the boss rises
+	float arena_stand() { return 19.0 + 9.8; }
+
 	// the route's distance at which the escape reaches the breach, facing it
 	float breach_stop() { return 19.0 + 10.0 + 9.0 + 8.3; }
 
@@ -435,6 +477,12 @@ class GlobHunter : Scene {
 			float want = (breach_stop() - lap) / (MUSIC_BAR * 12.0 - t + 0.05) / 2.4;
 			want = want < 0.0 ? 0.0 : (want > 3.0 ? 3.0 : want);
 			pace = stop_t > 0.0 ? want * 0.5 : want;
+		}
+		if (t >= MUSIC_BAR * 6.0 && t < MUSIC_BAR * 7.0) {
+			// the walk into the arena: always just fast enough to face the boss's floor on bar seven
+			float gait = (arena_stand() - lap) / (MUSIC_BAR * 7.0 - t + 0.05) / 2.4;
+			gait = gait < 0.3 ? 0.3 : (gait > 2.0 ? 2.0 : gait);
+			pace = stop_t > 0.0 ? gait * 0.5 : gait;
 		}
 		if (out) { pace = 0.0; }
 		pace *= bullet;
@@ -543,12 +591,9 @@ class GlobHunter : Scene {
 			}
 			if (best >= 0) { fire(best, bestx, besty, t); }
 		}
-		// the boss rises in the corridor ahead as the last bar begins
+		// the boss rises from the arena's open floor on bar seven
 		int boss = ne - 1;
 		if (t >= MUSIC_BAR * 7.0 && t - dt < MUSIC_BAR * 7.0) {
-			var ahead = path_at(travel + 4.4);
-			ex[boss] = ahead[0];
-			ey[boss] = ahead[1];
 			es[boss] = 0;
 			est[boss] = 0.0;
 			callout = "BOSS GLOB";
@@ -597,13 +642,13 @@ class GlobHunter : Scene {
 			int g = goo_next;
 			goo_next = (goo_next + 1) % ngoo;
 			float ahead = 1.2 + rng.nextf() * 3.2;
-			float across = (rng.nextf() - 0.5) * 1.6;
+			float across = (rng.nextf() - 0.5) * 2.6;
 			float sx = posx + dirx * ahead - diry * across;
 			float sy = posy + diry * ahead + dirx * across;
-			if (wmap[itrunc(sy) * mw + itrunc(sx)] != 0) { continue; }
+			if (wmap[math::itrunc(sy) * mw + math::itrunc(sx)] != 0) { continue; }
 			gx[g] = sx;
 			gy[g] = sy;
-			gz[g] = 0.95;
+			gz[g] = vault - 0.05;
 			gvx[g] = (rng.nextf() - 0.5) * 0.6;
 			gvy[g] = (rng.nextf() - 0.5) * 0.6;
 			gvz[g] = 0.0 - rng.nextf() * 1.5;
@@ -659,8 +704,8 @@ class GlobHunter : Scene {
 			muzzle_t = 0.12;
 			tracer_t = 0.14;
 			kick_t = 0.2;
-			tr_x = itrunc(w * 0.5 * (1.0 + bx / by));
-			tr_y = h / 2 + itrunc(h * 0.10 / by);
+			tr_x = math::itrunc(w * 0.5 * (1.0 + bx / by));
+			tr_y = h / 2 + math::itrunc(h * 0.10 / by);
 			callout = "";
 			for (int k0 = 0; k0 < 8; ++k0) {
 				int g0 = goo_next;
@@ -686,8 +731,8 @@ class GlobHunter : Scene {
 		hot_t = 0.35;
 		kick_t = 0.2;
 		stop_t = 0.16;
-		tr_x = itrunc(w * 0.5 * (1.0 + bx / by));
-		tr_y = h / 2 + itrunc(h * 0.10 / by);
+		tr_x = math::itrunc(w * 0.5 * (1.0 + bx / by));
+		tr_y = h / 2 + math::itrunc(h * 0.10 / by);
 		combo = t - last_kill < 1.8 ? combo + 1 : 1;
 		last_kill = t;
 		var words = ["SPLAT", "GLOBBED", "SQUISH", "POP"];
@@ -729,8 +774,8 @@ class GlobHunter : Scene {
 			gvz[g] = vz;
 			float nx = gx[g] + gvx[g] * dt;
 			float ny = gy[g] + gvy[g] * dt;
-			if (wmap[itrunc(gy[g]) * mw + itrunc(nx)] != 0) { gvx[g] = 0.0 - gvx[g] * 0.4; nx = gx[g]; }
-			if (wmap[itrunc(ny) * mw + itrunc(gx[g])] != 0) { gvy[g] = 0.0 - gvy[g] * 0.4; ny = gy[g]; }
+			if (wmap[math::itrunc(gy[g]) * mw + math::itrunc(nx)] != 0) { gvx[g] = 0.0 - gvx[g] * 0.4; nx = gx[g]; }
+			if (wmap[math::itrunc(ny) * mw + math::itrunc(gx[g])] != 0) { gvy[g] = 0.0 - gvy[g] * 0.4; ny = gy[g]; }
 			gx[g] = nx;
 			gy[g] = ny;
 		}
@@ -739,23 +784,23 @@ class GlobHunter : Scene {
 	// the light map: the torches' steady sum, each cell flickering with the torch
 	// that rules it, plus the muzzle near the camera while it burns
 	void light_up() {
-		int n = lres * lres;
+		int n = lw * lh;
 		int nt = tox.size();
 		array<float> flick = [];
 		float kick = cue != null ? cue.kick_env(tt) : 0.0;
 		// on the run the torches gutter low and the kick strobes them back up
 		bool run = tt >= MUSIC_BAR * 10.0 && tt < MUSIC_BAR * 12.0;
 		float gutter = run ? 0.4 + kick * 1.1 : 1.0;
+		float beat_flare = cue != null ? 0.45 * kick + 0.7 * cue.hit(tt) : 0.0;
 		for (int k = 0; k < nt; ++k) {
-			float beat_flare = cue != null ? 0.45 * kick + 0.7 * cue.hit(tt) : 0.0;
 			flick.push((1.0 + 0.12 * math::sin(tt * 13.0 + k * 2.3) + 0.10 * math::sin(tt * 29.0 + k * 5.1)) * gutter + beat_flare);
 		}
 		var& st = still;
 		var& ow = owner;
 		var& lm = lmap;
-		int flood = cue != null ? itrunc(cue.hit(tt) * 4.0) : 0;
+		int flood = cue != null ? math::itrunc(cue.hit(tt) * 4.0) : 0;
 		for (int c = 0; c < n; ++c) {
-			int lv = itrunc(st[c] * flick[ow[c]]) + flood;
+			int lv = math::itrunc(st[c] * flick[ow[c]]) + flood;
 			lm[c] = lv > 5 ? 5 : lv;
 		}
 		// every burst lights the hall around it while the goo flies
@@ -765,17 +810,17 @@ class GlobHunter : Scene {
 			float age = sb == 1 ? est[b] : 0.14 + est[b];
 			float power = 5.0 * (1.0 - age / 0.7);
 			if (power <= 0.0) { continue; }
-			int bx0 = itrunc(ex[b] * 2.0);
-			int by0 = itrunc(ey[b] * 2.0);
+			int bx0 = math::itrunc(ex[b] * 2.0);
+			int by0 = math::itrunc(ey[b] * 2.0);
 			for (int dy2 = -9; dy2 <= 9; ++dy2) {
 				int cy2 = by0 + dy2;
-				if (cy2 < 0 || cy2 >= lres) { continue; }
+				if (cy2 < 0 || cy2 >= lh) { continue; }
 				for (int dx2 = -9; dx2 <= 9; ++dx2) {
 					int cx2 = bx0 + dx2;
-					if (cx2 < 0 || cx2 >= lres) { continue; }
+					if (cx2 < 0 || cx2 >= lw) { continue; }
 					float dd = (dx2 * dx2 + dy2 * dy2) * 0.25;
-					int c3 = cy2 * lres + cx2;
-					int lv3 = lm[c3] + itrunc(power / (1.0 + dd * 0.5));
+					int c3 = cy2 * lw + cx2;
+					int lv3 = lm[c3] + math::itrunc(power / (1.0 + dd * 0.5));
 					lm[c3] = lv3 > 5 ? 5 : lv3;
 				}
 			}
@@ -788,29 +833,29 @@ class GlobHunter : Scene {
 			int by1 = breach_y * 2 + 1;
 			for (int dy3 = -12; dy3 <= 12; ++dy3) {
 				int cy3 = by1 + dy3;
-				if (cy3 < 0 || cy3 >= lres) { continue; }
+				if (cy3 < 0 || cy3 >= lh) { continue; }
 				for (int dx3 = -24; dx3 <= 0; ++dx3) {
 					int cx3 = bx1 + dx3;
 					if (cx3 < 0) { continue; }
 					float dd3 = (dx3 * dx3 + dy3 * dy3 * 2.0) * 0.25;
-					int c4 = cy3 * lres + cx3;
-					int lv4 = lm[c4] + itrunc(power / (1.0 + dd3 * 0.12));
+					int c4 = cy3 * lw + cx3;
+					int lv4 = lm[c4] + math::itrunc(power / (1.0 + dd3 * 0.12));
 					lm[c4] = lv4 > 5 ? 5 : lv4;
 				}
 			}
 		}
 		if (muzzle_t > 0.0) {
-			int cx0 = itrunc(posx * 2.0);
-			int cy0 = itrunc(posy * 2.0);
+			int cx0 = math::itrunc(posx * 2.0);
+			int cy0 = math::itrunc(posy * 2.0);
 			for (int dy = -10; dy <= 10; ++dy) {
 				int cy = cy0 + dy;
-				if (cy < 0 || cy >= lres) { continue; }
+				if (cy < 0 || cy >= lh) { continue; }
 				for (int dx = -10; dx <= 10; ++dx) {
 					int cx = cx0 + dx;
-					if (cx < 0 || cx >= lres) { continue; }
+					if (cx < 0 || cx >= lw) { continue; }
 					float d2 = (dx * dx + dy * dy) * 0.25;
-					int c2 = cy * lres + cx;
-					int lv2 = itrunc(st[c2] * flick[ow[c2]] + 4.5 / (1.0 + d2 * 0.35));
+					int c2 = cy * lw + cx;
+					int lv2 = math::itrunc(st[c2] * flick[ow[c2]] + 4.5 / (1.0 + d2 * 0.35));
 					lm[c2] = lv2 > 5 ? 5 : lv2;
 				}
 			}
@@ -818,78 +863,166 @@ class GlobHunter : Scene {
 	}
 
 	int light_at(float x, float y) {
-		int cx = itrunc(x * 2.0);
-		int cy = itrunc(y * 2.0);
-		cx = cx < 0 ? 0 : (cx >= lres ? lres - 1 : cx);
-		cy = cy < 0 ? 0 : (cy >= lres ? lres - 1 : cy);
-		return lmap[cy * lres + cx];
+		int cx = math::itrunc(x * 2.0);
+		int cy = math::itrunc(y * 2.0);
+		cx = cx < 0 ? 0 : (cx >= lw ? lw - 1 : cx);
+		cy = cy < 0 ? 0 : (cy >= lh ? lh - 1 : cy);
+		return lmap[cy * lw + cx];
 	}
 
-	// floor and ceiling, cast per pixel: each row off the horizon is a fixed
-	// distance, stepped across the screen along the camera plane and lit from the
-	// map; a floor row and the ceiling row as far above the horizon share one walk
-	void cast_planes(var& grid) {
+	// one ray per column: the wall's depth, the rows its slice covers, and what it hit;
+	// each column is also filed under the rows where its ceiling ends and its floor begins
+	void cast_walls() {
 		int ww = w;
 		int hh = h;
-		int h0 = hh / 2 + itrunc(pitch);
+		var& wm = wmap;
+		var& zc = zcol;
+		var& vx = vigx;
+		var& top = wall_top;
+		var& foot = wall_foot;
+		var& hit = wall_hit;
+		var& clo = ceil_lo;
+		var& chi = ceil_hi;
+		var& flo = floor_lo;
+		var& fhi = floor_hi;
+		var& lm = lmap;
+		int lcols = lw;
+		int lrows = lh;
+		int mcols = mw;
+		float px = posx;
+		float py = posy;
+		float hc = hh / 2 + math::itrunc(pitch);
+		float rise = vault - 0.5;
+		for (int v = 0; v <= hh; ++v) {
+			clo[v] = ww;
+			chi[v] = -1;
+			flo[v] = ww;
+			fhi[v] = -1;
+		}
+		for (int x = 0; x < ww; ++x) {
+			float camx = 2.0 * x / (ww - 1.0) - 1.0;
+			float rdx = dirx + planex * camx;
+			float rdy = diry + planey * camx;
+			int mx = math::itrunc(px);
+			int my = math::itrunc(py);
+			float adx = rdx < 0.0 ? -rdx : rdx;
+			float ady = rdy < 0.0 ? -rdy : rdy;
+			float ddx = adx < 0.00000001 ? 100000000.0 : 1.0 / adx;
+			float ddy = ady < 0.00000001 ? 100000000.0 : 1.0 / ady;
+			int stepx = rdx < 0.0 ? -1 : 1;
+			int stepy = rdy < 0.0 ? -1 : 1;
+			float sdx = rdx < 0.0 ? (px - mx) * ddx : (mx + 1.0 - px) * ddx;
+			float sdy = rdy < 0.0 ? (py - my) * ddy : (my + 1.0 - py) * ddy;
+			int side = 0;
+			int hitv = 0;
+			int guard = 0;
+			while (hitv == 0 && guard < 64) {
+				if (sdx < sdy) { sdx += ddx; mx += stepx; side = 0; }
+				else { sdy += ddy; my += stepy; side = 1; }
+				hitv = wm[my * mcols + mx];
+				++guard;
+			}
+			hitv = hitv == 0 ? 1 : hitv;
+			float pdist = side == 0 ? sdx - ddx : sdy - ddy;   // perpendicular: no fisheye
+			pdist = pdist < 0.05 ? 0.05 : pdist;
+			zc[x] = pdist;
+			float wallx = side == 0 ? py + pdist * rdy : px + pdist * rdx;
+			wallx -= math::floor(wallx);
+			int tu = math::itrunc(wallx * 16.0) & 15;
+			float lineh = hh / pdist;
+			int y0 = math::itrunc(hc - lineh * rise);
+			int y1 = math::itrunc(hc + lineh * 0.5);
+			y0 = y0 < 0 ? 0 : y0;
+			y1 = y1 > hh ? hh : y1;
+			top[x] = y0;
+			foot[x] = y1;
+			if (clo[y0] > x) { clo[y0] = x; }
+			chi[y0] = x;
+			if (flo[y1] > x) { flo[y1] = x; }
+			fhi[y1] = x;
+			// light: the gloom by distance, the torches at the face, the vignette
+			int amb = math::itrunc(8.0 / (pdist + 1.8));
+			amb = amb > 3 ? 3 : amb;
+			int lcx = math::itrunc((px + rdx * (pdist - 0.05)) * 2.0);
+			int lcy = math::itrunc((py + rdy * (pdist - 0.05)) * 2.0);
+			lcx = lcx < 0 ? 0 : (lcx >= lcols ? lcols - 1 : lcx);
+			lcy = lcy < 0 ? 0 : (lcy >= lrows ? lrows - 1 : lcy);
+			int lv = amb + lm[lcy * lcols + lcx] - vx[x];
+			lv = lv < 0 ? 0 : (lv > 7 ? 7 : lv);
+			hit[x] = ((hitv * 2 + side) * 16 + tu) * 8 + lv;
+		}
+	}
+
+	// floor and ceiling, cast per pixel only where no wall slice covers them: each
+	// row off the horizon is a fixed distance, stepped along the camera plane across
+	// the columns whose ceiling (or floor) reaches that row
+	void cast_planes(var& grid) {
+		int hh = h;
+		int h0 = hh / 2 + math::itrunc(pitch);
+		var& clo = ceil_lo;
+		var& chi = ceil_hi;
+		var& flo = floor_lo;
+		var& fhi = floor_hi;
+		float rise = vault - 0.5;
+		int lo = clo[hh];
+		int hi = chi[hh];
+		for (int y = hh - 1; y >= 0; --y) {
+			if (y < h0 && lo <= hi) {
+				float up = h0 - y - 0.5;
+				float ceil_d = rise * hh / up;
+				// a texel is up / (16 * ceil_d) pixels tall: under two, its grain would only speckle
+				cast_plane_row(grid, y, ceil_d, lo, hi, ceil_base, up < ceil_d * 32.0 ? 2304 : 1792);
+			}
+			lo = clo[y] < lo ? clo[y] : lo;
+			hi = chi[y] > hi ? chi[y] : hi;
+		}
+		lo = w;
+		hi = -1;
+		for (int y2 = 0; y2 < hh; ++y2) {
+			lo = flo[y2] < lo ? flo[y2] : lo;
+			hi = fhi[y2] > hi ? fhi[y2] : hi;
+			if (y2 >= h0 && lo <= hi) {
+				float down = y2 - h0 + 0.5;
+				float floor_d = 0.5 * hh / down;
+				cast_plane_row(grid, y2, floor_d, lo, hi, floor_base, down < floor_d * 32.0 ? 2048 : 1536);
+			}
+		}
+	}
+
+	void cast_plane_row(var& grid, int y, float rowd, int x0, int x1, int plane_base, int plane_tex) {
+		int ww = w;
 		var& tx = tex;
 		var& lm = lmap;
 		var& vx = vigx;
-		var& vy = vigy;
-		int lr = lres;
-		int fb = floor_base;
-		int cb = ceil_base;
-		float rdx0 = dirx - planex;
-		float rdy0 = diry - planey;
-		float rdx1 = dirx + planex;
-		float rdy1 = diry + planey;
-		int reach = h0 > hh - h0 ? h0 : hh - h0;
-		for (int k = 0; k < reach; ++k) {
-			int yf = h0 + k;
-			int yc = h0 - 1 - k;
-			bool dof = yf < hh;
-			bool doc = yc >= 0;
-			float rowd = hh * 0.5 / (k + 0.5);
-			float stx_ = rowd * (rdx1 - rdx0) / ww;
-			float sty_ = rowd * (rdy1 - rdy0) / ww;
-			float fx = posx + rowd * rdx0;
-			float fy = posy + rowd * rdy0;
-			int amb = itrunc(8.0 / (rowd + 1.8));
-			amb = amb > 3 ? 3 : amb;
-			int ambf = amb - (dof ? vy[yf] : 0);
-			int ambc = amb - (doc ? vy[yc] : 0);
-			int gf = yf * ww;
-			int gc = yc * ww;
-			int cell = -1;
-			int lit = 0;
-			for (int x = 0; x < ww; ++x) {
-				int iu = fx * 16.0;
-				int iv = fy * 16.0;
-				int ti = (iv & 15) * 16 + (iu & 15);
-				// the light changes only from one light-map cell to the next
-				int lc = (iv >> 3) * 4096 + (iu >> 3);
-				if (lc != cell) {
-					cell = lc;
-					int lcx = iu >> 3;
-					int lcy = iv >> 3;
-					lcx = lcx < 0 ? 0 : (lcx >= lr ? lr - 1 : lcx);
-					lcy = lcy < 0 ? 0 : (lcy >= lr ? lr - 1 : lcy);
-					lit = lm[lcy * lr + lcx];
-				}
-				int vxx = vx[x];
-				if (dof) {
-					int lv = ambf + lit - vxx;
-					lv = lv < 0 ? 0 : (lv > 7 ? 7 : lv);
-					grid[gf + x] = fb + lv * 8 + tx[768 + ti];
-				}
-				if (doc) {
-					int lv2 = ambc + lit - vxx;
-					lv2 = lv2 < 0 ? 0 : (lv2 > 7 ? 7 : lv2);
-					grid[gc + x] = cb + lv2 * 8 + tx[1024 + ti];
-				}
-				fx += stx_;
-				fy += sty_;
+		int lcols = lw;
+		int lrows = lh;
+		float step_x = rowd * 2.0 * planex / ww;
+		float step_y = rowd * 2.0 * planey / ww;
+		float fx = posx + rowd * (dirx - planex) + step_x * x0;
+		float fy = posy + rowd * (diry - planey) + step_y * x0;
+		int amb = math::itrunc(8.0 / (rowd + 1.8));
+		amb = (amb > 3 ? 3 : amb) - vigy[y];
+		int gi = y * ww;
+		int cell = -1;
+		int lit = 0;
+		for (int x = x0; x <= x1; ++x) {
+			int iu = cast<int>(fx * 16.0);
+			int iv = cast<int>(fy * 16.0);
+			// the light changes only from one light-map cell to the next
+			int lc = (iv >> 3) * 4096 + (iu >> 3);
+			if (lc != cell) {
+				cell = lc;
+				int lcx = iu >> 3;
+				int lcy = iv >> 3;
+				lcx = lcx < 0 ? 0 : (lcx >= lcols ? lcols - 1 : lcx);
+				lcy = lcy < 0 ? 0 : (lcy >= lrows ? lrows - 1 : lcy);
+				lit = amb + lm[lcy * lcols + lcx];
 			}
+			int lv = lit - vx[x];
+			lv = lv < 0 ? 0 : (lv > 7 ? 7 : lv);
+			grid[gi + x] = plane_base + lv * 8 + tx[plane_tex + (iv & 15) * 16 + (iu & 15)];
+			fx += step_x;
+			fy += step_y;
 		}
 	}
 
@@ -898,15 +1031,18 @@ class GlobHunter : Scene {
 	void draw_blob(var& grid, int i) {
 		float tyy = sty[i];
 		float txx = stx[i];
-		int scx = itrunc(w * 0.5 * (1.0 + txx / tyy));
+		int scx = math::itrunc(w * 0.5 * (1.0 + txx / tyy));
 		int typ = et[i];
 		bool boss = i == ne - 1;
 		float size = boss ? 1.7 + (cue != null ? cue.kick_env(tt) * 0.22 : 0.0) : (typ == 1 ? 1.1 : 0.78);
-		int sh = itrunc(h * size / tyy);
+		int sh = math::itrunc(h * size / tyy);
 		sh = sh < 3 ? 3 : sh;
 		sh = sh > h ? h : sh;
-		float hwm = (sh + (typ == 1 ? 6.0 : 2.0) * h / 80.0) * 0.5;
-		int feet = h / 2 + itrunc(pitch) + itrunc(h * 0.5 / tyy);
+		// its half-width never passes its kind's reach in world units, whatever the pixels' shape
+		float hwm = sh * (boss ? 0.57 : (typ == 1 ? 0.6 : 0.55));
+		float room = (boss ? 1.2 : (typ == 1 ? 0.75 : 0.5)) * w / (1.32 * tyy);
+		hwm = hwm > room ? room : hwm;
+		int feet = h / 2 + math::itrunc(pitch) + math::itrunc(h * 0.5 / tyy);
 		int top = feet - sh;
 		float wob = math::sin(tt * 5.0 + i * 2.1) * 0.10;
 		bool flash = es[i] == 1 || (boss && boss_flash > 0.0);
@@ -921,8 +1057,8 @@ class GlobHunter : Scene {
 			float vv = 1.0 - v * v;
 			if (vv <= 0.0) { continue; }
 			float hwf = math::sqrt(vv) * hwm;
-			int hw = itrunc(hwf);
-			int cxr = scx + itrunc(wob * v * hwm);
+			int hw = math::itrunc(hwf);
+			int cxr = scx + math::itrunc(wob * v * hwm);
 			int rowb = rr * w;
 			for (int dx = 0 - hw; dx <= hw; ++dx) {
 				int col = cxr + dx;
@@ -937,7 +1073,7 @@ class GlobHunter : Scene {
 					li = li < 0.0 ? 0.0 : li;
 					// a rim of torchlight on the silhouette's edge
 					float rim = q < 0.12 && li < 0.3 ? 0.35 : 0.0;
-					int lv = itrunc((0.10 + 0.9 * li + rim) * fogk * 11.99);
+					int lv = math::itrunc((0.10 + 0.9 * li + rim) * fogk * 11.99);
 					pi = body + (lv > 11 ? 11 : lv);
 					float ax = nx < 0.0 ? -nx : nx;
 					if (v > -0.5 && v < -0.12 && ax > 0.14 && ax < 0.52) {
@@ -965,17 +1101,17 @@ class GlobHunter : Scene {
 		float tyy = invdet * (planex * ry - planey * rx);
 		if (tyy < 0.3) { return; }
 		float txx = invdet * (diry * rx - dirx * ry);
-		int scx = itrunc(w * 0.5 * (1.0 + txx / tyy));
-		float hc = h / 2 + itrunc(pitch);
-		int fh = itrunc(h * 0.24 / tyy);
+		int scx = math::itrunc(w * 0.5 * (1.0 + txx / tyy));
+		float hc = h / 2 + math::itrunc(pitch);
+		int fh = math::itrunc(h * 0.24 / tyy);
 		fh = fh < 3 ? 3 : fh;
-		int fy0 = itrunc(hc - h * 0.14 / tyy) - fh;
+		int fy0 = math::itrunc(hc - h * 0.14 / tyy) - fh;
 		float flick = math::sin(tt * 17.0 + k * 3.0);
 		for (int dy = 0; dy < fh; ++dy) {
 			float v = (dy + 0.5) / fh;
 			float half = (v < 0.65 ? v / 0.65 : 1.0 - (v - 0.65) / 0.35 * 0.4) * fh * 0.28;
-			int sway = itrunc(flick * (1.0 - v) * fh * 0.12);
-			int hw = itrunc(half);
+			int sway = math::itrunc(flick * (1.0 - v) * fh * 0.12);
+			int hw = math::itrunc(half);
 			int row = fy0 + dy;
 			if (row < 0 || row >= h) { continue; }
 			for (int dx = 0 - hw; dx <= hw; ++dx) {
@@ -990,73 +1126,43 @@ class GlobHunter : Scene {
 	}
 
 	void render(var& grid) override {
+		cast_walls();
 		cast_planes(grid);
 		int ww = w;
 		int hh = h;
-		var& wm = wmap;
 		var& tx = tex;
 		var& zc = zcol;
-		var& vx = vigx;
+		var& top = wall_top;
+		var& foot = wall_foot;
+		var& hit = wall_hit;
 		int wb = wall_base;
 		int bb = banner_base;
-		int tshift = itrunc(tt * 14.0);
-		float hc = hh / 2 + itrunc(pitch);
+		int tshift = math::itrunc(tt * 14.0);
+		float hc = hh / 2 + math::itrunc(pitch);
+		float rise = vault - 0.5;
 		for (int x = 0; x < ww; ++x) {
-			float camx = 2.0 * x / (ww - 1.0) - 1.0;
-			float rdx = dirx + planex * camx;
-			float rdy = diry + planey * camx;
-			int mx = itrunc(posx);
-			int my = itrunc(posy);
-			float adx = rdx < 0.0 ? -rdx : rdx;
-			float ady = rdy < 0.0 ? -rdy : rdy;
-			float ddx = adx < 0.00000001 ? 100000000.0 : 1.0 / adx;
-			float ddy = ady < 0.00000001 ? 100000000.0 : 1.0 / ady;
-			int stepx = rdx < 0.0 ? -1 : 1;
-			int stepy = rdy < 0.0 ? -1 : 1;
-			float sdx = rdx < 0.0 ? (posx - mx) * ddx : (mx + 1.0 - posx) * ddx;
-			float sdy = rdy < 0.0 ? (posy - my) * ddy : (my + 1.0 - posy) * ddy;
-			int side = 0;
-			int hitv = 0;
-			int guard = 0;
-			while (hitv == 0 && guard < 64) {
-				if (sdx < sdy) { sdx += ddx; mx += stepx; side = 0; }
-				else { sdy += ddy; my += stepy; side = 1; }
-				int cellv = wm[my * mw + mx];
-				hitv = cellv;
-				++guard;
-			}
-			hitv = hitv == 0 ? 1 : hitv;
-			float pdist = side == 0 ? sdx - ddx : sdy - ddy;   // perpendicular: no fisheye
-			pdist = pdist < 0.05 ? 0.05 : pdist;
-			zc[x] = pdist;
-			float wallx = side == 0 ? posy + pdist * rdy : posx + pdist * rdx;
-			wallx -= math::floor(wallx);
-			int tu = itrunc(wallx * 16.0) & 15;
-			float lineh = hh / pdist;
-			float topf = hc - lineh * 0.5;
-			int y0 = itrunc(topf);
-			int y1 = itrunc(topf + lineh);
-			y0 = y0 < 0 ? 0 : y0;
-			y1 = y1 > hh ? hh : y1;
-			// light: the gloom by distance, the torches at the face, the vignette
-			int amb = itrunc(8.0 / (pdist + 1.8));
-			amb = amb > 3 ? 3 : amb;
-			int lv = amb + light_at(posx + rdx * (pdist - 0.05), posy + rdy * (pdist - 0.05)) - vx[x];
-			lv = lv < 0 ? 0 : (lv > 7 ? 7 : lv);
+			int y0 = top[x];
+			int y1 = foot[x];
+			int packed = hit[x];
+			int lv = packed & 7;
+			int tu = (packed >> 3) & 15;
+			int side = (packed >> 7) & 1;
+			int hitv = packed >> 8;
+			float lineh = hh / zc[x];
 			float tstep = 16.0 / lineh;
-			float tpos = (y0 + 0.5 - topf) * tstep;
+			float tpos = (y0 + 0.5 - (hc - lineh * rise)) * tstep;
 			int gi = y0 * ww + x;
 			if (hitv == 5) {
 				breach_slice(grid, x, y0, y1, tpos, tstep, tu, lv, side);
 			} else if (hitv == 4) {
 				int brow = bb + (side * 8 + lv) * 16;
-				// rainbow fire: ragged flame tongues per texel column, hue bands scroll up
+				// rainbow fire: ragged flame tongues per texel column, hue bands scroll up the cloth
 				int wave = (tu * 3 + tshift) % 12;
-				int flen = 6 + (wave < 6 ? wave : 12 - wave);
+				int flen = 12 + (wave < 6 ? wave : 12 - wave) * 2;
 				int bank = (((tu >> 2) + (tshift >> 3)) & 3) * 4;
 				for (int y = y0; y < y1; ++y) {
-					int tv = tpos;
-					int up = 15 - (tv & 15);
+					int tv = cast<int>(tpos);
+					int up = 31 - (tv & 31);
 					int heat = up > flen ? 0 : (up * 3 > flen * 2 ? 1 : (up * 3 > flen ? 2 : 3));
 					grid[gi] = brow + bank + heat;
 					tpos += tstep;
@@ -1064,10 +1170,10 @@ class GlobHunter : Scene {
 				}
 			} else {
 				int wrow = wb + (((hitv - 1) * 2 + side) * 8 + lv) * 8;
-				int tbase = (hitv - 1) * 256 + tu;
+				int tbase = (hitv - 1) * 512 + tu;
 				for (int y2 = y0; y2 < y1; ++y2) {
-					int tv2 = tpos;
-					grid[gi] = wrow + tx[tbase + (tv2 & 15) * 16];
+					int tv2 = cast<int>(tpos);
+					grid[gi] = wrow + tx[tbase + (tv2 & 31) * 16];
 					tpos += tstep;
 					gi += ww;
 				}
@@ -1126,8 +1232,8 @@ class GlobHunter : Scene {
 			float hh = r * r * 0.36 - dy * dy;
 			float xh = hh > 0.0 ? math::sqrt(hh) : 0.0;
 			int row = y * w;
-			int x0 = itrunc(cx - xo);
-			int x1 = itrunc(cx + xo) + 1;
+			int x0 = math::itrunc(cx - xo);
+			int x1 = math::itrunc(cx + xo) + 1;
 			x0 = x0 < 0 ? 0 : x0;
 			x1 = x1 > w ? w : x1;
 			for (int x = x0; x < x1; ++x) {
@@ -1152,10 +1258,10 @@ class GlobHunter : Scene {
 		int gi = y0 * w + x;
 		if (bs >= 2.0) {
 			// open: white at the heart of the opening, gold toward its edges, rays rippling up it
-			int shimmer = itrunc(tt * 9.0);
+			int shimmer = math::itrunc(tt * 9.0);
 			for (int y = y0; y < y1; ++y) {
-				int tv = tpos;
-				int ev = tv < 8 ? tv : 15 - tv;
+				int tv = cast<int>(tpos);
+				int ev = (tv < 16 ? tv : 31 - tv) >> 1;
 				int eu = tu < 8 ? tu : 15 - tu;
 				int edge = ev < eu ? ev : eu;
 				int ray = ((tu * 5 + (tv >> 1) + shimmer) & 7) == 0 ? 1 : 0;
@@ -1166,11 +1272,11 @@ class GlobHunter : Scene {
 			return;
 		}
 		float kick = cue != null ? cue.kick_env(tt) : 0.0;
-		int heat = itrunc((bs + kick * 0.35) * 14.0);
+		int heat = math::itrunc((bs + kick * 0.35) * 14.0);
 		int wrow = wall_base + (side * 8 + lv) * 8;
 		for (int y2 = y0; y2 < y1; ++y2) {
-			int tv2 = tpos;
-			int ti = (tv2 & 15) * 16 + tu;
+			int tv2 = cast<int>(tpos);
+			int ti = (tv2 & 31) * 16 + tu;
 			int crack = (hash2(ti, 77) & 15);
 			int c = tex[ti];
 			// mortar lines and a hashed web of cracks catch fire from the light behind
@@ -1184,7 +1290,7 @@ class GlobHunter : Scene {
 
 	// the goo in flight and on the floor: blobs sized by distance, lit by the map
 	void draw_goo(var& grid, float invdet) {
-		float hc = h / 2 + itrunc(pitch);
+		float hc = h / 2 + math::itrunc(pitch);
 		for (int g = 0; g < ngoo; ++g) {
 			float life = glife[g];
 			if (life <= 0.0) { continue; }
@@ -1193,14 +1299,14 @@ class GlobHunter : Scene {
 			float tyy = invdet * (planex * ry - planey * rx);
 			if (tyy < 0.3) { continue; }
 			float txx = invdet * (diry * rx - dirx * ry);
-			int scx = itrunc(w * 0.5 * (1.0 + txx / tyy));
+			int scx = math::itrunc(w * 0.5 * (1.0 + txx / tyy));
 			if (scx < 0 || scx >= w || tyy >= zcol[scx]) { continue; }
-			int scy = itrunc(hc + (0.5 - gz[g]) * h / tyy);
-			int rad = itrunc(h * (gtype[g] == 2 ? 0.024 : 0.04) / tyy * (life < 0.6 ? life / 0.6 : 1.0));
+			int scy = math::itrunc(hc + (0.5 - gz[g]) * h / tyy);
+			int rad = math::itrunc(h * (gtype[g] == 2 ? 0.024 : 0.04) / tyy * (life < 0.6 ? life / 0.6 : 1.0));
 			int flat = gz[g] <= 0.0 ? 1 : 0;
 			float lk = 0.3 + light_at(gx[g], gy[g]) * 0.14;
 			int base = gtype[g] == 2 ? rubble_base : sprite_base + gtype[g] * 12;
-			int body = base + itrunc(lk * 10.0);
+			int body = base + math::itrunc(lk * 10.0);
 			body = body > base + 11 ? base + 11 : body;
 			for (int dy = 0 - rad; dy <= rad; ++dy) {
 				int row = scy + (flat == 1 ? dy / 2 : dy);
@@ -1219,7 +1325,7 @@ class GlobHunter : Scene {
 		int gx0 = w / 2;
 		int gs = h / 40;
 		gs = gs < 2 ? 2 : gs;
-		int flick = itrunc(tt * 10.0);
+		int flick = math::itrunc(tt * 10.0);
 		// rainbow hitscan tracer from the muzzle to the target
 		if (tracer_t > 0.0) {
 			int y0t = h - 11 * gs;
@@ -1234,22 +1340,23 @@ class GlobHunter : Scene {
 			}
 		}
 		// the gun, drawn at gs x: bobs with the walk, kicks on the shot
-		int bob = itrunc(math::sin(travel * 5.2) * 1.25 * gs);
+		int bob = math::itrunc(math::sin(travel * 5.2) * 1.25 * gs);
 		int kick = muzzle_t > 0.0 ? 2 * gs : 0;
 		int gw = 16;
-		int gh = gun.size();
+		int gh = gun.size() / gw;
+		var& gn = gun;
+		int sb = sprite_base;
 		int gxs = gx0 - gw * gs / 2 + bob;
 		int gys = h - gh * gs + 2 * gs + kick + (bob < 0 ? 0 - bob : bob) / 2;
 		for (int ry = 0; ry < gh * gs; ++ry) {
-			string row = gun[ry / gs];
+			int grow = (ry / gs) * gw;
 			int yy2 = gys + ry;
 			if (yy2 < 0 || yy2 >= h) { continue; }
 			for (int rx = 0; rx < gw * gs; ++rx) {
-				string ch = row.substr(rx / gs, 1);
-				if (ch == ".") { continue; }
-				int c = ch == "d" ? 27 : (ch == "m" ? 28 : (ch == "l" ? 29 : (ch == "h" ? 30 : (ch == "k" ? 46 : 47))));
+				int c = gn[grow + rx / gs];
+				if (c == 0) { continue; }
 				int xx2 = gxs + rx;
-				if (xx2 >= 0 && xx2 < w) { grid[yy2 * w + xx2] = sprite_base + c; }
+				if (xx2 >= 0 && xx2 < w) { grid[yy2 * w + xx2] = sb + c; }
 			}
 		}
 		if (muzzle_t > 0.0) {
@@ -1268,7 +1375,7 @@ class GlobHunter : Scene {
 			}
 		}
 		int chc = hot_t > 0.0 ? sprite_base + 41 : sprite_base + 40;
-		int cy = itrunc(h * 0.5);
+		int cy = math::itrunc(h * 0.5);
 		int cr = gs / 2;
 		for (int d = cr + 1; d <= cr * 2 + 2; ++d) {
 			grid[cy * w + gx0 - d] = chc;
@@ -1288,7 +1395,7 @@ class GlobHunter : Scene {
 			cs += age < 0.08 ? 1 : 0;
 			int tw = callout.size() * 6 * cs;
 			int cx = (w - tw) / 2;
-			int cyy = itrunc(h * 0.22 - age * h * 0.08);
+			int cyy = math::itrunc(h * 0.22 - age * h * 0.08);
 			int ink = combo >= 2 ? sprite_base + 53 + (flick & 3) : sprite_base + 49 + (flick & 1) * 2;
 			if (cx > 0) { gfx.draw_text(grid, w, h, callout, cx, cyy, cs, cs, ink, 1, sprite_base + 44, 99); }
 		}

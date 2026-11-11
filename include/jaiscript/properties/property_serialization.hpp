@@ -246,8 +246,9 @@ namespace jai {
 			return;
 		}
 
+		// the mode is a run-time value, so a T no archive can write is an error where a save reaches it, not the build's
 		ar.dispatch([this](auto& concrete_ar) {
-			concrete_ar.serialize(name().c_str(), m_value);
+			concrete_ar.serialize_deferred(name().c_str(), m_value);
 		});
 	}
 
@@ -256,7 +257,7 @@ namespace jai {
 		// property_manager has already positioned to this property (read the name);
 		// we're now at the VALUE
 		ar.dispatch([&](auto& concrete_ar) {
-			concrete_ar.read_custom(m_value);
+			concrete_ar.read_custom_deferred(m_value);
 		});
 	}
 
@@ -269,7 +270,7 @@ namespace jai {
 		if constexpr (std::is_default_constructible_v<T>) {
 			ar.dispatch([](auto& concrete_ar) {
 				T dummy{};
-				concrete_ar.read_custom(dummy);
+				concrete_ar.read_custom_deferred(dummy);
 			});
 		} else {
 			// For non-default-constructible types, read as a generic script_value to
@@ -291,7 +292,7 @@ namespace jai {
 	void property_manager::save(Archive& ar) const {
 		serialization::any_archive_writer type_erased(ar);
 
-		for (const auto& [name, prop] : m_properties) {
+		for (property_base* prop : all()) {
 			if (prop->allow_save()) {
 				prop->serialize(type_erased);
 			}
@@ -309,9 +310,8 @@ namespace jai {
 			for (size_t i = 0; i < prop_names.size(); ++i) {
 				const std::string& prop_name = prop_names[i];
 				if (ar.seek_property_by_index(i)) {
-					auto it = m_properties.find(prop_name);
-					if (it != m_properties.end()) {
-						it->second->serialize(type_erased);
+					if (property_base* prop = get(prop_name)) {
+						prop->serialize(type_erased);
 					}
 				}
 			}
@@ -319,7 +319,7 @@ namespace jai {
 			// JSON: seek each known property by name — critical when multiple property_mgrs
 			// at different inheritance levels (Sprite → Drawable → Component) read the same
 			// flat object; consuming the sequential iterator would lose position.
-			for (const auto& [name, prop] : m_properties) {
+			for (property_base* prop : all()) {
 				if (type_erased.seek_property(prop->name())) {
 					prop->serialize(type_erased);
 				}

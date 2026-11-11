@@ -502,6 +502,30 @@ public:
             check_eq((int64_t)100, r3.as_int());
         });
 
+        test("a_refused_method_call_names_the_function_the_method_hides", [this]() {
+            // a bare call in a method finds the member first (C++ lookup); when the member refuses the arguments and the
+            // function it hides takes them, the refusal names the qualified call
+            auto e = make_stdlib_engine();
+            const auto refusal = [&](const std::string& a_source) {
+                const auto report = e->check(a_source);
+                for (const auto& d : report.diagnostics) {
+                    if (d.severity == jai::check_diagnostic::level::error) { return d.message; }
+                }
+                return std::string("clean");
+            };
+            check_eq(std::string("'to_string' expects 0 argument(s), got 1: the method hides the function 'to_string' here; call that one as ::to_string(...)"),
+                     refusal("class Money { int cents = 5; string to_string() { return \"$\" + to_string(cents); } }"));
+            check_eq(std::string("'flavor' expects 0 argument(s), got 1: the method hides the function 'flavor' here; call that one as ::flavor(...)"),
+                     refusal("string flavor(int n) { return \"g\"; }\nclass Tea { string flavor() { return \"m\"; } string sip() { return flavor(7); } }"));
+            check_eq(std::string("argument 1 of 'show': cannot pass 'string' to 'n' declared 'int': the method hides the function 'show' here; call that one as ::show(...)"),
+                     refusal("string show(string s) { return s; }\nclass A { string show(int n) { return \"m\"; } string go() { return show(\"x\"); } }"));
+            check_eq(std::string("'twice' expects 0 argument(s), got 1: the method hides the function 'twice' here; call that one as ns::twice(...)"),
+                     refusal("namespace ns { int twice(int n) { return n * 2; }\nclass A { int twice() { return 2; } int go() { return twice(2); } } }"));
+            check_eq(std::string("'f' expects 0 argument(s), got 1"), refusal("void f() {}\nclass A { void f() {} void g() { f(1); } }"));
+            check_eq(std::string("'f' expects 0 argument(s), got 1"), refusal("void f(string s) {}\nclass A { void f() {} void g() { f(1); } }"));
+            check_eq(std::string("$5"), e->execute("class Money { int cents = 5; string to_string() { return \"$\" + ::to_string(cents); } }\nMoney m; m.to_string();").as_string());
+        });
+
         test("global_qualified_escape_hatch", [this]() {
             // ::name reaches a deliberately shadowed global for every access form.
             auto e = make_stdlib_engine();

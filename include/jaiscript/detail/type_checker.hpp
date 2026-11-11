@@ -121,12 +121,13 @@ namespace jai {
         // Program closure functions: name -> unit path -> the unit's declarations of it (a re-gather of a unit replaces its own; the
         // declarations stay alive with the table, so a stamped decl never dangles and no address is reused). A call whose name the
         // unit does not declare, and exactly one other unit declares once, resolves to that decl for the inliner and the argument
-        // proofs; diagnostics never read the table.
+        // proofs, and the diagnostics check the call against it (its count, its arguments, the use of its result).
         using program_function_map = std::unordered_map<std::string, std::unordered_map<std::string, std::vector<std::shared_ptr<const function_decl>>>>;
         // Program closure globals: name -> unit path -> the unit's top-level variable declarations of it (kept alive like the
         // functions). A name the unit does not declare, and exactly one other unit declares once with a spelled non-reference type,
-        // is typed by that declaration in the PROOF pass alone (diagnostics never read the table); a class-typed one is typed once
-        // its class is defined, and a unit whose proofs waited re-stamps after each import completes (proof_stats::deferred).
+        // is typed by that declaration in the proof pass; a class-typed one is typed once its class is defined, and a unit whose
+        // proofs waited re-stamps after each import completes (proof_stats::deferred). The diagnostics read a scalar, text, container
+        // or math one by it (tentative), and check a store against it.
         using program_global_map = std::unordered_map<std::string, std::unordered_map<std::string, std::vector<std::shared_ptr<const variable_decl>>>>;
         // Program closure enums: name -> unit path -> the unit's top-level enum of that name. An enum exactly one unit declares names a
         // map<string,int> cell; a read of one of its values runs no user code (member_expr::enum_constant)

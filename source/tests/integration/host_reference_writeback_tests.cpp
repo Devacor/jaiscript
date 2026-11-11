@@ -141,12 +141,13 @@ public:
 		});
 
 		test("the_store_follows_the_assignment_table", [expect, run, this]() {
+			expect("int n = 3; string m = \"\"; try { halve(n); } catch (e) { m = e; } m + \"|\" + to_string(n)", "Cannot assign float to a variable declared int|3", "a double written back into an int variable is refused as a float is");
 			for (bool use_vm : {false, true}) {
-				check_eq(run("int n = 3; n = 1.5; to_string(n)", use_vm), run("int n = 3; halve(n); to_string(n)", use_vm),
-					std::string("a double written back into an int variable converts like n = 1.5") + (use_vm ? " (vm)" : " (interpreter)"));
-				check_eq(run("array<int> a = [3]; a[0] = 1.5; a.join(\",\")", use_vm), run("array<int> a = [3]; halve(a[0]); a.join(\",\")", use_vm),
+				check_eq(run("array<int> a = [3]; var f = 1.5; string m = \"\"; try { a[0] = f; } catch (e) { m = e; } m + a.join(\",\")", use_vm),
+					run("array<int> a = [3]; string m = \"\"; try { halve(a[0]); } catch (e) { m = e; } m + a.join(\",\")", use_vm),
 					std::string("an element takes the element boundary") + (use_vm ? " (vm)" : " (interpreter)"));
 			}
+			expect("float x = 3.0; add_i64(x, 1); to_string(x)", "4.0", "an int written back into a float variable widens");
 			expect("int k = 1; string m = \"\"; try { [[warn_mode]] set_text(k); } catch (e) { m = \"raised\"; } m + to_string(k)", "raised1", "a store the variable's type rejects raises and leaves it");
 		});
 

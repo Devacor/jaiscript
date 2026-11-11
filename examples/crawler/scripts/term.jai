@@ -121,10 +121,10 @@ function mix_rgb(int a, int b, float t) -> int {
 }
 
 function scale_rgb(int rgb, float k) -> int {
-	int r = iclamp(((rgb >> 16) & 255) * k, 0, 255);
-	int g = iclamp(((rgb >> 8) & 255) * k, 0, 255);
-	int b = iclamp((rgb & 255) * k, 0, 255);
+	int r = iclamp(cast<int>(((rgb >> 16) & 255) * k), 0, 255);
+	int g = iclamp(cast<int>(((rgb >> 8) & 255) * k), 0, 255);
+	int b = iclamp(cast<int>((rgb & 255) * k), 0, 255);
 	return (r << 16) | (g << 8) | b;
 }
 
-function lerp_i(int a, int b, float t) -> int { return a + (b - a) * t; }
+function lerp_i(int a, int b, float t) -> int { return cast<int>(a + (b - a) * t); }

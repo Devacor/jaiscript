@@ -1,4 +1,6 @@
 #include <jaiscript/serialization/archive_impl.hpp>
+#include <jaiscript/detail/class_runtime.hpp>
+#include <jaiscript/detail/engine_access.hpp>
 
 #include <charconv>
 #include <cmath>
@@ -8,6 +10,98 @@ namespace jai::serialization {
 
 void throw_archive_expected(const char* expected, std::string_view found) {
     throw serialization_error(std::string("Expected ") + expected + " in the archive, found " + std::string(found));
+}
+
+void throw_not_serializable(std::type_index type) {
+    throw serialization_error("Type '" + detail::readable_cpp_type_name(type) + "' is not serializable. "
+        "Add save/load, serialize, property_owner, or ADL functions, bind it in the archive's engine — or mark the property transient.");
+}
+
+void throw_not_deserializable(std::type_index type) {
+    throw serialization_error("Type '" + detail::readable_cpp_type_name(type) + "' is not deserializable. "
+        "Add save/load, serialize, property_owner, or ADL functions, bind it in the archive's engine — or mark the property transient.");
+}
+
+namespace {
+
+    std::shared_ptr<class_definition> binding_of(engine* eng, std::type_index type, const class_metadata*& record) {
+        record = nullptr;
+        std::shared_ptr<class_definition> result = eng ? detail::engine_access::get_class_definition_by_type(*eng, type) : nullptr;
+        if (result) {
+            record = detail::engine_access::get_serialization_registry(*eng).get_class_metadata(result->get_name());
+        }
+        return record ? result : nullptr;
+    }
+
+    // The binding's post_load hook, as the script archives run it on an object they load
+    void run_binding_post_load(engine* eng, const class_definition& binding, void* object) {
+        script_value hook = binding.get_method(detail::engine_access::symbolize(*eng, "post_load"), false);
+        if (hook.type() != script_value_type::jai_function_type) {
+            return;
+        }
+        script_value self = script_value::make_cpp_reference(binding.get_name(), binding.get_type_id(), object, std::weak_ptr<void>(), eng);
+        auto ran = hook.as_function()({ self, script_value(static_cast<script_int>(1), eng) });
+        if (!ran) {
+            throw serialization_error(eng->format_error(ran));
+        }
+    }
+
+}
+
+void write_binding_record(any_archive_writer& ar, engine* eng, std::type_index type, const void* object, bool base_level) {
+    const class_metadata* record = nullptr;
+    if (!binding_of(eng, type, record)) {
+        if (base_level) {
+            return;
+        }
+        throw_not_serializable(type);
+    }
+    for (const base_archive_route& base : record->bases) {
+        write_binding_record(ar, eng, base.type, base.upcast(const_cast<void*>(object)), true);
+    }
+    for (const property_metadata& property : record->properties) {
+        if (property.archive.save) {
+            property.archive.save(property.archive.state.get(), property.name.c_str(), object, ar);
+        }
+    }
+}
+
+void read_binding_record(any_archive_reader& ar, engine* eng, std::type_index type, void* object, bool base_level) {
+    const class_metadata* record = nullptr;
+    const std::shared_ptr<class_definition> binding = binding_of(eng, type, record);
+    if (!binding) {
+        if (base_level) {
+            return;
+        }
+        throw_not_deserializable(type);
+    }
+    for (const base_archive_route& base : record->bases) {
+        read_binding_record(ar, eng, base.type, base.upcast(object), true);
+    }
+    for (const property_metadata& property : record->properties) {
+        if (property.archive.load && ar.seek_property(property.name)) {
+            property.archive.load(property.archive.state.get(), object, ar);
+        }
+    }
+    ar.clear_property_value();
+    if (!base_level) {
+        run_binding_post_load(eng, *binding, object);
+    }
+}
+
+std::string bound_type_name(engine* eng, std::type_index type) {
+    const class_metadata* record = nullptr;
+    const std::shared_ptr<class_definition> binding = binding_of(eng, type, record);
+    return binding ? binding->get_name() : std::string();
+}
+
+const polymorphic_registry::type_entry* binding_entry_named(engine* eng, const std::string& name) {
+    const std::shared_ptr<class_definition> binding = eng ? detail::engine_access::get_class_definition(*eng, name) : nullptr;
+    if (!binding || !binding->cpp_type()) {
+        return nullptr;
+    }
+    const polymorphic_registry::type_entry* entry = polymorphic_registry::instance().find(std::type_index(*binding->cpp_type()));
+    return entry && entry->named_by_binding ? entry : nullptr;
 }
 
 void throw_archive_value_range(std::string_view value_text, const char* field) {
@@ -43,6 +137,27 @@ std::pair<uint32_t, bool> archive_writer_core::track_shared_ptr(const void* raw_
         ++next_shared_id_;
     }
     return {it->second, inserted};
+}
+
+std::pair<uint32_t, bool> archive_writer_core::track_handle(const script_value::object_holder* holder) {
+    const void* identity = holder;
+    if (const class_instance* instance = holder ? holder->instance() : nullptr) {
+        const class_definition* class_def = instance->get_class_definition();
+        if (class_def && !class_def->is_script_class() && instance->cpp_object_pointer()) {
+            identity = instance->cpp_object_pointer();
+        }
+    } else if (holder) {
+        identity = holder->object() ? holder->object() : holder->bound_object() ? holder->bound_object() : identity;
+    }
+    return track_shared_ptr(identity);
+}
+
+std::shared_ptr<class_definition> archive_writer_core::bound_class_of(const script_value& value) const {
+    const auto holder = engine_ref_ && value.is_object() ? value.get_object_holder() : nullptr;
+    if (!holder || holder->is_instance() || holder->type_id() == UINT64_MAX) {
+        return nullptr;
+    }
+    return detail::engine_access::get_class_definition(*engine_ref_, holder->type_id());
 }
 
 SerializationContext archive_writer_core::current_context() const {

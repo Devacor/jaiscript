@@ -62,8 +62,8 @@ public:
 	}
 
 	int at(float x, float y) {
-		int gx = x * LIGHT_SUB;
-		int gy = y * LIGHT_SUB;
+		int gx = cast<int>(x * LIGHT_SUB);
+		int gy = cast<int>(y * LIGHT_SUB);
 		if (gx < 0 || gy < 0 || gx >= gw || gy >= gh) { return 0; }
 		return grid[gy * gw + gx];
 	}
@@ -108,8 +108,8 @@ private:
 	void stamp(array<int>& into, float lx, float ly, int channel, float radius, float power) {
 		auto& world = G.world;
 		int mw = world.mw;
-		int sx = lx;
-		int sy = ly;
+		int sx = cast<int>(lx);
+		int sy = cast<int>(ly);
 		if (world.tile_at(sx, sy) != 0) { return; }
 		stamp_id = stamp_id + 1;
 		int steps = math::itrunc(radius) + 1;

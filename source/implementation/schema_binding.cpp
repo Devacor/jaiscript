@@ -365,17 +365,17 @@ void ensure_signal_view_type_registered(engine& a_engine) {
 	if (a_engine.is_type_registered("Signal")) { return; }
 	engine* eng = &a_engine;
 	dynamic_binder<signal_script_ops> builder(a_engine, "Signal");
+	// serial: a receiver list other objects' code reads and fires
 	builder.method("connect", [eng](signal_script_ops& self, const std::string& id, const script_value& cb) {
 		if (!self.valid()) { throw runtime_error("Signal view is not backed by a live signal"); }
 		self.connect_fn(self.source, id, cb, eng);
-	});
+	}, serial);
 	builder.method("disconnect", [](signal_script_ops& self, const std::string& id) {
 		if (self.disconnect_fn != nullptr) { self.disconnect_fn(self.source, id); }
-	});
+	}, serial);
 	builder.method("connected", [](signal_script_ops& self, const std::string& id) {
 		return self.connected_fn != nullptr && self.connected_fn(self.source, id);
 	});
-	builder.serial_method("connect").serial_method("disconnect");   // a receiver list other objects' code reads and fires
 	builder.build();
 }
 

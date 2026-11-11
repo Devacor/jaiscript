@@ -21,8 +21,8 @@
 
 namespace jai {
 
-// Which overloads of a method dynamic_binder::serial_method marks: the non-const ones (a const getter of the same name stays
-// parallel), or every one (a const overload that still touches shared state)
+// Which overloads of a method jai::serial marks: the non-const ones, when only non-const overloads were bound serial (a const
+// getter of the same name stays parallel), or every one, once a const overload was
 enum class serial_overloads : uint8_t { non_const, every };
 
 namespace detail {
@@ -354,8 +354,9 @@ private:
         uintptr_t bits = 0;
     };
     // The slot table in one word: the trailing cells' count, low bit set, while implicit (slot i sits a fixed distance past the
-    // instance's end, which is this word's end), else a heap table (size, capacity, one cell pointer per slot)
-    class field_table {
+    // instance's end, which is this word's end), else a heap table (size, capacity, one cell pointer per slot). Aligned as a cell, so
+    // the word's end is the instance's end on 32-bit hosts too, where the word alone would leave tail padding after it
+    class alignas(alignof(script_value)) field_table {
     public:
         field_table() = default;
         field_table(const field_table&) = delete;
@@ -1033,6 +1034,11 @@ public:
 
     inline void set_unwrap_function(std::function<script_value(script_value&, engine*)> fn);
 
+    // The value the script archives write in place of an object of this class: a bound C++ vector's elements
+    using archive_form_function = script_value (*)(const script_value& object, const class_definition& cls, engine* eng);
+    void set_archive_form(archive_form_function fn) { archive_form_ = fn; }
+    archive_form_function archive_form() const { return archive_form_; }
+
     const std::string& get_name() const { return name_; }
     // the name's view in the engine's interned table, looked up once (instances and handles name their type by it)
     std::string_view interned_name() const { intern_name_once(); return interned_name_; }
@@ -1210,8 +1216,8 @@ public:
 
     // A host class whose constructor or destructor touches state other objects share (a registry, a cache, a service): a
     // parallel body may not construct it, nor any script class over it (dynamic_binder::serial_only_constructor)
-    // A host method or static method that touches state other objects share (dynamic_binder::serial_method,
-    // serial_static_method): a parallel body may not call it. A method's mark covers its non-const overloads, or every one
+    // A host method or static method that touches state other objects share (bound jai::serial): a parallel body may not call
+    // it. A method's mark covers its non-const overloads, or every one
     void mark_serial_method(uint64_t name_id, serial_overloads which) { serial_methods_[name_id] = which; }
     const serial_overloads* serial_method(uint64_t name_id) const {
         const auto found = serial_methods_.find(name_id);
@@ -1342,7 +1348,7 @@ private:
     };
     struct overload_cache_hash {
         size_t operator()(const overload_cache_key& k) const noexcept {
-            return std::hash<uint64_t>{}(k.name_id) ^ (std::hash<size_t>{}(k.arity) << 32);
+            return std::hash<uint64_t>{}(k.name_id ^ (static_cast<uint64_t>(k.arity) << 32));
         }
     };
     mutable std::unordered_map<overload_cache_key, std::shared_ptr<function_decl>, overload_cache_hash> overload_resolution_cache_;
@@ -1430,6 +1436,7 @@ private:
 
     bool is_transparent_wrapper_ = false;
     std::function<script_value(script_value&, engine*)> unwrap_function_;
+    archive_form_function archive_form_ = nullptr;
 
     copy_function copy_function_;
     bool nocopy_ = false;

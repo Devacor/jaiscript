@@ -25,7 +25,7 @@ namespace {
 // main.jai is last and is NEVER hot-reloaded (it owns the persistent globals).
 const char* kSceneFiles[] = {
 	"util.jai", "music.jai", "reel.jai", "donut.jai", "julia.jai", "lava.jai", "pipes.jai", "fire.jai", "boids.jai",
-	"globhunter.jai", "voxelspace.jai", "chrome.jai", "skull.jai", "fluid.jai", "show.jai", "finale.jai", "intro.jai", "main.jai",
+	"globhunter.jai", "voxelspace.jai", "chrome.jai", "skull.jai", "fluid.jai", "show.jai", "eight.jai", "finale.jai", "intro.jai", "main.jai",
 };
 
 struct jai_flags {
@@ -110,7 +110,7 @@ public:
 			"",
 #endif
 			"demoreel_scenes", "main.jai");
-		// the FINALE imports scenes/live/ while it runs
+		// EIGHT imports scenes/live/ while it runs
 		eng_->add_global("SCENES_DIR", eng_->make_value(fs::canonical(fs::path(dir_)).generic_string()));
 #ifdef JAISCRIPT_ENABLE_DEBUGGER
 		if (flags_.debug) {

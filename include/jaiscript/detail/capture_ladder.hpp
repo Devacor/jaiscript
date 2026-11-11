@@ -4,7 +4,7 @@
 // (exec_closure): the SOURCE a captured name binds to, resolved in the runtime's own
 // order - the enclosing frame's slot (locals and parameters), the member scope when
 // active (the function's own env scopes below the floor, then fields / static fields /
-// a hybrid's C++ property; a method name shadows and is not a cell), then the environment
+// a hybrid's C++ property; a default capture takes the instance for any of them), then the environment
 // chain from the creating env (definition env -> global). A same-named global never wins
 // over a slot or a member. The capture KIND is the caller's: [&]/[&x] cell-share the
 // source, [=]/[x] snapshot it, [] captures nothing; a C++ property binds through
@@ -105,6 +105,18 @@ inline capture_source resolve_capture_source(script_value* frame_slot_cell,
     }
     if (src.cell) src.what = capture_source::kind::chain;
     return src;
+}
+
+// A default capture that names a member of the enclosing instance (a field, a C++ property, a method) captures the instance,
+// as one that names this does (C++: [=] and [&] capture this); the body reaches the member through it
+inline bool default_capture_takes_instance(const capture_source& src, const member_scope_ctx& scope) {
+    return scope.this_storage && (src.what == capture_source::kind::member || src.what == capture_source::kind::cpp_property ||
+                                  src.what == capture_source::kind::shadow);
+}
+
+// A static field named where no instance is (a static method) is never copied: [=] reads the one static, as C++ does
+inline bool default_capture_shares(const capture_source& src, bool by_reference) {
+    return by_reference || src.what == capture_source::kind::member;
 }
 
 // The vm keeps its member scope on the frame (call_frame scope_*; the interpreter passes

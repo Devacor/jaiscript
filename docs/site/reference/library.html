@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library Reference — JaiScript docs</title>
+<meta name="description" content="Builtin methods of arrays, maps, strings and smart pointers, the library namespaces at a glance, and the lookup tables for formatting, binary data, regular expressions, JSON, reflection, web and random numbers.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="Library Reference — JaiScript docs">
+<meta property="og:description" content="Builtin methods of arrays, maps, strings and smart pointers, the library namespaces at a glance, and the lookup tables for formatting, binary data, regular expressions, JSON, reflection, web and random numbers.">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/reference/library.html">
+<meta property="og:url" content="https://jaiscript.com/reference/library.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html" class="active" aria-current="page">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Reference<span class="sidebar-current">Library Reference</span></summary><ol class="chapter-list"><li><a href="../reference/rules.html">Language Rules</a></li><li><a href="../reference/errors.html">Errors and Diagnostics</a></li><li class="current"><a href="../reference/library.html" aria-current="page">Library Reference</a><ol class="page-toc" data-page-toc data-toc-h3></ol></li><li><a href="../reference/host.html">Host and Runner Reference</a></li><li><a href="../reference/api.html">Full API Signatures</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Reference</a><span class="sep" aria-hidden="true">/</span>Library Reference</nav>
+<article class="chapter"><h1 id="library-page">Library Reference<a class="hlink" href="#library-page" aria-label="link">&#8203;</a></h1>
+<p><a href="api.html"><strong>Full API signatures:</strong> arguments, defaults, results, effects, and availability for builtins, standard-library functions, and the standalone runner.</a></p>
+<h2 id="builtin-methods">Builtin methods<a class="hlink" href="#builtin-methods" aria-label="link">&#8203;</a></h2>
+<p>Taught in <a href="../guide/09-containers-strings.html">Containers &amp; Strings</a>. One registry serves both backends, so the lists below are the same on each. A method changes its receiver in place; the <code>array::</code>, <code>map::</code> or <code>string::</code> function of the same name returns a copy (<a href="#in-place-or-copy-names">the pairs</a>).</p>
+<h3 id="arrays">Arrays (35)<a class="hlink" href="#arrays" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>kind</th><th>methods</th></tr></thead><tbody>
+<tr><td>observers</td><td><code>size</code> <code>length</code> <code>empty</code> <code>front</code> <code>first</code> <code>back</code> <code>last</code> <code>index_of</code> <code>contains</code> <code>has</code></td></tr>
+<tr><td>call back per element</td><td><code>reduce</code> <code>for_each</code> <code>find</code> <code>find_index</code> <code>some</code> <code>every</code></td></tr>
+<tr><td>returns a string</td><td><code>join</code></td></tr>
+<tr><td><strong>change in place, return nothing</strong></td><td><code>push</code> <code>clear</code> <code>insert</code> <code>resize</code> <code>assign</code> <code>fill</code> <code>reserve</code> <code>sort</code> <code>reverse</code> <code>slice</code> <code>filter</code> <code>map</code> <code>concat</code> <code>append</code></td></tr>
+<tr><td><strong>change in place, return what they took</strong></td><td><code>pop</code> (the element) <code>remove</code> <code>erase</code> (whether there was one) <code>remove_if</code> (the count)</td></tr>
+</tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>On</th><th>Rule</th></tr></thead><tbody>
+<tr><td><code>a.filter(f)</code></td><td>Keeps the elements <code>f</code> accepts in <code>a</code> itself and returns nothing: <code>auto b = a.filter(f);</code> is an error (<a href="errors.html#err-in-place-result">the text</a>).</td></tr>
+<tr><td><code>remove_if</code></td><td>Drops the elements its predicate accepts.</td></tr>
+<tr><td><code>pop</code></td><td>On an empty array raises a catchable error.</td></tr>
+<tr><td>callbacks</td><td>Receive the element, or the element and its index for a two-parameter callback. A <code>T&amp;</code> element parameter is the element itself.</td></tr>
+<tr><td><code>a.map(f)</code></td><td>Keeps <code>a</code>&#x27;s element type (results convert into it).</td></tr>
+<tr><td><code>array::map</code></td><td>Returns an <code>array&lt;T&gt;</code> when its callback declares <code>T</code>.</td></tr>
+<tr><td><code>find</code>, <code>find_index</code></td><td>A copy or <code>null</code>; an index or <code>-1</code>.</td></tr>
+<tr><td><code>reduce(f)</code></td><td>Without an initial value raises on an empty array.</td></tr>
+<tr><td><code>insert(i, v)</code></td><td>Takes <code>i</code> from 0 to <code>size()</code>.</td></tr>
+<tr><td>typed array (<code>array&lt;int&gt;</code>)</td><td>Checks every store against its element type.</td></tr>
+<tr><td><code>array&lt;var&gt;</code>, a literal with no spelled element type</td><td>Holds anything.</td></tr>
+</tbody></table></div>
+<h3 id="maps">Maps (14)<a class="hlink" href="#maps" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>kind</th><th>methods</th></tr></thead><tbody>
+<tr><td>observers</td><td><code>size</code> <code>length</code> <code>empty</code> <code>contains</code> <code>has</code> <code>get</code> <code>keys</code> <code>values</code> <code>to_array</code></td></tr>
+<tr><td><strong>change in place, return nothing</strong></td><td><code>clear</code> <code>filter</code></td></tr>
+<tr><td><strong>change in place, return what they took</strong></td><td><code>erase</code> <code>remove</code> (whether the key was there) <code>remove_if</code> (the count)</td></tr>
+</tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>On</th><th>Rule</th></tr></thead><tbody>
+<tr><td><code>m[key] = v</code></td><td>Inserts or overwrites.</td></tr>
+<tr><td>reading a missing key</td><td><strong>Raises</strong> (<code>Key "k" not found in map</code>) and never inserts, on every map: a plain read, a compound or increment, a reference bound to the entry.</td></tr>
+<tr><td><code>contains(key)</code></td><td>Whether the key is there.</td></tr>
+<tr><td><code>get(key)</code></td><td>The value, or null for a missing key.</td></tr>
+<tr><td><code>get(key, default)</code></td><td>The value, or the explicit fallback.</td></tr>
+<tr><td><code>filter</code></td><td>The predicate takes <code>(key, value)</code>; keeps the accepted entries. <code>map::filter(m, f)</code> returns a new map.</td></tr>
+<tr><td>keys</td><td>Ordered (<a href="#map-key-order">key order</a>). Any script value can be a key: the total ordering of <code>&lt;=&gt;</code> guarantees it.</td></tr>
+<tr><td>declared key type</td><td>Enforced on stores (<code>map&lt;string,int&gt; m; m[5] = 1</code> raises). Keys never coerce.</td></tr>
+</tbody></table></div>
+<h3 id="strings">Strings (56: 38 reading, 18 in place)<a class="hlink" href="#strings" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>kind</th><th>methods</th></tr></thead><tbody>
+<tr><td>reading (leave the string alone)</td><td><code>size</code> <code>length</code> <code>byte_size</code> <code>empty</code> <code>at</code> <code>front</code> <code>back</code> <code>substr</code> <code>find</code> <code>rfind</code> <code>find_first_of</code> <code>find_last_of</code> <code>find_first_not_of</code> <code>find_last_not_of</code> <code>contains</code> <code>starts_with</code> <code>ends_with</code> <code>count</code> <code>compare</code> <code>to_int</code> <code>to_float</code> <code>split</code> <code>explode</code> <code>lines</code> <code>partition</code> <code>is_digit</code> <code>is_alpha</code> <code>is_alnum</code> <code>is_space</code> <code>is_upper</code> <code>is_lower</code> <code>utf8_chars</code> <code>utf8_length</code> <code>is_valid_utf8</code> <code>code</code> <code>to_utf8</code> <code>to_bytes</code> <code>reader</code></td></tr>
+<tr><td><strong>in-place mutators</strong> (change the receiver, return nothing)</td><td><code>append</code> <code>to_lower</code> <code>to_upper</code> <code>trim</code> <code>trim_left</code> <code>trim_right</code> <code>pad_left</code> <code>pad_right</code> <code>pad_center</code> <code>replace</code> <code>replace_first</code> <code>replace_last</code> <code>insert</code> <code>erase</code> <code>remove_prefix</code> <code>remove_suffix</code> <code>reverse</code> <code>repeat</code></td></tr>
+</tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>On</th><th>Rule</th></tr></thead><tbody>
+<tr><td><code>s[i]</code></td><td>Indexes <strong>bytes</strong> and returns a <code>char</code>, which promotes to an unsigned <code>int</code> (0..255) in numeric contexts.</td></tr>
+<tr><td>byte idioms</td><td><code>s[i] + 0</code> reads a byte value, <code>s[i] - '0'</code> is the digit-parse shape, <code>s[i] == 0x1A</code> is a byte test.</td></tr>
+<tr><td><code>s.at(i)</code></td><td>The same <code>char</code>, a negative <code>i</code> counting from the end. On a <code>utf8_string</code>, <code>u.at(i)</code> returns character <code>i</code> as text.</td></tr>
+<tr><td><code>s[i] = c</code></td><td>Replaces byte <code>i</code>.</td></tr>
+<tr><td><code>s[i] = text</code></td><td>Replaces byte <code>i</code> with the whole text. <code>s[i] += text</code> joins the char with the text, then stores it.</td></tr>
+<tr><td>a char beside a string</td><td>Compares and joins as its one-character text (<code>s[i] == "x"</code>, <code>s + 'c'</code>).</td></tr>
+<tr><td><code>u[i]</code> on a <code>utf8_string</code></td><td>Reads and replaces character <code>i</code>.</td></tr>
+<tr><td><code>cast&lt;char&gt;(n)</code>, <code>to_char(n)</code></td><td>Mint a byte, range-checked 0..255. <code>out += cast&lt;char&gt;(b)</code> is the binary-writer shape.</td></tr>
+<tr><td><code>\xNN</code></td><td>A byte in a quoted or backtick string: exactly two hex digits. <code>"\x00"</code> embeds a real NUL.</td></tr>
+<tr><td><code>R"(text)"</code>, <code>R"delim(text)delim"</code></td><td>A raw string: no escapes, a line ending inside as one <code>\n</code>. The delimiter is up to 16 characters, none a space, parenthesis, backslash or quote.</td></tr>
+<tr><td><code>find</code></td><td>Returns <code>-1</code> when absent.</td></tr>
+<tr><td><code>split()</code></td><td>Splits on whitespace and drops empty pieces; <code>split(string::whitespace)</code> is the same.</td></tr>
+<tr><td><code>split(sep)</code></td><td>Keeps empties. <code>split("")</code> splits into characters. <code>explode</code> is its synonym.</td></tr>
+<tr><td>a mutator's result</td><td>Cannot be used: <code>auto upper = name.to_upper();</code> and the chain <code>s.trim().to_lower()</code> are errors (<a href="errors.html#err-in-place-result">the text</a>).</td></tr>
+<tr><td>a changed copy</td><td>Build with <code>+</code> (which never mutates), or call the <code>string::</code> function of the same name: <code>string::to_upper(s)</code> returns a new string.</td></tr>
+<tr><td><code>to_utf8</code></td><td>A <code>utf8_string</code>.</td></tr>
+<tr><td><code>to_bytes([offset], [count])</code></td><td>An <code>array&lt;uint8&gt;</code>.</td></tr>
+<tr><td><code>reader()</code></td><td>A <code>binary::reader</code> (<a href="#binary-reader">its calls</a>).</td></tr>
+<tr><td>a <code>utf8_string</code></td><td>Answers the same method names in characters, except <code>to_utf8</code>.</td></tr>
+</tbody></table></div>
+<h3 id="smart-pointers">Smart pointers<a class="hlink" href="#smart-pointers" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>type</th><th>methods</th></tr></thead><tbody>
+<tr><td><code>shared_ptr</code> (5)</td><td><code>reset</code> <code>use_count</code> <code>cpp_ref_count</code> <code>unique</code> <code>same_as</code></td></tr>
+<tr><td><code>weak_ptr</code> (4)</td><td><code>lock</code> <code>expired</code> <code>reset</code> <code>same_as</code></td></tr>
+</tbody></table></div>
+<h3 id="method-synonyms">Synonyms<a class="hlink" href="#method-synonyms" aria-label="link">&#8203;</a></h3>
+<p>The same arguments, result and in-place behavior under either name.</p>
+<div class="tablewrap"><table><thead><tr><th>On</th><th>The same method</th></tr></thead><tbody>
+<tr><td>array, map, string</td><td><code>size</code> = <code>length</code></td></tr>
+<tr><td>array, map</td><td><code>contains</code> = <code>has</code>; <code>remove</code> = <code>erase</code></td></tr>
+<tr><td>array</td><td><code>front</code> = <code>first</code>; <code>back</code> = <code>last</code>; <code>concat</code> = <code>append</code></td></tr>
+<tr><td>string</td><td><code>split</code> = <code>explode</code></td></tr>
+</tbody></table></div>
+<h3 id="in-place-or-copy-names">In place or a copy<a class="hlink" href="#in-place-or-copy-names" aria-label="link">&#8203;</a></h3>
+<p>Using an in-place method's result is an error (<a href="errors.html#err-in-place-result">the text</a>). Every copying function is <code>[[nodiscard]]</code>. The rules: <a href="../guide/09-containers-strings.html#in-place-or-a-copy">In place or a copy</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>In place, returns nothing</th><th>Returns a copy</th></tr></thead><tbody>
+<tr><td><code>xs.append(other)</code>, <code>xs.concat(other)</code></td><td><code>array::append(xs, other)</code>, <code>array::concat(xs, other)</code></td></tr>
+<tr><td><code>xs.filter(f)</code></td><td><code>array::filter(xs, f)</code></td></tr>
+<tr><td><code>xs.map(f)</code></td><td><code>array::map(xs, f)</code></td></tr>
+<tr><td><code>xs.resize(n)</code>, <code>xs.resize(n, v)</code>, <code>xs.fill(v)</code></td><td><code>array::resize(xs, n)</code>, <code>array::resize(xs, n, v)</code>, <code>array::fill(xs, v)</code></td></tr>
+<tr><td><code>xs.slice(start, end)</code></td><td><code>array::slice(xs, start, end)</code></td></tr>
+<tr><td><code>xs.sort()</code>, <code>xs.sort(f)</code></td><td><code>array::sort(xs)</code>, <code>array::sort(xs, f)</code></td></tr>
+<tr><td><code>xs.reverse()</code></td><td><code>array::reverse(xs)</code></td></tr>
+<tr><td><code>m.filter(f)</code></td><td><code>map::filter(m, f)</code></td></tr>
+<tr><td><code>s.append(text)</code></td><td><code>string::append(s, text)</code></td></tr>
+<tr><td><code>s.trim()</code></td><td><code>string::trim(s)</code></td></tr>
+<tr><td><code>s.to_lower()</code>, <code>s.to_upper()</code></td><td><code>string::to_lower(s)</code>, <code>string::to_upper(s)</code></td></tr>
+<tr><td><code>s.replace(from, to)</code></td><td><code>string::replace(s, from, to)</code></td></tr>
+<tr><td><code>s.repeat(n)</code></td><td><code>string::repeat(s, n)</code></td></tr>
+<tr><td><code>s.pad_left(width)</code>, <code>s.pad_right(width)</code></td><td><code>string::pad_left(s, width)</code>, <code>string::pad_right(s, width)</code>; each takes an optional fill: <code>string::pad_left(s, n, [fill])</code></td></tr>
+<tr><td>no method form</td><td><code>string::join(parts, [sep])</code>, <code>string::from_code(n)</code>, <code>string::is_valid_utf8(s)</code>, <code>string::from_bytes(bytes)</code></td></tr>
+</tbody></table></div>
+
+<h2 id="format-specs">Formatting: format specs<a class="hlink" href="#format-specs" aria-label="link">&#8203;</a></h2>
+<p>A spec ends a template splice (<code>${expr:spec}</code>) or a <code>{}</code> placeholder of <code>print</code> or <code>format</code>; <code>format_value(value, "spec")</code> applies one directly. Errors and the <code>:</code> rules: <a href="../guide/09-containers-strings.html#template-strings-format-specs">Template strings &amp; format specs</a>.</p>
+<p><code>[[fill]align][+| ][0][width][,|_][.precision][d|x|X|b|f|e|g]</code></p>
+<div class="tablewrap"><table><thead><tr><th>Part</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>&lt;</code> <code>&gt;</code> <code>^</code>, with an optional fill before it</td><td>Align in the width. Strings default to the left, numbers to the right. <code>^</code> puts an odd fill character on the right.</td></tr>
+<tr><td><code>+</code>, a space</td><td>A sign on non-negative numbers.</td></tr>
+<tr><td><code>0</code></td><td>Zero padding after the sign. Under a grouping the zeros group too.</td></tr>
+<tr><td><code>,</code> or <code>_</code></td><td>Groups a number's integer digits in thousands. <code>_</code> groups <code>x</code>, <code>X</code> and <code>b</code> digits in fours.</td></tr>
+<tr><td><code>.N</code></td><td>Fixed decimals, bare or with <code>f</code>. <code>:f</code> alone is 6.</td></tr>
+<tr><td><code>d</code> <code>x</code> <code>X</code> <code>b</code></td><td>Integer bases (ints only).</td></tr>
+<tr><td><code>f</code> <code>e</code> <code>g</code></td><td>Float styles.</td></tr>
+</tbody></table></div>
+
+<h2 id="json-and-key-order">JSON and key order<a class="hlink" href="#json-and-key-order" aria-label="link">&#8203;</a></h2>
+<h3 id="json-encoding">JSON encoding<a class="hlink" href="#json-encoding" aria-label="link">&#8203;</a></h3>
+<p><code>to_json(x)</code> writes compact JSON, <code>to_json(x, n)</code> indents <code>n</code> spaces per level, <code>from_json(text)</code> reads it back. <code>to_binary</code> and <code>from_binary</code> round-trip the same values. Loading rules: <a href="../guide/09-containers-strings.html#json">JSON</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Value</th><th>JSON</th></tr></thead><tbody>
+<tr><td>a map with string keys, an array, a string, <code>bool</code>, <code>null</code></td><td>an object, an array, a string, <code>true</code>/<code>false</code>, <code>null</code></td></tr>
+<tr><td>an <code>int</code>, a <code>float</code></td><td>A number that reads back as the same kind. A float is written with every digit it needs to read back exactly.</td></tr>
+<tr><td>a map whose keys are not strings</td><td><code>{"$map": [[key, value], ...]}</code></td></tr>
+<tr><td>a char</td><td><code>{"$char": 65}</code></td></tr>
+<tr><td>a float JSON cannot spell</td><td><code>{"$float": "inf"}</code>, <code>"-inf"</code> or <code>"nan"</code></td></tr>
+<tr><td>a class instance</td><td><code>{"$type": "Hero", "$val": {fields}}</code></td></tr>
+<tr><td>a <code>shared_ptr</code> handle, the first to its object</td><td>The object, once: <code>{"$id": 1, "$type": "Hero", "$val": {...}}</code></td></tr>
+<tr><td>a <code>shared_ptr</code> handle, every later one</td><td><code>{"$id": 1}</code></td></tr>
+<tr><td>a <code>weak_ptr</code> handle</td><td>The same with <code>$ref</code> in place of <code>$id</code>. An expired one is <code>null</code>.</td></tr>
+</tbody></table></div>
+<h3 id="map-key-order">Map key order<a class="hlink" href="#map-key-order" aria-label="link">&#8203;</a></h3>
+<p>Keys follow one total order, the order a map iterates and serializes in. Lookup is hashed. More: <a href="../guide/09-containers-strings.html#key-types">Key types</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Key</th><th>Identity and order</th></tr></thead><tbody>
+<tr><td>numbers</td><td>By value. <code>0.0</code> and <code>-0.0</code> are one key. Every NaN is one key, ordered after the numbers.</td></tr>
+<tr><td>different kinds</td><td>Never one key: <code>1</code> and <code>1.0</code> are two, and a <code>utf8_string</code> is not the <code>string</code> of the same text.</td></tr>
+<tr><td>a char and its one-character string</td><td>One key, ordered as the string. The entry keeps the spelling that made it.</td></tr>
+<tr><td>a char key in a <code>map&lt;string, V&gt;</code></td><td>Stored as its string.</td></tr>
+<tr><td>a one-character string key in a <code>map&lt;char, V&gt;</code></td><td>Stored as its char. A longer string raises the char conversion's error.</td></tr>
+<tr><td>an array, map or handle</td><td>By the identity of the object it holds, never its contents: two equal array literals are two keys.</td></tr>
+<tr><td>a class value with <code>operator&lt;</code> or <code>operator&lt;=&gt;</code></td><td>Ordered by it. Two keys are one when neither is less.</td></tr>
+<tr><td>a class value with <code>int hash()</code> and neither</td><td>Keyed by <code>hash()</code> and <code>operator==</code> (identity without one), iterated by <code>hash()</code> value.</td></tr>
+<tr><td>a class value with none of these</td><td>By identity, with the warning <code>map keys of class 'C' compare by identity: declare operator&lt;=&gt; (or operator&lt;) or hash() to key its values by value</code></td></tr>
+<tr><td>class keys</td><td>Iterate grouped by class name, ahead of handles.</td></tr>
+</tbody></table></div>
+
+<h2 id="binary-data">Binary data<a class="hlink" href="#binary-data" aria-label="link">&#8203;</a></h2>
+<p>A <code>string</code> holds any byte. <code>s.to_bytes()</code> and <code>string::from_bytes(bytes)</code> convert to and from an <code>array&lt;uint8&gt;</code>. Errors, limits and file reads: <a href="../guide/09-containers-strings.html#binary-data">Binary data</a>.</p>
+<h3 id="binary-reader">binary::reader<a class="hlink" href="#binary-reader" aria-label="link">&#8203;</a></h3>
+<p><code>s.reader()</code> or <code>binary::reader(s)</code> reads the string from a cursor at 0, little-endian. Every read advances the cursor.</p>
+<div class="tablewrap"><table><thead><tr><th>Reader call</th><th>Reads</th></tr></thead><tbody>
+<tr><td><code>int8()</code> <code>int16()</code> <code>int32()</code> <code>int64()</code></td><td>A signed integer.</td></tr>
+<tr><td><code>uint8()</code> <code>uint16()</code> <code>uint32()</code></td><td>An unsigned integer. There is no <code>uint64()</code>: <code>int64()</code> reads the same eight bytes as a signed value.</td></tr>
+<tr><td><code>float32()</code>, <code>float64()</code></td><td>A float. <code>float32</code> widens, <code>float64</code> keeps every bit.</td></tr>
+<tr><td><code>text(n)</code></td><td>An <code>n</code>-byte text field, C's <code>char[n]</code>: the cursor moves exactly <code>n</code>. The text is the bytes before the first NUL (all <code>n</code> when there is none).</td></tr>
+<tr><td><code>text()</code></td><td>A C string: the bytes before the next NUL. The cursor moves past the NUL.</td></tr>
+<tr><td><code>bytes(n)</code></td><td>Exactly <code>n</code> raw bytes as an <code>array&lt;uint8&gt;</code>.</td></tr>
+<tr><td><code>big_endian()</code>, <code>little_endian()</code>, <code>seek(pos)</code>, <code>skip(n)</code></td><td>Set the byte order or move the cursor. Each returns the reader, so calls chain.</td></tr>
+<tr><td><code>pos()</code>, <code>size()</code>, <code>remaining()</code>, <code>at_end()</code></td><td>Ask: the cursor, the byte count, the bytes left, whether the cursor is at the end.</td></tr>
+<tr><td><code>unpack(layout)</code>, <code>unpack(name, width, ...)</code></td><td>A layout's fields in order, as a <code>map&lt;string, var&gt;</code>.</td></tr>
+<tr><td><code>read(Class, layout)</code></td><td>A default-constructed instance, its fields filled in declaration order, base fields first.</td></tr>
+<tr><td><code>read</code>: class against layout</td><td>The field count and each field's kind (int, float, string for text, array for bytes) must match the widths.</td></tr>
+</tbody></table></div>
+<h3 id="binary-writer">binary::writer<a class="hlink" href="#binary-writer" aria-label="link">&#8203;</a></h3>
+<p><code>binary::writer w;</code> mirrors the reader. Each call returns the writer.</p>
+<div class="tablewrap"><table><thead><tr><th>Writer call</th><th>Writes</th></tr></thead><tbody>
+<tr><td><code>int8(v)</code> to <code>int64(v)</code>, <code>uint8(v)</code> to <code>uint32(v)</code>, <code>float32(v)</code>, <code>float64(v)</code></td><td>The number. One that does not fit raises and writes nothing: <code>Cannot write 256 as uint8 (0 to 255)</code>.</td></tr>
+<tr><td><code>text(s)</code></td><td>The text, then a NUL. A text that holds a NUL raises <code>Cannot write text: the text holds a NUL at byte 3</code>; raw data goes through <code>bytes</code>.</td></tr>
+<tr><td><code>text(s, n)</code></td><td>An <code>n</code>-byte field: the text, then NULs to <code>n</code>. A text of exactly <code>n</code> bytes fills the field with no terminator.</td></tr>
+<tr><td><code>text(s, n)</code>, text longer than <code>n</code></td><td>Raises <code>Cannot write text: the text is 9 bytes, longer than text(8)</code>.</td></tr>
+<tr><td><code>bytes(b)</code></td><td>Raw bytes: a string's, or an array of 0–255.</td></tr>
+<tr><td><code>pack(layout, map)</code></td><td>The map's values in the layout's order. A missing name or a value that does not fit raises before anything is written.</td></tr>
+<tr><td><code>big_endian()</code>, <code>little_endian()</code>, <code>seek(pos)</code></td><td>Set the byte order; go back to patch an earlier field.</td></tr>
+<tr><td><code>pos()</code>, <code>size()</code>, <code>to_string()</code></td><td>The cursor, the byte count, the bytes.</td></tr>
+</tbody></table></div>
+<h3 id="binary-layout">Layouts and widths<a class="hlink" href="#binary-layout" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Name</th><th>Rule</th></tr></thead><tbody>
+<tr><td><code>binary::layout(name, width, ...)</code></td><td>A reusable layout, validated once (<code>binary::layout fields total more than 9223372036854775807 bytes</code>). Field order comes from the arguments, never from a map.</td></tr>
+<tr><td>widths</td><td><code>binary::int8</code>, <code>int16</code>, <code>int32</code>, <code>int64</code>, <code>uint8</code>, <code>uint16</code>, <code>uint32</code>, <code>float32</code>, <code>float64</code>, <code>binary::text(n)</code>, <code>binary::bytes(n)</code>: values that describe an encoding, not types.</td></tr>
+<tr><td><code>binary::bytes(n)</code></td><td>Unpacks to an <code>array&lt;uint8&gt;</code> and packs exactly <code>n</code> bytes.</td></tr>
+<tr><td>a width's methods</td><td><code>size</code> <code>name</code></td></tr>
+<tr><td>a layout's methods</td><td><code>size</code> <code>count</code></td></tr>
+<tr><td>load-time checks</td><td>A wrong signature, an odd name/width pairing, a non-width where a width belongs, a <code>read(Class, layout)</code> whose class and layout do not match.</td></tr>
+</tbody></table></div>
+
+<h2 id="regex">Regular expressions<a class="hlink" href="#regex" aria-label="link">&#8203;</a></h2>
+<p><code>regex(pattern)</code> and <code>regex(pattern, flags)</code> make a <code>regex</code> value. Matching is linear in the text: no pattern backtracks. Taught in <a href="../guide/09-containers-strings.html#regular-expressions">Regular expressions</a>; the constructs that are errors: <a href="../guide/09-containers-strings.html#regex-linear-time">no backtracking</a>; bytes against characters: <a href="../guide/09-containers-strings.html#regex-utf8">text kinds</a>; load-time compilation: <a href="../guide/09-containers-strings.html#regex-constant">constant patterns</a>.</p>
+<h3 id="regex-calls">Calls<a class="hlink" href="#regex-calls" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>Answers</th></tr></thead><tbody>
+<tr><td><code>r.search(text)</code>, <code>r.search(text, start)</code></td><td>The leftmost match at or after <code>start</code>, a <code>regex::match</code>, or <code>null</code>. The text before <code>start</code> still counts for <code>^</code> and <code>\b</code>.</td></tr>
+<tr><td><code>r.matches(text)</code></td><td>Whether the whole text matches, any way through the pattern: <code>regex("a|ab").matches("ab")</code> is true.</td></tr>
+<tr><td><code>r.find_all(text)</code></td><td>Every match, left to right, as an array of <code>regex::match</code>.</td></tr>
+<tr><td><code>r.replace(text, with)</code>, <code>r.replace_first(text, with)</code></td><td>The text with every match (or the first) replaced by a <a href="#regex-replacement">replacement text</a>, or by what a function returns for the <code>regex::match</code>.</td></tr>
+<tr><td><code>r.split(text)</code>, <code>r.split(text, max_splits)</code></td><td>The pieces between matches. Each split's capture groups follow its piece. A count keeps the rest in the last piece.</td></tr>
+<tr><td><code>r.pattern</code>, <code>r.flags</code></td><td>The pattern and flags it was made with (read-only).</td></tr>
+<tr><td><code>regex::escape(text)</code></td><td>A pattern that matches the text literally.</td></tr>
+<tr><td><code>m.text()</code>, <code>m[0]</code></td><td>The whole match.</td></tr>
+<tr><td><code>m[i]</code>, <code>m["name"]</code></td><td>A group by number or name; <code>null</code> for a group that took no part. A group in a loop keeps the text of the loop's last pass.</td></tr>
+<tr><td><code>m.start(g)</code>, <code>m.end(g)</code></td><td>Its positions (group 0 when <code>g</code> is left out); <code>-1</code> for a group that took no part.</td></tr>
+<tr><td><code>m.size()</code></td><td>The whole match plus every group.</td></tr>
+</tbody></table></div>
+<h3 id="regex-syntax">Syntax<a class="hlink" href="#regex-syntax" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Construct</th><th>Matches</th></tr></thead><tbody>
+<tr><td><code>a</code>, <code>\.</code>, <code>\t \n \r \f \v \0</code></td><td>The character. A backslash before punctuation or a space takes it literally; before a letter that names nothing it is an error.</td></tr>
+<tr><td><code>\xNN</code></td><td>A byte on a string; U+00NN on a utf8_string.</td></tr>
+<tr><td><code>\uXXXX</code>, <code>\u{X}</code></td><td>A code point (its UTF-8 bytes on a string).</td></tr>
+<tr><td><code>.</code></td><td>Any character but a newline (with flag <code>s</code>, any).</td></tr>
+<tr><td><code>[abc]</code>, <code>[a-z]</code>, <code>[^...]</code>, <code>[]</code>, <code>[^]</code></td><td>One character of the set, or not of it. <code>-</code> first or last is literal, <code>[]</code> matches nothing and <code>[^]</code> anything.</td></tr>
+<tr><td><code>\d \w \s</code>, <code>\D \W \S</code></td><td>An ASCII digit, word character (letters, digits, <code>_</code>) or whitespace (space, tab, newline, carriage return, vertical tab, form feed), or anything else. Inside a class too.</td></tr>
+<tr><td><code>^</code>, <code>$</code></td><td>The start or end of the text (with flag <code>m</code>, of a line: <code>\n</code> ends one). <code>$</code> does not match before a final newline.</td></tr>
+<tr><td><code>\A</code>, <code>\z</code></td><td>The start or end of the text, whatever the flags.</td></tr>
+<tr><td><code>\b</code>, <code>\B</code></td><td>A word boundary, or a position that is not one.</td></tr>
+<tr><td><code>(...)</code>, <code>(?&lt;name&gt;...)</code>, <code>(?:...)</code></td><td>A capture group (numbered from 1 by its opening parenthesis), a named one (also numbered), a group that captures nothing.</td></tr>
+<tr><td><code>x|y</code></td><td>The first alternative that leads to a match. An empty alternative matches empty.</td></tr>
+<tr><td><code>* + ?</code>, <code>{n} {n,} {n,m}</code></td><td>Repetition, as many as possible. A count runs to 1000. A brace that starts no count is a literal brace.</td></tr>
+<tr><td><code>*? +? ??</code>, <code>{n,m}?</code></td><td>Repetition, as few as possible.</td></tr>
+<tr><td><code>(?i)</code>, <code>(?-i)</code>, <code>(?i:...)</code></td><td>Turns flags on or off to the end of the enclosing group, or inside the group alone (any of <code>i m s x</code>).</td></tr>
+</tbody></table></div>
+<h3 id="regex-flags">Flags<a class="hlink" href="#regex-flags" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Flag</th><th>Effect</th></tr></thead><tbody>
+<tr><td><code>i</code></td><td>Letters match either case (ASCII letters).</td></tr>
+<tr><td><code>m</code></td><td><code>^</code> and <code>$</code> match at line breaks.</td></tr>
+<tr><td><code>s</code></td><td><code>.</code> takes a newline.</td></tr>
+<tr><td><code>x</code></td><td>Spaces and <code>#</code> comments outside a class are ignored.</td></tr>
+<tr><td>another letter, or one twice</td><td>Raises.</td></tr>
+</tbody></table></div>
+<h3 id="regex-replacement">Replacement text<a class="hlink" href="#regex-replacement" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>In a replacement text</th><th>Inserts</th></tr></thead><tbody>
+<tr><td><code>$1</code> to <code>$99</code></td><td>A group, taking the longest number the pattern has: <code>$10</code> with one group is <code>$1</code> then <code>0</code>.</td></tr>
+<tr><td><code>$0</code></td><td>The whole match.</td></tr>
+<tr><td><code>${n}</code>, <code>${name}</code></td><td>A group by number or name.</td></tr>
+<tr><td><code>$$</code></td><td>A dollar sign.</td></tr>
+<tr><td>a group that took no part</td><td>Inserts nothing.</td></tr>
+<tr><td>a group the pattern lacks, or a <code>$</code> before anything else</td><td>Raises: <code>regex: the replacement names group 2 at position 0, but the pattern has 1 group</code></td></tr>
+</tbody></table></div>
+
+<h2 id="location-builtins">Location builtins<a class="hlink" href="#location-builtins" aria-label="link">&#8203;</a></h2>
+<p>Path queries every engine carries, from <a href="../guide/10-modules.html#where-files-are">Modules: where files are</a>. Locations are absolute, with forward slashes and no trailing separator. Each requires the <code>jai::filesystem</code> privilege (<a href="../embedding/05-safety-rails.html#filesystem-privilege">Filesystem access is a host choice</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>Builtin</th><th>Answers</th></tr></thead><tbody>
+<tr><td><code>resolve_path(name)</code></td><td>The file <code>import name</code> would load, asked from the calling file; <code>""</code> when no rung has it.</td></tr>
+<tr><td><code>current_script_dir()</code>, <code>current_script_path()</code></td><td>The folder and file whose code is executing.</td></tr>
+<tr><td><code>root_script_dir()</code>, <code>root_script_path()</code></td><td>The folder and file the program started with, fixed for the run. A REPL or an inline program answers the working directory and <code>""</code>.</td></tr>
+<tr><td><code>executable_dir()</code> (alias <code>bin_dir()</code>), <code>executable_path()</code></td><td>The running executable&#x27;s folder and file, fixed for the process.</td></tr>
+<tr><td><code>app_data_dir(name)</code></td><td>The platform&#x27;s per-user folder for an app called <code>name</code>, for per-user saves: <code>%LOCALAPPDATA%\name</code>, <code>~/Library/Application Support/name</code>, <code>$XDG_DATA_HOME/name</code>. A query only.</td></tr>
+<tr><td><code>app_cache_dir(name)</code></td><td>The per-user folder for a regenerable cache: below <code>%LOCALAPPDATA%\name</code>, <code>~/Library/Caches/name</code>, <code>$XDG_CACHE_HOME/name</code>. A query only.</td></tr>
+<tr><td>other platforms (Android)</td><td>The host installs its own resolvers for both with <code>engine::app_directory_resolvers</code>.</td></tr>
+<tr><td><code>working_dir()</code></td><td>The working directory.</td></tr>
+<tr><td><code>parent_dir(p)</code></td><td>A normalized parent path, weakly canonicalized, so it can consult the filesystem.</td></tr>
+<tr><td><code>file_name(p)</code></td><td>The lexical last component of a path.</td></tr>
+<tr><td><code>file_data(p)</code></td><td>A <code>map&lt;string, var&gt;</code> about the file or folder the path ladder finds for <code>p</code> (keys below); <code>null</code> when nothing is there, so <code>file_data(p)["modified"]</code> polls without a <code>try</code>.</td></tr>
+</tbody></table></div>
+<h3 id="location-file-data-keys"><code>file_data</code> keys<a class="hlink" href="#location-file-data-keys" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>Key</th><th>Value</th></tr></thead><tbody>
+<tr><td><code>path</code></td><td>Canonical, absolute.</td></tr>
+<tr><td><code>filename</code></td><td>With its extension.</td></tr>
+<tr><td><code>extension</code></td><td>With its dot, <code>".jai"</code>; empty for a folder or a name without one.</td></tr>
+<tr><td><code>created</code></td><td>Int milliseconds since the Unix epoch; <code>null</code> where the platform does not report it, as on Linux.</td></tr>
+<tr><td><code>modified</code></td><td>Int milliseconds since the Unix epoch.</td></tr>
+<tr><td><code>size</code></td><td>Int bytes, 0 for a folder.</td></tr>
+<tr><td><code>is_directory</code></td><td>Whether it is a folder.</td></tr>
+</tbody></table></div>
+<h2 id="reflection-calls">Reflection calls<a class="hlink" href="#reflection-calls" aria-label="link">&#8203;</a></h2>
+<p>Every <code>reflect::</code> call, from <a href="../guide/12-reflection.html">Reflection</a>. A call that takes an instance <code>v</code> also takes a class name as a string.</p>
+<h3 id="reflection-shape">Shape<a class="hlink" href="#reflection-shape" aria-label="link">&#8203;</a></h3>
+<p>Taught in <a href="../guide/12-reflection.html#ask-what-shape-is-this">Ask: what shape is this?</a></p>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>Answers</th></tr></thead><tbody>
+<tr><td><code>reflect::type_name(v)</code></td><td><code>type_of</code>, except that a typed container gives its canonical tag (<code>"array&lt;int&gt;"</code>, not <code>"array"</code>). A reference answers what it refers to. A string is read as a value.</td></tr>
+<tr><td><code>reflect::fields(v)</code></td><td>One map per field: <code>name</code>, <code>type</code>, <code>kind</code>, <code>access</code>, <code>static</code>, <code>from</code> (the declaring class).</td></tr>
+<tr><td><code>reflect::fields</code> order</td><td>Base class fields first, then own, in declaration order on every engine and backend; a class&#x27;s static fields follow its instance fields.</td></tr>
+<tr><td><code>reflect::fields</code> of a C++-bound class</td><td>The host&#x27;s property schema; <code>kind</code> tells a plain field from a <code>"signal"</code> or <code>"observable"</code> member.</td></tr>
+<tr><td><code>reflect::methods(v)</code></td><td>One map <strong>per overload</strong>: <code>name</code>, <code>arity</code>, <code>static</code>, <code>access</code>, <code>from</code>, <code>params</code> (an array of <code>{name, type, default}</code> maps), sorted by name then arity. Property accessors and constructors are not listed.</td></tr>
+<tr><td><code>reflect::has_field(v, "name")</code>, <code>reflect::has_method(v, "name")</code></td><td>Bool; both walk the inheritance chain.</td></tr>
+<tr><td><code>reflect::method_arguments(v, "name")</code>, <code>reflect::function_arguments("name")</code></td><td>One <code>params</code> array per overload; empty for a host-registered function.</td></tr>
+</tbody></table></div>
+<h3 id="reflection-act">Read, write, call, construct<a class="hlink" href="#reflection-act" aria-label="link">&#8203;</a></h3>
+<p>Taught in <a href="../guide/12-reflection.html#act-read-write-call-construct">Act: read, write, call, construct</a>. <code>get</code>, <code>set</code>, <code>invoke</code>, <code>bind</code> and <code>construct</code> reach private members and private constructors.</p>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>Is</th></tr></thead><tbody>
+<tr><td><code>reflect::get(s, "hp")</code></td><td><code>s.hp</code></td></tr>
+<tr><td><code>reflect::set(s, "hp", 42)</code></td><td><code>s.hp = 42</code>; a typed field converts or raises the direct syntax&#x27;s error.</td></tr>
+<tr><td><code>reflect::invoke(s, "wound", 5)</code></td><td><code>s.wound(5)</code></td></tr>
+<tr><td><code>reflect::bind(s, "wound")</code></td><td>The method as a callable that holds <code>s</code> and keeps it alive: the one spelling of a method taken as a value (<a href="../guide/07-classes.html#methods-as-values">Classes</a>). A string, array or map is refused; wrap the call in a lambda.</td></tr>
+<tr><td><code>reflect::call("ns::name", args...)</code></td><td>A call of the global or namespace-qualified function.</td></tr>
+<tr><td><code>reflect::construct("Class", args...)</code></td><td><code>Class(args)</code>: a value; copies are independent.</td></tr>
+<tr><td><code>reflect::construct_shared("Class", args...)</code></td><td><code>new Class(args)</code>: a shared handle, as in <code>spawned.push(reflect::construct_shared(row["type"], row["hp"]))</code>.</td></tr>
+<tr><td><code>get</code>, <code>set</code>, <code>invoke</code> given a class name</td><td>Reach the class&#x27;s static members.</td></tr>
+</tbody></table></div>
+<h3 id="reflection-navigate">Program-wide queries<a class="hlink" href="#reflection-navigate" aria-label="link">&#8203;</a></h3>
+<p>Taught in <a href="../guide/12-reflection.html#navigate-the-wider-world">Navigate: the wider world</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>Answers</th></tr></thead><tbody>
+<tr><td><code>reflect::classes()</code></td><td>Every class, script-declared and host-bound, sorted.</td></tr>
+<tr><td><code>reflect::functions()</code></td><td>Every function, namespace-qualified and sorted; no constructors.</td></tr>
+<tr><td><code>reflect::globals()</code></td><td>Global variable names, sorted.</td></tr>
+<tr><td><code>reflect::bases(v)</code></td><td>The base classes in declaration order, empty at a root.</td></tr>
+<tr><td><code>reflect::is_a(v, "Class")</code></td><td><code>v instanceof Class</code> for a class named at run time: true when <code>v</code> holds an object of the class or of one derived from it; false for any other value, a string included. An unknown class name raises <code>reflect::is_a: unknown class 'Nope'</code>.</td></tr>
+<tr><td><code>reflect::is_cpp_bound(v)</code></td><td>For a class name, whether the host registered it; for a value, whether a C++ object backs it.</td></tr>
+<tr><td><code>reflect::is_enabled(requirements...)</code></td><td>Whether the host granted every named privilege (<code>"filesystem"</code>, <code>jai::filesystem</code>, a custom permission name); false for an unknown name (<a href="../guide/10-modules.html#where-files-are">Where files are</a>).</td></tr>
+<tr><td><code>reflect::instances("Class")</code></td><td>The live instances of a class, in creation order.</td></tr>
+<tr><td><code>reflect::generation("Class")</code></td><td>A counter that moves whenever the class is redefined.</td></tr>
+</tbody></table></div>
+<h3 id="reflection-non-class">A non-class argument<a class="hlink" href="#reflection-non-class" aria-label="link">&#8203;</a></h3>
+<p>What each function does given a value that is neither an instance nor a string (<code>5</code>, an array, <code>null</code>), from <a href="../guide/12-reflection.html#strings-are-class-names">Strings are class names</a>. A string that names no class raises <code>reflect::fields: unknown class 'hello'</code>, each function under its own name.</p>
+<div class="tablewrap"><table><thead><tr><th>Function</th><th>Result</th></tr></thead><tbody>
+<tr><td><code>fields</code>, <code>bases</code></td><td><code>[]</code></td></tr>
+<tr><td><code>has_field</code>, <code>has_method</code>, <code>is_cpp_bound</code></td><td><code>false</code></td></tr>
+<tr><td><code>methods</code>, <code>method_arguments</code>, <code>generation</code>, <code>instances</code></td><td>Raises <code>reflect::methods expects a class or class name</code>.</td></tr>
+<tr><td><code>get</code>, <code>set</code>, <code>invoke</code></td><td>Raises <code>reflect::get expects an object or class name</code>.</td></tr>
+</tbody></table></div>
+<h2 id="web-client">Web functions and the HTTP client<a class="hlink" href="#web-client" aria-label="link">&#8203;</a></h2>
+<p>The <code>web::</code> encoders and the <code>spider::</code> client, from <a href="../guide/17-web.html">Web</a>. Failure texts: <a href="errors.html#err-spider-failed">spider errors</a>.</p>
+<h3 id="web-text-functions">Encoding and query strings<a class="hlink" href="#web-text-functions" aria-label="link">&#8203;</a></h3>
+<p>Taught in <a href="../guide/17-web.html#percent-encoding">Percent-encoding</a> and <a href="../guide/17-web.html#queries">Query strings</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Function</th><th>Rules</th></tr></thead><tbody>
+<tr><td><code>web::url_encode(s)</code></td><td>RFC 3986, for a path segment or any other URL part: <code>A-Z a-z 0-9 - . _ ~</code> stay, every other byte is <code>%XX</code> in upper-case hex (PHP&#x27;s <code>rawurlencode</code>).</td></tr>
+<tr><td><code>web::form_encode(s)</code></td><td><code>application/x-www-form-urlencoded</code>, for a form body or query string: <code>A-Z a-z 0-9 * - . _</code> stay, a space is <code>+</code>, every other byte is <code>%XX</code> (PHP&#x27;s <code>urlencode</code>).</td></tr>
+<tr><td><code>web::url_decode(s)</code>, <code>web::form_decode(s)</code></td><td>Each <code>%XX</code> back into its byte; <code>form_decode</code> also reads <code>+</code> as a space. A <code>%</code> without two hex digits after it is kept as written.</td></tr>
+<tr><td><code>web::parse_query(s)</code></td><td>A <code>map&lt;string, string&gt;</code>; keys and values are form-decoded.</td></tr>
+<tr><td><code>web::parse_query</code> edge cases</td><td>A leading <code>?</code> is skipped. A key without <code>=</code> has an empty value. An empty key is dropped. A repeated key keeps its last value.</td></tr>
+<tr><td><code>web::parse_query_all(s)</code></td><td>Keeps every value: a <code>map&lt;string, var&gt;</code> of <code>array&lt;string&gt;</code>, in arrival order.</td></tr>
+<tr><td><code>web::build_query(m)</code></td><td>Form-encodes a map, joined with <code>&amp;</code> in the map&#x27;s key order.</td></tr>
+<tr><td><code>web::build_query</code> values</td><td>A string, number or bool is written as <code>to_string</code> writes it. An array repeats its key per element. A null value drops its key.</td></tr>
+<tr><td><code>web::build_query</code> errors</td><td>Any other value raises <code>web::build_query: the value of &#x27;m&#x27; is a map</code> (or <code>... is not text, a number, a bool or an array of them</code>).</td></tr>
+</tbody></table></div>
+<h3 id="web-options">Request options<a class="hlink" href="#web-options" aria-label="link">&#8203;</a></h3>
+<p>The options map of <code>spider::catch</code>, <code>spider::get</code>, <code>spider::sling</code> and <code>spider::post</code> (<a href="../guide/17-web.html#spider">HTTP with spider::</a>).</p>
+<div class="tablewrap"><table><thead><tr><th>Option</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>method</code></td><td><code>GET</code>, <code>HEAD</code>, <code>POST</code>, <code>PUT</code>, <code>PATCH</code>, <code>DELETE</code> or <code>OPTIONS</code>, any case.</td></tr>
+<tr><td><code>headers</code></td><td>A map of names to text, number or bool values; overrides the defaults (<code>User-Agent: jaiscript-spider/VERSION</code>, <code>Accept: */*</code>, the content&#x27;s type).</td></tr>
+<tr><td><code>timeout</code></td><td>Seconds for the whole call, redirects included (default 30).</td></tr>
+<tr><td><code>type</code></td><td><code>"json"</code>, <code>"text"</code>, <code>"form"</code> (a map sent as <code>web::build_query</code> spells it) or a media type such as <code>"text/csv"</code> for text content.</td></tr>
+<tr><td><code>redirects</code></td><td>How many to follow, 0 to 100 (default 5); 0 answers the redirect itself.</td></tr>
+</tbody></table></div>
+<h3 id="web-response"><code>spider::Response</code> members<a class="hlink" href="#web-response" aria-label="link">&#8203;</a></h3>
+<p>Taught in <a href="../guide/17-web.html#spider-response">spider::Response</a>.</p>
+<div class="tablewrap"><table><thead><tr><th>Member</th><th>What it is</th></tr></thead><tbody>
+<tr><td><code>spider::Response(status, body)</code></td><td>A new one; both optional: 200 and an empty body.</td></tr>
+<tr><td><code>status</code>, <code>ok()</code></td><td>The status code (<code>int</code>); true for 2xx.</td></tr>
+<tr><td><code>body</code>, <code>json()</code></td><td>The body&#x27;s bytes; <code>from_json</code> of them.</td></tr>
+<tr><td><code>url</code></td><td>The URL that answered, after redirects; "" for a response a script built.</td></tr>
+<tr><td><code>headers</code></td><td>A writable <code>map&lt;string, string&gt;</code>. A received answer&#x27;s names are lowercased and a repeated header is joined with <code>", "</code>.</td></tr>
+<tr><td><code>header(name)</code></td><td>Reads any spelling of the name; "" when absent.</td></tr>
+<tr><td><code>header(name, value)</code></td><td>Sets a header, replacing any spelling of the name, and returns the response, so calls chain. Raises <code>Response.header: &#x27;N&#x27; is not a header name, or its value holds a line break or NUL</code>.</td></tr>
+<tr><td><code>cookies</code></td><td>The Set-Cookie lines (<code>array&lt;string&gt;</code>).</td></tr>
+<tr><td><code>set_cookie(name, value[, options])</code></td><td>Adds a Set-Cookie line, the value percent-encoded. The name is a token.</td></tr>
+<tr><td><code>clear_cookie(name[, options])</code></td><td>Adds a Set-Cookie line that sets <code>Max-Age=0</code>.</td></tr>
+<tr><td><code>set_cookie</code> and <code>clear_cookie</code> options</td><td><code>max_age</code>, <code>expires</code> (unix seconds), <code>path</code> ("/"), <code>domain</code>, <code>secure</code> (false), <code>http_only</code> (true), <code>same_site</code> ("Lax"; "" leaves it out).</td></tr>
+<tr><td>cookie option text</td><td><code>path</code>, <code>domain</code> and <code>same_site</code> hold no <code>;</code> or control character (<code>Response.set_cookie: option &#x27;path&#x27; holds a &#x27;;&#x27; or a control character</code>).</td></tr>
+</tbody></table></div>
+<h2 id="random-algorithms">Random generator algorithm<a class="hlink" href="#random-algorithms" aria-label="link">&#8203;</a></h2>
+<p>The formulas behind <code>random</code>, from <a href="../guide/18-random.html#the-algorithm">Randomness: the algorithm, exactly</a>. Every formula is part of the language, so a seed draws the same bits everywhere.</p>
+<div class="tablewrap"><table><thead><tr><th>Step</th><th>Definition</th></tr></thead><tbody>
+<tr><td>generator</td><td>xoshiro256** 1.0 (Blackman and Vigna): four 64-bit words; a draw is <code>rotl(s1 * 5, 7) * 9</code>.</td></tr>
+<tr><td>seeding</td><td>The words are four successive splitmix64 outputs from the seed: <code>x += 0x9E3779B97F4A7C15</code>, then <code>z = (x ^ (x &gt;&gt; 30)) * 0xBF58476D1CE4E5B9</code>, <code>z = (z ^ (z &gt;&gt; 27)) * 0x94D049BB133111EB</code>, <code>z ^ (z &gt;&gt; 31)</code>.</td></tr>
+<tr><td><code>next_int(lo, hi)</code></td><td>Lemire&#x27;s method over span = hi &minus; lo + 1: the high word of draw &times; span, redrawn while the low word falls under (2<sup>64</sup> &minus; span) mod span.</td></tr>
+<tr><td><code>next_int</code> over the whole <code>int</code> range</td><td>One raw draw.</td></tr>
+<tr><td><code>next_float(lo, hi)</code></td><td><code>fma(u, hi &minus; lo, lo)</code> with u = <code>next_float()</code>, one rounding; a result that rounds up to hi is the float just below it.</td></tr>
+<tr><td><code>shuffle</code></td><td>Fisher&ndash;Yates from the last index down, element i swapped with the one at <code>next_int(0, i)</code>.</td></tr>
+<tr><td><code>pick</code></td><td>The element at <code>next_int(0, size &minus; 1)</code>.</td></tr>
+<tr><td>parallel streams</td><td>Element i (the chunk, for <code>parallel_reduce</code>) of a loop that captures a generator draws from the stream splitmix64 seeds from <code>mix(draw ^ mix(i + 0x9E3779B97F4A7C15))</code>.</td></tr>
+<tr><td><code>draw</code>, <code>mix</code></td><td><code>draw</code> is the statement&#x27;s one draw from the captured generator; <code>mix</code> is the seeding&#x27;s output step.</td></tr>
+</tbody></table></div>
+<h2 id="ansi-escapes">ANSI escape sequences<a class="hlink" href="#ansi-escapes" aria-label="link">&#8203;</a></h2>
+<p>The terminal sequences a game prints, from <a href="../guide/20-terminal-games.html#drawing-a-frame">Terminal Games: drawing a frame</a>. <code>ESC</code> is the escape byte <code>"\x1b"</code>.</p>
+<div class="tablewrap"><table><thead><tr><th>Sequence</th><th>Effect</th></tr></thead><tbody>
+<tr><td><code>ESC + "[?1049h"</code>, <code>ESC + "[?1049l"</code></td><td>Enter and leave the alternate screen: the shell&#x27;s text comes back afterwards.</td></tr>
+<tr><td><code>ESC + "[?25l"</code>, <code>ESC + "[?25h"</code></td><td>Hide and show the cursor.</td></tr>
+<tr><td><code>ESC + "[2J"</code></td><td>Clear the screen.</td></tr>
+<tr><td><code>ESC + "[H"</code></td><td>Move the cursor to the top-left corner.</td></tr>
+<tr><td><code>ESC + "[K"</code></td><td>Clear from the cursor to the end of the line, so a shorter line leaves nothing of a longer one.</td></tr>
+<tr><td><code>ESC + "[38;2;R;G;Bm"</code>, <code>ESC + "[48;2;R;G;Bm"</code></td><td>24-bit text and background colour, where <code>env_var("COLORTERM")</code> (<code>""</code> when unset) is <code>"truecolor"</code> or <code>"24bit"</code>.</td></tr>
+<tr><td><code>ESC + "[38;5;Nm"</code></td><td>One of the 256 xterm colours.</td></tr>
+<tr><td><code>ESC + "[0m"</code></td><td>Back to the default colours.</td></tr>
+</tbody></table></div>
+<h2 id="library">Library at a glance<a class="hlink" href="#library" aria-label="link">&#8203;</a></h2>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">math::vec3 p = math::vec3(1, 2, 3);
+p.x = 10;                                     // a component is an lvalue
+array&lt;math::vec3&gt; pts = [p, math::vec3(0, 0, 1)];
+print(p * 2.0, " ", math::dot(p, p), " ", math::length(math::vec2(3, 4)), " ", pts[1]);
+
+binary::writer w;
+w.uint16(513); w.text("hi");
+var r = w.to_string().reader();
+print(r.uint16(), " ", r.text(), " ", r.at_end());
+
+utf8_string u = "h\xC3\xA9llo";
+print(u.size(), " ", u[1], " ", "h\xC3\xA9llo".size());
+
+array&lt;float&gt; xs = [1.0, 2.0, 3.0];
+parallel_for (auto&amp; x : xs) { x *= 2.0; }
+print(to_json(xs), " ", type_of(time::utc_now()));
+print(to_json({"a": [1, 2]}, 2));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">(20.0, 4.0, 6.0) 113.0 5.0 (0.0, 0.0, 1.0)
+513 hi true
+5 é 6
+[2.0,4.0,6.0] time::date
+{
+  "a": [
+    1,
+    2
+  ]
+}</code></pre></div>
+<div class="tablewrap"><table><thead><tr><th>Area</th><th>Surface</th><th>Chapter</th></tr></thead><tbody>
+<tr><td>math functions</td><td><code>math::floor</code> <code>ceil</code> <code>round</code> <code>trunc</code> <code>itrunc</code> <code>ifloor</code> <code>sqrt</code> <code>cbrt</code> <code>pow</code> <code>exp</code> <code>exp2</code> <code>log</code> <code>log2</code> <code>log10</code> <code>abs</code> <code>sign</code> <code>fmod</code> <code>hypot</code> <code>saturate</code> <code>wrap</code> <code>remap</code> <code>sin</code> <code>cos</code> <code>tan</code> <code>asin</code> <code>acos</code> <code>atan</code> <code>atan2</code> <code>sinh</code> <code>cosh</code> <code>tanh</code> <code>degrees</code> <code>radians</code> <code>radians_to_degrees</code> <code>degrees_to_radians</code> <code>is_nan</code> <code>is_inf</code> <code>wrap_add</code> <code>wrap_sub</code> <code>wrap_mul</code>; constants <code>math::PI</code> <code>math::E</code></td><td><a href="../guide/15-math.html#scalar-math">Math</a></td></tr>
+<tr><td>vectors and colors</td><td><code>math::vec2</code> <code>vec3</code> <code>vec4</code> <code>ivec2</code> <code>ivec3</code> <code>color</code>: value types with component fields (<code>x y z w</code>, <code>r g b a</code>; also <code>width</code> <code>height</code> <code>depth</code>) and component-wise operators. An ivec's zero divisor component raises <code>Division by zero</code>. A default <code>math::color</code> is opaque white; colors mix in OKLab. <code>array&lt;math::vec3&gt;</code> is a typed buffer.</td><td><a href="../guide/15-math.html">Math</a></td></tr>
+<tr><td>vector functions</td><td><code>math::dot</code> <code>cross</code> <code>length</code> <code>length_squared</code> <code>normalize</code> <code>distance</code> <code>distance_squared</code> <code>reflect</code> <code>project</code> <code>perpendicular</code> <code>angle_between</code> <code>rotate</code> <code>math::rotate_around</code> <code>math::angle</code> <code>math::from_angle</code> (angles in radians); the component-wise <code>math::lerp</code> <code>math::mix</code> <code>math::clamp</code> <code>math::min</code> <code>math::max</code> family with <code>unmix</code> <code>mix_rgb</code> <code>mix_hsv</code> <code>mix_in</code> <code>mix_out</code> <code>mix_in_out</code> <code>mix_out_in</code> <code>unmix_in</code> <code>unmix_out</code> <code>unmix_in_out</code> <code>unmix_out_in</code></td><td><a href="../guide/15-math.html#geometry">Math</a></td></tr>
+<tr><td>vector methods</td><td><code>length</code> <code>length_squared</code> <code>normalized</code> <code>dot</code> <code>distance_to</code>; on 2- and 3-component vectors <code>cross</code> <code>rotated</code>; on 2-component vectors <code>rotated_around</code> <code>angle</code></td><td><a href="../guide/15-math.html#geometry">Math</a></td></tr>
+<tr><td>host math types</td><td><code>JAI_BIND_VEC2</code> / <code>VEC3</code> / <code>VEC4</code> / <code>IVEC2</code> / <code>IVEC3</code> / <code>COLOR</code> in a C++ type&#x27;s header make it cross the boundary as the native kind.</td><td><a href="../embedding/15-math-adapters.html">Math Adapters</a></td></tr>
+<tr><td>printing and conversion</td><td><code>print</code> (tokens <code>skip_newline</code> <code>skip_flush</code>) <code>format</code> <code>vformat</code> <code>format_value</code> <code>to_string</code> <code>type_of</code> <code>is_registered_type</code> <code>to_char</code> <code>utf8_string</code> <code>cast&lt;T&gt;</code>; <a href="#format-specs">format specs</a></td><td><a href="../guide/09-containers-strings.html#printing-values">Containers &amp; Strings</a></td></tr>
+<tr><td>text</td><td><code>string</code> is bytes; <code>utf8_string</code> counts characters (<code>size</code>, <code>u[i]</code>, <code>substr</code>, range-<code>for</code>). <code>split()</code> splits on whitespace (<code>string::whitespace</code>). <a href="#strings">String methods</a>.</td><td><a href="../guide/09-containers-strings.html#utf-8-text">Containers &amp; Strings</a></td></tr>
+<tr><td>containers and objects</td><td><a href="#arrays">array</a> and <a href="#maps">map</a> methods, the <code>array::</code> and <code>map::</code> copies; <code>merge</code> <code>pair</code> (<code>first</code> <code>second</code>); <code>same_object</code> <code>extend</code> <code>shared_from_this</code> <code>weak_from_this</code></td><td><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></td></tr>
+<tr><td>regular expressions</td><td><code>regex(pattern, [flags])</code>, <code>regex::escape(text)</code>, <code>regex::match</code>: <a href="#regex-calls">calls</a>, <a href="#regex-syntax">syntax</a>, <a href="#regex-flags">flags</a> <code>i m s x</code>, <a href="#regex-replacement">replacements</a> <code>$1 ${name} $0 $$</code>. Linear time; bytes on a string, characters on a utf8_string; a constant pattern compiles at load.</td><td><a href="../guide/09-containers-strings.html#regular-expressions">Containers &amp; Strings</a></td></tr>
+<tr><td>binary data</td><td><code>s.reader()</code> / <code>binary::reader(s)</code>, <code>binary::writer w;</code>, <code>binary::layout("field", width, ...)</code> with <code>r.unpack</code>, <code>w.pack</code> and <code>r.read(Class, layout)</code>: <a href="#binary-reader">reader</a>, <a href="#binary-writer">writer</a>, <a href="#binary-layout">layouts</a>. <code>s.to_bytes()</code> and <code>string::from_bytes(b)</code>. <code>array&lt;uint8&gt;</code> / <code>array&lt;int8&gt;</code> are one-byte buffers.</td><td><a href="../guide/09-containers-strings.html#binary-data">Containers &amp; Strings</a></td></tr>
+<tr><td>JSON and archives</td><td><code>to_json(x)</code> compact, <code>to_json(x, n)</code> with <code>n</code> spaces per level; <code>from_json(s)</code> rebuilds class instances (through their constructor), chars and non-string map keys (<a href="#json-encoding">encoding</a>). <code>to_binary</code> <code>from_binary</code> <code>to_base64</code> <code>from_base64</code>; <code>base64_encode</code> <code>base64_decode</code> for raw bytes.</td><td><a href="../guide/09-containers-strings.html#json">Containers &amp; Strings</a></td></tr>
+<tr><td>random numbers</td><td><code>random r;</code> (seeded by the system), <code>random r(seed);</code> (the same stream on every platform): <code>next_int(lo, hi)</code> inclusive, <code>next_float()</code> in [0, 1), <code>next_float(lo, hi)</code>, <code>next_bool()</code>, <code>pick</code>, <code>shuffle</code>, <code>next_bytes(n)</code>, <code>seed(s)</code>. A copy replays its draws; <code>state</code> round-trips through every archive.</td><td><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></td></tr>
+<tr><td>crypto</td><td><code>crypto::random_bytes(n)</code> <code>random_hex(n)</code> <code>random_int(lo, hi)</code>: the system&#x27;s secure generator, never seedable. <code>sha256</code> <code>sha512</code> <code>sha1</code> <code>md5</code> (hex, <code>_bytes</code> raw), <code>sha256_file(path)</code>. <code>hmac_sha256(key, message)</code> <code>hmac_sha512</code> (<code>hmac_sha256_bytes</code> <code>hmac_sha512_bytes</code> raw). <code>equals(a, b)</code> in constant time. <code>password_hash(pw[, cost])</code> and <code>password_verify(pw, hash)</code>: bcrypt as PHP writes it.</td><td><a href="../guide/18-random.html#crypto">Random Numbers &amp; Crypto</a></td></tr>
+<tr><td>web text (opt-in: <code>register_web</code>)</td><td><code>web::html_escape(s)</code> (<code>&amp; &lt; &gt; &quot; &#x27;</code>), <code>web::html_unescape(s)</code> (HTML5 references, as a browser reads them), <code>web::url_encode</code> / <code>url_decode</code> (RFC 3986), <code>web::form_encode</code> / <code>form_decode</code> (space as <code>+</code>), <code>web::parse_query</code>, <code>web::parse_query_all</code>, <code>web::build_query</code> (key order), <code>web::parse_url</code> to a <code>web::url</code> whose <code>to_string()</code> joins it back.</td><td><a href="../guide/17-web.html">The web:: Library</a></td></tr>
+<tr><td>templates</td><td><code>template</code> <code>scoped_template</code> <code>scoped_template_text</code> <code>raw</code>, each answering a <code>web::html</code> (<code>to_string</code>)</td><td><a href="../guide/17-web.html">The web:: Library</a></td></tr>
+<tr><td>HTTP client (opt-in: <code>register_spider</code>, a host transport, the <code>network</code> permission)</td><td><code>spider::catch(url[, options])</code> (also <code>spider::get</code>), <code>spider::sling(content, url[, options])</code> (also <code>spider::post(url, content[, options])</code>). Options <code>method</code>, <code>headers</code>, <code>timeout</code>, <code>type</code>, <code>redirects</code>. Each answers a <code>spider::Response</code> (<code>status</code>, <code>headers</code>, <code>cookies</code>, <code>body</code>, <code>url</code>, <code>ok()</code>, <code>json()</code>, <code>header(name)</code>, <code>set_cookie</code>, <code>clear_cookie</code>).</td><td><a href="../guide/17-web.html#spider">HTTP with spider::</a></td></tr>
+<tr><td>atomics (opt-in: <code>register_atomics</code>)</td><td><code>atomic&lt;int&gt;</code> <code>atomic&lt;float&gt;</code> <code>atomic&lt;bool&gt;</code>: a host&#x27;s <code>std::atomic</code> bound by reference into every engine that shares it; never copied. <code>load</code> <code>store</code> <code>exchange</code> <code>compare_exchange(expected&amp;, desired)</code>, <code>fetch_add</code> <code>fetch_sub</code> (int, float), <code>fetch_and</code> <code>fetch_or</code> <code>fetch_xor</code> (int). <code>+= -=</code> and <code>++ --</code> (int) are single atomic steps; a typed slot is a load.</td><td><a href="../embedding/02-dynamic-binder.html#atomics">Dynamic Binder</a></td></tr>
+<tr><td>time</td><td><code>time::now()</code> <code>engine_elapsed()</code> <code>execute_elapsed()</code> <code>unix_time()</code> <code>unix_ms()</code> <code>date_now(template)</code> <code>utc_now()</code> <code>local_now()</code> <code>date_from_unix(seconds)</code> <code>utc_date(y, m, d, ...)</code> <code>local_date(y, m, d, ...)</code>, the value types <code>time::stopwatch</code> and <code>time::date</code></td><td><a href="../guide/14-time.html">Time</a></td></tr>
+<tr><td><code>time::stopwatch</code></td><td><code>start</code> <code>stop</code> <code>delta</code> <code>elapsed</code> <code>pause</code> <code>resume</code> <code>is_running</code> <code>is_paused</code></td><td><a href="../guide/14-time.html#stopwatches">Time</a></td></tr>
+<tr><td><code>time::date</code></td><td>fields <code>year</code> <code>month</code> <code>day</code> <code>hour</code> <code>minute</code> <code>second</code> <code>millisecond</code> <code>weekday</code> <code>yearday</code> <code>utc</code>; methods <code>unix</code> <code>unix_ms</code> <code>format</code> <code>to_string</code> <code>to_utc</code> <code>to_local</code> <code>add_days</code> <code>add_months</code> <code>add_years</code> <code>add_hours</code> <code>add_minutes</code> <code>add_seconds</code> <code>between</code></td><td><a href="../guide/14-time.html#dates">Time</a></td></tr>
+<tr><td>waiting</td><td><code>sleep(seconds)</code>, a builtin of every engine: suspends a run the host started with <code>engine::start</code> until the time has passed, and blocks anywhere else.</td><td><a href="../guide/08-coroutines.html#sleep">Coroutines</a></td></tr>
+<tr><td>coroutine handles</td><td><code>next</code> <code>advance</code> <code>result</code> <code>done</code></td><td><a href="../guide/08-coroutines.html">Coroutines</a></td></tr>
+<tr><td>parallelism</td><td><code>parallel_for (auto&amp; x : arr) { ... }</code> , <code>parallel_for (int i = a; i &lt; b; i++) { ... }</code> , <code>parallel_transform(arr, f)</code> and <code>parallel_reduce(arr, init, step, combine)</code>: deterministic at any worker count; <code>thread_count</code>. A body that writes enclosing state raises <code>parallel_for: body writes enclosing state 'total' at 11:31</code>.</td><td><a href="../guide/16-parallel.html">Parallel Loops</a></td></tr>
+<tr><td>reflection</td><td><code>reflect::</code>: type queries, fields and methods by name, <code>reflect::bind(obj, "name")</code>. <code>type_name</code> <code>is_cpp_bound</code> <code>has_field</code> <code>has_method</code> <code>classes</code> <code>bases</code> <code>generation</code> <code>fields</code> <code>instances</code> <code>get</code> <code>set</code> <code>invoke</code> <code>bind</code> <code>call</code> <code>construct</code> <code>construct_shared</code> <code>methods</code> <code>method_arguments</code> <code>functions</code> <code>globals</code> <code>function_arguments</code> <code>is_enabled</code> <code>template_output_limit</code> <code>scoped_template_output_limit</code> <code>scoped_template_dirs</code></td><td><a href="../guide/12-reflection.html">Reflection</a></td></tr>
+<tr><td>files and modules</td><td><code>include</code> <code>import</code> (<code>jai::force</code>) <code>import_recheck_interval</code>, under the <code>jai::filesystem</code> privilege; the location builtins <code>root_script_path</code> <code>root_script_dir</code> <code>current_script_path</code> <code>current_script_dir</code> <code>executable_path</code> <code>executable_dir</code> <code>bin_dir</code> <code>working_dir</code> <code>parent_dir</code> <code>file_name</code> <code>resolve_path</code> <code>app_data_dir</code> <code>app_cache_dir</code> <code>file_data</code></td><td><a href="../guide/10-modules.html#where-files-are">Modules</a></td></tr>
+<tr><td>signals (when the host binds the signal type)</td><td><code>Signal</code>: <code>connect</code> <code>disconnect</code> <code>connected</code>; <code>SignalEmitter</code>: those and <code>emit</code></td><td><a href="api.html">API signatures</a></td></tr>
+<tr><td>standalone runner</td><td><code>ARGS</code> <code>read_file</code> <code>write_file</code> <code>file_exists</code> <code>delete_file</code> <code>move_file</code> <code>dir_exists</code> <code>make_dirs</code> <code>writable_dir</code> <code>list_dir</code> <code>zip_entries</code> <code>zip_extract</code> <code>env_var</code> <code>key_down</code> <code>read_key</code> <code>term_cols</code> <code>term_rows</code> <code>load_sound</code> <code>play_sound</code> <code>stop_sounds</code> <code>net_host_name</code> <code>net_local_addresses</code> <code>Download</code> <code>NetChannel</code> <code>NetServer</code></td><td><a href="host.html#runner-host-api">Runner host API</a></td></tr>
+</tbody></table></div>
+<p id="bare-engine"><strong>What a bare engine has.</strong> <code>jai::engine::make()</code> alone runs the whole language with these builtins:</p>
+<ul>
+<li>a <code>print</code> that concatenates its arguments, and template strings with format specs (<code>format_value</code>)</li>
+<li>the builtin container and string methods and their <code>array::</code> forms</li>
+<li><code>math::</code> (functions, vectors, colors, <code>wrap_*</code>), <code>regex</code>, and <code>binary::</code> readers and writers with <code>string::from_bytes</code></li>
+<li><code>same_object</code>, <code>extend</code>, <code>thread_count</code>, <code>parallel_transform</code> and <code>parallel_reduce</code>, <code>sleep</code></li>
+<li>the location builtins (<code>executable_dir</code>, <code>file_data</code>, <code>resolve_path</code> and the rest)</li>
+</ul>
+<p><code>jai::stdlib::register_all</code> adds the formatted <code>print</code>, <code>format</code>, <code>to_string</code>, <code>type_of</code>, JSON and binary serialization, the <code>string::</code> functions, <code>to_char</code>, <code>random</code>, <code>time::</code>, <code>crypto::</code> and <code>reflect::</code>. <code>web::</code> and <code>spider::</code> are separate opt-ins.</p>
+
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../reference/errors.html"><span>&larr; previous</span>Errors and Diagnostics</a><a class="next" rel="next" href="../reference/host.html"><span>next &rarr;</span>Host and Runner Reference</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

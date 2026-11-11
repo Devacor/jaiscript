@@ -11,8 +11,16 @@
 <meta property="og:site_name" content="JaiScript docs">
 <meta property="og:title" content="Editor Support: the Language Server — JaiScript Embedding">
 <meta property="og:description" content="jaiscript_lsp answers the editor from the engine's own parser and strict checker: diagnostics as you type across a whole program, definitions, references, hover, completion, rename.">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/embedding/14-language-server.html">
+<meta property="og:url" content="https://jaiscript.com/embedding/14-language-server.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
@@ -25,75 +33,87 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
 <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
-<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../reference/index.html">Reference</a></nav>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html">Guide</a><a href="../embedding/index.html" class="active" aria-current="page">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
 <div class="header-tools">
 <div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
 <button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding</summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li class="current"><a href="../embedding/14-language-server.html" aria-current="page">Editor Support: the Language Server</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Embedding<span class="sidebar-current">Editor Support: the Language Server</span></summary><ol class="chapter-list"><li><a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a></li><li><a href="../embedding/02-dynamic-binder.html">dynamic_binder: Binding C++ Classes</a></li><li><a href="../embedding/03-backends.html">Backends: Interpreter vs VM</a></li><li><a href="../embedding/04-jaibite.html">jaibite: Parse Once, Ship Precompiled</a></li><li><a href="../embedding/05-safety-rails.html">Safety Rails</a></li><li><a href="../embedding/06-static-checking.html">Static Checking</a></li><li><a href="../embedding/07-hot-reload.html">Hot Reload</a></li><li><a href="../embedding/08-serialization.html">Serialization</a></li><li><a href="../embedding/09-coroutine-hosting.html">Coroutine Hosting</a></li><li><a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a></li><li><a href="../embedding/11-performance.html">Performance Notes</a></li><li><a href="../embedding/12-debugging.html">Debugging</a></li><li><a href="../embedding/13-script-extensible.html">Script-Extensible Objects: extend</a></li><li class="current"><a href="../embedding/14-language-server.html" aria-current="page">Editor Support: the Language Server</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../embedding/15-math-adapters.html">Math Adapters: Host Vector Types</a></li><li><a href="../embedding/16-thread-pool.html">Thread Pool for Host Work</a></li><li><a href="../embedding/17-host-api.html">Host API in Depth</a></li><li><a href="../embedding/18-build-integration.html">Building JaiScript into a Host</a></li><li><a href="../embedding/19-jai-spider.html">jai_spider: a Web Application Host</a></li><li><a href="../embedding/20-foundry.html">Foundry: Testing a Host</a></li><li><a href="../embedding/21-visual-studio.html">Visual Studio, Step by Step</a></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>14</nav>
 <article class="chapter"><h1 id="editor-support-the-language-server">Editor Support: the Language Server<a class="hlink" href="#editor-support-the-language-server" aria-label="link">&#8203;</a></h1>
-<p><code>jaiscript_lsp</code> is the JaiScript language server. It speaks the Language Server Protocol over stdin/stdout and answers from the engine&#x27;s own lexer, parser and strict checker, so what the editor underlines is what the engine reports when the program loads. The VS&nbsp;Code extension in <code>tools/vscode-jaiscript/</code> launches it for every <code>.jai</code> file. Any other LSP client can run it the same way.</p>
-<div class="callout"><p><strong>One checker, two places.</strong> The server does not reimplement the language. It parses with the engine&#x27;s parser, checks with the checker that gates <code>execute()</code> (<a href="06-static-checking.html">Static Checking</a>), and builds navigation from the same parse and the checker&#x27;s inferred types. A clean program shows no diagnostics in the editor for the same reason it loads: the checker&#x27;s false-positive contract.</p></div>
-<h2 id="quick-start">Quick start<a class="hlink" href="#quick-start" aria-label="link">&#8203;</a></h2>
-<ol><li>Build the server from the JaiScript folder: <code>cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release</code>, then <code>cmake --build build --target jaiscript_lsp</code>. The executable is <code>build/bin/jaiscript_lsp</code> (<code>.exe</code> on Windows).</li>
-<li>Open <code>tools/vscode-jaiscript</code> in VS&nbsp;Code and press F5, or link or install the extension (<a href="#vs-code">below</a>). Run from <code>tools/vscode-jaiscript</code>, the extension finds the server step 1 built without any setting. Otherwise set <code>jaiscript.languageServer.path</code> to the executable, or put its folder on <code>PATH</code>.</li>
-<li>Open a <code>.jai</code> file. Diagnostics appear as you type; F12 goes to a definition, Shift+F12 lists references, F2 renames.</li>
-<li>Scripts written for your own host: declare its names with <code>extern</code>, or build a server with your registrations (<a href="#host-surface">The host surface</a>).</li></ol>
-<p>If the server is not found the extension says so (<code>jaiscript_lsp was not found</code>); point <code>jaiscript.languageServer.path</code> at the executable.</p>
-<h2 id="what-it-does">What it does<a class="hlink" href="#what-it-does" aria-label="link">&#8203;</a></h2>
+<p><code>jaiscript_lsp</code> speaks the Language Server Protocol over stdin/stdout. It answers from the engine's own lexer,
+parser and <a href="06-static-checking.html">strict checker</a>, so what the editor underlines is what the engine reports
+when the program loads. The VS&nbsp;Code extension in <code>tools/vscode-jaiscript/</code> launches it for every
+<code>.jai</code> file; any other LSP client can run it the same way.</p>
 <ul>
-<li><strong>Diagnostics as you type.</strong> Parse errors and every checker finding, errors and warnings, with the checker&#x27;s own text.<ul>
-<li>The edited file is re-checked on each change. The other files of its program are re-checked in the background when a change alters what they can see (a declaration, a signature, a field).</li>
-<li>An error in an imported file is reported in that file, at its line.</li>
-<li>A file that does not parse reports its parse error, and the names it declares stay declared for the files that import it: one syntax error is one diagnostic, not a list of undeclared identifiers elsewhere.</li>
-</ul></li>
-<li><strong>Go to definition and find references</strong> for functions, classes, fields, methods, constructors, globals, locals, parameters, enums and their values, and namespace members, across imports and includes. Definition on the path of an <code>import</code> or <code>include</code> opens that file.</li>
-<li><strong>Hover</strong>: a variable&#x27;s declared type, or for <code>auto</code> the type the checker inferred; a function&#x27;s or method&#x27;s signatures; a class with its fields and methods; an enum value with its number; a host function with the parameter types it was registered with.</li>
-<li><strong>Completion</strong>: locals and parameters in scope, the enclosing class&#x27;s members, the program&#x27;s globals, functions, classes, enums and namespaces, the host&#x27;s functions and classes, and keywords.<ul>
-<li>after <code>.</code>, the receiver&#x27;s members (inherited ones included, registered C++ classes included) or the builtin methods of an array, map or string;</li>
-<li>after <code>::</code>, a namespace&#x27;s members, a class&#x27;s statics or an enum&#x27;s values.</li>
-</ul></li>
-<li><strong>Signature help</strong> inside a call&#x27;s parentheses, every overload, the current parameter highlighted.</li>
-<li><strong>Rename</strong> across every file of the program. A rename that cannot be proven complete is refused with the reason instead of applied halfway (see <a href="#rename">Rename</a>).</li>
-<li><strong>Document symbols</strong> (the outline: classes with their members, functions, globals, enums, namespaces) and <strong>workspace symbols</strong> (every declaration in the workspace&#x27;s <code>.jai</code> files, fuzzy-matched).</li>
+<li><strong>It never executes scripts.</strong> Everything it knows comes from the parse and the checker's types.</li>
+<li><strong>It checks a file as part of its program</strong>: the files that import it and everything they import.</li>
+<li><strong>It knows host names from a host profile</strong> or from <code>extern</code> declarations.</li>
+<li><strong>It refuses rather than guesses.</strong> A rename it cannot prove complete is not applied.</li>
+</ul>
+<h2 id="quick-start">Quick start<a class="hlink" href="#quick-start" aria-label="link">&#8203;</a></h2>
+<ol><li>Build it from the JaiScript folder: <code>cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release</code>, then
+<code>cmake --build build --target jaiscript_lsp</code>. The executable is <code>build/bin/jaiscript_lsp</code>
+(<code>.exe</code> on Windows).</li>
+<li>Open <code>tools/vscode-jaiscript</code> in VS&nbsp;Code and press F5, or <a href="#vs-code">install the extension</a>.</li>
+<li>Open a <code>.jai</code> file. Diagnostics appear as you type; F12 goes to a definition, Shift+F12 lists references,
+F2 renames.</li>
+<li>For scripts written against your own host, see <a href="#host-surface">The host surface</a>.</li></ol>
+<h2 id="what-it-does">What it does<a class="hlink" href="#what-it-does" aria-label="link">&#8203;</a></h2>
+<p>Diagnostics on each change, definition and references, hover, completion, signature help, <a href="#rename">rename</a>, and document and workspace symbols. What each covers: <a href="../reference/host.html#lsp-capabilities">language server features</a>.</p>
+<h3 id="limits">What it does not see<a class="hlink" href="#limits" aria-label="link">&#8203;</a></h3>
+<ul>
+<li><strong>Dynamic values.</strong> A member used on a <code>var</code> has no definition and no hover, and a
+<code>var</code> hovers as <code>var</code>. Declared types, <code>auto</code> and references to them navigate.</li>
+<li><strong>Run-time structure.</strong> Members a script adds with <code>extend</code>, names a host registers after
+load and files reached by a computed <code>import(expr)</code>. <code>extern</code> declares such names.</li>
+<li><strong>Inside a declaration that does not parse.</strong> The editor shows the parser's error for it. Findings stay
+for the code before it and for whole declarations after it; inside it, completion and signature help work from the text
+before the cursor.</li>
 </ul>
 <h2 id="programs">Programs: what is checked together<a class="hlink" href="#programs" aria-label="link">&#8203;</a></h2>
-<p>A file whose top-level <code>import</code> and <code>include</code> declarations carry literal paths is the root of a <em>program</em>, and the checker checks a program as one. A function in one file may use a global or a class another file declares, in any import order (<a href="../guide/13-strict-checking.html#across-files">Across files</a>).</p>
-<p>The server gives each file the view the engine gives it when its program runs. It reads the workspace&#x27;s import graph, walks up from the file to the files nothing imports (the program&#x27;s roots), and checks the file against the names and class declarations of every unit in those roots&#x27; closures. A file shared by two programs sees both. A file nothing imports is its own root.</p>
-<p>Paths resolve with the engine&#x27;s one ladder:</p>
-<ol>
-<li>the importing file&#x27;s folder;</li>
-<li>then the configured include paths;</li>
-<li>then the working directory, which the server sets to the first workspace folder.</li>
-</ol>
-<p>The file an editor has open is read from the editor, unsaved changes included; every other file is read from disk and re-read when it changes.</p>
+<p>The checker checks a program as one: a function in one file may use a global or class another file declares, in any
+import order (<a href="../guide/13-strict-checking.html#across-files">Across files</a>). The server gives each file the
+view it has when its program runs. From the workspace's import graph it walks up from the file to the roots (files
+nothing imports) and checks the file against every unit those roots reach. A file two programs share sees both; a file
+nothing imports is its own root.</p>
+<p>Paths resolve as the engine resolves them: the importing file's folder, then the configured include paths, then the
+working directory, which the server sets to the first workspace folder. An open file is read from the editor, unsaved
+changes included; every other file from disk, re-read when it changes.</p>
 <h2 id="host-surface">The host surface<a class="hlink" href="#host-surface" aria-label="link">&#8203;</a></h2>
-<p>A script can call what its host registers, and the checker knows those names only from the engine it checks against. The server builds that engine from a <em>host profile</em>:</p>
+<p>The checker knows host names only from the engine it checks against. The server builds that engine from a profile:</p>
 <div class="tablewrap"><table>
-<thead><tr><th>host</th><th>registrations</th></tr></thead>
+<thead><tr><th><code>--host=</code></th><th>registrations</th></tr></thead>
 <tbody>
-<tr><td><code>runner</code> (default)</td><td>the <code>jaiscript</code> runner&#x27;s exact surface: the standard library, file IO, the console and audio functions, <code>NetServer</code>/<code>NetChannel</code>, <code>Download</code>, <code>ARGS</code>. The server compiles the runner&#x27;s own registration code (<code>tools/lsp/runner_host.cpp</code>), so the two never drift.</td></tr>
-<tr><td><code>stdlib</code></td><td><code>jai::stdlib::register_all</code> alone.</td></tr>
-<tr><td><code>bare</code></td><td>a fresh engine: the language and the engine-core builtins every engine has (<code>print</code>, <code>format_value</code>, <code>math::</code>, <code>binary::</code>, <code>extend</code>, <code>same_object</code>, <code>parallel_transform</code>, the file-location functions), without the standard library's <code>to_string</code>, <code>type_of</code>, <code>to_json</code>, <code>time::</code> or <code>reflect::</code> (whose <code>is_enabled</code> alone is core).</td></tr>
+<tr><td><code>runner</code> (default)</td><td>the <code>jaiscript</code> runner's exact surface: the standard library, file IO, the console and audio functions, <code>NetServer</code>/<code>NetChannel</code>, <code>Download</code>, <code>ARGS</code></td></tr>
+<tr><td><code>stdlib</code></td><td><code>jai::stdlib::register_all</code> alone</td></tr>
+<tr><td><code>bare</code></td><td>a fresh engine: the language and the core builtins (<code>print</code>, <code>format_value</code>, <code>math::</code>, <code>binary::</code>, <code>extend</code>, <code>same_object</code>, <code>parallel_transform</code>, the file-location functions, <code>reflect::is_enabled</code>), without the standard library's <code>to_string</code>, <code>type_of</code>, <code>to_json</code>, <code>time::</code> or the rest of <code>reflect::</code></td></tr>
 </tbody></table></div>
-<p>Scripts written for another host (a game engine with its own bound classes) have two routes:</p>
-<ul>
-<li>Names the host provides can be declared in the scripts with <code>extern</code>, which the checker, and therefore the server, reads as declarations (<a href="06-static-checking.html">Static Checking</a>).</li>
-<li>Or the host builds its own server. The server is six source files over the library, and <code>runner_host.cpp</code> is the one that registers the surface. A host replaces it with a file that calls its own registration function.</li>
-</ul>
-<h2 id="building">Building the server<a class="hlink" href="#building" aria-label="link">&#8203;</a></h2>
-<p>The server is the <code>jaiscript_lsp</code> CMake target (<code>JAISCRIPT_BUILD_LSP</code>, on by default when JaiScript is the top-level CMake project and off as a subproject). It has no dependency beyond the library and what the runner links.</p>
-<div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain">cmake --build build --target jaiscript_lsp       # -&gt; build/bin/jaiscript_lsp(.exe)
-
-jaiscript_lsp --host=runner|stdlib|bare   # the host profile (default runner)
+<p>Scripts for another host have two routes: declare the host's names with <code>extern</code>, or build a server that
+knows them. The server is six source files over the library; <code>tools/lsp/runner_host.cpp</code> registers the
+surface, and a host replaces it with a file that calls its own registration function.</p>
+<h2 id="building">Running the server<a class="hlink" href="#building" aria-label="link">&#8203;</a></h2>
+<p>The CMake target is <code>jaiscript_lsp</code> (<code>JAISCRIPT_BUILD_LSP</code>: on when JaiScript is the top-level
+project, off as a subproject).</p>
+<div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain">jaiscript_lsp --host=runner|stdlib|bare   # the host profile (default runner)
               --include=&lt;dir&gt;             # an include path (repeatable)
               --max-message=&lt;bytes&gt;       # the largest message body read (default 64 MiB, at least 65536; a larger one is skipped)
               --log                       # each request and its time, on stderr</code></pre></div>
-<h2 id="vs-code">Installing the VS&nbsp;Code extension<a class="hlink" href="#vs-code" aria-label="link">&#8203;</a></h2>
-<p>The extension folder is ready to run as it is in the repository: <code>out/extension.js</code> is a single bundled file, the language client included. Install it in one of three ways:</p>
+<p id="other-editors">Any LSP client runs it as a stdio process for the <code>jaiscript</code> language and
+<code>.jai</code> files, with initialization options that mirror the extension's settings:</p>
+<div class="codeblock cb-plain"><span class="cb-label">initializationOptions</span><pre><code class="lang-plain">{ "host": "runner", "includePaths": ["scripts/shared"] }</code></pre></div>
+<p>It reads file changes from <code>workspace/didChangeWatchedFiles</code> for <code>**/*.jai</code>. Its capabilities:
+incremental <code>textDocumentSync</code>; hover, definition, references, document highlights; completion on
+<code>.</code>, <code>::</code> and <code>-&gt;</code>; signature help on <code>(</code> and <code>,</code>; rename with
+prepare; document and workspace symbols.</p>
+<h2 id="vs-code">The VS&nbsp;Code extension<a class="hlink" href="#vs-code" aria-label="link">&#8203;</a></h2>
+<p>The extension folder runs as it is in the repository (<code>out/extension.js</code> is one bundled file). It also
+carries syntax highlighting and the <a href="12-debugging.html">debugger attach</a>, which work without the server.</p>
 <div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain"># 1. try it: an Extension Development Host window
 code tools/vscode-jaiscript          # then press F5 and open a .jai file there
 
@@ -104,77 +124,41 @@ code tools/vscode-jaiscript          # then press F5 and open a .jai file there
 # 3. package it
 cd tools/vscode-jaiscript
 npm install
-npx @vscode/vsce package             # jaiscript-0.5.2.vsix
-code --install-extension jaiscript-0.5.2.vsix</code></pre></div>
-<p>The extension finds the server in this order:</p>
+npx @vscode/vsce package             # jaiscript-0.5.3.vsix
+code --install-extension jaiscript-0.5.3.vsix</code></pre></div>
+<p>The extension looks for the server in this order, and says <code>jaiscript_lsp was not found</code> when all four
+fail:</p>
 <ol>
-<li><code>jaiscript.languageServer.path</code> when it is set;</li>
-<li><code>server/jaiscript_lsp</code> (<code>.exe</code> on Windows) inside the extension folder, where a packaged build carries it;</li>
-<li>the JaiScript folder&#x27;s build trees, two levels above the extension folder (so found when the extension runs from <code>tools/vscode-jaiscript</code>): <code>build/bin</code>, then <code>build-debug/bin</code>, then the trees Visual Studio&#x27;s CMake presets create there (Release before Debug);</li>
-<li>then <code>PATH</code>.</li>
+<li><code>jaiscript.languageServer.path</code>, when set;</li>
+<li><code>server/jaiscript_lsp</code> inside the extension folder, where a packaged build carries it;</li>
+<li>the JaiScript folder's build trees two levels above the extension folder: <code>build/bin</code>, then
+<code>build-debug/bin</code>, then the trees Visual Studio's CMake presets create (Release before Debug);</li>
+<li><code>PATH</code>.</li>
 </ol>
-<p>Rebuilding the extension itself is <code>npm install</code> and <code>npm run compile</code> (a type check, then the bundle).</p>
-<div class="tablewrap"><table>
-<thead><tr><th>setting</th><th>default</th><th>meaning</th></tr></thead>
-<tbody>
-<tr><td><code>jaiscript.languageServer.enabled</code></td><td><code>true</code></td><td>run the server for <code>.jai</code> files</td></tr>
-<tr><td><code>jaiscript.languageServer.path</code></td><td>empty</td><td>the server executable; <code>${workspaceFolder}</code> expands</td></tr>
-<tr><td><code>jaiscript.languageServer.host</code></td><td><code>runner</code></td><td>the host profile (<a href="#host-surface">above</a>)</td></tr>
-<tr><td><code>jaiscript.languageServer.includePaths</code></td><td><code>[]</code></td><td>include paths for <code>import</code> and <code>include</code></td></tr>
-<tr><td><code>jaiscript.languageServer.log</code></td><td><code>false</code></td><td>log requests and timings to the <em>JaiScript Language Server</em> output channel</td></tr>
-</tbody></table></div>
-<p>A settings change restarts the server. <em>JaiScript: Restart Language Server</em> in the command palette does it by hand. The debugger attach (<a href="12-debugging.html">Debugging</a>) is the same extension and works with or without the server.</p>
+<p>The extension's settings are under <code>jaiscript.languageServer.</code>, each with its default: <a href="../reference/host.html#lsp-settings">extension settings</a>.</p>
+<p>A settings change restarts the server, as does <em>JaiScript: Restart Language Server</em> in the command palette.
+Rebuilding the extension is <code>npm install</code> and <code>npm run compile</code>.</p>
 <h2 id="rename">Rename<a class="hlink" href="#rename" aria-label="link">&#8203;</a></h2>
-<p>A rename edits the declaration and every use in every file of the declaring file&#x27;s programs. Renaming a method renames it in every class of its hierarchy that declares the name, so an override keeps overriding. A rename is refused, with the reason, when the server cannot prove the edit complete or correct:</p>
+<p>A rename edits the declaration and every use in every file of the declaring file's programs. Renaming a method renames
+it in every class of its hierarchy that declares the name, so an override keeps overriding. It is refused, with the
+reason, for:</p>
 <ul>
-<li>a member whose name is also used on a receiver of unknown type (a <code>var</code>, a dynamic value): that use might be this member, and the server does not guess;</li>
-<li>a global declared in more than one file: each file sees its own declaration (<a href="../guide/10-modules.html">Modules</a>), so one rename would change which one the others see;</li>
-<li>a new name already declared where the old one is visible (the class already has that member, the program already has that global, the scope already has that local);</li>
+<li>a member whose name is also used on a receiver of unknown type (a <code>var</code>): that use might be this member;</li>
+<li>a global declared in more than one file: each file sees its own declaration (<a href="../guide/10-modules.html">Modules</a>);</li>
+<li>a new name already declared where the old one is visible;</li>
 <li>a name the host or the language defines.</li>
 </ul>
 <h2 id="performance">Performance<a class="hlink" href="#performance" aria-label="link">&#8203;</a></h2>
-<p>A change re-parses the edited file and re-checks it against its program&#x27;s tables.</p>
-<ul>
-<li>The other files&#x27; parses stay cached.</li>
-<li>The program&#x27;s tables are rebuilt from cached per-file declarations only when a file&#x27;s declarations change.</li>
-<li>Only such a change sends the rest of the program to be re-checked, one file at a time between requests.</li>
-</ul>
-<p>Navigation reads a per-file model built from the same check and kept until the file or its program changes.</p>
-<p>Measured on Gator Quest (<code>examples/gatorquest</code>: 36 files, 13,980 lines; a Release build on a desktop Windows machine; times from the request sent to the answer received, over stdio):</p>
-<div class="tablewrap"><table>
-<thead><tr><th>operation</th><th>time</th></tr></thead>
-<tbody>
-<tr><td>an edit inside a function of <code>gq_combat.jai</code> (464 lines), to its diagnostics</td><td>3&nbsp;ms median, 4&nbsp;ms at the 95th percentile</td></tr>
-<tr><td>the same in <code>gq_actions.jai</code> (1,085 lines, the largest file)</td><td>10&nbsp;ms median, 11&nbsp;ms at the 95th percentile</td></tr>
-<tr><td>opening the root: every file parsed and the whole program checked</td><td>about 210&nbsp;ms</td></tr>
-<tr><td>an edit that changes a declaration: the rest of the program re-checked</td><td>about 60&nbsp;ms</td></tr>
-<tr><td>find references across the program, first time (every file&#x27;s model built) / after</td><td>130&nbsp;ms / 4&nbsp;ms</td></tr>
-<tr><td>completion after <code>CHARS[0].</code></td><td>20&nbsp;ms</td></tr>
-</tbody></table></div>
-<p>The measurement is part of the server&#x27;s protocol tests: <code>python tools/lsp/tests/lsp_test.py --only latency</code>.</p>
-<h2 id="other-editors">Other editors<a class="hlink" href="#other-editors" aria-label="link">&#8203;</a></h2>
-<p>Any LSP client runs the server as a stdio process for the <code>jaiscript</code> language and <code>.jai</code> files. The initialization options mirror the extension&#x27;s settings:</p>
-<div class="codeblock cb-plain"><span class="cb-label">initializationOptions</span><pre><code class="lang-plain">{ "host": "runner", "includePaths": ["scripts/shared"] }</code></pre></div>
-<p>The server reads file changes from <code>workspace/didChangeWatchedFiles</code> for <code>**/*.jai</code>, and declares its capabilities in the usual way:</p>
-<ul>
-<li><code>textDocumentSync</code> incremental;</li>
-<li>hover, definition, references, document highlights;</li>
-<li>completion on <code>.</code>, <code>::</code> and <code>-&gt;</code>;</li>
-<li>signature help on <code>(</code> and <code>,</code>;</li>
-<li>rename with prepare;</li>
-<li>document and workspace symbols.</li>
-</ul>
-<h2 id="limits">What it does not see<a class="hlink" href="#limits" aria-label="link">&#8203;</a></h2>
-<ul>
-<li><strong>Dynamic values.</strong> A member used on a <code>var</code> has no definition to go to and nothing to hover, and a <code>var</code> variable hovers as <code>var</code>: the checker&#x27;s precision map (<a href="06-static-checking.html">Static Checking</a>) is the server&#x27;s too. Declared types, <code>auto</code> and references to declared types navigate.</li>
-<li><strong>Run-time structure.</strong> Scripts are never executed. Members a script adds with <code>extend</code>, names a host registers after load, and files reached by a computed <code>import(expr)</code> are outside what it knows. <code>extern</code> declares the names.</li>
-<li><strong>A declaration that does not parse.</strong> While a declaration has a syntax error, the parser&#x27;s error is what the editor shows for it. Checker findings stay for the code before the error and for whole declarations after it, and the file&#x27;s other declarations keep their navigation. Inside the broken declaration, completion and signature help work from the text before the cursor.</li>
-</ul>
-<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/13-script-extensible.html"><span>&larr; previous</span>Script-Extensible Objects: extend</a><a class="next" rel="next" href="../embedding/15-math-adapters.html"><span>next &rarr;</span>Math Adapters: Host Vector Types</a></nav></article>
+<p>An edit re-parses that file and re-checks it against its program. The rest of the program is re-checked, one file at a
+time between requests, only when the edit changes a declaration, a signature or a field. On Gator Quest
+(36 files, 13,980 lines; Release build, desktop Windows machine, over stdio) an edit inside a function reaches its
+diagnostics in 3 to 10&nbsp;ms depending on the file's size, an edit that changes a declaration re-checks the program in
+about 60&nbsp;ms, and opening the root parses and checks everything in about 210&nbsp;ms.
+<code>python tools/lsp/tests/lsp_test.py --only latency</code> measures it.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/13-script-extensible.html"><span>&larr; previous</span>Script-Extensible Objects: extend</a><a class="next" rel="next" href="../embedding/15-math-adapters.html"><span>next &rarr;</span>Math Adapters: Host Vector Types</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/master/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

@@ -45,19 +45,19 @@ inline bool declares_unary_operator(const class_definition* def, uint64_t name_i
     return bound && bound->is_function();
 }
 
-// A typed parameter takes the argument with no mismatch (the scorer's rows: the class or a subclass, the same kind, int<->float)
+// A typed parameter takes the argument with no mismatch (the scorer's rows: the class or a subclass, the same kind, an int for a float)
 inline bool parameter_admits(const parameter& p, const script_value& raw) {
     if (!p.type || p.type->type_name.empty() || p.type->type_name == "any" || p.type->base_type == script_value_type::jai_any_type) { return true; }
     const script_value& arg = raw.deref();
     const auto kind = arg.type();
+    if (p.type->is_enum) { return arg.type_info_raw() == p.type->enum_value_type; }
     if (kind == script_value_type::jai_object_type || kind == script_value_type::jai_shared_ptr_type) {
         auto instance = const_cast<script_value&>(arg).get_class_instance();
         auto def = instance ? instance->get_class_definition() : nullptr;
         return def && (def->get_name() == p.type->type_name || def->is_subtype_of(p.type->type_name));
     }
     return kind == p.type->base_type ||
-           (kind == script_value_type::jai_int_type && p.type->base_type == script_value_type::jai_float_type) ||
-           (kind == script_value_type::jai_float_type && p.type->base_type == script_value_type::jai_int_type);
+           (kind == script_value_type::jai_int_type && p.type->base_type == script_value_type::jai_float_type);
 }
 
 // A host operator: a method the binder registered with its C++ signature (its dispatch scores the arguments)
@@ -175,7 +175,7 @@ inline bool object_declares_method(const script_value& arg, std::string_view nam
 inline bool converting_constructor_takes(const script_value& arg, const type_info& target, engine* eng);
 
 // The assignment table's rows past the exact type that a by-value parameter takes (docs/site/embedding/06-static-checking.html "One conversion table"), as overload costs:
-// int<->float, bool to a number and a char to text 1 (a conversion, ahead of a var parameter); a to_int/to_float/to_char/to_string
+// an int for a float, bool to a number and a char to text 1 (a conversion, ahead of a var parameter); a to_int/to_float/to_char/to_string
 // method, the other text kind, a one-character string for a char and the bool row 2 and a converting constructor 3 (k_loose_conversion and up: after a var parameter, which takes the value as it
 // is); 0 = not viable. Among several overloads a string never makes a bool parameter viable.
 inline constexpr size_t k_loose_conversion = 2;
@@ -183,8 +183,7 @@ inline size_t table_conversion_cost(const script_value& arg, const parameter& pa
     using t = script_value_type;
     const t to = param.type->base_type;
     const t from = arg.type();
-    const bool number_to = to == t::jai_int_type || to == t::jai_float_type;
-    if (number_to && (from == t::jai_int_type || from == t::jai_float_type)) { return 1; }
+    if (to == t::jai_float_type && from == t::jai_int_type) { return 1; }
     if (param.is_reference && !param.is_const) { return 0; }   // a const T& binds a T made from the argument
     switch (to) {
         case t::jai_int_type:
@@ -284,7 +283,18 @@ inline auto score_overloads(const Range& overloads, Params&& params_of, const sc
                     }
                 };
 
-                if (arg_type == script_value_type::jai_object_type ||
+                if (param.type->is_enum) {
+                    // an enum parameter takes its own enum's values; an unstamped int that is one of them converts
+                    const type_info* tag = arg.type_info_raw();
+                    if (tag != param.type->enum_value_type) {
+                        all_exact = false;
+                        if (arg.raw_storage_index() == script_value::TYPEID_INT && !(tag && tag->is_enum) && param.type->enum_holds(arg.unchecked_as_int())) { ++conversion_count; }
+                        else { all_convertible = false; ++mismatches; }
+                    }
+                } else if (arg_type == script_value_type::jai_int_type && arg_type == param.type->base_type && arg.type_info_raw() && arg.type_info_raw()->is_enum) {
+                    all_exact = false;   // an enum's value into an int parameter converts
+                    ++conversion_count;
+                } else if (arg_type == script_value_type::jai_object_type ||
                     arg_type == script_value_type::jai_shared_ptr_type) {
                     // For objects and shared_ptr, check class name with inheritance support
                     auto instance = const_cast<script_value&>(arg).get_class_instance();

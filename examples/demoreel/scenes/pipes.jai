@@ -143,7 +143,7 @@ function pd_band(int b) -> array<int> {
 					float depth = za + t * dz;
 					if (depth <= rz[rowb + xx]) { continue; }
 					rz[rowb + xx] = depth;
-					rk[rowb + xx] = base + 1 + itrunc(q / r2 * 4.0);
+					rk[rowb + xx] = base + 1 + math::itrunc(q / r2 * 4.0);
 				}
 			}
 			continue;
@@ -203,7 +203,7 @@ function pd_band(int b) -> array<int> {
 				float sd = up * PD_SY + (rcx * PD_RZ + rcy * PD_UZ + rcz * PD_FZ) * PD_SZ;
 				if (sd > 0.94) { env += (sd - 0.94) * 22.0; }
 				float lit = (env * 0.72 + d * 0.22) * fog + s8 * s8 * spec;
-				int lv = itrunc(lit * 15.99) + plift;
+				int lv = math::itrunc(lit * 15.99) + plift;
 				float dg = xx + yy - glint;
 				if (dg > -4.0 && dg < 4.0) { lv += 8; } else if (dg > -14.0 && dg < -9.0) { lv += 5; }
 				zb[rowb + xx] = depth;
@@ -236,14 +236,14 @@ function pd_band(int b) -> array<int> {
 			if (dy >= 0.0) {
 				// the sky by elevation, and the striped sun sinking into the horizon
 				float el = dy * il;
-				int si = 31 - itrunc(el * 68.0);
+				int si = 31 - math::itrunc(el * 68.0);
 				int ink2 = PD_SKY + (si < 0 ? 0 : si);
 				if ((dy * PD_SY + dz * PD_SZ) * il > PD_SCOS) {
 					float down = (PD_SELC + PD_SR - el) / (PD_SR * 1.35);
 					float band = (el - PD_SELC + PD_SR) * PD_SUNK;
 					float gap = band - math::floor(band);
 					bool cut = el < PD_SELC + PD_SR * 0.25 && gap < 0.18 + down * 0.35;
-					if (!cut) { ink2 = PD_SUN + PD_SUNSHIFT + itrunc((down > 0.999 ? 0.999 : (down < 0.0 ? 0.0 : down)) * 16.0); }
+					if (!cut) { ink2 = PD_SUN + PD_SUNSHIFT + math::itrunc((down > 0.999 ? 0.999 : (down < 0.0 ? 0.0 : down)) * 16.0); }
 				}
 				out[i] = ink2;
 				++i;
@@ -280,10 +280,10 @@ function pd_band(int b) -> array<int> {
 			}
 			float near = 1.0 - tf / il * 0.022;
 			near = near < 0.0 ? 0.0 : near;
-			int glow = itrunc(near * 7.99) + PD_GRIDKICK;
+			int glow = math::itrunc(near * 7.99) + PD_GRIDKICK;
 			int ink3 = (zl && fz < 0.34) || (xl && fx < 0.34) ? PD_GRID + (glow > 7 ? 7 : glow) : -1;
 			if (ink3 < 0) {
-				ink3 = PD_FLOOR + itrunc((1.0 - near) * 7.99);
+				ink3 = PD_FLOOR + math::itrunc((1.0 - near) * 7.99);
 				if (rk[i] >= 0) {
 					ink3 = rk[i];
 				} else {
@@ -292,7 +292,7 @@ function pd_band(int b) -> array<int> {
 					bool stripe = dep < 0.07 ? y % 2 == 0 : dep < 0.17 && y % 4 == 0;
 					if (stripe && (dep * PD_SY + dz * il * PD_SZ) > PD_SCOS) {
 						float down2 = (PD_SELC + PD_SR - dep) / (PD_SR * 1.35);
-						int sl = itrunc((down2 > 0.999 ? 0.999 : (down2 < 0.0 ? 0.0 : down2)) * 16.0) + 4;
+						int sl = math::itrunc((down2 > 0.999 ? 0.999 : (down2 < 0.0 ? 0.0 : down2)) * 16.0) + 4;
 						ink3 = PD_SUN + PD_SUNSHIFT + (sl > 15 ? 15 : sl);
 					}
 				}
@@ -527,7 +527,7 @@ class Pipes : Scene {
 			// grow toward the fill the clock calls for: steady, and full on the beat
 			float k = (t - fill_start()) / (fill_end() - fill_start());
 			k = k < 0.0 ? 0.0 : (k > 1.0 ? 1.0 : k);
-			int target = itrunc(cap * k);
+			int target = math::itrunc(cap * k);
 			int guard = 0;
 			while (filled < target && guard < 400) {
 				for (int p = 0; p < npipes; ++p) { step_one(p); }
@@ -802,7 +802,7 @@ class Pipes : Scene {
 				if (surge) {
 					float heat = surge_heat((ia + ib) / 2, n);
 					if (heat > 0.3) { base = hot_ramp; }
-					lift = itrunc(heat * 8.0);
+					lift = math::itrunc(heat * 8.0);
 				}
 				emit(ia, ib, mir, 0.4, base, 0.55, lift, fog_off);
 			}
@@ -810,12 +810,12 @@ class Pipes : Scene {
 				int kind = okind[i];
 				if (kind == 0) { continue; }
 				int p = opipe[i];
-				int base2 = kind == 2 ? egg_base + ((flick + p + itrunc(ox[i] * 3.0 + oz[i] + 40.0)) % 6) * 16 : pipe_base + p * 16;
+				int base2 = kind == 2 ? egg_base + ((flick + p + math::itrunc(ox[i] * 3.0 + oz[i] + 40.0)) % 6) * 16 : pipe_base + p * 16;
 				int lift2 = 0;
 				if (surge) {
 					float heat2 = surge_heat(i, n);
 					if (heat2 > 0.3) { base2 = hot_ramp; }
-					lift2 = itrunc(heat2 * 8.0);
+					lift2 = math::itrunc(heat2 * 8.0);
 				}
 				emit(i, i, mir, 0.58, base2, 0.85, lift2, fog_off);
 			}
@@ -859,7 +859,7 @@ class Pipes : Scene {
 	void draw_sparks(var& grid) {
 		if (phase != 0) { return; }
 		int n = ox.size();
-		int now = itrunc(tt / MUSIC_STEP);
+		int now = math::itrunc(tt / MUSIC_STEP);
 		for (int p = 0; p < npipes; ++p) {
 			int hi = cell_ord[cell_idx(hx[p], hy[p], hz[p])];
 			if (hi >= n || cvz[hi] <= NEAR) { continue; }
@@ -884,10 +884,10 @@ class Pipes : Scene {
 	}
 
 	void render(var& grid) override {
-		flick = itrunc(tt / MUSIC_STEP);
+		flick = math::itrunc(tt / MUSIC_STEP);
 		if (phase == 2) {
 			// generation over: a CRT beam sweeps down and leaves the set behind it
-			int target = itrunc(phase_t * h / (MUSIC_BEAT * 2.0));
+			int target = math::itrunc(phase_t * h / (MUSIC_BEAT * 2.0));
 			last_wipe = target > h ? h : target;
 		}
 		float kick = cue == null ? 0.0 : cue.kick_env(tt);
@@ -933,12 +933,12 @@ class Pipes : Scene {
 		PD_SUNSHIFT = (cue == null ? 0 : cue.chord(tt) % suns) * 16;
 		PD_FLOOR = floor_base;
 		PD_GRID = grid_base;
-		PD_GRIDKICK = itrunc(kick * 2.5);
+		PD_GRIDKICK = math::itrunc(kick * 2.5);
 		// the glint: a bright diagonal band crosses every pipe after a fill or the surge,
 		// over a flash that lifts the whole frame and decays
 		float since = tt - glint_t;
 		PD_GLINT = since >= 0.0 && since < 0.9 ? since / 0.9 * (w + h) * 1.3 - h * 0.3 : -999.0;
-		PD_LIFT = (since >= 0.0 && since < 0.35 ? itrunc((0.35 - since) * 20.0) : 0) + itrunc(snare * 3.5);
+		PD_LIFT = (since >= 0.0 && since < 0.35 ? math::itrunc((0.35 - since) * 20.0) : 0) + math::itrunc(snare * 3.5);
 		PD_WIPE = phase == 2 ? last_wipe : 0;
 		PD_BEAM = phase == 2 ? last_wipe : -9;
 		project_all();

@@ -847,7 +847,9 @@ public:
         test("arrow_auto_keeps_leading_type", [this]() {
             auto engine = make_engine();
             // -> { adds no information; the declared int still converts/enforces
-            check_eq(int64_t(2), engine->execute("int f() -> { return 2.9; } f();").as_int());
+            const auto converted = engine->execute("int f() -> { return true; } f();");
+            check_true(converted.is_int());
+            check_eq(int64_t(1), converted.as_int());
             check_throws([&]() { engine->execute("int g() -> { return \"x\"; } g();"); });
         });
 

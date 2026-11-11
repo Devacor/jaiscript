@@ -60,10 +60,10 @@ public:
 			eng->add_function("retype_x", [raw]() { raw->execute("class P { float x = 1; }"); });
 			run(*eng, R"(
 				class P { int x = 1; }
-				function bump(var& r) -> string { r = r + 1; retype_x(); r = r + 0.5; return to_string(r); }
+				function bump(var& r) -> string { r = r + 1; retype_x(); try { r = r + 0.5; } catch (e) { return e; } return to_string(r); }
 				P p = P();
 			)");
-			check_eq(std::string("2|2"), run(*eng, "string b = bump(p.x); b + \"|\" + to_string(p.x);"), "the bound reference across the reload");
+			check_eq(std::string("Cannot assign float to field 'x' of P (declared int)|2.0"), run(*eng, "string b = bump(p.x); b + \"|\" + to_string(p.x);"), "the bound reference keeps the type it bound across the reload");
 			check_eq(std::string("4.5|4.5"), run(*eng, "p.x = 3; string c = bump(p.x); c + \"|\" + to_string(p.x);"), "a later bind takes the reloaded field");
 		});
 

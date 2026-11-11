@@ -141,7 +141,8 @@ public:
                 s.insert(1, "x");
                 print(to_json(s));
                 try { b.insert(9, 1); } catch (e) { print("caught: ", e); }
-                try { b.insert(1, "s"); } catch (e) { print("caught: ", e); }
+                var text = "s";
+                try { b.insert(1, text); } catch (e) { print("caught: ", e); }
             )JS", "[1,2,3,4] [1,2]\ncaught: Cannot push 'string' to array<int>\n[0,1,9,2,3]\n[\"a\",\"x\",\"b\"]\n"
                                  "caught: Cannot insert at index 9 of an array of size 5\ncaught: Cannot insert 'string' into array<int>\n"},
                 {"array_helper_callback_throw_propagates", R"JS(
@@ -305,7 +306,7 @@ public:
                 class Weapon { string name = "axe"; }
                 class Player { var weapon = null; }
                 var nobody = null;
-                Player p;
+                var p = Player();
                 string a = nobody?.weapon?.name ?? "fists";
                 string b = p?.weapon?.name ?? "fists";
                 p.weapon = Weapon();
@@ -488,8 +489,6 @@ public:
                 {"class A { } var a = new A;", foreign_word::new_without_arguments},
                 {"goto done;", foreign_word::goto_statement},
                 {"var x = 1; var p = &x;", foreign_word::address_of},
-                {"try { throw 1; } catch (Error e) { }", foreign_word::typed_catch},
-                {"try { throw 1; } catch (int e) { }", foreign_word::typed_catch},
                 {"class A { } class B extends A { }", foreign_word::extends_base},
                 {"var a = 1; var b = a === 1;", foreign_word::strict_equal},
                 {"var a = 1; var b = a !== 1;", foreign_word::strict_not_equal},

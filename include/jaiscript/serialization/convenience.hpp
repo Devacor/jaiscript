@@ -108,86 +108,23 @@ inline std::string base64_decode(const std::string& input) {
 } // namespace detail
 
 namespace detail {
-template<typename T> struct shared_ptr_element { using type = T; };
-template<typename T> struct shared_ptr_element<std::shared_ptr<T>> { using type = T; };
-template<typename T> using shared_ptr_element_t = typename shared_ptr_element<T>::type;
+// A record writes named values: through its properties, a member save or serialize jai::access reaches, a free serialize or
+// save, or its type's binding
+template<typename Archive, typename T>
+constexpr bool writes_record_v = Archive::template writes_member_record_v<T> || Archive::template writes_binding_record_v<T> ||
+	serialization::writes_free_record_v<Archive, T>;
 
-template<typename T> struct unique_ptr_element { using type = T; };
-template<typename T, typename D> struct unique_ptr_element<std::unique_ptr<T, D>> { using type = T; };
-template<typename T> using unique_ptr_element_t = typename unique_ptr_element<T>::type;
+template<typename Archive, typename T>
+constexpr bool reads_record_v = Archive::template reads_member_record_v<T> || Archive::template reads_binding_record_v<T> ||
+	serialization::reads_free_record_v<Archive, T>;
 
-template<typename T> struct is_shared_ptr : std::false_type {};
-template<typename T> struct is_shared_ptr<std::shared_ptr<T>> : std::true_type {};
-template<typename T> inline constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
-
-template<typename T> struct is_unique_ptr : std::false_type {};
-template<typename T, typename D> struct is_unique_ptr<std::unique_ptr<T, D>> : std::true_type {};
-template<typename T> inline constexpr bool is_unique_ptr_v = is_unique_ptr<T>::value;
-
-// Combined: is owning smart pointer (shared_ptr or unique_ptr, but NOT weak_ptr)
-template<typename T>
-inline constexpr bool is_owning_ptr_v = is_shared_ptr_v<T> || is_unique_ptr_v<T>;
-
-template<typename T>
-using owning_ptr_element_t = std::conditional_t<
-    is_shared_ptr_v<T>,
-    shared_ptr_element_t<T>,
-    std::conditional_t<is_unique_ptr_v<T>, unique_ptr_element_t<T>, T>
->;
-
-template<typename T, typename = void>
-struct has_property_mgr : std::false_type {};
-
-template<typename T>
-struct has_property_mgr<T, std::void_t<decltype(std::declval<T>().property_mgr)>> : std::true_type {};
-
-// Concept to detect types with templated save() method (using concrete archive for detection)
-template<typename T, typename = void>
-struct has_save_method : std::false_type {};
-
-template<typename T>
-struct has_save_method<T, std::void_t<decltype(std::declval<T>().save(std::declval<serialization::json_archive_writer&>()))>> : std::true_type {};
-
-// Concept to detect types with templated load() method (using concrete archive for detection)
-template<typename T, typename = void>
-struct has_load_method : std::false_type {};
-
-template<typename T>
-struct has_load_method<T, std::void_t<decltype(std::declval<T>().load(std::declval<serialization::json_archive_reader&>()))>> : std::true_type {};
-
-template<typename T, typename = void>
-struct has_serialize_method : std::false_type {};
-
-template<typename T>
-struct has_serialize_method<T, std::void_t<decltype(std::declval<T>().serialize(std::declval<serialization::json_archive_writer&>()))>> : std::true_type {};
-
-template<typename T>
-constexpr bool can_use_direct_archive_v = []() {
-    if constexpr (is_owning_ptr_v<T>) {
-        using E = owning_ptr_element_t<T>;
-        return has_property_mgr<E>::value || has_save_method<E>::value || has_serialize_method<E>::value;
-    } else {
-        return has_property_mgr<T>::value || has_save_method<T>::value || has_serialize_method<T>::value;
-    }
-}();
-
-template<typename T>
-constexpr bool can_use_direct_archive_read_v = []() {
-    if constexpr (is_owning_ptr_v<T>) {
-        using E = owning_ptr_element_t<T>;
-        return has_property_mgr<E>::value || has_load_method<E>::value || has_serialize_method<E>::value;
-    } else {
-        return has_property_mgr<T>::value || has_load_method<T>::value || has_serialize_method<T>::value;
-    }
-}();
-
-// The root object every archive's document is: an owning pointer goes through the archive's smart-ptr path ($id/$type/$val),
-// so its dynamic (polymorphic) type and aliasing survive instead of being sliced to the static pointee; a type the
-// archive serializes directly writes its content into the root; anything else is the root's value0
+// The root object every archive's document is: a record writes its named values into the root; anything else is the
+// root's value0, so an owning pointer goes through the archive's smart-ptr path ($id/$type/$val) and keeps its dynamic
+// type and aliasing
 template<typename Archive, typename T>
 void write_root(Archive& ar, const T& value) {
     ar.begin_object("", 1);
-    if constexpr (!is_owning_ptr_v<T> && can_use_direct_archive_v<T>) {
+    if constexpr (writes_record_v<Archive, T>) {
         ar.serialize_object_content(value);
     } else {
         ar.serialize("value0", value);
@@ -202,8 +139,8 @@ T read_root(Archive& ar) {
     uint32_t version;
     ar.begin_object(type_name, version);
     T result{};
-    if constexpr (!is_owning_ptr_v<T> && can_use_direct_archive_read_v<T>) {
-        ar(result);
+    if constexpr (reads_record_v<Archive, T>) {
+        ar.read_object_content(result);
     } else {
         ar.serialize("value0", result);
     }

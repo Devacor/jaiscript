@@ -339,9 +339,16 @@ void json_archive_writer::begin_value(const script_value& given, std::vector<wri
                 out_.append("null");
                 return;
             }
-            if (strong_ptr<class_instance> instance = written_instance(value)) {
+            strong_ptr<class_instance> instance = written_instance(value);
+            const std::shared_ptr<class_definition> bound = instance ? nullptr : bound_class_of(value);
+            class_definition* class_def = instance ? instance->get_class_definition() : bound.get();
+            if (class_def && class_def->archive_form()) {
+                begin_value(class_def->archive_form()(value, *class_def, engine_ref_), frames);
+                return;
+            }
+            if (instance || class_def) {
                 open_value('{');
-                begin_instance_members(value, std::move(instance), false, frames);
+                begin_instance_members(value, std::move(instance), class_def, false, frames);
                 return;
             }
             write_leaf(value);
@@ -363,14 +370,15 @@ strong_ptr<class_instance> json_archive_writer::written_instance(const script_va
 }
 
 void json_archive_writer::begin_handle(std::string_view id_key, const strong_ptr<script_value::object_holder>& holder, std::vector<write_frame>& frames) {
-    auto [id, is_new] = track_shared_ptr(holder.get());
+    auto [id, is_new] = track_handle(holder.get());
     open_value('{');
     write_value_key(id_key, false);
     append_json_integer(out_, id);
     if (is_new) {
         script_value object = weak_target_value(holder);
         if (strong_ptr<class_instance> instance = engine_ref_ ? written_instance(object) : nullptr) {
-            begin_instance_members(object, std::move(instance), true, frames);
+            class_definition* class_def = instance->get_class_definition();
+            begin_instance_members(object, std::move(instance), class_def, true, frames);
             return;
         }
         write_value_key("$val", true);
@@ -379,9 +387,8 @@ void json_archive_writer::begin_handle(std::string_view id_key, const strong_ptr
     close_value('}', false);
 }
 
-void json_archive_writer::begin_instance_members(const script_value& value, strong_ptr<class_instance> instance, bool comma,
-                                                 std::vector<write_frame>& frames) {
-    class_definition* class_def = instance->get_class_definition();
+void json_archive_writer::begin_instance_members(const script_value& value, strong_ptr<class_instance> instance, class_definition* class_def,
+                                                 bool comma, std::vector<write_frame>& frames) {
     std::string type_name;
     if (class_def) {
         type_name = class_def->get_name();

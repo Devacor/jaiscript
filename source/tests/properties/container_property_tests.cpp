@@ -6,6 +6,8 @@
 #include <jaiscript/properties/observable_property.hpp>
 #include <jaiscript/properties/property_serialization.hpp>
 #include <jaiscript/properties/macros.hpp>
+#include <jaiscript/signals/signal_property.hpp>
+#include <jaiscript/serialization/convenience.hpp>
 #include <jaiscript/stdlib/stdlib.hpp>
 #include <algorithm>
 #include <atomic>
@@ -401,6 +403,59 @@ public:
     });
 };
 
+enum class relocated_mood { calm, stormy };
+
+class relocated_item : public property_owner<relocated_item> {
+public:
+    JAI_PROPERTY((std::string), name);
+    JAI_PROPERTY((int), count, 1);
+};
+
+class relocated_save : public property_owner<relocated_save> {
+public:
+    JAI_PROPERTY((int), level, 1);
+    JAI_PROPERTY((std::string), hero);
+    JAI_PROPERTY((std::vector<relocated_item>), items);
+    JAI_PROPERTY((relocated_mood), mood, relocated_mood::calm);
+    JAI_PROPERTY((std::string), a_property_name_past_the_small_string_buffer, "long");
+};
+
+class relocated_side : public property_owner<relocated_side> {
+public:
+    JAI_PROPERTY((std::string), side_note, "side");
+};
+
+class relocated_both : public property_owner<relocated_both, hardened_base, relocated_side> {
+public:
+    JAI_PROPERTY((int), own_value, 3);
+};
+
+class relocated_listener : public property_owner<relocated_listener> {
+public:
+    JAI_PROPERTY((int), volume, 5);
+    JAI_OBSERVABLE_PROPERTY((int), health, 100);
+    JAI_SIGNAL_PROPERTY(void(int), onHeard);
+
+    void hear(int a_value) { onHeardSignal(a_value); }
+    void follow(jai::signal<void(int)>& a_signal, int& a_total) {
+        track(a_signal.connect([&a_total](int a_value) { a_total += a_value; }));
+    }
+    size_t followed() const { return receivers().size(); }
+};
+
+class relocated_hand_copied : public property_owner<relocated_hand_copied> {
+public:
+    relocated_hand_copied() = default;
+    relocated_hand_copied(const relocated_hand_copied& a_other) : property_owner<relocated_hand_copied>(a_other) {}
+
+    JAI_PROPERTY((int), amount, 4);
+};
+
+template<typename Owner>
+bool registered_in_place(Owner& a_owner, const std::string& a_name, const property_base& a_member) {
+    return a_owner.property_mgr.get(a_name) == &a_member;
+}
+
 class property_hardening_tests : public suite {
 public:
     property_hardening_tests() : suite("Property Hardening") {}
@@ -452,6 +507,222 @@ public:
             check_true(checked_transient);
             check_true(checked_deleted);
             check_true(checked_plain);
+        });
+
+        test("an_owner_moves_and_copies_with_its_properties_registered_in_place", [this]() {
+            static_assert(std::is_nothrow_move_constructible_v<relocated_save> && std::is_nothrow_move_assignable_v<relocated_save>);
+            static_assert(std::is_copy_constructible_v<relocated_save> && std::is_copy_assignable_v<relocated_save>);
+            static_assert(std::is_nothrow_move_constructible_v<relocated_both> && std::is_copy_constructible_v<relocated_both>);
+            static_assert(std::is_nothrow_move_constructible_v<move_only_owner> && std::is_nothrow_move_assignable_v<move_only_owner>);
+            static_assert(!std::is_copy_constructible_v<move_only_owner> && !std::is_copy_assignable_v<move_only_owner>, "an owner of a move-only property is move-only: a copy fails where it is written");
+            static_assert(!std::is_copy_constructible_v<property<std::unique_ptr<int>>> && std::is_move_constructible_v<property<std::unique_ptr<int>>>);
+
+            auto eng = make_engine();
+            std::vector<relocated_save> saves;
+            const char* heroText = nullptr;
+            const relocated_item* itemStorage = nullptr;
+            for (int i = 0; i < 9; ++i) {
+                relocated_save save;
+                save.level = i;
+                save.hero = "a hero whose name is longer than any small string buffer " + std::to_string(i);
+                save.items->emplace_back();
+                save.items->back().name = "potion";
+                save.items->back().count = i + 1;
+                save.mood = relocated_mood::stormy;
+                if (i == 0) {
+                    heroText = save.hero->data();
+                    itemStorage = save.items->data();
+                }
+                saves.push_back(std::move(save));
+                check_eq((size_t)0, save.items->size(), "a moved-from owner gave its values away");
+                check_true(registered_in_place(save, "level", save.level), "and keeps its own properties registered");
+                save = relocated_save{};
+                check_eq(1, save.level.get(), "a moved-from owner takes a new value");
+            }
+            check_true(heroText == saves[0].hero->data(), "a move carries a string's storage");
+            check_true(itemStorage == saves[0].items->data(), "a move carries a vector's storage");
+            for (int i = 0; i < 9; ++i) {
+                check_eq(i, saves[i].level.get());
+                check_eq((size_t)5, saves[i].property_mgr.all().size());
+                check_true(registered_in_place(saves[i], "level", saves[i].level));
+                check_true(registered_in_place(saves[i], "hero", saves[i].hero));
+                check_true(registered_in_place(saves[i], "items", saves[i].items));
+                check_true(registered_in_place(saves[i], "mood", saves[i].mood));
+                check_true(registered_in_place(saves[i], "a_property_name_past_the_small_string_buffer", saves[i].a_property_name_past_the_small_string_buffer));
+                check_true(registered_in_place(saves[i].items.get()[0], "count", saves[i].items.get()[0].count));
+            }
+
+            saves.front().hero = "Ada";
+            std::string text = jai::to_json(*eng, saves.front(), 0);
+            check_eq(std::string(R"({"a_property_name_past_the_small_string_buffer": "long","hero": "Ada","items": [{"count": 1,"name": "potion"}],"level": 0,"mood": 1})"), text);
+            relocated_save fromText = jai::from_json<relocated_save>(*eng, text);
+            check_eq(std::string("Ada"), fromText.hero.get());
+            check_eq(std::string("potion"), fromText.items.get()[0].name.get());
+            check_true(fromText.mood.get() == relocated_mood::stormy);
+            relocated_save fromBytes = jai::from_binary<relocated_save>(*eng, jai::to_binary(*eng, saves[3]));
+            check_eq(3, fromBytes.level.get());
+            check_eq(4, fromBytes.items.get()[0].count.get());
+            check_true(registered_in_place(fromBytes, "level", fromBytes.level));
+
+            relocated_save copy = saves[2];
+            check_eq(2, copy.level.get());
+            check_eq(2, saves[2].level.get());
+            check_true(copy.hero->data() != saves[2].hero->data(), "a copy owns its values");
+            check_true(registered_in_place(copy, "items", copy.items));
+            check_true(registered_in_place(copy.items.get()[0], "name", copy.items.get()[0].name));
+            copy.level = 40;
+            check_eq(2, saves[2].level.get());
+            copy = saves[4];
+            check_eq(4, copy.level.get());
+            copy = std::move(saves[5]);
+            check_eq(5, copy.level.get());
+            check_eq(saves[4].hero.get(), jai::from_json<relocated_save>(*eng, jai::to_json(*eng, saves[4], 0)).hero.get(), "an owner assigned from still saves itself");
+        });
+
+        test("every_level_of_a_moved_or_copied_owner_registers_in_place", [this]() {
+            relocated_both source;
+            source.shared_name = 11;
+            source.cached_value = 12;
+            source.side_note = "a side note longer than the small string buffer";
+            source.own_value = 13;
+            source.shared_name.serialize_enabled(false);
+
+            relocated_both copy = source;
+            check_eq(11, copy.shared_name.get());
+            check_eq(12, copy.cached_value.get());
+            check_eq(13, copy.own_value.get());
+            check_eq(source.side_note.get(), copy.side_note.get());
+            check_true(!copy.shared_name.allow_save(), "a copy keeps a property's save switch");
+            check_true(copy.find_owned_property("shared_name") == &copy.shared_name);
+            check_true(copy.find_owned_property("side_note") == &copy.side_note);
+            check_true(copy.find_owned_property("own_value") == &copy.own_value);
+
+            const char* noteText = source.side_note->data();
+            relocated_both moved = std::move(source);
+            check_true(noteText == moved.side_note->data());
+            check_eq(11, moved.shared_name.get());
+            check_true(moved.find_owned_property("cached_value") == &moved.cached_value);
+            check_true(moved.find_owned_property("side_note") == &moved.side_note);
+            check_true(source.find_owned_property("side_note") == &source.side_note);
+
+            relocated_both assigned;
+            assigned = std::move(moved);
+            check_eq(13, assigned.own_value.get());
+            check_eq(12, assigned.cached_value.get());
+            check_true(noteText == assigned.side_note->data());
+            assigned = copy;
+            check_eq(copy.side_note.get(), assigned.side_note.get());
+
+            hardened_base sliced = copy;
+            check_eq(11, sliced.shared_name.get());
+            check_eq((size_t)2, sliced.property_mgr.all().size());
+            check_true(registered_in_place(sliced, "shared_name", sliced.shared_name));
+
+            relocated_hand_copied first;
+            first.amount = 9;
+            relocated_hand_copied second = first;
+            check_true(registered_in_place(second, "amount", second.amount));
+            check_eq((size_t)1, second.property_mgr.all().size());
+
+            move_only_owner exclusiveSource;
+            exclusiveSource.exclusive = std::make_unique<int>(8);
+            move_only_owner exclusiveTarget = std::move(exclusiveSource);
+            check_eq(8, *exclusiveTarget.exclusive.get());
+            check_true(registered_in_place(exclusiveTarget, "exclusive", exclusiveTarget.exclusive));
+            check_true(exclusiveSource.exclusive.get() == nullptr);
+            exclusiveSource = std::move(exclusiveTarget);
+            check_eq(8, *exclusiveSource.exclusive.get());
+            std::vector<move_only_owner> exclusives;
+            exclusives.push_back(std::move(exclusiveSource));
+            exclusives.resize(6);
+            check_eq(8, *exclusives.front().exclusive.get());
+            check_true(registered_in_place(exclusives.front(), "exclusive", exclusives.front().exclusive));
+        });
+
+        test("a_move_carries_connections_and_a_copy_starts_unconnected", [this]() {
+            static_assert(std::is_nothrow_move_constructible_v<relocated_listener> && std::is_nothrow_move_assignable_v<relocated_listener>);
+            static_assert(std::is_copy_constructible_v<relocated_listener> && std::is_copy_assignable_v<relocated_listener>);
+
+            signal_emitter<void(int)> outside;
+            signal<void(int)> outsideView{ outside };
+            int followedTotal = 0;
+            int heard = 0;
+            int healthChanges = 0;
+
+            relocated_listener source;
+            source.follow(outsideView, followedTotal);
+            auto heardConnection = source.onHeard.connect([&heard](int a_value) { heard += a_value; });
+            auto healthConnection = source.health.on_change.connect([&healthChanges](const int&, const int&) { ++healthChanges; });
+            source.onHeard.connect("named", [&heard](int a_value) { heard += 100 * a_value; });
+            source.health = 90;
+            check_eq(1, healthChanges);
+
+            relocated_listener copy = source;
+            check_eq(90, copy.health.get());
+            check_eq((size_t)0, copy.onHeard.observer_count(), "a copy has no receivers");
+            check_eq((size_t)0, copy.health.on_change.observer_count());
+            check_eq((size_t)0, copy.followed());
+            copy.hear(1);
+            copy.health = 80;
+            check_eq(0, heard);
+            check_eq(1, healthChanges);
+            int copyHeard = 0;
+            auto copyConnection = copy.onHeard.connect([&copyHeard](int a_value) { copyHeard += a_value; });
+            copy.hear(2);
+            check_eq(2, copyHeard, "a copy's signal is its own emitter's");
+            check_eq(0, heard);
+            signal_script_ops copyOps;
+            check_true(copy.property_mgr.get("onHeard")->signal_ops(copyOps));
+            check_true(copyOps.connected_fn(copyOps.source, "named") == false);
+
+            relocated_listener moved = std::move(source);
+            check_eq((size_t)2, moved.onHeard.observer_count(), "a move carries the receivers");
+            check_eq((size_t)0, source.onHeard.observer_count());
+            check_true(heardConnection->connected());
+            check_true(moved.onHeard.connected("named"));
+            moved.hear(3);
+            check_eq(303, heard);
+            source.hear(50);
+            check_eq(303, heard, "the moved-from owner emits to nobody");
+            moved.health = 70;
+            check_eq(2, healthChanges);
+            source.health = 60;
+            check_eq(2, healthChanges);
+            check_eq((size_t)1, moved.followed());
+            check_eq((size_t)0, source.followed());
+            outside(4);
+            check_eq(4, followedTotal);
+            signal_script_ops movedOps;
+            check_true(moved.property_mgr.get("onHeard")->signal_ops(movedOps));
+            check_true(movedOps.connected_fn(movedOps.source, "named"));
+
+            relocated_listener assigned;
+            int dropped = 0;
+            auto droppedConnection = assigned.onHeard.connect([&dropped](int a_value) { dropped += a_value; });
+            assigned = std::move(moved);
+            assigned.hear(1);
+            check_eq(404, heard, "move assignment takes the source's receivers");
+            check_eq(0, dropped, "and lets go of the target's");
+            check_true(!droppedConnection->connected());
+            assigned.health = 50;
+            check_eq(3, healthChanges);
+
+            assigned = copy;
+            check_eq(80, assigned.health.get());
+            check_eq(3, healthChanges, "copy assignment keeps the target's receivers and clones the value in without a change signal");
+            assigned.health = 81;
+            check_eq(4, healthChanges);
+            assigned.hear(1);
+            check_eq(505, heard);
+            check_eq(2, copyHeard);
+
+            std::vector<relocated_listener> listeners;
+            listeners.push_back(std::move(assigned));
+            for (int i = 0; i < 8; ++i) {
+                listeners.emplace_back();
+            }
+            listeners.front().hear(1);
+            check_eq(606, heard, "receivers follow an element through a vector's growth");
         });
 
         test("type_registry_concurrent_first_touch", [this]() {

@@ -573,9 +573,9 @@ public:
             auto str_result = eng->execute("Calculator().process(\"ab\")");
             check_eq(str_result.as<std::string>(), "abab", "process(string) returns s + s");
 
-            // Test with float - C++ semantics: float->int conversion beats var fallback
+            // A float never converts to int, so only the var overload takes it
             auto float_result = eng->execute("Calculator().process(3.14)");
-            check_eq(float_result.as<int>(), 6, "process(float) converts to int (C++ semantics)");
+            check_eq(float_result.as<std::string>(), "fallback", "process(float) takes the var overload");
 
             // Test with object - should call var fallback (no conversion to int/string)
             auto obj_result = eng->execute("Calculator().process(Wrapper())");
@@ -746,11 +746,18 @@ public:
             check_eq(eng->execute("NumTest().test(2.0 + 3.0)").as<std::string>(), "float", "float + float = float");
         });
 
-        test("a_float_stored_into_an_int_slot_truncates_toward_zero", [this]() {
+        test("a_float_never_enters_an_int_slot_implicitly", [this]() {
+            check_rejected({
+                {"auto x = 5; x = 3.9; x", "cannot assign 'float' to 'x' declared 'int': cast<int>(x) truncates toward zero, math::ifloor(x) rounds down"},
+                {"int i = 3.7; i", "cannot initialize 'i' declared 'int' with 'float': cast<int>(x) truncates toward zero, math::ifloor(x) rounds down"},
+                {"var f = 3.7; int i = 5; i = f; i", "Cannot assign float to 'i' (declared int)"},
+                {"var f = -3.9; int i = f; i", "Cannot initialize 'i' (declared int) with float"},
+            });
             check_values({
-                {"auto x = 5; x = 3.9; x", 3},
-                {"auto x = 5; x = -3.9; x", -3},
-                {"int i = 5; i = 3.7; i", 3},
+                {"auto x = 5; x = cast<int>(3.9); x", 3},
+                {"auto x = 5; x = cast<int>(-3.9); x", -3},
+                {"int i = 5; i = math::ifloor(-3.7); i", -4},
+                {"float f = 5; f", 5.0},
             });
         });
 
@@ -772,7 +779,8 @@ public:
             // A uniform primitive literal infers its element type and
             // takes that representation; auto is infer-then-enforce for arrays too
             auto eng = make_engine();
-            check_eq((int64_t)4, eng->execute("auto nums = [1, 2, 3]; nums.push(4.7); nums[3]").as_int(), "auto int literal locks to int (float converts)");
+            check_eq((int64_t)4, eng->execute("auto nums = [1, 2, 3]; nums.push(cast<int>(4.7)); nums[3]").as_int(), "auto int literal locks to int");
+            check_rejected({{"auto nums = [1, 2, 3]; nums.push(4.7); nums[3]", "'float'"}});
             check_throws([&]() { eng->execute("auto nums = [1, 2, 3]; nums.push(\"hello\")"); });
             check_throws([&]() { eng->execute("auto names = [\"a\", \"b\"]; names.push(1)"); });
             check_throws([&]() { eng->execute("array<auto> f = [1.5, 2.5]; f.push(\"x\")"); });
@@ -908,16 +916,18 @@ public:
             check_eq(r2.type(), script_value_type::jai_string_type);
         });
 
-        test("null_assignable_to_object_types", [this]() {
-            auto eng = make_engine();
-            eng->execute(R"(
-                class Foo { int x = 0; }
-            )");
-
-            eng->execute(R"(
-                auto f = Foo();
-                f = null;  // OK for objects
-            )");
+        test("a_class_value_slot_refuses_null_and_a_shared_ptr_takes_it", [this]() {
+            const char* prelude = "class Foo { int x = 0; }";
+            check_rejected({
+                {"auto f = Foo(); f = null;", "cannot assign 'null' to 'f' declared 'Foo': a 'Foo' is never null; declare 'shared_ptr<Foo>' (or var) for a slot that can be empty", prelude},
+                {"Foo f = null;", "cannot initialize 'f' declared 'Foo' with 'null': a 'Foo' is never null; declare 'shared_ptr<Foo>' (or var) for a slot that can be empty", prelude},
+                {"var n = null; auto f = Foo(); f = n;", "Cannot assign null to 'f' (declared Foo)", prelude},
+                {"var n = null; Foo f = n;", "Cannot initialize 'f' (declared Foo) with null", prelude},
+            });
+            check_values({
+                {"shared_ptr<Foo> f = new Foo(); f = null; f == null", true, prelude},
+                {"var f = Foo(); f = null; f == null", true, prelude},
+            });
         });
 
         test("a_derived_object_reads_base_fields_through_a_base_or_derived_slot", [this]() {
