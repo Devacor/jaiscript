@@ -146,8 +146,8 @@ checked_result<std::shared_ptr<void>> checked_native_object(engine* eng, const s
 
 namespace conversions {
 
-[[noreturn]] JAI_NOINLINE void throw_unregistered_conversion(const char* prefix, const char* type_name) {
-    throw std::runtime_error(std::string(prefix) + type_name);
+[[noreturn]] JAI_NOINLINE void throw_unregistered_conversion(const char* prefix, std::type_index type) {
+    throw std::runtime_error(std::string(prefix) + ::jai::detail::readable_cpp_type_name(type));
 }
 
 void conversion_registry::register_entry(type_id type, conversion_entry entry) {

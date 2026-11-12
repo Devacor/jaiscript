@@ -53,34 +53,68 @@ runtime was measured on the <em>reference machine</em> (Core Ultra 9 285HX, MSVC
 P core). The embedder cost tables were measured on the <em>report machine</em>, a 2016-era 4-core/8-thread laptop, with
 a different build of the VM. The reference machine runs everything several times faster.</p></div>
 <h2 id="measured-results">The headline<a class="hlink" href="#measured-results" aria-label="link">&#8203;</a></h2>
-<p>Whole programs, each written the ordinary way in every language, hash-checked against each other, timing their own
-workload so start-up and compilation stay out. Lower is faster; the last column is the VM's time over Lua 5.4's.</p>
-<div class="tablewrap"><table><thead><tr><th>program</th><th>Jai VM</th><th>Lua 5.4</th><th>Squirrel 3.2</th><th>VM / Lua</th></tr></thead><tbody>
-<tr><td>OSSUARY (raymarched scene, float math)</td><td>127.1 ms/frame</td><td>167.7</td><td>388.5</td><td><strong>0.76</strong></td></tr>
-<tr><td>bytecode VM written in script (dispatch loop over integer arrays)</td><td>673 ms</td><td>744</td><td>1,104</td><td><strong>0.90</strong></td></tr>
-<tr><td>Gator Quest simulation (6,000 ticks, 4 bots)</td><td>1.354 ms/tick</td><td>1.151</td><td>n/a</td><td>1.18</td></tr>
-<tr><td>GLOOM (software-rendered shooter)</td><td>0.634 ms/tick</td><td>0.397</td><td>1.165</td><td>1.60</td></tr>
-<tr><td>Richards (scheduler: small methods over linked objects)</td><td>788 ms</td><td>334</td><td>609</td><td>2.36</td></tr>
-<tr><td>DeltaBlue (constraint solver: deep hierarchy, virtual dispatch)</td><td>948 ms</td><td>398</td><td>588</td><td>2.38</td></tr>
-<tr><td>spatial hash, 100,000 entities (a map of per-cell arrays)</td><td>2,644 ms</td><td>972</td><td>1,130</td><td>2.72</td></tr>
+<p>Whole programs, each written the ordinary way in every language and ported whole, the same algorithm in the same
+order, timing their own workload so start-up and compilation stay out. Every runtime's frames hash equal to the VM's.
+Lower is faster.</p>
+<div class="tablewrap" data-shared="headline" data-source><table><thead><tr><th>program</th><th>shape</th><th>Jai VM</th><th>Jai VM, N workers</th><th>Lua 5.4</th><th>Squirrel 3.2</th><th>ChaiScript 6.1</th><th>Python 3.11</th><th>VM / Lua (best &middot; serial)</th></tr></thead><tbody>
+<tr><td>OSSUARY, the demoreel's raymarched skull-spider</td><td>a per-pixel float raymarch: small distance functions over float arguments, called tens of thousands of times a frame</td><td>117.2 ms/frame</td><td>18.5 (8)</td><td>45.7</td><td>97.6</td><td>5,964<sup><a href="#headline-footnotes">a</a></sup></td><td>143.0<sup><a href="#headline-footnotes">b</a></sup></td><td><span class="ratio-best">0.40</span> &middot; <span class="ratio-serial">2.56</span></td></tr>
+<tr><td>MAELSTROM, the demoreel's fluid simulation</td><td>a fluid grid: stencil passes (ripples, advection, pressure) over float arrays, then a ray per column</td><td>24.5 ms/frame</td><td>9.5 (8)</td><td>7.08</td><td>13.7</td><td>768<sup><a href="#headline-footnotes">a</a></sup></td><td>23.8<sup><a href="#headline-footnotes">b</a></sup></td><td><span class="ratio-best">1.34</span> &middot; <span class="ratio-serial">3.46</span></td></tr>
+<tr><td>GLOOM, reference look</td><td>a raycaster: a ray per cell column over a prebaked floor and ceiling, cached wall strips, many small entity updates</td><td>0.773 ms/tick</td><td>0.606 (8)</td><td>0.413</td><td>1.177</td><td>106.2<sup><a href="#headline-footnotes">a</a></sup></td><td>0.985<sup><a href="#headline-footnotes">b</a></sup></td><td><span class="ratio-best">1.47</span> &middot; <span class="ratio-serial">1.87</span></td></tr>
+<tr><td>GLOBHUNTER, the demoreel's textured raycaster</td><td>a grid raycaster: integer DDA and per-pixel floor and ceiling texture lookups through class fields; no parallel loop</td><td>6.53 ms/frame</td><td>n/a</td><td>2.20</td><td>4.40</td><td>152<sup><a href="#headline-footnotes">a</a></sup></td><td>5.87<sup><a href="#headline-footnotes">b</a></sup></td><td><span class="ratio-best">2.97</span></td></tr>
+<tr><td>GLOOM, the game as played (showcase look)</td><td>a raycaster: a ray per pixel column, textured lamp-lit floor and ceiling spans per pixel, a light grid, sprites, many small entity updates</td><td>10.94 ms/tick</td><td>11.51 (8)</td><td>2.21</td><td>5.08</td><td>407.5<sup><a href="#headline-footnotes">a</a></sup></td><td>5.19<sup><a href="#headline-footnotes">b</a></sup></td><td><span class="ratio-best">4.94</span></td></tr>
 </tbody></table></div>
-<p>The pattern: typed loops over locals and typed arrays run level with or ahead of Lua; programs made of many small
-calls over shared objects take about 2.4 to 2.7 times Lua's time. Per-call and per-object cost is the VM's slowest
-ground. The four app rows are medians of seven interleaved processes; the game rows are detailed
-<a href="#whole-games-measured">below</a>.</p>
+<p><strong>VM / Lua</strong> compares each language at its best. The first number (green) is the VM's faster run, with
+eight workers (the P-core count) or on one core, over Lua's serial run, since Lua has no parallel loop. The second
+(grey) is the VM's serial run over Lua's. A row whose workers do not beat its serial run shows one ratio.</p>
+<p>On one core the VM takes 1.9 to 4.9 times Lua 5.4's time on these programs. Per-call and per-object cost is the VM's
+slowest ground, and OSSUARY alone makes about 37,000 small distance-function calls a frame. Parallel loops change that
+where a program has them: eight workers bring OSSUARY to 0.40 of Lua's time, MAELSTROM to 1.34 and GLOOM's reference look
+to 1.47. GLOOM as played textures and lights every floor and ceiling pixel in serial passes, so its workers only
+parallelize the wall rays, particles and glyph rows, and the run comes out about 5% slower. On one core ChaiScript 6.1
+takes 23 to 137 times the VM's time. Squirrel 3.2 runs 1.2 to 2.2 times faster than the VM, except on GLOOM's reference
+look, where the VM is 1.5 times faster. CPython 3.11 runs level with the VM on the demoreel scenes (0.82 to 1.11 of its
+time), 2.1 times faster on GLOOM as played and 1.3 times slower on its reference look. Lua 5.5.1 runs GLOOM at 2.17
+ms/tick (showcase) and 0.408 (reference); LuaJIT's JIT, the ceiling, runs the reference look at 0.100.</p>
+<p id="headline-footnotes">Measured 2026-11-12 on the reference machine, every process pinned to one P core (the
+workers column to the eight P cores) and hash-checked. The demoreel scenes: 60 frames at 100×40 from three seconds in,
+after 30 warm-up frames, the median of five interleaved runs, each within 4% of the others. GLOOM: 600 ticks after a
+600-tick warm-up at 100×40, the median of five interleaved processes. <sup>a</sup> ChaiScript is too slow for the full
+run, so its cells sample the same window in three slices spread across it, each slice the median of three runs: twelve
+frames of each scene (projecting OSSUARY's 60-frame window at 358 seconds) and 600 of GLOOM's ticks over three processes
+(projecting the showcase look's 600 ticks at 245 seconds). <sup>b</sup> CPython hashes each frame outside its timed
+window, where the C++ hosts hash inside it (tens of microseconds a frame in C++). The ports and their runners are in the
+comparison project: <code>demoreel/ports/COMPARISON.md</code> and the GLOOM ports beside it.</p>
+<h3 id="smaller-apps">Smaller apps<a class="hlink" href="#smaller-apps" aria-label="link">&#8203;</a></h3>
+<p>Four benchmark programs with no ChaiScript port, so they sit outside the headline. Same protocol: whole programs,
+hash-checked, timing their own workload, lower is faster.</p>
+<div class="tablewrap"><table><thead><tr><th>program</th><th>shape</th><th>Jai VM</th><th>Lua 5.4</th><th>Squirrel 3.2</th><th>Python 3.11</th><th>VM / Lua</th></tr></thead><tbody>
+<tr><td>bytecode VM written in script</td><td>a dispatch loop over integer arrays</td><td>680 ms</td><td>789</td><td>1,239</td><td>1,802</td><td><span class="ratio-best">0.86</span></td></tr>
+<tr><td>spatial hash, 100,000 entities</td><td>a map of per-cell arrays rebuilt every step, past the caches</td><td>3,351 ms</td><td>1,642</td><td>1,659</td><td>3,385</td><td><span class="ratio-best">2.04</span></td></tr>
+<tr><td>Richards</td><td>a scheduler of small methods over linked objects</td><td>812 ms</td><td>348</td><td>594</td><td>461</td><td><span class="ratio-best">2.33</span></td></tr>
+<tr><td>DeltaBlue</td><td>a constraint solver: deep hierarchy, virtual dispatch</td><td>959 ms</td><td>408</td><td>581</td><td>425</td><td><span class="ratio-best">2.35</span></td></tr>
+</tbody></table></div>
+<p>A dispatch loop over integer arrays runs 14% ahead of Lua; programs made of many small calls over shared objects
+take 2.0 to 2.4 times Lua's time. On Richards, DeltaBlue and the spatial hash, Squirrel 3.2 runs 1.4 to 2.0 times
+faster than the VM. CPython 3.11 runs 1.8 to 2.3 times faster than the VM on the first two and level on the third. On
+the bytecode VM the VM is 1.8 times faster than Squirrel and 2.7 times faster than CPython. Lua 5.5.1 runs within 1% of
+Lua 5.4.8 on Richards and DeltaBlue, 4% slower on the bytecode VM and 12% faster on the spatial hash. Measured
+2026-11-12, each the median of seven interleaved processes (thirteen for the spatial hash), every process pinned to one
+P core and hash-checked; other work kept 1 to 4 cores busy, which moves the memory-bound spatial hash most (its VM / Lua
+ratio ranged from 1.8 to 2.3 round to round).</p>
 <h3 id="the-comparison-story">Kernels and microbenchmarks<a class="hlink" href="#the-comparison-story" aria-label="link">&#8203;</a></h3>
 <p><strong>The kernel suite.</strong> Over the sixteen interpreter kernels of daScript's
 <a href="https://github.com/borisbat/dasProfile">dasProfile</a>, run under its protocol (one process per sample repeating
 the kernel for 0.5&nbsp;s, median of five, implementations interleaved, checksums equal), idiomatic typed JaiScript
 takes a geometric mean of <strong>1.09×</strong> Lua 5.5.1's time, and the same algorithms with <code>var</code>
-everywhere 1.35×.</p>
-<div class="tablewrap"><table><thead><tr><th>VM time / Lua time</th><th>kernels</th></tr></thead><tbody>
-<tr><td>widest wins</td><td>mandelbrot 0.04 (two float locals against Lua's complex-number tables), sha256 0.12, float-to-string 0.30, string-to-float 0.88</td></tr>
-<tr><td>widest losses</td><td>treap 5.5, host calls 4.4, n-queens 3.3, dictionary 2.6, n-bodies 2.1, recursive fibonacci 1.8</td></tr>
+everywhere 1.35× (measured 2026-11-12 with every sample pinned to one P core; the four noisiest kernels took ten
+samples; LuaJIT's row, 2026-11-04).</p>
+<div class="tablewrap" data-shared="kernels" data-source><table><thead><tr><th>VM time / Lua time</th><th>kernels</th></tr></thead><tbody>
+<tr><td>widest wins</td><td>mandelbrot 0.04 (two float locals against Lua's complex-number tables), sha256 0.13, float-to-string 0.32, string-to-float 0.93</td></tr>
+<tr><td>widest losses</td><td>treap 5.5, host calls 4.1, n-queens 3.2, dictionary 2.5, n-bodies 2.4, sort 1.9, recursive fibonacci 1.5</td></tr>
 <tr><td>LuaJIT's JIT, for scale</td><td>0.01 to 0.73 across the suite</td></tr>
 </tbody></table></div>
 <p><strong>Microbenchmarks</strong>, µs per iteration, fastest of five runs:</p>
-<div class="tablewrap"><table><thead><tr><th>benchmark</th><th>Jai VM</th><th>Lua 5.4</th><th>Squirrel</th><th>ChaiScript</th></tr></thead><tbody>
+<div class="tablewrap" data-shared="micro" data-source><table><thead><tr><th>benchmark</th><th>Jai VM</th><th>Lua 5.4</th><th>Squirrel</th><th>ChaiScript</th></tr></thead><tbody>
 <tr><td>Hot loop, 1000 iterations (<code>sum += i</code>)</td><td>9</td><td>3</td><td>10</td><td>n/a</td></tr>
 <tr><td>BST 15 nodes, <code>&amp;</code> parameters</td><td>18</td><td>8</td><td>11</td><td>n/a</td></tr>
 <tr><td>Fibonacci(15)</td><td>69</td><td>25</td><td>55</td><td>n/a</td></tr>
@@ -92,26 +126,39 @@ push/pop and map insert-and-lookup print 0 for the VM, 1 to 2 for Lua, 2 to 3 fo
 that orders the runtimes and gives no ratio. What the table does show is Lua ahead on the tight loop (about 3×),
 call-dense recursion (2.8×) and the script-built tree (2.3×), Squirrel ahead on the last two (1.25× and 1.6×), and
 ChaiScript 12 to 19 times slower wherever it runs.</p>
+<p><strong>Recursion against ChaiScript.</strong> Each language runs <code>fib(n)</code> written the natural way:
+<code>def fib(n)</code> in ChaiScript 6.1.0, built without thread safety, and <code>int fib(int n)</code> in JaiScript.
+The host calls it from C++ through a <code>std::function</code>, after a warm-up call and with parsing excluded. Each
+sample is its own process; the figures are medians of seven, measured 2026-11-12.</p>
+<div class="tablewrap" data-shared="chai-recursion" data-source><table><thead><tr><th>call</th><th>Jai VM</th><th>ChaiScript 6.1</th><th>ChaiScript / VM</th></tr></thead><tbody>
+<tr><td>fib(15): 1,973 calls</td><td>0.040 ms</td><td>4.99 ms</td><td>124</td></tr>
+<tr><td>fib(20): 21,891 calls</td><td>0.397 ms</td><td>108 ms</td><td>273</td></tr>
+<tr><td>fib(25): 242,785 calls</td><td>4.37 ms</td><td>7,668 ms</td><td>1,750</td></tr>
+</tbody></table></div>
+<p>The VM's cost per call stays at 18 to 20 ns. ChaiScript's grows with the size of the run, from 2.5 µs a call at
+fib(15) to 32 µs at fib(25), so the gap widens as the run grows.</p>
 <h3 id="whole-games-measured">Whole games<a class="hlink" href="#whole-games-measured" aria-label="link">&#8203;</a></h3>
-<p>Measured 2026-11-04 on the reference machine; every run's frame or state hash matches across runtimes. Each row is
-the median of three to six runs, the builds interleaved. Small differences are code layout, not speed: relinking the
-same program with unused padding moves most rows by under 2%, OSSUARY's serial row and GLOOM's parallel row by up to
-9%, and LuaJIT's by over 20%.</p>
+<p>Every run's frame or state hash matches across runtimes. The GLOOM and demoreel rows and Gator Quest's VM and Lua
+figures were measured 2026-11-12 under the headline's protocol; DOOM and Gator Quest's other figures on 2026-11-04,
+each the median of three to six runs, the builds interleaved. Small differences are code layout, not speed: relinking
+the same program with unused padding moved most 2026-11-04 rows by under 2% and LuaJIT's by over 20%.</p>
 <div class="tablewrap"><table><thead><tr><th>workload</th><th>result</th></tr></thead><tbody>
 <tr><td><strong>DOOM</strong>: E1M1, textured software render at 120×78 plus status bar, six monsters awake and firing,
 300-frame autopilot session</td><td><strong>1.3 ms/frame</strong> (sim 0.39, render 0.71, blit 0.21): 21 times inside
 the 28.5 ms frame budget, with enemy brains written as coroutines. The 3,984-tic timedemo replays at
 1.389 ms/tic, about 20× real time.</td></tr>
-<tr><td><strong>GLOOM</strong>: 600 ticks after 600 warm-up, 100×40 output</td><td>VM serial <strong>0.634 ms/tick</strong>,
-VM 8 workers 0.461; Lua 5.4.8 0.397, Lua 5.5.1 0.389, Squirrel 3.2 1.165, LuaJIT JIT 0.097. Eight workers give 1.38×:
-only the stages whose loops the engine proves safe run in parallel.</td></tr>
-<tr><td><strong>OSSUARY</strong>: the demoreel's raymarched scene at 100×40, five frames after five warm-up</td><td>VM serial
-<strong>127.1 ms/frame</strong>, VM 6 workers 23.7 (5.4×); Lua 5.4.8 167.7, Squirrel 3.2 388.5.</td></tr>
-<tr><td><strong>Demoreel</strong>: all seventeen scenes headless, 1,700 frames at 100×40, one core</td><td>VM
-<strong>9.9 ms/frame</strong>, under a third of the 33.3 ms budget at 30 fps.</td></tr>
+<tr><td><strong>GLOOM</strong>, the game as played (showcase look): 600 ticks after 600 warm-up, 100×40
+output</td><td>VM serial <strong>10.94 ms/tick</strong>, VM 8 workers 11.51; Lua 5.4.8 2.21, Lua 5.5.1 2.17, Squirrel
+3.2 5.08, Python 3.11 5.19, ChaiScript 6.1 407.5 (sampled). The per-pixel floor, ceiling and light passes run serially,
+so eight workers parallelize only the wall rays, particles and glyph rows.</td></tr>
+<tr><td><strong>GLOOM</strong>, reference look: the same ticks, a ray per cell column over a prebaked floor</td><td>VM
+serial <strong>0.773 ms/tick</strong>, VM 8 workers 0.606 (1.28×); Lua 5.4.8 0.413, Lua 5.5.1 0.408, Squirrel 3.2
+1.177, Python 3.11 0.985, ChaiScript 6.1 106.2 (sampled), LuaJIT JIT 0.100.</td></tr>
+<tr><td><strong>Demoreel</strong>: the cold open and all twelve scenes headless, transitions included, 1,700 frames at
+100×40, one core</td><td>VM <strong>22.1 ms/frame</strong>, two thirds of the 33.3 ms budget at 30 fps.</td></tr>
 <tr><td><strong>Gator Quest</strong>: simulation only (mobiles, combat, items, quests, bots), 6,000 ticks</td><td>VM
-<strong>1.354 ms/tick</strong>; Lua 5.4.8 and 5.5.1 1.151, Luau 0.741 interpreter 1.126, Luau native 0.655, LuaJIT
-interpreter 0.777, LuaJIT JIT 0.190.</td></tr>
+<strong>1.415 ms/tick</strong>; Lua 5.4.8 1.299, Lua 5.5.1 1.288 (2026-11-12). On 2026-11-04, with the VM at 1.354: Luau
+0.741 interpreter 1.126, Luau native 0.655, LuaJIT interpreter 0.777, LuaJIT JIT 0.190.</td></tr>
 </tbody></table></div>
 <p>LuaJIT's JIT generates machine code at run time, which some shipping targets (iOS) forbid: it is a ceiling, not a
 target. <strong>Style is nearly free:</strong> a flat rewrite of GLOOM in free functions and globals produces identical
@@ -167,10 +214,10 @@ field, an element or a <code>string&amp;</code> parameter.</p>
 <h3 id="whats-slower">What is slower, and what to use instead<a class="hlink" href="#whats-slower" aria-label="link">&#8203;</a></h3>
 <div class="tablewrap"><table><thead><tr><th>shape</th><th>cost</th><th>instead</th></tr></thead><tbody>
 <tr><td>Call-dense non-tail recursion; object graphs walked through many small methods</td><td>fib(15) at 2.8× Lua, Richards
-and DeltaBlue at 2.4×: per-call frame setup</td><td>iterate, or use accumulator-style tail calls</td></tr>
+and DeltaBlue at 2.3×: per-call frame setup</td><td>iterate, or use accumulator-style tail calls</td></tr>
 <tr><td>By-value parameters on big structures</td><td>the BST benchmark by value runs 74 µs against 18 µs with
 <code>&amp;</code>: a subtree copy at every level</td><td><code>&amp;</code> parameters, <code>var&amp;</code> declarations</td></tr>
-<tr><td>Per-pixel loops (tens of thousands of scripted element operations a frame)</td><td>GLOOM at 1.6× Lua</td><td>typed
+<tr><td>Per-pixel loops (tens of thousands of scripted element operations a frame)</td><td>GLOOM's showcase look at 4.94× Lua, its reference look at 1.87×</td><td>typed
 arrays, then <code>parallel_transform</code> for the bulk stages, then one C++ function for the innermost loop</td></tr>
 <tr><td>Re-executing class declarations every frame</td><td>about 250 µs per 30-line class script</td><td>declare once, call per frame</td></tr>
 </tbody></table></div>

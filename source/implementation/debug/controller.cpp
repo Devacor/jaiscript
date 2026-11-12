@@ -173,7 +173,7 @@ void controller::set_on_source_loaded(std::function<void(const std::string&)> cb
 
 void controller::note_source(const std::string& path, const std::vector<std::shared_ptr<declaration>>* declarations) {
     if (path.empty() || path == "<script>") return;
-    normalize_sources_.store(engine_->is_enabled(jai::filesystem), std::memory_order_relaxed);
+    normalize_sources_.store(engine_->is_enabled(jai::permissions::filesystem), std::memory_order_relaxed);
     stop_line_map lines;
     if (declarations) {
         for (const auto& d : *declarations) { collect_stop_lines(d.get(), lines); }
@@ -519,7 +519,7 @@ bool controller::sync_hot_state() {
     hot_step_or_pause_.store(pending_pause_.load(std::memory_order_relaxed) != 0
         || step_mode_.load(std::memory_order_relaxed) != static_cast<int>(step_mode::none));
     if (sync_requested_.load()) { hot_step_or_pause_.store(true); }   // raised between the exchange and the store above
-    normalize_sources_.store(engine_->is_enabled(jai::filesystem), std::memory_order_relaxed);
+    normalize_sources_.store(engine_->is_enabled(jai::permissions::filesystem), std::memory_order_relaxed);
     const uint64_t version = bp_version_.load(std::memory_order_acquire);
     const uint64_t lines_version = stop_lines_version_.load(std::memory_order_acquire);
     if (version != hot_bp_version_ || lines_version != hot_stop_lines_version_) {
@@ -549,7 +549,7 @@ bool controller::sync_hot_state() {
                 return a.record->sequence < b.record->sequence;
             });
             for (const auto& change : changed) {
-                const std::string file = change.source_path && engine_->is_enabled(jai::filesystem)
+                const std::string file = change.source_path && engine_->is_enabled(jai::permissions::filesystem)
                     ? normalize_bp_path(*change.file) : *change.file;
                 if (change.record->lines.empty()) next->erase(file);
                 else (*next)[file] = change.record->lines;

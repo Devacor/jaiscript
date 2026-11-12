@@ -24,6 +24,8 @@ using namespace jai::foundry;
 
 namespace jai::foundry::tests {
 
+enum class vm_test_permission : std::int32_t { app_count = jai::permissions::count };
+
 // These tests pin the VM backend explicitly (never make_engine) so they exercise the
 // bytecode VM regardless of the runner's --backend flag.
 class vm_backend_tests : public suite {
@@ -598,7 +600,7 @@ public:
 			for (bool use_vm : {false, true}) {
 				auto e = jai::foundry::make_default_engine();
 				e->set_backend(use_vm ? jai::backend_type::vm : jai::backend_type::interpreter);
-				e->disable(jai::filesystem);
+				e->disable(jai::permissions::filesystem);
 				const std::string path = "D:/virtual/sticky/unit.jai";
 				// first = (12+3)*2 = 30, second = 20+5 = 25
 				check_eq((int64_t)3025, e->execute_file_source(path, src).as_int(),
@@ -3794,10 +3796,10 @@ public:
 					return args[0];
 				});
 				e->add_variadic_function("try_count", [](jai::engine&, std::span<const jai::script_value> args) { return !args.empty(); }, jai::nodiscard);
-				e->add_variadic_function("io_count", [](jai::engine&, std::span<const jai::script_value> args) { return static_cast<jai::script_int>(args.size()); }, jai::filesystem);
-				e->register_privilege("app.count");
-				e->add_variadic_function("app_count", [](jai::engine&, std::span<const jai::script_value> args) { return static_cast<jai::script_int>(args.size()); }, "app.count");
-				e->add_variadic_function("both_count", [](jai::engine&, std::span<const jai::script_value> args) { return static_cast<jai::script_int>(args.size()); }, {"filesystem", "app.count"});
+				e->add_variadic_function("io_count", [](jai::engine&, std::span<const jai::script_value> args) { return static_cast<jai::script_int>(args.size()); }, jai::permissions::filesystem);
+				e->register_permission(vm_test_permission::app_count, "app.count");
+				e->add_variadic_function("app_count", [](jai::engine&, std::span<const jai::script_value> args) { return static_cast<jai::script_int>(args.size()); }, vm_test_permission::app_count);
+				e->add_variadic_function("both_count", [](jai::engine&, std::span<const jai::script_value> args) { return static_cast<jai::script_int>(args.size()); }, jai::permissions::filesystem, vm_test_permission::app_count);
 				auto row_of = [&](const char* name) {
 					const jai::script_value fn = detail::engine_access::get_variable_unheld(*e, name);
 					return detail::engine_access::host_direct_for(*e, &fn.unchecked_as_function()) != nullptr;
@@ -3809,7 +3811,7 @@ public:
 				check_true(dropped.format().find("the result of 'try_count' is discarded") != std::string::npos, dropped.format());
 				std::string denied;
 				try { e->execute("app_count(1);"); } catch (const std::exception& ex) { denied = ex.what(); }
-				e->enable(std::string_view("app.count"));
+				e->enable(vm_test_permission::app_count);
 				try { return denied + "|" + e->execute(program).to_string(); } catch (const std::exception& ex) { return std::string("ERROR: ") + ex.what(); }
 			};
 			const char* program =
@@ -3822,7 +3824,7 @@ public:
 				"try { first_of(); } catch (e) { out += ` ${e}`; }\n"
 				"bool any = try_count(); out += ` ${any} ${io_count(1, 2)} ${app_count(1, 2, 3)} ${both_count()}`;\n"
 				"out;";
-			check_eq(std::string("Insufficient privilege: app.count.|intfloatother?? intfloatother?? intfloatother?? float 198 noneintstringother 7 first_of needs an argument false 2 3 0"), run(false, program), "interpreter");
+			check_eq(std::string("Insufficient permission: app.count.|intfloatother?? intfloatother?? intfloatother?? float 198 noneintstringother 7 first_of needs an argument false 2 3 0"), run(false, program), "interpreter");
 			check_eq(run(false, program), run(true, program), "parity");
 		});
 		test("map_stores_borrow_their_key_and_element_reads_write_back_only_through_mutators", [this]() {

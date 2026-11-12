@@ -426,9 +426,15 @@ int run_smoke(script_adapter& adapter, const host_options& opt, console_host& co
 		profile_capture profile;
 		profile.begin();
 #endif
+		const bool sliced = !opt.time_slices.empty();
+		double slice_ms = 0.0;
+		int64_t slice_ticks = 0;
 		double t0 = now_seconds();
 		for (int64_t i = 0; i < opt.ticks; ++i) {
 			if (i == opt.coverage_reset_tick) { session->coverage_reset(); }
+			bool timed_tick = false;
+			for (const auto& slice : opt.time_slices) { timed_tick = timed_tick || (i >= slice.first && i < slice.second); }
+			const double tick_start = timed_tick ? now_seconds() : 0.0;
 			std::string text;
 			try {
 				text = session->frame(dt, "", 0.0, 0.0, 0.0);
@@ -443,12 +449,20 @@ int run_smoke(script_adapter& adapter, const host_options& opt, console_host& co
 				out.write(text.data(), static_cast<std::streamsize>(text.size()));
 			}
 			hash = fnv1a(hash, text);
+			if (timed_tick) {
+				slice_ms += (now_seconds() - tick_start) * 1000.0;
+				++slice_ticks;
+			}
 		}
-		double total_ms = (now_seconds() - t0) * 1000.0;
+		double total_ms = sliced ? slice_ms : (now_seconds() - t0) * 1000.0;
 #ifdef GLOOM_PROFILE_CAPTURE
 		profile.stop();
 #endif
-		per_tick[b] = total_ms / opt.ticks;
+		per_tick[b] = total_ms / (sliced ? slice_ticks : opt.ticks);
+		if (sliced) {
+			std::printf("%-12s   timed %lld of %lld ticks in --time-slices\n", names[b].c_str(),
+				static_cast<long long>(slice_ticks), static_cast<long long>(opt.ticks));
+		}
 		frame_hashes[b] = hash;
 		state_hashes[b] = session->state_hash();
 		std::printf("%-12s | %10.3f | %9.6f | %016llx   | %lld\n",
@@ -532,6 +546,7 @@ void print_usage(script_adapter& adapter) {
 		"  --smoke         headless deterministic autoplay on every backend; parity check\n"
 		"  --ticks N       smoke tick budget (default 2000)\n"
 		"  --warmup N      untimed smoke ticks before reboot (default 0)\n"
+		"  --time-slices A:B[,C:D...]  smoke: time only ticks [A, B) ...; every tick still runs and hashes\n"
 		"  --workers N     parallel workers (0 = serial loop; default engine; ports: serial)\n"
 		"  --miss-every N  jai: the vm misses at every Nth plain cell instruction (a build with JAISCRIPT_MISS_INJECTION)\n"
 		"  --coverage FILE jai: write the vm's execution-coverage census to FILE at exit (a build with JAISCRIPT_VM_COVERAGE)\n"
@@ -575,6 +590,22 @@ int run_gloom(int argc, char** argv, script_adapter& adapter) {
 		else if (a == "--coverage-reset-tick") { opt.coverage_reset_tick = std::stoll(next_arg("--coverage-reset-tick")); }
 		else if (a == "--ticks") { opt.ticks = std::stoll(next_arg("--ticks")); }
 		else if (a == "--warmup") { opt.warmup_ticks = std::stoll(next_arg("--warmup")); }
+		else if (a == "--time-slices") {
+			std::string spec = next_arg("--time-slices");
+			size_t at = 0;
+			while (at < spec.size()) {
+				size_t end = spec.find(',', at);
+				if (end == std::string::npos) { end = spec.size(); }
+				const std::string slice = spec.substr(at, end - at);
+				const size_t colon = slice.find(':');
+				if (colon == std::string::npos) {
+					std::fprintf(stderr, "--time-slices takes FROM:TO[,FROM:TO...]\n");
+					return 2;
+				}
+				opt.time_slices.push_back({std::stoll(slice.substr(0, colon)), std::stoll(slice.substr(colon + 1))});
+				at = end + 1;
+			}
+		}
 		else if (a == "--workers") { opt.workers = std::stoll(next_arg("--workers")); }
 		else if (a == "--miss-every") { opt.miss_every = static_cast<uint32_t>(std::stoll(next_arg("--miss-every"))); }
 		else if (a == "--coverage") { opt.coverage = next_arg("--coverage"); }
@@ -600,6 +631,12 @@ int run_gloom(int argc, char** argv, script_adapter& adapter) {
 	if (opt.ticks <= 0 || opt.warmup_ticks < 0) {
 		std::fprintf(stderr, "--ticks must be positive and --warmup non-negative\n");
 		return 2;
+	}
+	for (const auto& slice : opt.time_slices) {
+		if (slice.first < 0 || slice.second <= slice.first || slice.second > opt.ticks) {
+			std::fprintf(stderr, "each --time-slices range FROM:TO needs 0 <= FROM < TO <= --ticks\n");
+			return 2;
+		}
 	}
 	if (opt.backend.empty()) { opt.backend = adapter.default_backend(); }
 	opt.backend = adapter.normalize_backend(opt.backend);

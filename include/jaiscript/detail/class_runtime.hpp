@@ -553,6 +553,17 @@ inline const script_value* class_definition::method_ptr(uint64_t id) const {
     return cpp_base_class_ ? cpp_base_class_->method_ptr(id) : nullptr;
 }
 
+inline const script_value* class_definition::assignment_operator_ptr(uint64_t id) const {
+    if (!is_script_class()) { return method_ptr(id); }
+    if (auto it = methods_.find(id); it != methods_.end()) { return &it->second; }
+    for (const auto& parent : parent_classes_) {
+        if (parent && parent->is_script_class()) {
+            if (const script_value* found = parent->assignment_operator_ptr(id)) { return found; }
+        }
+    }
+    return nullptr;
+}
+
 [[noreturn]] void class_definition::throw_method_missing(const char* kind, uint64_t id) const {
     std::string name;
     if (auto eng = engine_) {
@@ -2970,7 +2981,7 @@ inline std::optional<checked_result<void>> user_assign_operator(const script_val
             }
         }
     }
-    const script_value* bound_assign = def->method_ptr(assign_id);
+    const script_value* bound_assign = def->assignment_operator_ptr(assign_id);
     if (!bound_assign || !bound_assign->is_function()) { return std::nullopt; }
     return call_assign_operator(current, bound_assign, value, assign_id, eng);
 }

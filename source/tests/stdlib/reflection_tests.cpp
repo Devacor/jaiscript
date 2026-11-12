@@ -191,7 +191,6 @@ public:
             auto eng = make_reflective_engine();
             dynamic_binder<reflect_host_thing>(*eng, "HostThing")
                 .constructor<>()
-                .auto_bind()
                 .build();
             eng->execute("class ScriptThing { int x = 1; }");
             check_eq(eng->execute("reflect::is_cpp_bound(\"HostThing\")").as<bool>(), true);
@@ -258,7 +257,6 @@ public:
             auto eng = make_reflective_engine();
             dynamic_binder<reflect_host_thing>(*eng, "HostThing2")
                 .constructor<>()
-                .auto_bind()
                 .build();
             eng->execute("var hf = reflect::fields(\"HostThing2\");");
             check_eq(eng->execute("hf.size()").as_int(), (int64_t)1);
@@ -384,7 +382,6 @@ public:
             auto eng = make_reflective_engine();
             dynamic_binder<reflect_host_thing>(*eng, "HostThing3")
                 .constructor<>()
-                .auto_bind()
                 .build();
             eng->execute("var h = HostThing3();");
             check_eq(eng->execute("reflect::get(h, \"armor\")").as_int(), (int64_t)4);

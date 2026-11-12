@@ -253,6 +253,9 @@ build what they run with `--build`, and end on a one-line verdict.
   against VM fuzz, the hashes on the interpreter). `--lanes` declares a change confined to the VM's optimized lanes and
   `--interp` forces the interpreter tier; the script's header has the rules. An example runs its own gate; prose and design notes run nothing. A
   change to the property system or the archives also prints a note for hosts, whose asset round-trips exercise them.
+  A `--build` run on a committed tree leaves a stamp for each gate it passes (`tools/ci/ci_lib.sh` has the format), and
+  `--landing`, the mode a landing uses, runs the suites on the Release build and skips any gate stamped for the same tree,
+  configuration and toolchain. `LAND_NO_STAMPS=1` runs every gate.
 - **Battery, at milestones.** `tools/ci/battery.sh` runs everything at depth: the Debug suites on the interpreter, the
   VM and the VM reference, then on the Release build the suites, a 3000-program run of each differential, every example's hashes (GLOOM also with workers and at 600 ticks,
   and JaiDOOM's timedemo where the checkout has it), the embedding quickstart, the language server and the one-file

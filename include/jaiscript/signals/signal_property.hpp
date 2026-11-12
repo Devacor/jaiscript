@@ -32,16 +32,33 @@ namespace jai {
 		signal<T, Sync>& facade() const {
 			return *reinterpret_cast<signal<T, Sync>*>(const_cast<char*>(reinterpret_cast<const char*>(this)) + m_facade_offset);
 		}
+		void view_own_emitter() noexcept {
+			detail::signal_state_access::state(facade()) = detail::signal_state_access::state(emitter());
+		}
 	public:
 		// a_facade is declared before this property, so the copy or move of an owner has made it by the time this runs
 		signal_property(property_manager& reg, std::string name, signal_emitter<T, Sync>& a_emitter, signal<T, Sync>& a_facade)
 			: property_base(reg, std::move(name)), m_emitter_offset(offset_to(this, a_emitter)), m_facade_offset(offset_to(this, a_facade)) {}
 
+		// the owner's emitter and facade copy or move first: each side's facade then views its own emitter
 		signal_property(const signal_property& a_other) noexcept
 			: property_base(a_other), m_emitter_offset(a_other.m_emitter_offset), m_facade_offset(a_other.m_facade_offset) {
-			facade().emitter_ = &emitter();
+			view_own_emitter();
 		}
-		signal_property& operator=(const signal_property&) noexcept { return *this; }
+		signal_property(signal_property&& a_other) noexcept
+			: property_base(std::move(a_other)), m_emitter_offset(a_other.m_emitter_offset), m_facade_offset(a_other.m_facade_offset) {
+			view_own_emitter();
+			a_other.view_own_emitter();
+		}
+		signal_property& operator=(const signal_property&) noexcept {
+			view_own_emitter();
+			return *this;
+		}
+		signal_property& operator=(signal_property&& a_other) noexcept {
+			view_own_emitter();
+			a_other.view_own_emitter();
+			return *this;
+		}
 
 		void serialize(serialization::any_archive_writer& ar) const override {
 			ar.dispatch([this](auto& concrete_ar) {
@@ -56,7 +73,7 @@ namespace jai {
 		void clone_to_target(property_base&) override {}
 
 		// The generic "Signal" script view connects through this erased table,
-		// so auto_bind exposes the property with no per-signature registration.
+		// so the class's binder exposes the property with no per-signature registration.
 		bool signal_ops(signal_script_ops& ops) override {
 			ops = make_signal_script_ops(emitter());
 			return true;
@@ -73,10 +90,10 @@ namespace jai {
 // Emit through the emitter: emitter(args). Requires the enclosing class to be a property_owner
 // (have a property_mgr). Leaves member access at public:. A moved owner takes the receivers, a copied
 // one starts with none, and either way name is its own emitter's facade. The schema entry (is_signal) lets
-// dynamic_binder's auto_bind expose the generic Signal view — declaring the signal is the whole
-// registration. JAI_SIGNAL_PROPERTY(Sig, name) names the emitter nameSignal. Both are unsynchronized;
-// JAI_SYNCHRONIZED_SIGNAL_PROPERTY declares the jai::signal_synchronized pair for a signal used from several threads.
-#define JAI_SIGNAL_PROPERTY_WITH_POLICY(signature, name, emitter, policy) \
+// every dynamic_binder of the class expose the generic Signal view — declaring the signal is the whole
+// registration. JAI_SIGNAL(Sig, name) names the emitter nameSignal. Both are unsynchronized;
+// JAI_SYNCHRONIZED_SIGNAL declares the jai::signal_synchronized pair for a signal used from several threads.
+#define JAI_SIGNAL_WITH_POLICY(signature, name, emitter, policy) \
 	private: \
 		inline static const int _jai_schema_reg_##name = []{ \
 			using OwnerT = _jai_owner_type; \
@@ -92,9 +109,9 @@ namespace jai {
 	public: \
 		using _jai_signal_declared_##name = void
 
-#define JAI_SIGNAL_PROPERTY_AS(signature, name, emitter) JAI_SIGNAL_PROPERTY_WITH_POLICY(signature, name, emitter, jai::signal_unsynchronized)
-#define JAI_SIGNAL_PROPERTY(signature, name) JAI_SIGNAL_PROPERTY_AS(signature, name, name##Signal)
-#define JAI_SYNCHRONIZED_SIGNAL_PROPERTY_AS(signature, name, emitter) JAI_SIGNAL_PROPERTY_WITH_POLICY(signature, name, emitter, jai::signal_synchronized)
-#define JAI_SYNCHRONIZED_SIGNAL_PROPERTY(signature, name) JAI_SYNCHRONIZED_SIGNAL_PROPERTY_AS(signature, name, name##Signal)
+#define JAI_SIGNAL_AS(signature, name, emitter) JAI_SIGNAL_WITH_POLICY(signature, name, emitter, jai::signal_unsynchronized)
+#define JAI_SIGNAL(signature, name) JAI_SIGNAL_AS(signature, name, name##Signal)
+#define JAI_SYNCHRONIZED_SIGNAL_AS(signature, name, emitter) JAI_SIGNAL_WITH_POLICY(signature, name, emitter, jai::signal_synchronized)
+#define JAI_SYNCHRONIZED_SIGNAL(signature, name) JAI_SYNCHRONIZED_SIGNAL_AS(signature, name, name##Signal)
 
 #endif

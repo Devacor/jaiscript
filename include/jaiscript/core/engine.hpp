@@ -6,14 +6,14 @@
 #include "types.hpp"
 #include "value.hpp"
 #include "function_binder.hpp"
-#include "binding_traits.hpp"
 #include "conversion_registry.hpp"
 #include "conversion_registry_impl.hpp"
 // conversion_registry_templates.hpp moved to after engine class definition
 #include "bound_array.hpp"
 #include "bound_map.hpp"
 #include "jaibite.hpp"
-#include "privilege.hpp"
+#include "permission.hpp"
+#include "overload.hpp"
 #include "hot_reload_report.hpp"
 #include <jaiscript/detail/type_checker.hpp>
 #include <jaiscript/detail/first_type.hpp>
@@ -125,33 +125,23 @@ namespace jai {
     public:
         ~engine();
 
-        // Filesystem access is enabled by default. Changes affect the next protected
-        // operation, including after a reentrant C++ callback; started work is not
-        // cancelled. Grants are per-engine, not shared through script variables.
-        // Configure on the engine thread (or while idle), outside parallel regions.
-        // Concurrent cross-thread grant changes are not supported.
-        void enable(privilege flags);
-        void disable(privilege flags);
-        bool is_enabled(privilege flags) const noexcept;
-        checked_result<void> require_privilege(privilege flags) const noexcept;
+        // Every permission is an int32_t id (core/permission.hpp): filesystem and scoped_template are enabled by default, every
+        // other one starts disabled. Changes affect the next protected operation, including after a reentrant C++ callback;
+        // started work is not cancelled. Grants are per-engine, not shared through script variables. Configure on the engine
+        // thread (or while idle), outside parallel regions. Concurrent cross-thread grant changes are not supported.
+        template<detail::permission_enum... Permissions>
+        void enable(Permissions... permissions) { set_permissions(detail::permission_set_of(permissions...), true); }
+        template<detail::permission_enum... Permissions>
+        void disable(Permissions... permissions) { set_permissions(detail::permission_set_of(permissions...), false); }
+        // True when every one is enabled
+        template<detail::permission_enum... Permissions>
+        bool is_enabled(Permissions... permissions) const noexcept { return permissions_enabled(detail::permission_set_of(permissions...)); }
+        template<detail::permission_enum... Permissions>
+        checked_result<void> require_permission(Permissions... permissions) const noexcept { return require_permissions(detail::permission_set_of(permissions...)); }
+        // The name a host permission's denial shows (Insufficient permission: game.cheats.); without one it shows the id
+        template<detail::permission_enum Permission>
+        void register_permission(Permission permission, std::string_view name) { name_permission(detail::permission_id(permission), name); }
 
-        // Custom names are interned once, start disabled, and register idempotently.
-        // "filesystem" refers to the existing builtin, without changing its grant.
-        // The host uses names, never engine-local IDs. Bindings resolve names once.
-        void register_privilege(std::string_view name);
-        void enable(std::span<const std::string_view> names);
-        void disable(std::span<const std::string_view> names);
-        bool is_enabled(std::span<const std::string_view> names) const noexcept;
-        checked_result<void> require_privilege(std::span<const std::string_view> names) const noexcept;
-        void enable(std::string_view name) { enable(std::span(&name, 1)); }
-        void disable(std::string_view name) { disable(std::span(&name, 1)); }
-        bool is_enabled(std::string_view name) const noexcept { return is_enabled(std::span(&name, 1)); }
-        checked_result<void> require_privilege(std::string_view name) const noexcept { return require_privilege(std::span(&name, 1)); }
-        void enable(std::initializer_list<std::string_view> names) { enable(std::span(names.begin(), names.size())); }
-        void disable(std::initializer_list<std::string_view> names) { disable(std::span(names.begin(), names.size())); }
-        bool is_enabled(std::initializer_list<std::string_view> names) const noexcept { return is_enabled(std::span(names.begin(), names.size())); }
-        checked_result<void> require_privilege(std::initializer_list<std::string_view> names) const noexcept { return require_privilege(std::span(names.begin(), names.size())); }
-        
         // Factory method to ensure engines are always created as shared_ptr
         static std::shared_ptr<engine> make() {
             auto eng = std::shared_ptr<engine>(new engine());
@@ -461,17 +451,17 @@ namespace jai {
         // The most bytes one template() render writes (default 10 MiB, 10485760) and one scoped_template or scoped_template_text
         // render writes (default 1 MiB, 1048576); a render that would write past its limit raises a catchable error naming the
         // limit. Zero is no limit. Scripts read them (reflect::template_output_limit()) and cannot change them; a change follows
-        // the privilege rules: idle or on the execution thread, never inside a parallel region, and a render already started
+        // the permission rules: idle or on the execution thread, never inside a parallel region, and a render already started
         // keeps the limit it started with.
         void template_output_limit(size_t bytes);
         size_t template_output_limit() const;
         void scoped_template_output_limit(size_t bytes);
         size_t scoped_template_output_limit() const;
-        // The folders a scoped_template(path, map) file is read from, under the scoped_template privilege alone. The path is
+        // The folders a scoped_template(path, map) file is read from, under the scoped_template permission alone. The path is
         // relative with no .. segment; it is tried in each folder in list order, and the first file that exists and canonically lies
         // inside its folder (links resolved) is the template. A relative folder is relative to the directory of the script that
         // calls; the default is {"template"}, and a folder that does not exist holds nothing. Scripts read the list with
-        // reflect::scoped_template_dirs() and cannot change it; a change follows the privilege rules.
+        // reflect::scoped_template_dirs() and cannot change it; a change follows the permission rules.
         void add_scoped_template_dir(const std::string& dir);
         void remove_scoped_template_dir(const std::string& dir);
         void set_scoped_template_dirs(std::vector<std::string> dirs);
@@ -634,55 +624,31 @@ namespace jai {
         // typed binding returns, a script_value or a checked_result<script_value>; alone under its name, the VM runs it on the
         // arguments where they are. The vector form returns a checked_result<script_value>.
         // Example: engine.add_variadic_function("sum_all", [](jai::engine&, std::span<const jai::script_value> args) { ... });
-        template<detail::engine_first_variadic Func>
-        void add_variadic_function(const std::string& name, Func&& func, privilege required = privilege::none) {
+        // The trailing options (core/permission.hpp) are any number of permissions, jai::nodiscard and jai::serial
+        template<detail::engine_first_variadic Func, detail::function_option... Options>
+        void add_variadic_function(const std::string& name, Func&& func, const Options&... options) {
             using call_t = detail::engine_variadic_call<std::decay_t<Func>>;
-            add_engine_variadic_function(name, guard_function(call_t{std::forward<Func>(func), this}, required), {&call_t::invoke, &call_t::locate},
+            const function_options folded = detail::fold_function_options(options...);
+            add_engine_variadic_function(name, guard_function(call_t{std::forward<Func>(func), this}, folded.required), {&call_t::invoke, &call_t::locate},
                                          host_result_kind<typename call_t::result_type>());
+            apply_function_options(name, folded);
         }
-        template<detail::engine_first_variadic Func>
-        void add_variadic_function(const std::string& name, Func&& func, function_options options) {
-            add_variadic_function(name, std::forward<Func>(func), options.required);
-            apply_function_options(name, options);
-        }
-        template<detail::engine_first_variadic Func>
-        void add_variadic_function(const std::string& name, Func&& func, std::span<const std::string_view> names) {
-            using call_t = detail::engine_variadic_call<std::decay_t<Func>>;
-            add_engine_variadic_function(name, guard_function(call_t{std::forward<Func>(func), this}, names), {&call_t::invoke, &call_t::locate},
-                                         host_result_kind<typename call_t::result_type>());
-        }
-        template<detail::engine_first_variadic Func>
-        void add_variadic_function(const std::string& name, Func&& func, std::string_view required) {
-            add_variadic_function(name, std::forward<Func>(func), std::span(&required, 1));
-        }
-        template<detail::engine_first_variadic Func>
-        void add_variadic_function(const std::string& name, Func&& func, std::initializer_list<std::string_view> names) {
-            add_variadic_function(name, std::forward<Func>(func), std::span(names.begin(), names.size()));
-        }
-        void add_variadic_function(const std::string& name, script_function func, privilege required = privilege::none);
-        void add_variadic_function(const std::string& name, script_function func, function_options options) {
-            add_variadic_function(name, std::move(func), options.required);
-            apply_function_options(name, options);
-        }
-        void add_variadic_function(const std::string& name, script_function func, std::span<const std::string_view> names) {
-            add_variadic_function(name, guard_function(std::move(func), names));
-        }
-        void add_variadic_function(const std::string& name, script_function func, std::string_view required) {
-            add_variadic_function(name, std::move(func), std::span(&required, 1));
-        }
-        void add_variadic_function(const std::string& name, script_function func, std::initializer_list<std::string_view> names) {
-            add_variadic_function(name, std::move(func), std::span(names.begin(), names.size()));
+        void add_variadic_function(const std::string& name, script_function func);
+        template<detail::function_option... Options>
+        void add_variadic_function(const std::string& name, script_function func, const Options&... options) {
+            const function_options folded = detail::fold_function_options(options...);
+            add_variadic_function(name, guard_function(std::move(func), folded.required));
+            apply_function_options(name, folded);
         }
         void add_function_with_arity(const std::string& name, script_function func, size_t arity);
         
         // Typed function registration with automatic overloading
         // Use this for functions with specific C++ signatures
         // Example: engine.add_function("add", [](int a, int b) -> int { return a + b; });
-        template<typename Func, typename Requirements = privilege>
-        void add_function(const std::string& name, Func&& func, Requirements required = privilege::none) {
-            // Check for rejected container references
-            binding_traits::check_binding_validity<Func>(name);
-            
+        // The trailing options are add_variadic_function's
+        template<typename Func, detail::function_option... Options>
+        void add_function(const std::string& name, Func&& func, const Options&... options) {
+            const function_options folded = detail::fold_function_options(options...);
             using traits = detail::function_traits<std::decay_t<Func>>;
             using return_type = typename traits::return_type;
             constexpr size_t arity = traits::arity;
@@ -690,14 +656,14 @@ namespace jai {
             auto binder = make_function_binder(std::forward<Func>(func), this);
             script_function bound_func = binder.bind();
             stage_host_result(host_result_kind<return_type>());
-            if constexpr (detail::host_lane_params<typename traits::argument_types>() && std::is_same_v<Requirements, privilege>) {
-                if (required == privilege::none) {
+            if constexpr (detail::host_lane_params<typename traits::argument_types>()) {
+                if (folded.required.empty()) {
                     using call_t = typename decltype(binder)::by_value_call;
                     stage_host_direct({&call_t::invoke, &call_t::locate});
                 }
             }
             
-            script_function wrapped_func = guard_function(std::move(bound_func), std::move(required));
+            script_function wrapped_func = guard_function(std::move(bound_func), folded.required);
             if constexpr (constexpr uint64_t writeback = detail::tuple_writeback_mask<typename traits::argument_types>::value; writeback != 0) {
                 wrapped_func = host_writeback_function{ std::move(wrapped_func), writeback };
             }
@@ -712,18 +678,9 @@ namespace jai {
                 // Register normally but store arity info for future overloading
                 add_function_with_arity_and_full_types(name, wrapped_func, arity, param_types);
             }
+            apply_function_options(name, folded);
         }
 
-        template<typename Func>
-        void add_function(const std::string& name, Func&& func, function_options options) {
-            add_function(name, std::forward<Func>(func), options.required);
-            apply_function_options(name, options);
-        }
-
-        template<typename Func>
-        void add_function(const std::string& name, Func&& func, std::initializer_list<std::string_view> names) {
-            add_function(name, std::forward<Func>(func), std::span(names.begin(), names.size()));
-        }
         // Overloaded function registration
         void add_overloaded_function(const std::string& name, size_t arg_count, script_function func);
         
@@ -926,14 +883,7 @@ namespace jai {
         // Attach a requirement to the actual callable, so aliases, overload dispatch
         // and worker-local copies all recheck this engine's current grants. An empty
         // requirement returns the original callable with no invocation overhead.
-        script_function guard_function(script_function function, privilege required);
-        script_function guard_function(script_function function, std::span<const std::string_view> names);
-        script_function guard_function(script_function function, std::string_view name) {
-            return guard_function(std::move(function), std::span(&name, 1));
-        }
-        script_function guard_function(script_function function, std::initializer_list<std::string_view> names) {
-            return guard_function(std::move(function), std::span(names.begin(), names.size()));
-        }
+        script_function guard_function(script_function function, const permission_set& required);
         // include: the file runs at the include site, in the current scope and under the running unit, so
         // its declarations are the includer's. scope names the function or block the
         // include runs in (empty at program scope): an enum the file declares there stays local to it.
@@ -1670,17 +1620,12 @@ namespace jai {
         void register_location_builtins();   // engine-core script builtins: root/current_script_dir, resolve_path, app dirs
         script_run launch_run(std::unique_ptr<detail::run_record> run);   // start's first switch into the run (script_run.cpp)
         void cancel_suspended_runs() noexcept;   // the engine's teardown: every run still suspended is cancelled
-        void register_privilege_builtins();
-        void set_privileges(privilege flags, bool enabled);
-        void set_privileges(std::span<const std::string_view> names, bool enabled);
-        void check_privilege_mutation() const;
-        std::optional<uint64_t> find_custom_privilege(std::string_view name) const noexcept;
-        struct resolved_privileges {
-            privilege builtins = privilege::none;
-            std::vector<uint64_t> custom;
-        };
-        resolved_privileges resolve_privileges(std::span<const std::string_view> names) const;
-        checked_result<void> require_privileges(privilege flags, std::span<const uint64_t> slots) const noexcept;
+        void register_permission_builtins();
+        void set_permissions(const permission_set& permissions, bool enabled);
+        void check_permission_mutation() const;
+        bool permissions_enabled(const permission_set& permissions) const noexcept;
+        checked_result<void> require_permissions(const permission_set& required) const noexcept;
+        void name_permission(std::int32_t id, std::string_view name);
         std::unique_ptr<std::mutex> parallel_compile_mutex_ = std::make_unique<std::mutex>();
         int load_depth_ = 0;
         std::vector<std::pair<script_value, script_int>> deferred_post_loads_;
@@ -1719,6 +1664,8 @@ namespace jai {
         // Records a base link whose base class has not registered yet (registrar order is
         // type_index order, not dependency order); resolved when the base arrives.
         void defer_base_link(std::type_index base, std::shared_ptr<class_definition> derived);
+        // The classes still waiting on base
+        std::vector<std::string> classes_awaiting_base(std::type_index base) const;
 
         // A bound member of a class type no binder has registered yet is recorded; settle_bindings reports those still missing
         void require_bound_type(const std::string& class_name, const std::string& member, const std::type_info& type);
@@ -1761,8 +1708,8 @@ namespace jai {
                                                      bool for_import = false);
     checked_result<std::string> resolve_include_path(const std::string& path, engine* engine_ptr);   // from the executing file
     namespace detail {
-        // The same ladder without the filesystem privilege's gate: a scoped template folder resolves as an import's file does,
-        // under the scoped_template privilege (detail/template_library.hpp)
+        // The same ladder without the filesystem permission's gate: a scoped template folder resolves as an import's file does,
+        // under the scoped_template permission (detail/template_library.hpp)
         checked_result<std::string> resolve_on_import_ladder(const std::string& path, engine* engine_ptr, const std::string& from_file);
     }
 

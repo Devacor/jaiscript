@@ -21,10 +21,7 @@ namespace jai::detail {
         using construction_access_waiver = engine::construction_access_waiver;
         using load_session = engine::load_session;
         using load_field = engine::load_field;
-        template<typename F> JAI_FORCEINLINE static script_function guard_function(engine& a_engine, F&& function, privilege required) { return a_engine.guard_function(std::forward<F>(function), required); }
-        template<typename F> JAI_FORCEINLINE static script_function guard_function(engine& a_engine, F&& function, std::span<const std::string_view> names) { return a_engine.guard_function(std::forward<F>(function), names); }
-        template<typename F> JAI_FORCEINLINE static script_function guard_function(engine& a_engine, F&& function, std::string_view name) { return a_engine.guard_function(std::forward<F>(function), name); }
-        template<typename F> JAI_FORCEINLINE static script_function guard_function(engine& a_engine, F&& function, std::initializer_list<std::string_view> names) { return a_engine.guard_function(std::forward<F>(function), names); }
+        template<typename F> JAI_FORCEINLINE static script_function guard_function(engine& a_engine, F&& function, const permission_set& required) { return a_engine.guard_function(std::forward<F>(function), required); }
         JAI_FORCEINLINE static script_value execute_include_source(engine& a_engine, const std::string& resolved_path, const std::string& content, std::string_view scope = {}) { return a_engine.execute_include_source(resolved_path, content, scope); }
         JAI_FORCEINLINE static bool read_include_file(engine& a_engine, const std::string& resolved_path, std::string& content) { return a_engine.read_include_file(resolved_path, content); }
         JAI_FORCEINLINE static checked_result<script_value> sleep_builtin(engine& a_engine, const script_value& seconds) { return a_engine.sleep_builtin(seconds); }
@@ -37,6 +34,7 @@ namespace jai::detail {
         JAI_FORCEINLINE static int* active_run_pins(const engine& a_engine) noexcept { return a_engine.active_run_pins(); }
         JAI_FORCEINLINE static void active_run_pins(engine& a_engine, int* pins) noexcept { return a_engine.active_run_pins(pins); }
         JAI_FORCEINLINE static void debug_sync_point(engine& a_engine) { return a_engine.debug_sync_point(); }
+        static std::vector<std::string> classes_awaiting_base(const engine& a_engine, std::type_index base) { return a_engine.classes_awaiting_base(base); }
         JAI_FORCEINLINE static detail::run_registry& run_registry(engine& a_engine) { return a_engine.run_registry(); }
         JAI_FORCEINLINE static void swap_run_entry_state(engine& a_engine, detail::run_entry_state& state) noexcept { return a_engine.swap_run_entry_state(state); }
         JAI_FORCEINLINE static uint64_t aggregate_lowered_locals(const engine& a_engine) { return a_engine.aggregate_lowered_locals(); }

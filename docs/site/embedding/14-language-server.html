@@ -92,7 +92,7 @@ changes included; every other file from disk, re-read when it changes.</p>
 <tbody>
 <tr><td><code>runner</code> (default)</td><td>the <code>jaiscript</code> runner's exact surface: the standard library, file IO, the console and audio functions, <code>NetServer</code>/<code>NetChannel</code>, <code>Download</code>, <code>ARGS</code></td></tr>
 <tr><td><code>stdlib</code></td><td><code>jai::stdlib::register_all</code> alone</td></tr>
-<tr><td><code>bare</code></td><td>a fresh engine: the language and the core builtins (<code>print</code>, <code>format_value</code>, <code>math::</code>, <code>binary::</code>, <code>extend</code>, <code>same_object</code>, <code>parallel_transform</code>, the file-location functions, <code>reflect::is_enabled</code>), without the standard library's <code>to_string</code>, <code>type_of</code>, <code>to_json</code>, <code>time::</code> or the rest of <code>reflect::</code></td></tr>
+<tr><td><code>bare</code></td><td>a fresh engine: the language and the core builtins (<code>print</code>, <code>format_value</code>, <code>math::</code>, <code>binary::</code>, <code>extend</code>, <code>same_object</code>, <code>parallel_transform</code>, the file-location functions, <code>jai::permissions::is_enabled</code>), without the standard library's <code>to_string</code>, <code>type_of</code>, <code>to_json</code>, <code>time::</code> or the rest of <code>reflect::</code></td></tr>
 </tbody></table></div>
 <p>Scripts for another host have two routes: declare the host's names with <code>extern</code>, or build a server that
 knows them. The server is six source files over the library; <code>tools/lsp/runner_host.cpp</code> registers the
@@ -124,8 +124,8 @@ code tools/vscode-jaiscript          # then press F5 and open a .jai file there
 # 3. package it
 cd tools/vscode-jaiscript
 npm install
-npx @vscode/vsce package             # jaiscript-0.5.3.vsix
-code --install-extension jaiscript-0.5.3.vsix</code></pre></div>
+npx @vscode/vsce package             # jaiscript-0.5.4.vsix
+code --install-extension jaiscript-0.5.4.vsix</code></pre></div>
 <p>The extension looks for the server in this order, and says <code>jaiscript_lsp was not found</code> when all four
 fail:</p>
 <ol>

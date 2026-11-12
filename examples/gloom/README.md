@@ -57,8 +57,10 @@ GLOOM draws in two looks over one renderer:
   Windows). Under the view sit a status bar and a panel with big numerals, bars, a face that bleeds as you do, the arms
   rack and keycards. The title burns, the floor tally counts up, and the death and victory pages are pixel art too.
 - **reference** (`--look reference`): the frames of [reference/README.md](reference/README.md) section 4.2, the ones
-  the Lua, LuaJIT, Squirrel and ChaiScript ports reproduce byte for byte. `--smoke` draws it unless told otherwise, so
-  the published comparison times the same frames in every language.
+  every port of the comparison reproduces byte for byte. `--smoke` draws it unless told otherwise.
+
+The Lua, Squirrel, ChaiScript and Python ports draw the showcase look too, frame for frame, so the published
+comparison times both looks.
 
 Both looks run the same simulation. The reference look casts one ray per cell column over a prebaked floor and
 ceiling; the showcase look casts one per pixel column and textures and lights every pixel, at about 7 ms a frame at

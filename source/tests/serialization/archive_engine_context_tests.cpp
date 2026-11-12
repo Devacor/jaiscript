@@ -21,11 +21,11 @@ namespace jai::foundry::tests {
 
 struct unrelated_archive_context {};
 
-// A clickable widget shape: a property_owner whose JAI_SIGNAL_PROPERTY persists owned text receivers.
+// A clickable widget shape: a property_owner whose JAI_SIGNAL persists owned text receivers.
 class context_receiver_owner : public property_owner<context_receiver_owner> {
 public:
     typedef void PingSignature(int);
-    JAI_SIGNAL_PROPERTY(PingSignature, onPing);
+    JAI_SIGNAL(PingSignature, onPing);
 
     void addOwned(const std::string& id, const std::string& script) { onPingSignal.connect(id, script); }
     bool hasOwned(const std::string& id) { return onPingSignal.connected(id); }

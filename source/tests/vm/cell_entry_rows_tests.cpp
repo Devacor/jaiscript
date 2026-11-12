@@ -27,7 +27,7 @@ public:
 		e->set_backend(vm ? backend_type::vm : backend_type::interpreter);
 		stdlib::register_all(*e);
 		if (!proofs) { e->type_proofs(false); }
-		e->disable(jai::filesystem);
+		e->disable(jai::permissions::filesystem);
 		if (setup) { setup(*e); }
 		const std::string path = "D:/virtual/cell_entry_rows/unit.jai";
 		std::vector<step_result> result;

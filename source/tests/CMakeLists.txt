@@ -163,3 +163,16 @@ endif()
 # ============================================
 # END differential fuzzer (fuzz/) block
 # ============================================
+
+# The landing page's two binding tabs (docs/site/index.html#one-declaration) each bind a class named Spawner, which one binary
+# cannot hold twice: each is a program of its own, which the Doc Samples suite checks against the page and runs
+foreach(home_tab intrusive external)
+    add_executable(jai_home_${home_tab} home_page/home_${home_tab}.cpp)
+    target_link_libraries(jai_home_${home_tab} PRIVATE ${JAISCRIPT_VERIFIER_LIBRARY})
+    add_dependencies(jaiscript_tests jai_home_${home_tab})
+endforeach()
+# on the target, not the source file: Xcode resolves a per-configuration path only in target properties
+target_compile_definitions(jaiscript_tests PRIVATE
+    JAI_HOME_INTRUSIVE="$<TARGET_FILE:jai_home_intrusive>"
+    JAI_HOME_EXTERNAL="$<TARGET_FILE:jai_home_external>"
+)

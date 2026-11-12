@@ -1701,7 +1701,7 @@ JAI_NOINLINE checked_result<expression_ptr> parser::template_call() {
         static_cast<literal_expr*>(path.get())->value.raw_storage_index() == script_value::TYPEID_STRING;
     if (!literal) { return dynamic(std::move(path)); }
     const std::string spelled_path(static_cast<literal_expr*>(path.get())->value.unchecked_as_string());
-    if (!engine_->is_enabled(privilege::filesystem)) { return dynamic(std::move(path)); }   // the render raises the privilege error, as include does
+    if (!engine_->is_enabled(permissions::filesystem)) { return dynamic(std::move(path)); }   // the render raises the permission error, as include does
     auto resolved = resolve_include_path(spelled_path, engine_, at.filename);
     if (!resolved) {
         report_error("template file '" + spelled_path + "' not found", name);
@@ -1762,7 +1762,7 @@ JAI_NOINLINE checked_result<expression_ptr> parser::scoped_template_call(bool te
     std::string content = source;
     std::string label(detail::template_library::k_text_label);
     if (!text_form) {
-        if (!engine_->is_enabled(privilege::scoped_template)) {   // the render raises the privilege error, as include does
+        if (!engine_->is_enabled(permissions::scoped_template)) {   // the render raises the permission error, as include does
             call.push_back(std::move(arguments[0]));
             call.push_back(literal_text(at.filename));
             call.push_back(std::move(arguments[1]));
@@ -4026,7 +4026,7 @@ bool parser::splice_include(const declaration_ptr& decl, std::vector<declaration
         if (lit->value.raw_storage_index() != script_value::TYPEID_STRING) return false;
         path = std::string(lit->value.unchecked_as_string());
     }
-    if (!engine_->is_enabled(privilege::filesystem)) return false;
+    if (!engine_->is_enabled(permissions::filesystem)) return false;
     auto resolved = resolve_include_path(path, engine_, decl->location.filename);
     if (!resolved) return false;
     if (splice_depth_ >= 32 || std::find(splice_active_.begin(), splice_active_.end(), resolved.value()) != splice_active_.end()) {

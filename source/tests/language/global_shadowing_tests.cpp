@@ -335,7 +335,7 @@ public:
 		});
 		test("a_file_reloaded_at_its_path_is_the_same_unit_and_writes_in_place", [this]() {
 			every_backend("reload", "102 5", [](engine& e) {
-				e.disable(jai::filesystem);
+				e.disable(jai::permissions::filesystem);
 				const std::string path = "D:/virtual/shadowing/unit_a.jai";
 				e.execute_file_source(path, "var G = 1; function f() { return G; }");
 				e.execute("int G = 5;");

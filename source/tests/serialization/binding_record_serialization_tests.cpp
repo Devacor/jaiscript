@@ -5,6 +5,7 @@
 #include <jaiscript/properties.hpp>
 #include <jaiscript/properties/property_serialization.hpp>
 #include <jaiscript/serialization/convenience.hpp>
+#include <jaiscript/signals/signal.hpp>
 #include <jaiscript/stdlib/stdlib.hpp>
 
 // Classes the tests cannot edit: no serialize, save, load or property_owner, only a dynamic_binder in the engine
@@ -87,6 +88,81 @@ struct Healed {
 struct Holder : jai::property_owner<Holder> {
 	JAI_PROPERTY((Stat), stat);
 	JAI_PROPERTY((std::vector<std::shared_ptr<Shape>>), shapes);
+};
+
+// A property_owner saves the members its binding binds beside each level's property_mgr: a save/load ladder (Warden,
+// Captain) and the automatic route (Scout, Ranger)
+struct Warden : jai::property_owner<Warden> {
+	JAI_PROPERTY((int), hp, 10);
+	jai::property<int> legacy{property_mgr, "legacy", 6};
+	int stamina = 3;
+	int cache = 4;
+	int mood = 2;
+	jai::signal_emitter<void(int)> onCall;
+	jai::signal<void(int)> onCallView{onCall};
+	std::function<void()> hook;
+	std::string heard;
+
+	int getMood() const { return mood; }
+	void setMood(int a_mood) { mood = a_mood; }
+	int getLegacy() const { return legacy.get(); }
+	void setLegacy(int a_legacy) { legacy = a_legacy; }
+
+	static void jai_auto_bind(jai::dynamic_binder<Warden>& a_builder) {
+		a_builder.property("stamina", &Warden::stamina).transient_property("cache", &Warden::cache).property("mood", &Warden::getMood, &Warden::setMood)
+			.property("onCall", &Warden::onCall).property("onCallView", &Warden::onCallView).property("hook", &Warden::hook)
+			.property("legacy", &Warden::getLegacy, &Warden::setLegacy).transient_property("heard", &Warden::heard);
+	}
+
+protected:
+	friend jai::access;
+	template<class Archive> void save(Archive& a_archive, std::uint32_t const) const { property_mgr.save(a_archive); }
+	template<class Archive> void load(Archive& a_archive, std::uint32_t const) { property_mgr.load(a_archive); }
+};
+
+struct Captain : jai::property_owner<Captain, Warden> {
+	JAI_PROPERTY((std::string), title, "sir");
+	int valor = 5;
+	int rank = 0;
+
+	explicit Captain(int a_rank) : rank(a_rank) {}
+
+	static void jai_auto_bind(jai::dynamic_binder<Captain>& a_builder) {
+		a_builder.property("valor", &Captain::valor);
+	}
+
+protected:
+	friend jai::access;
+	template<class Archive> void save(Archive& a_archive, std::uint32_t const) const {
+		a_archive("rank", rank);
+		property_mgr.save(a_archive);
+		Warden::save(a_archive, 0);
+	}
+	template<class Archive> void load(Archive& a_archive, std::uint32_t const) {
+		property_mgr.load(a_archive);
+		Warden::load(a_archive, 0);
+	}
+	template<typename Archive> static void load_and_construct(Archive& a_archive, jai::serialization::construct<Captain>& a_construct) {
+		int rank = 0;
+		a_archive.serialize("rank", rank);
+		a_construct(rank);
+		a_construct->load(a_archive, 0);
+	}
+};
+
+struct Scout : jai::property_owner<Scout> {
+	JAI_PROPERTY((int), range, 4);
+	int arrows = 12;
+	static void jai_auto_bind(jai::dynamic_binder<Scout>& a_builder) { a_builder.property("arrows", &Scout::arrows); }
+};
+
+struct Ranger : jai::property_owner<Ranger, Scout> {
+	JAI_PROPERTY((int), tracking, 2);
+	int traps = 1;
+	int cache = 8;
+	static void jai_auto_bind(jai::dynamic_binder<Ranger>& a_builder) {
+		a_builder.property("traps", &Ranger::traps).transient_property("cache", &Ranger::cache);
+	}
 };
 
 struct Registered {
@@ -270,6 +346,69 @@ public:
 			const Holder back = from_json<Holder>(*eng, json);
 			check_eq(5, back.stat->hp, json);
 			check(back.shapes->size() == 1 && dynamic_cast<Square*>(back.shapes->at(0).get()) != nullptr, json);
+		});
+
+		test("a_property_owners_bound_members_save_beside_each_levels_property_mgr", [this]() {
+			auto eng = make_engine();
+			bind_all(*eng);
+			auto log = std::make_shared<Warden>();
+			eng->add_global("log", eng->make_object(log));
+			auto captain = std::make_shared<Captain>(7);
+			captain->title = "dame";
+			captain->valor = 9;
+			captain->hp = 30;
+			captain->stamina = 11;
+			captain->cache = 40;
+			captain->setMood(6);
+			captain->setLegacy(13);
+			captain->onCall.connect("echo", "log.heard = \"echoed\";");
+			const std::shared_ptr<Warden> held = captain;
+			const std::string json = to_json(*eng, held, 0);
+			check(json.rfind("{\"value0\": {\"$id\": 1,\"$type\": \"Captain\",\"$val\": {\"rank\": 7,\"title\": \"dame\",\"valor\": 9,\"hp\": 30,\"legacy\": 13,\"stamina\": 11,"
+				"\"mood\": 6,\"onCall\": {", 0) == 0, "each level's property_mgr, then its bound members, levels as the ladder writes them: " + json);
+			for (const char* absent : {"\"cache\"", "\"onCallView\"", "\"hook\"", "\"heard\""}) {
+				check(json.find(absent) == std::string::npos, std::string("a transient property, a signal view and a callback stay out: ") + absent);
+			}
+			check(json.find("\"legacy\"", json.find("\"legacy\"") + 1) == std::string::npos, "a bound name the property_mgr holds is written once: " + json);
+			for (bool binary : {false, true}) {
+				const std::string format = binary ? "binary" : "JSON";
+				const auto loaded = std::dynamic_pointer_cast<Captain>(binary ? from_binary<std::shared_ptr<Warden>>(*eng, to_binary(*eng, held))
+				                                                              : from_json<std::shared_ptr<Warden>>(*eng, json));
+				check(loaded != nullptr, "the dynamic type, " + format);
+				check_eq(7, loaded->rank, format);
+				check_eq(std::string("dame"), loaded->title.get(), format);
+				check_eq(9, loaded->valor, "the derived level's bound member, " + format);
+				check_eq(30, loaded->hp.get(), format);
+				check_eq(13, loaded->getLegacy(), format);
+				check_eq(11, loaded->stamina, "the base level's bound member, " + format);
+				check_eq(6, loaded->getMood(), "the setter, " + format);
+				check_eq(4, loaded->cache, "the transient property keeps its constructed value, " + format);
+				log->heard.clear();
+				loaded->onCall(1);
+				check_eq(std::string("echoed"), log->heard, "the emitter's script-text receiver loads armed, " + format);
+			}
+		});
+
+		test("the_automatic_route_saves_every_levels_bound_members", [this]() {
+			auto eng = make_engine();
+			bind_all(*eng);
+			Ranger ranger;
+			ranger.range = 9;
+			ranger.arrows = 20;
+			ranger.tracking = 5;
+			ranger.traps = 3;
+			ranger.cache = 50;
+			const std::string json = to_json(*eng, ranger, 0);
+			check_eq(std::string("{\"range\": 9,\"tracking\": 5,\"arrows\": 20,\"traps\": 3}"), json);
+			for (bool binary : {false, true}) {
+				const std::string format = binary ? "binary" : "JSON";
+				const Ranger loaded = binary ? from_binary<Ranger>(*eng, to_binary(*eng, ranger)) : from_json<Ranger>(*eng, json);
+				check_eq(9, loaded.range.get(), format);
+				check_eq(20, loaded.arrows, "the base level's bound member, " + format);
+				check_eq(5, loaded.tracking.get(), format);
+				check_eq(3, loaded.traps, "the derived level's, " + format);
+				check_eq(8, loaded.cache, "the transient property keeps its constructed value, " + format);
+			}
 		});
 
 		test("the_bindings_post_load_hook_runs_after_a_load", [this]() {

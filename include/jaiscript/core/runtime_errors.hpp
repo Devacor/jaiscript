@@ -67,7 +67,7 @@ namespace jai {
         // File I/O errors (81-90)
         file_not_found = 81,
         include_path_invalid = 82,
-        insufficient_privilege = 83,
+        insufficient_permission = 83,
 
         // Operator errors (101-110)
         unknown_operator = 101,

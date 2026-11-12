@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
 # The targeted tier: the checks a change needs, picked from the paths it touches.
 #
-#   tools/ci/targeted.sh [--plan] [--build] [--lanes] [--interp] <rev-range>       # e.g. HEAD~1..HEAD, master..my-branch
-#                                                                                   # A..B diffs from the merge base of A and B, as A...B
-#   tools/ci/targeted.sh [--plan] [--build] [--lanes] [--interp] --files <path>...  # paths relative to the package root
+#   tools/ci/targeted.sh [--plan] [--build] [--landing] [--lanes] [--interp] <rev-range>       # e.g. HEAD~1..HEAD, main..my-branch
+#                                                                                               # A..B diffs from the merge base of A and B, as A...B
+#   tools/ci/targeted.sh [--plan] [--build] [--landing] [--lanes] [--interp] --files <path>...  # paths relative to the package root
 #
 # --plan prints the checks and why each was picked, and runs nothing. --build configures and builds what the checks run
 # (tools/ci/ci_lib.sh names the build directories and the toolchain). The last line is the verdict: TARGETED GREEN or
 # TARGETED RED. The milestone tier is tools/ci/battery.sh, which runs everything below on both tiers.
 #
+# A run with --build on a committed tree (no tracked change, no untracked file in the package) writes a stamp for each gate it
+# passes (tools/ci/ci_lib.sh). --landing is what a landing runs: the suites on the Release build instead of the Debug one, and
+# no gate whose stamp for the tree being checked (HEAD's; under --plan, the range's tip) matches its gate, configuration and
+# toolchain; it prints the run it trusts instead. Before it builds, a --landing run waits while someone holds the timing
+# lock. LAND_NO_STAMPS=1 trusts no stamp.
+#
 # Two tiers. The VM tier runs for every change to code a program runs (the library, the VM, the interpreter, a kernel, the
-# build): the Debug suites on the VM and on the VM reference (--backend=vm, --backend=vm-reference), the VM against
+# build): the suites on the VM and on the VM reference (--backend=vm, --backend=vm-reference), the VM against
 # VM-reference fuzz (gates.sh fuzz-vm-reference) and the example hashes on the VM; a change to the VM or its compiler adds the
 # ordering fuzz (gates.sh fuzz-order). The interpreter tier adds the
-# interpreter's Debug suites, the interpreter against VM fuzz (gates.sh fuzz) and the example hashes on the interpreter, and
+# interpreter's suites, the interpreter against VM fuzz (gates.sh fuzz) and the example hashes on the interpreter, and
 # is picked only when a path touches
 #   - the interpreter: source/interpreter/*, include/jaiscript/detail/interpreter.hpp
 #   - the VM's general path or its compiler's front end: source/implementation/vm/vm_backend.cpp, vm_compiler.cpp and
@@ -23,9 +29,7 @@
 #     type_checker.cpp, builtin_methods.cpp
 #   - Gator Quest's or JaiDOOM's script (the runner runs them on both backends) or the fuzzer
 # The VM's optimized lanes elsewhere (vm_inline.cpp, region_ir.*, the coverage and listing tools) take the VM tier only.
-# A test change also takes the android gate: the Debug suites build with MSVC alone, whose template parsing accepts what
-# Clang and GCC reject (a dependent `.as<T>()` without `template` in a generic lambda), and the NDK's Clang is the cheapest
-# build of the suites with another compiler.
+# No change takes the android gate; gates.sh android runs by hand.
 # A library change also takes the wasm gate: the WebAssembly build is the one 32-bit libc++ target the gates run, so it catches
 # layout assumptions the 64-bit builds hide (a field placed in tail padding, a tag in a 4-aligned pointer's low bits).
 #
@@ -37,6 +41,7 @@ set -uo pipefail
 
 PLAN=0
 BUILD=0
+LANDING=0
 LANES=0
 FORCE_INTERP=0
 RANGE=""
@@ -45,6 +50,7 @@ while [ "$#" -gt 0 ]; do
 	case "$1" in
 		--plan) PLAN=1 ;;
 		--build) BUILD=1 ;;
+		--landing) LANDING=1 ;;
 		--lanes) LANES=1 ;;
 		--interp) FORCE_INTERP=1 ;;
 		--files) shift; FILES=("$@"); break ;;
@@ -54,10 +60,10 @@ while [ "$#" -gt 0 ]; do
 	shift
 done
 if [ -n "$RANGE" ]; then
-	case "$RANGE" in *...*) ;; *..*) RANGE="${RANGE/../...}" ;; esac   # a branch behind master must not count master's new commits
+	case "$RANGE" in *...*) ;; *..*) RANGE="${RANGE/../...}" ;; esac   # a branch behind main must not count main's new commits
 	mapfile -t FILES < <(git -C "$JAI_ROOT" diff --name-only --relative "$RANGE" -- . | tr -d '\r')
 fi
-[ -n "$RANGE" ] || [ "${#FILES[@]}" -gt 0 ] || { echo "usage: targeted.sh [--plan] [--build] [--lanes] [--interp] <rev-range> | --files <path>..." >&2; exit 2; }
+[ -n "$RANGE" ] || [ "${#FILES[@]}" -gt 0 ] || { echo "usage: targeted.sh [--plan] [--build] [--landing] [--lanes] [--interp] <rev-range> | --files <path>..." >&2; exit 2; }
 
 CHECKS=""
 REASONS=""
@@ -73,7 +79,7 @@ interp_tier() { INTERP_REASONS="$INTERP_REASONS"$'\n'"$1"; }
 # the VM tier: the suites on the VM and the VM reference, the VM against VM-reference fuzz, every example's hash on the VM
 vm_tier() {
 	local game
-	pick debug-suites "$1"
+	pick suites "$1"
 	pick fuzz-vm-reference "$1"
 	for game in gloom demoreel crawler gatorquest; do pick "$game" "$1"; done
 }
@@ -105,27 +111,27 @@ classify() {
 		examples/embed_quickstart/*) pick embed-quickstart "the embedding quickstart ($p)" ;;
 		examples/jaidoom/*) pick timedemo "JaiDOOM ($p)"; interp_tier "an example's script runs on both backends ($p)" ;;
 		examples/*) NOTES="$NOTES $p" ;;
-		source/tests/fuzz/*) pick fuzz-vm-reference "the fuzzer ($p)"; pick debug-suites "the fuzzer's suite ($p)"; interp_tier "the fuzzer's interpreter pair ($p)"; pick android "Clang compiles the suites ($p)" ;;
-		source/tests/*) pick debug-suites "a test ($p)"; pick android "Clang compiles the suites ($p)" ;;
+		source/tests/fuzz/*) pick fuzz-vm-reference "the fuzzer ($p)"; pick suites "the fuzzer's suite ($p)"; interp_tier "the fuzzer's interpreter pair ($p)" ;;
+		source/tests/*) pick suites "a test ($p)" ;;
 		source/implementation/vm/vm_backend.cpp | source/implementation/vm/vm_compiler.cpp | \
 		include/jaiscript/vm/vm_backend.hpp | include/jaiscript/vm/vm_compiler.hpp | include/jaiscript/vm/chunk.hpp | include/jaiscript/vm/opcode.hpp)
-			vm_tier "the VM or its compiler ($p)"; pick fuzz-order "the VM or its compiler ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)"
+			vm_tier "the VM or its compiler ($p)"; pick fuzz-order "the VM or its compiler ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)"
 			[ "$LANES" = 1 ] || interp_tier "the VM's general path or its compiler's front end ($p)" ;;
-		include/jaiscript/vm/* | source/implementation/vm/*) vm_tier "the VM's optimized lanes or its tools ($p)"; pick fuzz-order "the VM's optimized lanes ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
+		include/jaiscript/vm/* | source/implementation/vm/*) vm_tier "the VM's optimized lanes or its tools ($p)"; pick fuzz-order "the VM's optimized lanes ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		source/interpreter/* | include/jaiscript/detail/interpreter.hpp)
-			vm_tier "the interpreter ($p)"; interp_tier "the interpreter ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
+			vm_tier "the interpreter ($p)"; interp_tier "the interpreter ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		include/jaiscript/detail/* | source/implementation/parser.cpp | source/implementation/lexer.cpp | source/implementation/type_checker.cpp | \
 		source/implementation/builtin_methods.cpp)
-			vm_tier "a kernel both backends share ($p)"; interp_tier "a kernel both backends share ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)"
+			vm_tier "a kernel both backends share ($p)"; interp_tier "a kernel both backends share ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)"
 			pick selftest "the runner's REPL retries on the parser's missing-';' text ($p)" ;;
 		include/jaiscript/properties/* | include/jaiscript/properties.hpp | include/jaiscript/serialization/* | source/implementation/serialization/* | \
 		source/implementation/properties.cpp | source/implementation/schema_binding.cpp)
-			vm_tier "the property system or the archives ($p)"; HOST_ARCHIVES=1; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
+			vm_tier "the property system or the archives ($p)"; HOST_ARCHIVES=1; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		source/implementation/stdlib/spider.cpp | include/jaiscript/stdlib/spider.hpp | include/jaiscript/core/http_transport.hpp | include/jaiscript/net/*)
-			vm_tier "the spider:: client ($p)"; pick spider "the spider:: client against a live server ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
-		include/* | source/implementation/*) vm_tier "the library ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
+			vm_tier "the spider:: client ($p)"; pick spider "the spider:: client against a live server ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
+		include/* | source/implementation/*) vm_tier "the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		CMakeLists.txt | */CMakeLists.txt | cmake/* | source/jaiscript.cpp | CMakePresets.json)
-			vm_tier "the build ($p)"; pick amalgamation "the build's file lists ($p)"; pick android "libc++ and 32-bit compile the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
+			vm_tier "the build ($p)"; pick amalgamation "the build's file lists ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		*) vm_tier "a path no rule names ($p)" ;;
 	esac
 }
@@ -137,7 +143,7 @@ for f in "${FILES[@]}"; do classify "$f"; done
 INTERP=0
 if [ -n "$INTERP_REASONS" ]; then
 	INTERP=1
-	case " $CHECKS " in *" debug-suites "* | *" fuzz-vm-reference "*) pick fuzz "the interpreter tier" ;; esac
+	case " $CHECKS " in *" suites "* | *" fuzz-vm-reference "*) pick fuzz "the interpreter tier" ;; esac
 fi
 SUITE_BACKENDS="vm vm-reference"
 export HASH_BACKENDS="vm"
@@ -150,7 +156,7 @@ if [ -z "$CHECKS" ]; then
 	exit 0
 fi
 RUNS_CODE=0
-for check in $CHECKS; do case "$check" in debug-suites | fuzz* | gloom | demoreel | crawler | gatorquest | timedemo) RUNS_CODE=1 ;; esac; done
+for check in $CHECKS; do case "$check" in suites | fuzz* | gloom | demoreel | crawler | gatorquest | timedemo) RUNS_CODE=1 ;; esac; done
 if [ "$RUNS_CODE" = 0 ]; then
 	:
 elif [ "$INTERP" = 1 ]; then
@@ -161,17 +167,54 @@ fi
 for check in $CHECKS; do
 	echo "chose: $check, because $(printf '%s\n' "$REASONS" | grep "^$check|" | head -n 3 | cut -d'|' -f2- | paste -sd ';' - | sed 's/;/; /g')"
 done
-[ "$RUNS_CODE" = 1 ] && echo "suites on: $SUITE_BACKENDS; hashes on: $HASH_BACKENDS"
+SUITE_BUILD=debug
+[ "$LANDING" = 1 ] && SUITE_BUILD=release
+[ "$RUNS_CODE" = 1 ] && echo "suites on: $SUITE_BACKENDS ($SUITE_BUILD build); hashes on: $HASH_BACKENDS"
 [ -n "$NOTES" ] && echo "no check for:$NOTES"
 [ "$HOST_ARCHIVES" = 1 ] && echo "host note: the property system or the archives changed; a host runs its asset round-trip check too"
+
+# a landing runs no gate that already passed on this tree with the same configuration and toolchain
+TRUSTED=""
+if [ "$LANDING" = 1 ]; then
+	stamp_rev=HEAD
+	if [ "$PLAN" = 1 ]; then case "$RANGE" in *...?*) stamp_rev="${RANGE##*...}" ;; esac; fi
+	stamp_tree="$(git -C "$JAI_ROOT" rev-parse "$stamp_rev^{tree}" 2>/dev/null)"
+	if [ "${LAND_NO_STAMPS:-0}" = 1 ]; then echo "stamps: LAND_NO_STAMPS=1, every check runs"
+	else echo "stamps: the tree of $stamp_rev (${stamp_tree:0:12}) in $(cygpath -m "$JAI_STAMP_DIR" 2>/dev/null || echo "$JAI_STAMP_DIR")"; fi
+	runs=""
+	for check in $CHECKS; do
+		if [ "$check" = suites ]; then
+			left=""
+			for be in $SUITE_BACKENDS; do
+				if jai_gate_trusted "$stamp_tree" "tests-$be" release; then TRUSTED="$TRUSTED tests-$be"; else left="$left $be"; fi
+			done
+			SUITE_BACKENDS="${left# }"
+			[ -z "$SUITE_BACKENDS" ] || runs="$runs suites"
+		elif jai_gate_trusted "$stamp_tree" "$check" release; then
+			TRUSTED="$TRUSTED $check"
+		else
+			runs="$runs $check"
+		fi
+	done
+	CHECKS="$runs"
+	case " $CHECKS " in *" suites "*) echo "runs:$CHECKS (suites on $SUITE_BACKENDS)" ;; *) echo "runs:${CHECKS:- nothing}" ;; esac
+	if [ -z "$CHECKS" ]; then
+		[ "$PLAN" = 1 ] && exit 0
+		echo "TARGETED GREEN (every check trusted:$TRUSTED)"
+		exit 0
+	fi
+fi
 [ "$PLAN" = 1 ] && exit 0
+[ "$LANDING" = 1 ] && lockq_wait
+# binaries a run did not build may predate the tree, so only a --build run stamps what it passes
+[ "$BUILD" = 1 ] && jai_stamp_begin .
 
 if [ "$BUILD" = 1 ]; then
 	debug_targets=""
 	release_targets=""
 	for check in $CHECKS; do
 		case "$check" in
-			debug-suites) debug_targets="$debug_targets jaiscript_tests" ;;
+			suites) if [ "$SUITE_BUILD" = debug ]; then debug_targets="$debug_targets jaiscript_tests"; else release_targets="$release_targets jaiscript_tests"; fi ;;
 			fuzz | fuzz-vm-reference | fuzz-order) release_targets="$release_targets jaiscript_fuzz" ;;
 			gloom) release_targets="$release_targets jai_gloom jaiscript_runner" ;;
 			demoreel) release_targets="$release_targets jai_demoreel jaiscript_runner" ;;
@@ -194,13 +237,13 @@ jai_watchdog
 FAILED=""
 SIDE_GATES=()
 TIMING_GATES=()
-debug_pid=""
+suites_pid=""
 for check in $CHECKS; do
 	case "$check" in
 		# shellcheck disable=SC2086
-		debug-suites)
-			{ jai_debug_suites $SUITE_BACKENDS || echo "DEBUG-SUITES-RED"; } > "$JAI_CI_LOG_DIR/targeted_debug.out" 2>&1 &
-			debug_pid=$!
+		suites)
+			{ jai_suites "$SUITE_BUILD" $SUITE_BACKENDS || echo "SUITES-RED"; } > "$JAI_CI_LOG_DIR/targeted_suites.out" 2>&1 &
+			suites_pid=$!
 			;;
 		ci-scripts) ;;
 		*) if jai_timing_gate "$check"; then TIMING_GATES+=("$check"); else SIDE_GATES+=("$check"); fi ;;
@@ -219,15 +262,21 @@ for check in $CHECKS; do
 				command -v "$ps" > /dev/null 2>&1 || continue
 				"$ps" -NoProfile -Command "\$e = \$null; [void][System.Management.Automation.Language.Parser]::ParseFile('$install_ps1', [ref]\$null, [ref]\$e); exit [int](\$e.Count -gt 0)" || bad=1
 			done
-			if [ "$bad" = 0 ]; then echo "green: ci-scripts (every tools/ci script and installer parses)"; else echo "red: ci-scripts"; FAILED="$FAILED ci-scripts"; fi
+			if [ "$bad" = 0 ]; then
+				echo "green: ci-scripts (every tools/ci script and installer parses)"
+				jai_gate_stamp ci-scripts release
+			else
+				echo "red: ci-scripts"
+				FAILED="$FAILED ci-scripts"
+			fi
 			;;
 	esac
 done
-if [ -n "$debug_pid" ]; then
-	wait "$debug_pid" || true
-	cat "$JAI_CI_LOG_DIR/targeted_debug.out"
-	grep -q "DEBUG-SUITES-RED" "$JAI_CI_LOG_DIR/targeted_debug.out" && FAILED="$FAILED debug-suites"
+if [ -n "$suites_pid" ]; then
+	wait "$suites_pid" || true
+	cat "$JAI_CI_LOG_DIR/targeted_suites.out"
+	grep -q "SUITES-RED" "$JAI_CI_LOG_DIR/targeted_suites.out" && FAILED="$FAILED suites"
 fi
 for check in "${TIMING_GATES[@]+"${TIMING_GATES[@]}"}"; do jai_gates release "$check" || FAILED="$FAILED $check"; done
 
-if [ -z "$FAILED" ]; then echo "TARGETED GREEN:$CHECKS"; else echo "TARGETED RED:$FAILED"; exit 1; fi
+if [ -z "$FAILED" ]; then echo "TARGETED GREEN:$CHECKS${TRUSTED:+ (trusted:$TRUSTED)}"; else echo "TARGETED RED:$FAILED"; exit 1; fi

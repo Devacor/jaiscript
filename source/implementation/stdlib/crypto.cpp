@@ -953,7 +953,7 @@ namespace crypto_detail {
 			std::string hex;
 			if (const char* reason = sha256_file_hex(*path, hex)) { return unreadable_file_error(eng, *path, reason); }
 			return script_value(std::move(hex), eng);
-		}, privilege::filesystem));
+		}, permissions::filesystem));
 
 		static constexpr entry_texts k_random_bytes {"random_bytes", "crypto::random_bytes expects 1 argument (count)", "crypto::random_bytes expects an int count"};
 		define("random_bytes", 1, 1, {svt::jai_int_type}, svt::jai_string_type, [eng](const std::vector<script_value>& a_raw) -> function_result {

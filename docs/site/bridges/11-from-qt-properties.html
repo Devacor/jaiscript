@@ -47,11 +47,11 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>11</nav>
 <article class="chapter"><h1 id="from-qt-properties">From Qt Properties, RTTR and refl-cpp<a class="hlink" href="#from-qt-properties" aria-label="link">&#8203;</a></h1>
 <p class="lead">C++ reflection libraries answer one question: what fields does this object have, and how do I read and write them by name? Qt answers with <code>Q_PROPERTY</code> and the moc-generated meta-object, RTTR with a run-time registration block, refl-cpp with a compile-time member list.</p>
-<p>In JaiScript a property is a member declared with <code>JAI_PROPERTY</code> on a <code>jai::property_owner</code>, and that one declaration serves run-time reflection by name, serialization, script access and, through <code>JAI_OBSERVABLE_PROPERTY</code> and <code>JAI_SIGNAL_PROPERTY</code>, change signals. The trade is scope: no user metadata on a property, no compile-time member list, no property added at run time (<a href="#no-counterpart">What has no counterpart</a>).</p>
+<p>In JaiScript a property is a member declared with <code>JAI_PROPERTY</code> on a <code>jai::property_owner</code>, and that one declaration serves run-time reflection by name, serialization, script access and, through <code>JAI_OBSERVABLE_PROPERTY</code> and <code>JAI_SIGNAL</code>, change signals. The trade is scope: no user metadata on a property, no compile-time member list, no property added at run time (<a href="#no-counterpart">What has no counterpart</a>).</p>
 <p>The declaration is documented in <a href="../embedding/02-dynamic-binder.html#the-declaration">dynamic_binder</a>, observable values and signals in <a href="../embedding/10-signals-properties.html">Signals &amp; Observable Properties</a>, and script-side reflection in the guide's <a href="../guide/12-reflection.html">Reflection</a>.</p>
 
 <h2 id="the-concept-map">The concept map<a class="hlink" href="#the-concept-map" aria-label="link">&#8203;</a></h2>
-<p>Headers: <code>&lt;jaiscript/properties/macros.hpp&gt;</code> and <code>&lt;jaiscript/properties/property_serialization.hpp&gt;</code> for the declarations, <code>&lt;jaiscript/properties/observable_property.hpp&gt;</code> for observable values, <code>&lt;jaiscript/signals/signal_property.hpp&gt;</code> for <code>JAI_SIGNAL_PROPERTY</code>, and <code>&lt;jaiscript/core/registrar.hpp&gt;</code> to make the class scriptable.</p>
+<p>Headers: <code>&lt;jaiscript/properties/macros.hpp&gt;</code> for the declarations, <code>&lt;jaiscript/properties/observable_property.hpp&gt;</code> for observable values, <code>&lt;jaiscript/signals/signal_property.hpp&gt;</code> for <code>JAI_SIGNAL</code>, and <code>&lt;jaiscript/core/registrar.hpp&gt;</code> to make the class scriptable.</p>
 <h3 id="declaring">Declaring<a class="hlink" href="#declaring" aria-label="link">&#8203;</a></h3>
 <div class="tablewrap"><table><thead><tr><th>Qt / RTTR / refl-cpp</th><th>JaiScript</th></tr></thead><tbody>
 <tr><td>a <code>QObject</code> with <code>Q_OBJECT</code>; RTTR and refl-cpp work on any class</td><td><code>class Turret : public jai::property_owner&lt;Turret&gt;</code> (<code>property_owner&lt;Derived, Base&gt;</code> for a derived level)</td></tr>
@@ -60,7 +60,7 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 <tr><td><code>Q_PROPERTY(... CONSTANT)</code>, RTTR <code>registration::property_readonly</code></td><td>script-side, a binder <code>.property(name, getter, nullptr)</code>; a <code>JAI_PROPERTY</code> is writable</td></tr>
 <tr><td><code>Q_PROPERTY(... STORED false)</code></td><td><code>JAI_TRANSIENT_PROPERTY</code>: reflected and scripted, never saved</td></tr>
 <tr><td>a different public name for a member</td><td><code>JAI_NAMED_PROPERTY((int64_t), "ammo_count", ammo, 10);</code></td></tr>
-<tr><td>a <code>signals:</code> member; RTTR has none</td><td><code>JAI_SIGNAL_PROPERTY(void(int64_t), onFire);</code>: a signal scripts connect to, whose script-text receivers save with the object</td></tr>
+<tr><td>a <code>signals:</code> member; RTTR has none</td><td><code>JAI_SIGNAL(void(int64_t), onFire);</code>: a signal scripts connect to, whose script-text receivers save with the object</td></tr>
 <tr><td>the class name from <code>Q_OBJECT</code>; <code>registration::class_&lt;T&gt;("Turret")</code>; <code>type(Turret)</code></td><td>the bare C++ class name, or <code>JAI_PROPERTY_OWNER_AS(Turret, "Turret")</code> to pin one</td></tr>
 <tr><td>moc, a registration block, <code>REFL_AUTO</code></td><td>nothing else: the macros are the declaration</td></tr>
 </tbody></table></div>
@@ -76,7 +76,7 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 </tbody></table></div>
 <h3 id="from-script">From script<a class="hlink" href="#from-script" aria-label="link">&#8203;</a></h3>
 <div class="tablewrap"><table><thead><tr><th>Qt (QML / QJSEngine)</th><th>JaiScript</th></tr></thead><tbody>
-<tr><td><code>turret.ammo</code> in QML</td><td><code>turret.ammo</code>: a property of <code>int</code>, <code>float</code>, <code>bool</code> or <code>string</code> type binds to script by itself, through <code>auto_bind</code>; another type takes a binder <code>.property</code> line</td></tr>
+<tr><td><code>turret.ammo</code> in QML</td><td><code>turret.ammo</code>: a property of <code>int</code>, <code>float</code>, <code>bool</code> or <code>string</code> type binds to script by itself, through the class's binder; another type takes a binder <code>.property</code> line</td></tr>
 <tr><td><code>onAmmoChanged: ...</code></td><td><code>turret.ammo.on_change([=](int old_value, int new_value) -&gt; void { ... });</code> on an observable property</td></tr>
 <tr><td>enumerating properties from JavaScript</td><td><code>reflect::fields(turret)</code> (name, type, kind), <code>reflect::get(turret, "ammo")</code>, <code>reflect::set(turret, "ammo", 3)</code></td></tr>
 </tbody></table></div>
@@ -139,7 +139,6 @@ for_each(refl::reflect&lt;Turret&gt;().members, [&amp;](auto member) {
 });</code></pre></div>
 <div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript)</span><pre><code class="lang-cpp">#include &lt;jaiscript/core/registrar.hpp&gt;
 #include &lt;jaiscript/properties/macros.hpp&gt;
-#include &lt;jaiscript/properties/property_serialization.hpp&gt;
 #include &lt;jaiscript/properties/observable_property.hpp&gt;
 
 class Turret : public jai::property_owner&lt;Turret&gt; {

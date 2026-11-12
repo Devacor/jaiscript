@@ -54,7 +54,7 @@ jaiscript
 A persistent engine: globals, functions and classes accumulate across lines.
 
 ```
-JaiScript 0.5.3-beta - vm backend, stdlib loaded, budget off. :help for commands.
+JaiScript 0.5.4-beta - vm backend, stdlib loaded, budget off. :help for commands.
 jai> int hp = 100
 jai> hp - 58
 42
@@ -151,7 +151,7 @@ counts from 0.
 The full JaiScript stdlib is always registered (`jai::stdlib::register_all`): formatted
 `print` / `format` / `to_string` / `type_of`, math, `to_json` / `from_json`, container
 helpers, the `random` type, `crypto::` (hashes such as `crypto::sha256(s)` and `crypto::sha256_file(path)`, HMAC,
-secure random bytes and password hashing; `crypto::sha256_file` needs the `filesystem` privilege and raises `read_file`'s
+secure random bytes and password hashing; `crypto::sha256_file` needs the `filesystem` permission and raises `read_file`'s
 error below), and the opt-in `web::` library (`jai::stdlib::register_web`: `web::html_escape`, `web::url_encode`, `web::form_encode`,
 `web::parse_query`, `web::build_query`, `web::parse_url` and the rest), and the opt-in `spider::` HTTP client
 (`jai::stdlib::register_spider`: `spider::catch(url[, options])`, also spelled `spider::get`, and
@@ -174,7 +174,7 @@ zip_entries(zip) -> array<string>  zip_extract(zip, entry, dest) -> bool   (CRC-
 `move_file("save.tmp", "save.txt")`. On one volume the destination is replaced in a single
 operation (`MoveFileEx` on Windows, `rename(2)` elsewhere), so a crash leaves the old file or
 the new one, never half of either; across volumes it copies, then removes the source. Every
-function above requires the engine's `filesystem` privilege. A file's metadata (size, created and
+function above requires the engine's `filesystem` permission. A file's metadata (size, created and
 modified times) is the engine-core `file_data(path)` builtin, on every engine.
 
 `read_file` returns the file's bytes exactly (binary mode: every byte value, NULs and `\r\n` as they
@@ -205,7 +205,7 @@ d.success()  d.error()  d.cancel()
 
 The transport is the platform's own: WinHTTP on Windows, libcurl on Linux and macOS when
 the build found it, otherwise the `curl` executable at run time; redirects follow only to http
-and https. `start` needs the `filesystem` and `network` privileges. A failed transfer leaves no
+and https. `start` needs the `filesystem` and `network` permissions. A failed transfer leaves no
 partial file. JaiDoom's first run uses this to fetch and verify its own game data.
 
 For hosting, `net_host_name()` returns this machine's name and `net_local_addresses()` its IPv4

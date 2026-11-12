@@ -139,7 +139,7 @@ value 30, shared 9</code></pre></div>
 <tr><td><code>reflect::instances("Class")</code></td><td>the live instances of a class, in creation order</td></tr>
 <tr><td><code>reflect::generation("Class")</code></td><td>a counter that moves whenever the class is redefined</td></tr>
 </tbody></table></div>
-<p>Functions, globals, host-bound classes and privileges are asked the same way: <a href="../reference/library.html#reflection-navigate">program-wide queries</a>.</p>
+<p>Functions, globals, host-bound classes and permissions are asked the same way: <a href="../reference/library.html#reflection-navigate">program-wide queries</a>.</p>
 <h2 id="hot-reload-ask-again">Hot reload: ask again<a class="hlink" href="#hot-reload-ask-again" aria-label="link">&#8203;</a></h2>
 <p><code>reflect::generation</code> is the cheap poll: a property grid re-reads <code>fields()</code> only when the number moved. The sample declares <code>Evolver</code> twice, which is legal because a class declared again at program scope replaces the class in place for every live instance (<a href="10-modules.html#program-scope-redeclarations">Program-scope redeclarations</a>); a reloaded file does that.</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Evolver { int a = 1; }

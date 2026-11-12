@@ -21,6 +21,14 @@ using namespace jai::foundry;
 namespace jai::foundry::tests {
 
 // These smart-pointer test types must be at namespace scope for JAI_PROPERTY.
+// A record that cannot move: from_json<T> cannot return it, from_json(engine, json, object) fills one
+struct conv_pinned {
+    int64_t count = 0;
+    conv_pinned() = default;
+    conv_pinned(conv_pinned&&) = delete;
+    conv_pinned& operator=(conv_pinned&&) = delete;
+};
+
 struct sp_inner_data {
     int x = 0;
     std::string label;
@@ -553,6 +561,38 @@ public:
             check_eq(loaded.health.get(), 75, "Health restored");
             check_eq(loaded.name.get(), std::string("Hero"), "Name restored");
             check(std::abs(loaded.speed.get() - 10.0f) < 0.001f, "Speed restored");
+        });
+
+        test("engine_handles_and_in_place_loads", [this]() {
+            // every entry point takes the engine however the host holds it, and a load can fill an object it cannot return
+            auto eng = make_engine();
+            stdlib::register_all(eng);
+            dynamic_binder<conv_player>(eng, "ConvPlayer").build();
+            dynamic_binder<conv_pinned>(eng.get(), "ConvPinned").property("count", &conv_pinned::count).build();
+
+            conv_player original;
+            original.health = 75;
+            original.name = "Hero";
+            const std::string json = to_json(eng, original);
+            check_eq(json, to_json(eng.get(), original));
+            check_eq(json, to_json(*eng, original));
+
+            const conv_player by_value = from_json<conv_player>(eng, json);
+            check_eq(75, by_value.health.get());
+            conv_player in_place;
+            from_json(eng, json, in_place);
+            check_eq(std::string("Hero"), in_place.name.get());
+            conv_player from_bytes;
+            from_binary(eng.get(), to_binary(eng, original), from_bytes);
+            check_eq(75, from_bytes.health.get());
+
+            conv_pinned pinned;
+            pinned.count = 9;
+            conv_pinned loaded;
+            from_json(eng, to_json(eng, pinned), loaded);
+            check_eq((int64_t)9, loaded.count);
+            from_binary(eng, to_binary(eng, pinned), loaded);
+            check_eq((int64_t)9, loaded.count);
         });
 
         test("property_owner_binary_roundtrip", [this]() {

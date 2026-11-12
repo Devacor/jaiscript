@@ -183,7 +183,7 @@ std::optional<checked_result<value_store>> handle_value_assign(const script_valu
     }
     const class_definition* def = instance->get_class_definition();
     const uint64_t assign_id = engine_access::get_symbolizer(*eng)->intern("=");
-    const script_value* method = def->method_ptr(assign_id);
+    const script_value* method = def->assignment_operator_ptr(assign_id);
     const bool has_operator = method && method->is_function();
     script_value pointee = current;   // shares the holder: a store into it is a store into the shared object
     pointee.set_type_info(def->get_type_info());
@@ -203,7 +203,7 @@ std::optional<checked_result<value_store>> handle_value_assign(const script_valu
 std::optional<checked_result<void>> run_script_assign_operator(const script_value& current, const class_definition* def, uint64_t assign_id,
                                                                const script_value& value, engine* eng) {
     if (value.is_null() || !binary_operator_accepts(def, assign_id, value)) { return std::nullopt; }
-    const script_value* method = def->method_ptr(assign_id);
+    const script_value* method = def->assignment_operator_ptr(assign_id);
     if (!method || !method->is_function()) { return std::nullopt; }
     return call_assign_operator(current, method, value, assign_id, eng);
 }
@@ -255,7 +255,7 @@ std::optional<checked_result<value_store>> slot_value_assign(const script_value&
     const class_definition* def = instance ? instance->get_class_definition() : nullptr;
     if (!def) { return std::nullopt; }
     const uint64_t assign_id = engine_access::get_symbolizer(*eng)->intern("=");
-    const script_value* method = def->method_ptr(assign_id);
+    const script_value* method = def->assignment_operator_ptr(assign_id);
     if (!method || !method->is_function() || !binary_operator_accepts(def, assign_id, value)) { return std::nullopt; }
     return run_assign_operator(storage, *method, value, assign_id, eng);
 }

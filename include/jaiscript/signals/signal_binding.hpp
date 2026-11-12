@@ -26,20 +26,25 @@ namespace jai {
 		}
 	};
 
+	// A view whose emitter is gone connects nothing; script hears it as the generic view's error
+	template<typename S>
+	void connect_from_script(S& a_signal, const std::string& a_id, const script_value& a_callback) {
+		auto connected = a_callback.is_string() ? a_signal.connect(a_id, a_callback.as_string()) : a_signal.connect(a_id, a_callback);
+		if (!connected->connected()) {
+			throw runtime_error("Signal view is not backed by a live signal");
+		}
+	}
+
 	// Named connections are owned by the signal, so they persist for its lifetime.
 	// Registers both jai::signal<Sig> (a_name) and jai::signal_emitter<Sig>
 	// (a_name + "Emitter") — members are exposed as either. Sync is the emitter policy the bound types carry.
 	template<typename Sig, typename Sync = signal_unsynchronized>
-	void bind_signal_type(engine& a_engine, const std::string& a_name) {
-		if (!a_engine.is_type_registered(a_name)) {
+	void bind_signal_type(engine_ref a_engine, const std::string& a_name) {
+		if (!a_engine->is_type_registered(a_name)) {
 			dynamic_binder<signal<Sig, Sync>> builder(a_engine, a_name);
 			// serial: a receiver list other objects' code reads and fires
 			builder.method("connect", [](signal<Sig, Sync>& a_self, const std::string& a_id, script_value a_callback) {
-				if (a_callback.is_string()) {
-					a_self.connect(a_id, a_callback.as_string());
-				} else {
-					a_self.connect(a_id, a_callback);
-				}
+				connect_from_script(a_self, a_id, a_callback);
 			}, serial);
 			builder.method("disconnect", [](signal<Sig, Sync>& a_self, const std::string& a_id) {
 				a_self.disconnect(a_id);
@@ -50,14 +55,10 @@ namespace jai {
 			builder.build();
 		}
 		const std::string emitter_name = a_name + "Emitter";
-		if (!a_engine.is_type_registered(emitter_name)) {
+		if (!a_engine->is_type_registered(emitter_name)) {
 			dynamic_binder<signal_emitter<Sig, Sync>> builder(a_engine, emitter_name);
 			builder.method("connect", [](signal_emitter<Sig, Sync>& a_self, const std::string& a_id, script_value a_callback) {
-				if (a_callback.is_string()) {
-					a_self.connect(a_id, a_callback.as_string());
-				} else {
-					a_self.connect(a_id, a_callback);
-				}
+				connect_from_script(a_self, a_id, a_callback);
 			}, serial);
 			builder.method("disconnect", [](signal_emitter<Sig, Sync>& a_self, const std::string& a_id) {
 				a_self.disconnect(a_id);

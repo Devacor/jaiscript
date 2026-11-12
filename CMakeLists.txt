@@ -9,7 +9,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND NOT CMAKE_BUILD_TYPE A
 endif()
 
 project(JaiScript
-    VERSION 0.5.3
+    VERSION 0.5.4
     DESCRIPTION "High-performance scripting language with C++ syntax for game engines"
     LANGUAGES CXX
 )

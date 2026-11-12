@@ -675,3 +675,6 @@ namespace jai {
 
 } // namespace jai
 #endif
+
+// a property is used with its manager, whose header brings property<T>'s serialize overrides
+#include <jaiscript/properties/property_manager.hpp>

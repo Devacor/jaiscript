@@ -7,6 +7,7 @@
 #include <jaiscript/signals/signal_property.hpp>
 #include <jaiscript/serialization/json_archive.hpp>
 #include <jaiscript/serialization/binary_archive.hpp>
+#include <jaiscript/serialization/convenience.hpp>
 #include <jaiscript/serialization/serialization_metadata.hpp>  // For any_archive_reader
 #include <jaiscript/core/dynamic_binder.hpp>
 #include <jaiscript/core/dynamic_binder_serialization.hpp>
@@ -285,11 +286,11 @@ public:
     }
 };
 
-// A JAI_SIGNAL_PROPERTY rides property_mgr serialization: its owned script receivers persist.
+// A JAI_SIGNAL rides property_mgr serialization: its owned script receivers persist.
 class signal_test_object : public property_owner<signal_test_object> {
 public:
     typedef void PingSignature(int);
-    JAI_SIGNAL_PROPERTY(PingSignature, onPing);
+    JAI_SIGNAL(PingSignature, onPing);
 
     void addOwned(const std::string& id, const std::string& script) { onPingSignal.connect(id, script); }
     bool hasOwned(const std::string& id) { return onPingSignal.connected(id); }
@@ -355,10 +356,9 @@ public:
         });
 
         test("function_property_lambda_assign", [&]() {
-            // auto_bind() must reach jai_auto_bind (regression: shadowed fwd-decl falsified has_jai_auto_bind).
+            // The binder must reach jai_auto_bind (regression: shadowed fwd-decl falsified has_jai_auto_bind).
             auto eng = make_engine();
             dynamic_binder<callback_host> b(*eng, "callback_host");
-            b.auto_bind();
             b.build();
             auto host = std::make_shared<callback_host>();
             eng->add_global("self", eng->make_object(host));
@@ -396,10 +396,8 @@ public:
             // fall back to holder identity (which is always false for two T& reads).
             auto eng = make_engine();
             dynamic_binder<pair_value> pv(*eng, "pair_value");
-            pv.auto_bind();
             pv.build();
             dynamic_binder<pair_host> dh(*eng, "pair_host");
-            dh.auto_bind();
             dh.build();
             auto host = std::make_shared<pair_host>();
             host->a.x = 1.0; host->a.y = 2.0;
@@ -414,10 +412,8 @@ public:
             // Truthiness of a cpp_bound object must consult its bound to_bool method.
             auto eng = make_engine();
             dynamic_binder<pair_value> pv(*eng, "pair_value");
-            pv.auto_bind();
             pv.build();
             dynamic_binder<pair_host> dh(*eng, "pair_host");
-            dh.auto_bind();
             dh.build();
             auto host = std::make_shared<pair_host>();
             eng->add_global("host", eng->make_object(host));
@@ -432,10 +428,8 @@ public:
             // (keep_alive) like chained method calls do, or the member read dangles.
             auto eng = make_engine();
             dynamic_binder<pair_value> pv(*eng, "pair_value");
-            pv.auto_bind();
             pv.build();
             dynamic_binder<pair_host> dh(*eng, "pair_host");
-            dh.auto_bind();
             dh.build();
             eng->add_function("makePair", [engPtr = eng.get()]() {
                 auto fresh = std::make_shared<pair_host>();
@@ -452,19 +446,15 @@ public:
             // instance's field map) as T.
             auto eng = make_engine();
             dynamic_binder<pair_value> pv(*eng, "pair_value");
-            pv.auto_bind();
             pv.build();
             dynamic_binder<base_thing> bt(*eng, "base_thing");
-            bt.auto_bind();
             bt.build();
             dynamic_binder<derived_thing> dt(*eng, "derived_thing");
             dt.base_class<base_thing>();
             dt.build();
             dynamic_binder<thing_host> th(*eng, "thing_host");
-            th.auto_bind();
             th.build();
             dynamic_binder<pair_host> dh(*eng, "pair_host");
-            dh.auto_bind();
             dh.method("takeRef", [](pair_host&, const pair_value& a_v) { return a_v.x; });
             dh.build();
             auto host = std::make_shared<pair_host>();
@@ -492,10 +482,8 @@ public:
             // registered class, not reject them for lacking a class_instance.
             auto eng = make_engine();
             dynamic_binder<pair_value> pv(*eng, "pair_value");
-            pv.auto_bind();
             pv.build();
             dynamic_binder<pair_host> dh(*eng, "pair_host");
-            dh.auto_bind();
             dh.method("measure", [](pair_host&, const pair_value&) { return script_int(1); });
             dh.method("measure", [](pair_host&, script_int) { return script_int(2); });
             dh.build();
@@ -517,13 +505,11 @@ public:
             // mutation of the live object goes through direct member writes.
             auto eng = make_engine();
             dynamic_binder<base_thing> bt(*eng, "base_thing");
-            bt.auto_bind();
             bt.build();
             dynamic_binder<derived_thing> dt(*eng, "derived_thing");
             dt.base_class<base_thing>();
             dt.build();
             dynamic_binder<thing_host> dh(*eng, "thing_host");
-            dh.auto_bind();
             dh.build();
             auto host = std::make_shared<thing_host>();
             eng->add_global("host", eng->make_object(host));
@@ -537,7 +523,6 @@ public:
             // A property_owner (schema-bound) class materialized via make_object and read from script.
             auto eng = make_engine();
             dynamic_binder<test_object> b(*eng, "test_object");
-            b.auto_bind();
             b.build();
             auto obj = std::make_shared<test_object>();
             eng->add_global("obj", eng->make_object(obj));
@@ -547,12 +532,9 @@ public:
         });
 
         test("make_object_self_referential_schema", [&]() {
-            // Node-shaped: self-referential vector property + double auto_bind (registrar's
-            // implicit call plus the configure lambda's explicit one).
+            // Node-shaped: a self-referential vector property
             auto eng = make_engine();
             dynamic_binder<tree_object> b(*eng, "tree_object");
-            b.auto_bind();
-            b.auto_bind();
             b.build();
             auto obj = std::make_shared<tree_object>();
             obj->name = "root";
@@ -566,7 +548,6 @@ public:
             // outer hook keeps running and chains a call on the returned object.
             auto eng = make_engine();
             dynamic_binder<callback_host> b(*eng, "callback_host");
-            b.auto_bind();
             b.build();
             auto outer = std::make_shared<callback_host>();
             auto inner = std::make_shared<callback_host>();
@@ -591,7 +572,6 @@ public:
             // reference-param binding (literal -> spurious error, identifier -> hijacked var).
             auto eng = make_engine();
             dynamic_binder<callback_host> b(*eng, "callback_host");
-            b.auto_bind();
             b.build();
             auto host = std::make_shared<callback_host>();
             eng->add_global("self", eng->make_object(host));
@@ -609,7 +589,6 @@ public:
             auto eng = make_engine();
             bind_signal_type<void(const std::string&)>(*eng, "SignalString");
             dynamic_binder<emitter_host> b(*eng, "emitter_host");
-            b.auto_bind();
             b.build();
             auto host = std::make_shared<emitter_host>();
             eng->add_global("messages", eng->make_object(host));
@@ -621,6 +600,32 @@ public:
             check_eq(std::string("hello"), host->received);
             eng->execute("messages.onNotice.disconnect(\"greet\");");
             check_false(host->onNotice.connected("greet"));
+
+            // a bound emitter saves its script-text receivers as a JAI_SIGNAL does, and a load re-arms them
+            host->onNotice.connect("echo", "messages.received = \"echoed\";");
+            const auto json_copy = jai::from_json<std::shared_ptr<emitter_host>>(*eng, jai::to_json(*eng, host));
+            const auto binary_copy = jai::from_binary<std::shared_ptr<emitter_host>>(*eng, jai::to_binary(*eng, host));
+            for (const auto& copy : { json_copy, binary_copy }) {
+                check_true(copy->onNotice.connected("echo"));
+                host->received.clear();
+                copy->onNotice("x");
+                check_eq(std::string("echoed"), host->received);
+            }
+
+            // a plain class holding an emitter returns by value, its named and unnamed text receivers armed
+            host->onNotice.disconnect("echo");
+            host->onNotice.connect("named", "messages.received += \"n\";");
+            auto unnamed = host->onNotice.connect("messages.received += \"u\";");
+            auto json_value = jai::from_json<emitter_host>(*eng, jai::to_json(*eng, *host));
+            auto binary_value = jai::from_binary<emitter_host>(*eng, jai::to_binary(*eng, *host));
+            for (auto* copy : { &json_value, &binary_value }) {
+                check_true(copy->onNotice.connected("named"));
+                check_eq((size_t)2, copy->onNotice.observer_count());
+                host->received.clear();
+                copy->onNotice("x");
+                check_eq((size_t)2, host->received.size());
+                check_true(host->received.find('n') != std::string::npos && host->received.find('u') != std::string::npos);
+            }
         });
 
         test("property_transparent_conversion", [&]() {

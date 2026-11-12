@@ -2004,8 +2004,8 @@ public:
                 return std::string();
             };
             auto sandbox = make_engine();
-            sandbox->disable(jai::filesystem);
-            check_eq(std::string("Insufficient privilege: filesystem."), what_of(sandbox, "extern x; import(\"nowhere.jai\");"));
+            sandbox->disable(jai::permissions::filesystem);
+            check_eq(std::string("Insufficient permission: filesystem."), what_of(sandbox, "extern x; import(\"nowhere.jai\");"));
             auto e = make_engine();
             check_eq(std::string("Undefined variable 'undefined_thing'"), what_of(e, "[[warn_mode]]; undefined_thing + 1;"));
             check_eq(std::string("Cannot apply '+=' to string and int"), what_of(e, "[[warn_mode]]; string u = \"x\"; u += 5;"),

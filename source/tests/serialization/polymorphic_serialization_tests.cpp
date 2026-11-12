@@ -745,12 +745,14 @@ public:
     JAI_PROPERTY((std::string), derivedTag, "");
 };
 
-// property_owner AND an explicit registrar: the explicit name must win.
+// property_owner AND an explicit registrar: the explicit name wins the $type, and binding it throws (a property_owner binds
+// under its own serialization name in every other engine)
 class RenamedRegType : public jai::property_owner<RenamedRegType, ImplicitRegBase> {
 public:
     JAI_PROPERTY((int), marker, 7);
 };
-static jai::registrar<RenamedRegType, void> _renamedRegistration("CustomRegName");
+struct renamed_registration_context {};
+static jai::registrar<RenamedRegType, renamed_registration_context> _renamedRegistration("CustomRegName");
 
 namespace {
 	// Anonymous-namespace spellings differ per compiler, but stripping to the bare last
@@ -988,6 +990,11 @@ public:
 
             auto loaded = roundtrip_json(*eng, original);
             check(std::dynamic_pointer_cast<RenamedRegType>(loaded) != nullptr, "round-trip through the explicit name failed");
+
+            std::string refused;
+            try { jai::bind_registrar(*eng, renamed_registration_context{}); } catch (const std::exception& e) { refused = e.what(); }
+            check_eq(std::string("bind_registrar: the jai::registrar of the property_owner class 'jai::foundry::tests::RenamedRegType' names it 'CustomRegName'; "
+                "it binds under its serialization name 'RenamedRegType'"), refused);
         });
 
         test("in_class_jai_type_name_pins_the_name", [&]() {
@@ -1008,10 +1015,13 @@ public:
             auto eng = make_engine();
             std::shared_ptr<UnregPolyBase> original = std::make_shared<UnregPolyDerived>();
 
-            check_throws([&]() {
+            std::string refused;
+            try {
                 jai::serialization::json_archive_writer w(0, eng.get());
                 w(original);
-            }, "saving an unregistered polymorphic type through a base pointer must throw");
+            } catch (const std::exception& e) { refused = e.what(); }
+            check_eq(std::string("Cannot serialize unregistered polymorphic type 'jai::foundry::tests::UnregPolyDerived' through pointer-to-base "
+                "'jai::foundry::tests::UnregPolyBase'. Register it with jai::registrar<T, Context, jai::bases<Base>>(\"Name\") or derive from jai::property_owner<T, Base>."), refused);
 
             // Static type == dynamic type stays legal without registration.
             auto exact = std::make_shared<UnregPolyDerived>();
@@ -2115,7 +2125,7 @@ public:
         // saved value that no longer fits keeps the constructed value and is recorded as a retype
         test("a_load_notifies_no_observer_and_records_a_value_that_no_longer_fits", [&]() {
             auto eng = hybrid_engine();
-            dynamic_binder<WatchCreature>(*eng, "WatchCreature").auto_bind().constructor<>().build();
+            dynamic_binder<WatchCreature>(*eng, "WatchCreature").constructor<>().build();
             eng->execute(R"(
                 int fired = 0;
                 class Watchkin : WatchCreature {
@@ -2181,7 +2191,7 @@ public:
         // JSON and binary, script values and the C++ archive)
         test("saving_what_a_load_restored_writes_the_same_bytes_for_every_class_shape", [&]() {
             auto eng = hybrid_engine();
-            dynamic_binder<WatchCreature>(*eng, "WatchCreature").auto_bind().constructor<>().build();
+            dynamic_binder<WatchCreature>(*eng, "WatchCreature").constructor<>().build();
             eng->execute(R"(
                 int hooks = 0;
                 class Pt { int x = 0; int y = 0; }
@@ -2487,7 +2497,7 @@ public:
 
 struct NativeGadget : jai::property_owner<NativeGadget> {
     JAI_PROPERTY((int), charge, 5);
-    JAI_SIGNAL_PROPERTY(void(int), on_spark);
+    JAI_SIGNAL(void(int), on_spark);
     void spark(int amount) { charge = charge.get() + amount; on_sparkSignal(amount); }
     void note(const std::string& id, const std::string& script) { on_sparkSignal.connect(id, script); }
 };
@@ -2521,7 +2531,6 @@ public:
         dynamic_binder<NativeGadget>(*eng, "NativeGadget")
             .constructor<>()
             .method("spark", &NativeGadget::spark)
-            .auto_bind()
             .build();
         eng->execute(R"(
             class Voidkin : HybridCreature {

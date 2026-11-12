@@ -274,7 +274,7 @@ inline const std::shared_ptr<jai::http_transport>& shared_http_transport() {
 inline void register_http_client(jai::engine& a_engine) {
 	jai::stdlib::register_spider(a_engine);
 	a_engine.http_transport(shared_http_transport());
-	a_engine.enable("network");
+	a_engine.enable(jai::permissions::network);
 }
 
 } // namespace jai_runner

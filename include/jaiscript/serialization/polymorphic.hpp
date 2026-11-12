@@ -286,8 +286,11 @@ private:
                     // non-polymorphic shared_ptr load path (archive_impl.hpp), which
                     // sets the same on_construct hook, and lets back-references
                     // inside this object's subtree resolve during load.
+                    constexpr bool owned = serialization_traits::is_property_owner_v<T>;
+                    record_scope<owned, std::remove_reference_t<decltype(concrete_ar)>> record(concrete_ar, static_cast<T*>(nullptr), typeid(T));
                     c.set_on_construct([&ptr, id, &concrete_ar]() {
                         concrete_ar.register_deserialized_shared(id, ptr);
+                        if constexpr (owned) { concrete_ar.set_record_object(ptr.get()); }
                     });
                     ::jai::access::load_and_construct(concrete_ar, c);
                     return std::static_pointer_cast<void>(ptr);

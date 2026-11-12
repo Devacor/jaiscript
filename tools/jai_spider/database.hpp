@@ -526,7 +526,7 @@ inline void register_database(jai::engine& eng, const std::filesystem::path& app
 			resolved = (app_dir / path).lexically_normal().string();
 		}
 		return std::make_shared<database>(database::open(resolved, engine_pointer));
-	}, jai::filesystem);
+	}, jai::permissions::filesystem);
 }
 
 } // namespace spider_host

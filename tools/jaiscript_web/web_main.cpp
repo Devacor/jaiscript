@@ -168,7 +168,7 @@ void register_page_sound(jai::engine& eng) {
 		.method("volume", &page_sound::volume)
 		.method("format", &page_sound::format)
 		.build();
-	eng.add_function("load_sound", [](const std::string& path) { return load_page_sound(path); }, jai::filesystem);
+	eng.add_function("load_sound", [](const std::string& path) { return load_page_sound(path); }, jai::permissions::filesystem);
 	eng.add_function("play_sound", [](const std::string& path) {
 		auto result = load_page_sound(path);
 		if (result) {
@@ -176,7 +176,7 @@ void register_page_sound(jai::engine& eng) {
 			result->play();
 		}
 		return result;
-	}, jai::filesystem);
+	}, jai::permissions::filesystem);
 	eng.add_function("play_sound", [](const std::string& path, bool loop) {
 		auto result = load_page_sound(path);
 		if (result) {
@@ -184,7 +184,7 @@ void register_page_sound(jai::engine& eng) {
 			result->play_looped(loop);
 		}
 		return result;
-	}, jai::filesystem);
+	}, jai::permissions::filesystem);
 	eng.add_function("stop_sounds", []() { send_sound(sound_op::stop_all, 0); });
 }
 

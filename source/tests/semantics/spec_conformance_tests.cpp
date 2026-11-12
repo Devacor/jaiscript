@@ -25,6 +25,8 @@ using namespace jai::foundry;
 
 namespace jai::foundry::tests {
 
+enum class spec_permission : std::int32_t { app_b = jai::permissions::count, app_a };
+
 namespace spec {
 
 // A host class whose accessors, methods and operators throw (docs/site/guide/05-control-flow.html "try / catch / throw": a C++ exception a bound
@@ -783,7 +785,7 @@ public:
 		checker_verdicts();
 		instance_variable_overlays();
 		file_locations();
-		privilege_order();
+		permission_order();
 		guide_examples();
 		parallel_contracts();
 		native_exceptions();
@@ -2546,15 +2548,15 @@ private:
 		});
 	}
 
-	// docs/site/embedding/05-safety-rails.html: the first missing built-in, then custom names in registration order
-	void privilege_order() {
-		test("a_denial_names_the_first_missing_permission_in_registration_order", [this]() {
-			every_config("denial order", "Insufficient privilege: app.b.|Insufficient privilege: filesystem.", [](engine& e) {
-				e.register_privilege("app.b");
-				e.register_privilege("app.a");
-				e.add_function("f", []() -> script_int { return 1; }, {"app.a", "app.b"});
-				e.add_function("g2", []() -> script_int { return 2; }, {"filesystem", "app.a"});
-				e.disable(jai::filesystem);
+	// docs/site/embedding/05-safety-rails.html: a denial names the lowest missing slot, the engine's own before a host's
+	void permission_order() {
+		test("a_denial_names_the_first_missing_permission_in_slot_order", [this]() {
+			every_config("denial order", "Insufficient permission: app.b.|Insufficient permission: filesystem.", [](engine& e) {
+				e.register_permission(spec_permission::app_a, "app.a");
+				e.register_permission(spec_permission::app_b, "app.b");
+				e.add_function("f", []() -> script_int { return 1; }, spec_permission::app_a, spec_permission::app_b);
+				e.add_function("g2", []() -> script_int { return 2; }, jai::permissions::filesystem, spec_permission::app_a);
+				e.disable(jai::permissions::filesystem);
 				std::string out = e.execute("var r = \"\"; try { f(); } catch (x) { r = x; } r;").as_string();
 				out += "|" + e.execute("var r2 = \"\"; try { g2(); } catch (x) { r2 = x; } r2;").as_string();
 				return out;

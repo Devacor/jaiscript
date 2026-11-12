@@ -66,7 +66,7 @@ array<shared_ptr<EnemyDef>> ENEMY_DEFS = [
 	new EnemyDef("GRUNT",   30,  3.1, 0.34, 55, 0.72, 4,  10),
 	new EnemyDef("SPITTER", 45,  2.2, 0.36, 40, 0.78, 3,  7),
 	new EnemyDef("TURRET",  60,  0.0, 0.38, 15, 0.60, 0,  0),
-	new EnemyDef("WARDEN",  520, 2.0, 0.45, 8,  1.05, 10, 22)
+	new EnemyDef("WARDEN",  260, 2.0, 0.45, 8,  1.05, 10, 22)
 ];
 
 // ---------------------------------------------------------------- pickups ---

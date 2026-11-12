@@ -322,9 +322,9 @@ inline void register_sound(jai::engine& eng) {
 		.method("volume", &sound::volume)
 		.method("format", &sound::format)
 		.build();
-	eng.add_function("load_sound", [](const std::string& path) { return load_sound(path); }, jai::filesystem);
-	eng.add_function("play_sound", [](const std::string& path) { return play_sound(path, false); }, jai::filesystem);
-	eng.add_function("play_sound", [](const std::string& path, bool loop) { return play_sound(path, loop); }, jai::filesystem);
+	eng.add_function("load_sound", [](const std::string& path) { return load_sound(path); }, jai::permissions::filesystem);
+	eng.add_function("play_sound", [](const std::string& path) { return play_sound(path, false); }, jai::permissions::filesystem);
+	eng.add_function("play_sound", [](const std::string& path, bool loop) { return play_sound(path, loop); }, jai::permissions::filesystem);
 	eng.add_function("stop_sounds", []() {
 #ifdef _WIN32
 		sound_mixer::get().stop_all();

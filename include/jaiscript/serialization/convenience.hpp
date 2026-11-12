@@ -2,6 +2,7 @@
 
 #include "json_archive.hpp"
 #include "binary_archive.hpp"
+#include <jaiscript/core/engine_ref.hpp>
 #include <cctype>
 
 namespace jai {
@@ -132,78 +133,101 @@ void write_root(Archive& ar, const T& value) {
     ar.end_object();
 }
 
-// The root object back: an owning pointer's $type selects the concrete polymorphic factory
-template<typename T, typename Archive>
-T read_root(Archive& ar) {
+// The root object back into a live object: an owning pointer's $type selects the concrete polymorphic factory
+template<typename Archive, typename T>
+void read_root_into(Archive& ar, T& a_into) {
     std::string type_name;
     uint32_t version;
     ar.begin_object(type_name, version);
-    T result{};
     if constexpr (reads_record_v<Archive, T>) {
-        ar.read_object_content(result);
+        ar.read_object_content(a_into);
     } else {
-        ar.serialize("value0", result);
+        ar.serialize("value0", a_into);
     }
     ar.end_object();
+}
+
+template<typename T, typename Archive>
+T read_root(Archive& ar) {
+    static_assert(std::is_move_constructible_v<T>,
+        "from_json<T> / from_binary<T> return T by value and T cannot move (a signal_emitter member never moves): "
+        "load into an object instead, from_json(engine, json, object)");
+    T result{};
+    read_root_into(ar, result);
     return result;
 }
 
 } // namespace detail
 
 template<typename T>
-std::string to_json(engine& eng, const T& value, int indent = 2) {
-    serialization::json_archive_writer ar(indent, &eng);
+std::string to_json(engine_ref eng, const T& value, int indent = 2) {
+    serialization::json_archive_writer ar(indent, eng.get());
     detail::write_root(ar, value);
     return ar.str();
 }
 
 template<typename T, typename Context>
-std::string to_json(engine& eng, const T& value, Context& ctx, int indent = 2) {
-    serialization::json_archive_writer ar(indent, &eng);
+std::string to_json(engine_ref eng, const T& value, Context& ctx, int indent = 2) {
+    serialization::json_archive_writer ar(indent, eng.get());
     ar.template set_user_context<Context>(&ctx);
     detail::write_root(ar, value);
     return ar.str();
 }
 
 template<typename T>
-T from_json(engine& eng, const std::string& json) {
-    serialization::json_archive_reader ar(json, &eng);
+T from_json(engine_ref eng, const std::string& json) {
+    serialization::json_archive_reader ar(json, eng.get());
     return detail::read_root<T>(ar);
 }
 
 template<typename T, typename Context>
-T from_json(engine& eng, const std::string& json, Context& ctx) {
-    serialization::json_archive_reader ar(json, &eng);
+    requires (!std::is_same_v<T, Context>)
+T from_json(engine_ref eng, const std::string& json, Context& ctx) {
+    serialization::json_archive_reader ar(json, eng.get());
     ar.template set_user_context<Context>(&ctx);
     return detail::read_root<T>(ar);
 }
 
+// Loads into a live object: the form for a type that cannot move, and for a load that keeps the object's own state
 template<typename T>
-std::vector<uint8_t> to_binary(engine& eng, const T& value) {
-    serialization::binary_archive_writer ar(&eng);
+void from_json(engine_ref eng, const std::string& json, T& into) {
+    serialization::json_archive_reader ar(json, eng.get());
+    detail::read_root_into(ar, into);
+}
+
+template<typename T, typename Context>
+void from_json(engine_ref eng, const std::string& json, T& into, Context& ctx) {
+    serialization::json_archive_reader ar(json, eng.get());
+    ar.template set_user_context<Context>(&ctx);
+    detail::read_root_into(ar, into);
+}
+
+template<typename T>
+std::vector<uint8_t> to_binary(engine_ref eng, const T& value) {
+    serialization::binary_archive_writer ar(eng.get());
     detail::write_root(ar, value);
     return ar.data();
 }
 
 template<typename T, typename Context>
-std::vector<uint8_t> to_binary(engine& eng, const T& value, Context& ctx) {
-    serialization::binary_archive_writer ar(&eng);
+std::vector<uint8_t> to_binary(engine_ref eng, const T& value, Context& ctx) {
+    serialization::binary_archive_writer ar(eng.get());
     ar.template set_user_context<Context>(&ctx);
     detail::write_root(ar, value);
     return ar.data();
 }
 
 template<typename T>
-std::string to_binary_string(engine& eng, const T& value) {
-    serialization::binary_archive_writer ar(&eng);
+std::string to_binary_string(engine_ref eng, const T& value) {
+    serialization::binary_archive_writer ar(eng.get());
     detail::write_root(ar, value);
     auto& data = ar.data();
     return std::string(data.begin(), data.end());
 }
 
 template<typename T, typename Context>
-std::string to_binary_string(engine& eng, const T& value, Context& ctx) {
-    serialization::binary_archive_writer ar(&eng);
+std::string to_binary_string(engine_ref eng, const T& value, Context& ctx) {
+    serialization::binary_archive_writer ar(eng.get());
     ar.template set_user_context<Context>(&ctx);
     detail::write_root(ar, value);
     auto& data = ar.data();
@@ -211,48 +235,62 @@ std::string to_binary_string(engine& eng, const T& value, Context& ctx) {
 }
 
 template<typename T>
-T from_binary(engine& eng, const std::vector<uint8_t>& data) {
-    serialization::binary_archive_reader ar(data, &eng);
+T from_binary(engine_ref eng, const std::vector<uint8_t>& data) {
+    serialization::binary_archive_reader ar(data, eng.get());
     return detail::read_root<T>(ar);
 }
 
 template<typename T, typename Context>
-T from_binary(engine& eng, const std::vector<uint8_t>& data, Context& ctx) {
-    serialization::binary_archive_reader ar(data, &eng);
+    requires (!std::is_same_v<T, Context>)
+T from_binary(engine_ref eng, const std::vector<uint8_t>& data, Context& ctx) {
+    serialization::binary_archive_reader ar(data, eng.get());
     ar.template set_user_context<Context>(&ctx);
     return detail::read_root<T>(ar);
 }
 
 template<typename T>
-T from_binary_string(engine& eng, const std::string& data) {
-    serialization::binary_archive_reader ar(reinterpret_cast<const uint8_t*>(data.data()), data.size(), &eng);
+void from_binary(engine_ref eng, const std::vector<uint8_t>& data, T& into) {
+    serialization::binary_archive_reader ar(data, eng.get());
+    detail::read_root_into(ar, into);
+}
+
+template<typename T, typename Context>
+void from_binary(engine_ref eng, const std::vector<uint8_t>& data, T& into, Context& ctx) {
+    serialization::binary_archive_reader ar(data, eng.get());
+    ar.template set_user_context<Context>(&ctx);
+    detail::read_root_into(ar, into);
+}
+
+template<typename T>
+T from_binary_string(engine_ref eng, const std::string& data) {
+    serialization::binary_archive_reader ar(reinterpret_cast<const uint8_t*>(data.data()), data.size(), eng.get());
     return detail::read_root<T>(ar);
 }
 
 template<typename T, typename Context>
-T from_binary_string(engine& eng, const std::string& data, Context& ctx) {
-    serialization::binary_archive_reader ar(reinterpret_cast<const uint8_t*>(data.data()), data.size(), &eng);
+T from_binary_string(engine_ref eng, const std::string& data, Context& ctx) {
+    serialization::binary_archive_reader ar(reinterpret_cast<const uint8_t*>(data.data()), data.size(), eng.get());
     ar.template set_user_context<Context>(&ctx);
     return detail::read_root<T>(ar);
 }
 
 template<typename T>
-std::string to_base64(engine& eng, const T& value) {
+std::string to_base64(engine_ref eng, const T& value) {
     return detail::base64_encode(to_binary_string(eng, value));
 }
 
 template<typename T, typename Context>
-std::string to_base64(engine& eng, const T& value, Context& ctx) {
+std::string to_base64(engine_ref eng, const T& value, Context& ctx) {
     return detail::base64_encode(to_binary_string(eng, value, ctx));
 }
 
 template<typename T>
-T from_base64(engine& eng, const std::string& base64) {
+T from_base64(engine_ref eng, const std::string& base64) {
     return from_binary_string<T>(eng, detail::base64_decode(base64));
 }
 
 template<typename T, typename Context>
-T from_base64(engine& eng, const std::string& base64, Context& ctx) {
+T from_base64(engine_ref eng, const std::string& base64, Context& ctx) {
     return from_binary_string<T>(eng, detail::base64_decode(base64), ctx);
 }
 

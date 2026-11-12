@@ -36,14 +36,14 @@ void load(Archive& ar, serialized_receiver& r) {
 	ar(serialization::make_nvp("script", r.script));
 }
 
-// ADL hooks (named save/load so the archive's write_element/read_element find them). The format
-// stores parameter_names (signal-level), observers (array), and owned_observers (id -> receiver
-// map). A named connection lives in both observers_ and owned_connections_, so owned receivers
-// are excluded from the observers list to avoid serializing them twice.
-template<typename Archive, typename T, typename Sync>
-void save(Archive& ar, const signal_emitter<T, Sync>& sig) {
-	auto lock = sig.lock_state();
-	std::vector<std::string> param_names = sig.parameter_names();
+// A save stores parameter_names (signal-level), observers (array), and owned_observers (id -> receiver map). A named
+// connection lives in both observers_ and owned_connections_, so owned receivers are excluded from the observers list to
+// avoid serializing them twice.
+template<typename T, typename Sync>
+template<typename Archive>
+void detail::signal_state<T, Sync>::save_receivers(Archive& ar) const {
+	auto lock = lock_state();
+	std::vector<std::string> param_names = parameter_names();
 	ar(serialization::make_nvp("parameter_names", param_names));
 
 	const auto snapshot = [](const std::shared_ptr<receiver<T>>& a_receiver) {
@@ -54,11 +54,11 @@ void save(Archive& ar, const signal_emitter<T, Sync>& sig) {
 	};
 
 	std::vector<serialized_receiver> observers;
-	for (const auto& entry : sig.observers_) {
-		auto obs = sig.live_target(entry);
+	for (const auto& entry : observers_) {
+		auto obs = live_target(entry);
 		if (!obs || !obs->has_script()) { continue; }
 		bool owned = false;
-		for (const auto& [id, owned_obs] : sig.owned_connections_) {
+		for (const auto& [id, owned_obs] : owned_connections_) {
 			if (owned_obs == obs) { owned = true; break; }
 		}
 		if (owned) { continue; }
@@ -67,8 +67,8 @@ void save(Archive& ar, const signal_emitter<T, Sync>& sig) {
 	ar(serialization::make_nvp("observers", observers));
 
 	std::map<std::string, serialized_receiver> owned_observers;
-	for (const auto& [id, obs] : sig.owned_connections_) {
-		if (!obs->has_script() || !sig.owns(*obs)) { continue; }
+	for (const auto& [id, obs] : owned_connections_) {
+		if (!obs->has_script() || !owns(*obs)) { continue; }
 		owned_observers[id] = snapshot(obs);
 	}
 	ar(serialization::make_nvp("owned_observers", owned_observers));
@@ -76,8 +76,9 @@ void save(Archive& ar, const signal_emitter<T, Sync>& sig) {
 
 // A load replaces the script-text receivers the signal holds (the ones a save writes) with the saved ones, so loading
 // into a live object never doubles them; C++ callbacks and script function receivers stay connected.
-template<typename Archive, typename T, typename Sync>
-void load(Archive& ar, signal_emitter<T, Sync>& sig) {
+template<typename T, typename Sync>
+template<typename Archive>
+void detail::signal_state<T, Sync>::load_receivers(Archive& ar) {
 	engine* eng = ar.template get_user_context<engine>();
 
 	std::vector<std::string> param_names;
@@ -87,17 +88,17 @@ void load(Archive& ar, signal_emitter<T, Sync>& sig) {
 	std::map<std::string, serialized_receiver> owned_observers;
 	ar(serialization::make_nvp("owned_observers", owned_observers));
 
-	auto lock = sig.lock_state();
-	sig.parameter_names(param_names);
+	auto lock = lock_state();
+	parameter_names(param_names);
 
 	std::vector<std::shared_ptr<receiver<T>>> replaced;
-	for (const auto& entry : sig.observers_) {
-		if (auto obs = sig.live_target(entry); obs && obs->has_script()) {
+	for (const auto& entry : observers_) {
+		if (auto obs = live_target(entry); obs && obs->has_script()) {
 			replaced.push_back(std::move(obs));
 		}
 	}
 	for (const auto& obs : replaced) {
-		sig.detach(obs);
+		detach(obs);
 	}
 
 	auto rebuild = [&](const serialized_receiver& r) {
@@ -110,18 +111,29 @@ void load(Archive& ar, signal_emitter<T, Sync>& sig) {
 
 	for (const auto& r : observers) {
 		auto recv = rebuild(r);
-		sig.loaded_observers_.push_back(recv);
-		sig.attach(std::move(recv), false);
+		loaded_observers_.push_back(recv);
+		attach(std::move(recv), false);
 	}
 
 	for (const auto& [id, r] : owned_observers) {
-		replaced.push_back(std::exchange(sig.owned_connections_[id], rebuild(r)));
-		sig.attach(sig.owned_connections_[id], false);
+		replaced.push_back(std::exchange(owned_connections_[id], rebuild(r)));
+		attach(owned_connections_[id], false);
 	}
 
 	if (eng) {
-		sig.script_engine(eng);
+		script_engine(eng);
 	}
+}
+
+// ADL hooks (named save/load so the archive's write_element/read_element find them).
+template<typename Archive, typename T, typename Sync>
+void save(Archive& ar, const signal_emitter<T, Sync>& sig) {
+	detail::signal_state_access::state(sig)->save_receivers(ar);
+}
+
+template<typename Archive, typename T, typename Sync>
+void load(Archive& ar, signal_emitter<T, Sync>& sig) {
+	detail::signal_state_access::state(sig)->load_receivers(ar);
 }
 
 } // namespace jai

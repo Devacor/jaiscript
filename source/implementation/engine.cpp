@@ -434,7 +434,7 @@ static int compute_param_match_cost(
 struct engine::implementation {
     // Engine-thread state. A C++ callback may change grants before returning to
     // script; parallel regions keep them immutable until their workers join.
-    uint64_t privileges_ = static_cast<uint64_t>(privilege::filesystem) | static_cast<uint64_t>(privilege::scoped_template);
+    permission_set permissions_ = detail::permission_set_of(permissions::filesystem, permissions::scoped_template);
     std::vector<std::string> scoped_template_dirs_{"template"};   // engine::scoped_template_dirs, relative ones from the calling script's directory
     // Per-engine reference_holder block pool, type-erased (value.cpp owns the type).
     // Before other owning members so it is destroyed LAST - members releasing reference
@@ -1264,7 +1264,7 @@ struct engine::implementation {
         cacheFile.clear();
         cacheFresh = false;
         std::filesystem::path shipped;   // with a cache directory set, the .cache beside the source is read, never written
-        if (jaibite_cache_enabled && sourcePath != "<script>" && self.is_enabled(privilege::filesystem)) {
+        if (jaibite_cache_enabled && sourcePath != "<script>" && self.is_enabled(permissions::filesystem)) {
             cacheFile = jaibite_cache_file(sourcePath);
             if (!cacheFile.empty() && !jaibite_cache_directory_.empty()) { shipped = jaibite_beside_file(sourcePath); }
         }
@@ -1346,8 +1346,7 @@ struct engine::implementation {
     bool closure_due(const script_cache_entry& entry) const {
         if (entry.closure_epoch != check_surface_epoch_) { return true; }
         if (!entry.closure_root) { return false; }
-        const bool filesystem_allowed = (privileges_ &
-            static_cast<uint64_t>(privilege::filesystem)) != 0;
+        const bool filesystem_allowed = permissions_.contains(detail::permission_id(permissions::filesystem));
         if (entry.closure_filesystem != filesystem_allowed) { return true; }
         if (!filesystem_allowed) { return false; }
         if (!entry.closure_listing.empty() || !entry.closure_parse_failures.empty() || entry.check_result.has_errors()) { return true; }
@@ -1480,7 +1479,7 @@ struct engine::implementation {
                 for (const auto& unit : closure) { detail::gather_constants(unit.entry->declarations, program_constants_, constant_rule_index_); }
             }
             entry.closure_epoch = check_surface_epoch_;
-            entry.closure_filesystem = self.is_enabled(privilege::filesystem);
+            entry.closure_filesystem = self.is_enabled(permissions::filesystem);
             if (!entry.closure_parse_failures.empty()) {
                 entry.check_result = {};
                 check_entry(self, entry, false);
@@ -2374,7 +2373,7 @@ struct engine::implementation {
     // deleting it threw away another engine's fresh write whenever two engines raced on one file.
     void write_jaibite_cache(engine& self, const std::filesystem::path& cacheFile, script_cache_entry& entry,
                              const std::string& sourcePath, const std::string& source) noexcept {
-        if (!self.is_enabled(privilege::filesystem) || entry.cache_write_failed == cacheFile) { return; }
+        if (!self.is_enabled(permissions::filesystem) || entry.cache_write_failed == cacheFile) { return; }
         std::filesystem::path temporary;
         try {
             uint32_t flags = 0;
@@ -2469,17 +2468,9 @@ struct engine::implementation {
         return overloadSet;
     }
 
-    // Optional host configuration: engines without custom permissions do not
-    // allocate a registry or shift the offsets of existing hot members.
-    struct custom_privilege_state {
-        struct record {
-            uint64_t name_id;
-            bool enabled = false;
-        };
-        std::vector<record> records;
-        std::unordered_map<uint64_t, uint64_t> slots;
-    };
-    std::unique_ptr<custom_privilege_state> custom_privileges_;
+    // The interned display name of each host permission a denial names (engine::register_permission), or its id parked when it
+    // has none; empty until a host permission is named or guarded
+    std::unordered_map<std::int32_t, uint64_t> permission_names_;
 
     // The math vectors' canonical stamps and node pool, last for the same reason (the pool's teardown orphans it while
     // any vector is still out, so its place in the destruction order does not matter)
@@ -3221,7 +3212,7 @@ void engine::initialize_engine_reference() {
 	detail::register_math_namespace(*this);
 	detail::register_array_namespace(*this);
 	detail::register_map_namespace(*this);
-    register_privilege_builtins();
+    register_permission_builtins();
     register_location_builtins();
 
     // extend(object, Class): a script class layer over a C++ object, or a re-derived script
@@ -3531,7 +3522,7 @@ held_value engine::execute(const std::string& scriptContent, const instance_vari
 
 script_value engine::execute_file_source(const std::string& resolvedPath, const std::string& content) {
     std::error_code ec;
-    const std::filesystem::path canonical = is_enabled(privilege::filesystem) ? std::filesystem::weakly_canonical(resolvedPath, ec) : std::filesystem::path();
+    const std::filesystem::path canonical = is_enabled(permissions::filesystem) ? std::filesystem::weakly_canonical(resolvedPath, ec) : std::filesystem::path();
     implementation::running_root_scope running_root(impl->running_roots_, canonical.empty() || ec ? resolvedPath : canonical.string());
     return execute_source(content, instance_variables{}, resolvedPath);
 }
@@ -3798,7 +3789,7 @@ std::vector<uint8_t> jaibite::save_bytes() const {
 void jaibite::save(const std::string& path) const {
     auto owner = engine_.lock();
     if (!owner) { throw script_exception("jaibite: owning engine no longer exists"); }
-    auto allowed = owner->require_privilege(privilege::filesystem);
+    auto allowed = owner->require_permission(permissions::filesystem);
     if (!allowed) { throw runtime_error(owner->format_error(allowed)); }
     auto bytes = save_bytes();
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
@@ -3812,7 +3803,7 @@ void jaibite::save(const std::string& path) const {
 }
 
 jai::jaibite engine::jaibite_load(const std::string& path) {
-    auto allowed = require_privilege(privilege::filesystem);
+    auto allowed = require_permission(permissions::filesystem);
     if (!allowed) { throw runtime_error(format_error(allowed)); }
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
@@ -4097,7 +4088,7 @@ held_value engine::execute_file(const std::string& scriptPath, const instance_va
 }
 
 script_value engine::execute_file_unheld(const std::string& scriptPath, const instance_variables& instanceVars) {
-    auto allowed = require_privilege(privilege::filesystem);
+    auto allowed = require_permission(permissions::filesystem);
     if (!allowed) { throw runtime_error(format_error(allowed)); }
     // File fast lane (parse-avoidance ladder): canonical-path key + one-stat gate. A
     // stamp-valid re-execute touches zero file bytes. Any stamp change, epoch bump or a
@@ -4315,8 +4306,8 @@ static void register_variadic(engine& eng, const std::string& name, script_funct
     }
 }
 
-void engine::add_variadic_function(const std::string& name, script_function func, privilege required) {
-    register_variadic(*this, name, variadic_by_value(guard_function(std::move(func), required)));
+void engine::add_variadic_function(const std::string& name, script_function func) {
+    register_variadic(*this, name, variadic_by_value(std::move(func)));
 }
 
 // The engine-first callable reads its arguments by value itself; a guard around it takes them by value first, as the vector
@@ -4944,6 +4935,14 @@ void engine::defer_base_link(std::type_index base, std::shared_ptr<class_definit
     impl->pendingBaseLinks[base].push_back(std::move(derived));
 }
 
+std::vector<std::string> engine::classes_awaiting_base(std::type_index base) const {
+    std::vector<std::string> result;
+    if (auto pending = impl->pendingBaseLinks.find(base); pending != impl->pendingBaseLinks.end()) {
+        for (const auto& derived : pending->second) { result.push_back(derived->get_name()); }
+    }
+    return result;
+}
+
 std::shared_ptr<class_definition> engine::get_class_definition_by_type(const std::type_index& type) const {
     auto it = impl->classesByType.find(type);
     if (it != impl->classesByType.end()) {
@@ -5423,195 +5422,136 @@ double engine::execution_budget() const {
     return impl->execution_budget_seconds_;
 }
 
-void engine::enable(privilege flags) {
-    set_privileges(flags, true);
+permission_set& permission_set::merge(const permission_set& a_other) {
+    for (std::size_t i = 0; i < words.size(); ++i) { words[i] |= a_other.words[i]; }
+    for (std::int32_t id : a_other.spill) { add_spilled(id); }
+    return *this;
 }
 
-void engine::disable(privilege flags) {
-    set_privileges(flags, false);
+permission_set& permission_set::remove(const permission_set& a_other) {
+    for (std::size_t i = 0; i < words.size(); ++i) { words[i] &= ~a_other.words[i]; }
+    std::erase_if(spill, [&](std::int32_t a_id) { return std::binary_search(a_other.spill.begin(), a_other.spill.end(), a_id); });
+    return *this;
 }
 
-void engine::set_privileges(privilege flags, bool enabled) {
-    if (!valid_privileges(flags)) { throw runtime_error("Invalid privilege flags"); }
-    check_privilege_mutation();
-    const auto bits = static_cast<uint64_t>(flags);
-    if (enabled) { impl->privileges_ |= bits; }
-    else { impl->privileges_ &= ~bits; }
+void permission_set::add_spilled(std::int32_t a_id) {
+    if (auto at = std::lower_bound(spill.begin(), spill.end(), a_id); at == spill.end() || *at != a_id) { spill.insert(at, a_id); }
 }
 
-void engine::check_privilege_mutation() const {
+bool permission_set::contains(std::int32_t a_id) const noexcept {
+    if (a_id >= 0 && a_id < inline_ids) { return ((words[static_cast<std::size_t>(a_id) / 64] >> (static_cast<std::size_t>(a_id) % 64)) & 1) != 0; }
+    return std::binary_search(spill.begin(), spill.end(), a_id);
+}
+
+bool permission_set::covers_spilled(const permission_set& a_required) const noexcept {
+    return std::includes(spill.begin(), spill.end(), a_required.spill.begin(), a_required.spill.end());
+}
+
+std::optional<std::int32_t> permission_set::first_missing(const permission_set& a_required) const {
+    // negative ids sort before the ids in place, the large ones after them
+    for (std::int32_t id : a_required.spill) {
+        if (id >= 0) { break; }
+        if (!std::binary_search(spill.begin(), spill.end(), id)) { return id; }
+    }
+    for (std::size_t i = 0; i < words.size(); ++i) {
+        if (const std::uint64_t missing = a_required.words[i] & ~words[i]; missing != 0) {
+            return static_cast<std::int32_t>(i * 64 + static_cast<std::size_t>(std::countr_zero(missing)));
+        }
+    }
+    for (std::int32_t id : a_required.spill) {
+        if (id >= 0 && !std::binary_search(spill.begin(), spill.end(), id)) { return id; }
+    }
+    return std::nullopt;
+}
+
+void engine::set_permissions(const permission_set& permissions, bool enabled) {
+    check_permission_mutation();
+    if (enabled) { impl->permissions_.merge(permissions); }
+    else { impl->permissions_.remove(permissions); }
+}
+
+void engine::check_permission_mutation() const {
     if (impl->parallel_ && impl->parallel_->active_region) {
-        throw runtime_error("Cannot change privileges during a parallel region");
+        throw runtime_error("Cannot change permissions during a parallel region");
     }
 }
 
-void engine::register_privilege(std::string_view name) {
-    check_privilege_mutation();
-    if (name.empty()) { throw runtime_error("Privilege name must not be empty"); }
-    if (name == "filesystem" || name == "scoped_template") { return; }
-    const auto name_id = impl->string_symbolizer_.intern(name);
-    if (!impl->custom_privileges_) {
-        impl->custom_privileges_ = std::make_unique<implementation::custom_privilege_state>();
+void engine::name_permission(std::int32_t id, std::string_view name) {
+    check_permission_mutation();
+    if (id >= 0 && id < permissions::count) { throw runtime_error("A built-in permission keeps its name"); }
+    if (name.empty()) { throw runtime_error("Permission name must not be empty"); }
+    impl->permission_names_[id] = impl->string_symbolizer_.intern(name);
+}
+
+bool engine::permissions_enabled(const permission_set& permissions) const noexcept {
+    return impl->permissions_.covers(permissions);
+}
+
+checked_result<void> engine::require_permissions(const permission_set& required) const noexcept {
+    if (impl->permissions_.covers(required)) { return {}; }
+    const std::int32_t missing = *impl->permissions_.first_missing(required);
+    static constexpr const char* built_in_denials[] = {
+        "Insufficient permission: filesystem.", "Insufficient permission: scoped_template.", "Insufficient permission: network.",
+        "Insufficient permission: debug.", "Insufficient permission: trusted.", "Insufficient permission: untrusted.",
+    };
+    static_assert(std::size(built_in_denials) == permissions::count);
+    if (missing >= 0 && missing < permissions::count) {
+        return checked_result<void>(make_error_code(runtime_error_code::insufficient_permission), built_in_denials[missing]);
     }
-    auto& state = *impl->custom_privileges_;
-    if (state.slots.contains(name_id)) { return; }
-    const auto slot = static_cast<uint64_t>(state.records.size());
-    // A failed map insertion rolls back the record; an interned but unregistered
-    // name is inert. Nothing exposes these engine-local slots to the host.
-    state.records.push_back({name_id, false});
-    try {
-        state.slots.emplace(name_id, slot);
-    } catch (...) {
-        state.records.pop_back();
-        throw;
+    const auto named = impl->permission_names_.find(missing);
+    const uint64_t name_id = named != impl->permission_names_.end() ? named->second : park_error_text(std::to_string(missing));
+    return checked_result<void>(make_error_code(runtime_error_code::insufficient_permission), "Insufficient permission: {0}.", name_id);
+}
+
+script_function engine::guard_function(script_function function, const permission_set& required) {
+    if (required.empty()) { return function; }
+    // a permission nothing names shows its id; parking it here keeps a denial inside a parallel region (frozen symbols) able to name it
+    for (permission_set missing_names = required; auto id = permission_set{}.first_missing(missing_names);) {
+        if (*id < 0 || *id >= permissions::count) { impl->permission_names_.try_emplace(*id, park_error_text(std::to_string(*id))); }
+        missing_names.remove(permission_set{}.add(*id));
     }
-}
-
-std::optional<uint64_t> engine::find_custom_privilege(std::string_view name) const noexcept {
-    if (!impl->custom_privileges_) { return std::nullopt; }
-    const auto name_id = impl->string_symbolizer_.find(name);
-    if (!name_id) { return std::nullopt; }
-    const auto& slots = impl->custom_privileges_->slots;
-    const auto it = slots.find(*name_id);
-    if (it == slots.end()) { return std::nullopt; }
-    return it->second;
-}
-
-engine::resolved_privileges engine::resolve_privileges(std::span<const std::string_view> names) const {
-    resolved_privileges result;
-    for (const auto name : names) {
-        if (name == "filesystem") { result.builtins = result.builtins | privilege::filesystem; }
-        else if (name == "scoped_template") { result.builtins = result.builtins | privilege::scoped_template; }
-        else {
-            const auto slot = find_custom_privilege(name);
-            if (!slot) { throw runtime_error("Unknown privilege name"); }
-            result.custom.push_back(*slot);
-        }
-    }
-    std::sort(result.custom.begin(), result.custom.end());
-    result.custom.erase(std::unique(result.custom.begin(), result.custom.end()), result.custom.end());
-    return result;
-}
-
-void engine::enable(std::span<const std::string_view> names) {
-    set_privileges(names, true);
-}
-
-void engine::disable(std::span<const std::string_view> names) {
-    set_privileges(names, false);
-}
-
-void engine::set_privileges(std::span<const std::string_view> names, bool enabled) {
-    check_privilege_mutation();
-    const auto required = resolve_privileges(names);
-    // Resolve every name before changing any grant. The updates cannot allocate.
-    set_privileges(required.builtins, enabled);
-    for (const auto slot : required.custom) { impl->custom_privileges_->records[slot].enabled = enabled; }
-}
-
-bool engine::is_enabled(std::span<const std::string_view> names) const noexcept {
-    return bool(require_privilege(names));
-}
-
-checked_result<void> engine::require_privilege(std::span<const std::string_view> names) const noexcept {
-    privilege flags = privilege::none;
-    std::optional<uint64_t> missing;
-    for (const auto name : names) {
-        if (name == "filesystem") { flags = flags | privilege::filesystem; }
-        else if (name == "scoped_template") { flags = flags | privilege::scoped_template; }
-        else {
-            const auto slot = find_custom_privilege(name);
-            if (!slot) {
-                return checked_result<void>(make_error_code(runtime_error_code::invalid_operation), "Unknown privilege name");
-            }
-            if (!impl->custom_privileges_->records[*slot].enabled && (!missing || *slot < *missing)) { missing = *slot; }
-        }
-    }
-    // Same deterministic denial order as a resolved binding, without allocating
-    // a temporary slot vector for name queries or manual checked guards.
-    return require_privileges(flags, missing ? std::span(&*missing, 1) : std::span<const uint64_t>{});
-}
-
-checked_result<void> engine::require_privileges(privilege flags, std::span<const uint64_t> slots) const noexcept {
-    auto allowed = require_privilege(flags);
-    if (!allowed) { return allowed; }
-    for (const auto slot : slots) {
-        const auto& record = impl->custom_privileges_->records[slot];
-        if (!record.enabled) {
-            return checked_result<void>(make_error_code(runtime_error_code::insufficient_privilege),
-                "Insufficient privilege: {0}.", record.name_id);
-        }
-    }
-    return {};
-}
-
-bool engine::is_enabled(privilege flags) const noexcept {
-    const auto bits = static_cast<uint64_t>(flags);
-    return valid_privileges(flags) && (impl->privileges_ & bits) == bits;
-}
-
-checked_result<void> engine::require_privilege(privilege flags) const noexcept {
-    if (!valid_privileges(flags)) {
-        return checked_result<void>(make_error_code(runtime_error_code::invalid_operation), "Invalid privilege flags");
-    }
-    if (is_enabled(flags)) { return {}; }
-    if ((flags & privilege::filesystem) == privilege::filesystem && !is_enabled(privilege::filesystem)) {
-        return checked_result<void>(make_error_code(runtime_error_code::insufficient_privilege), "Insufficient privilege: filesystem.");
-    }
-    return checked_result<void>(make_error_code(runtime_error_code::insufficient_privilege),
-        "Insufficient privilege: scoped_template.");
-}
-
-script_function engine::guard_function(script_function function, privilege required) {
-    if (!valid_privileges(required)) { throw runtime_error("Invalid privilege flags"); }
-    if (required == privilege::none) { return function; }
     return [this, function = std::move(function), required](const std::vector<script_value>& args) -> checked_result<script_value> {
-        auto allowed = require_privilege(required);
+        auto allowed = require_permissions(required);
         if (!allowed) { return allowed.error_value(); }
         return function(args);
     };
 }
 
-script_function engine::guard_function(script_function function, std::span<const std::string_view> names) {
-    auto required = resolve_privileges(names);
-    // Preserve both the original unguarded callable and the builtin-only fast path.
-    if (required.custom.empty()) { return guard_function(std::move(function), required.builtins); }
-    return [this, function = std::move(function), required = std::move(required)](const std::vector<script_value>& args) -> checked_result<script_value> {
-        auto allowed = require_privileges(required.builtins, required.custom);
-        if (!allowed) { return allowed.error_value(); }
-        return function(args);
-    };
-}
-
-void engine::register_privilege_builtins() {
+void engine::register_permission_builtins() {
     auto& jai_namespace = script_namespaces()[symbolize("jai")];
     if (!jai_namespace) { jai_namespace = std::make_shared<script_namespace_data>(); }
-    jai_namespace->variables[symbolize("filesystem")] = script_value(static_cast<script_int>(privilege::filesystem), this);
-    jai_namespace->variables[symbolize("scoped_template")] = script_value(static_cast<script_int>(privilege::scoped_template), this);
     jai_namespace->variables[symbolize("force")] = script_value(std::string("jai::force"), this);   // the import directive (import("m.jai", jai::force)), visible as a value
-    auto& reflect_namespace = script_namespaces()[symbolize("reflect")];
-    if (!reflect_namespace) { reflect_namespace = std::make_shared<script_namespace_data>(); }
-    reflect_namespace->variables[symbolize("is_enabled")] = script_value::make_function(
+    // jai::permissions mirrors the C++ namespace: the built-in ids, count, and is_enabled
+    auto& permissions_namespace = script_namespaces()[symbolize("jai::permissions")];
+    if (!permissions_namespace) { permissions_namespace = std::make_shared<script_namespace_data>(); }
+    const std::pair<const char*, permission> built_ins[] = {
+        {"filesystem", permissions::filesystem}, {"scoped_template", permissions::scoped_template}, {"network", permissions::network},
+        {"debug", permissions::debug}, {"trusted", permissions::trusted}, {"untrusted", permissions::untrusted},
+    };
+    for (const auto& [name, id] : built_ins) {
+        permissions_namespace->variables[symbolize(name)] = script_value(static_cast<script_int>(detail::permission_id(id)), this);
+    }
+    permissions_namespace->variables[symbolize("count")] = script_value(static_cast<script_int>(permissions::count), this);
+    permissions_namespace->variables[symbolize("is_enabled")] = script_value::make_function(
         [this](const std::vector<script_value>& args) -> checked_result<script_value> {
             if (args.empty()) {
                 return checked_result<script_value>(make_error_code(runtime_error_code::argument_count_mismatch),
-                    "reflect::is_enabled expects at least 1 argument");
+                    "jai::permissions::is_enabled expects at least 1 argument");
             }
-            bool enabled = true;
+            permission_set asked;
             for (const auto& arg : args) {
                 const auto& value = arg.deref();
-                if (value.is_string()) {
-                    enabled = is_enabled(value.unchecked_as_string()) && enabled;
-                    continue;
-                }
-                if (!value.is_int() || !valid_privileges(static_cast<privilege>(value.unchecked_as_int()))) {
+                if (!value.is_int() || value.unchecked_as_int() < std::numeric_limits<std::int32_t>::min() ||
+                    value.unchecked_as_int() > std::numeric_limits<std::int32_t>::max()) {
                     return checked_result<script_value>(make_error_code(runtime_error_code::type_mismatch),
-                        "reflect::is_enabled expects valid privilege flags");
+                        "jai::permissions::is_enabled expects permission ids");
                 }
-                enabled = is_enabled(static_cast<privilege>(value.unchecked_as_int())) && enabled;
+                asked.add(static_cast<std::int32_t>(value.unchecked_as_int()));
             }
-            return script_value(enabled, this);
+            return script_value(permissions_enabled(asked), this);
         }, this);
+    auto& reflect_namespace = script_namespaces()[symbolize("reflect")];
+    if (!reflect_namespace) { reflect_namespace = std::make_shared<script_namespace_data>(); }
     // the template output limits a host set (engine::template_output_limit): scripts read them, 0 = no limit
     auto limit_reader = [this](const char* a_name, size_t detail::execution_limits::* a_limit) {
         return script_value::make_function([this, a_name, a_limit](const std::vector<script_value>& args) -> checked_result<script_value> {
@@ -5689,7 +5629,7 @@ size_t engine::binary_scan_limit() const {
 }
 
 void engine::template_output_limit(size_t bytes) {
-    check_privilege_mutation();
+    check_permission_mutation();
     impl->limits_.template_output_limit = bytes;
 }
 
@@ -5698,19 +5638,19 @@ size_t engine::template_output_limit() const {
 }
 
 void engine::add_scoped_template_dir(const std::string& dir) {
-    check_privilege_mutation();
+    check_permission_mutation();
     auto& dirs = impl->scoped_template_dirs_;
     if (std::find(dirs.begin(), dirs.end(), dir) == dirs.end()) { dirs.push_back(dir); }
 }
 
 void engine::remove_scoped_template_dir(const std::string& dir) {
-    check_privilege_mutation();
+    check_permission_mutation();
     auto& dirs = impl->scoped_template_dirs_;
     dirs.erase(std::remove(dirs.begin(), dirs.end(), dir), dirs.end());
 }
 
 void engine::set_scoped_template_dirs(std::vector<std::string> dirs) {
-    check_privilege_mutation();
+    check_permission_mutation();
     impl->scoped_template_dirs_ = std::move(dirs);
 }
 
@@ -5719,7 +5659,7 @@ const std::vector<std::string>& engine::scoped_template_dirs() const {
 }
 
 void engine::scoped_template_output_limit(size_t bytes) {
-    check_privilege_mutation();
+    check_permission_mutation();
     impl->limits_.scoped_template_output_limit = bytes;
 }
 
@@ -5996,13 +5936,13 @@ void engine::app_directory_resolvers(std::function<std::string(const std::string
 }
 
 std::string engine::app_data_dir(const std::string& app) const {
-    auto allowed = require_privilege(privilege::filesystem);
+    auto allowed = require_permission(permissions::filesystem);
     if (!allowed) { throw runtime_error(std::string(allowed.message())); }
     return impl->app_data_resolver ? impl->app_data_resolver(app) : default_app_data_dir(app);
 }
 
 std::string engine::app_cache_dir(const std::string& app) const {
-    auto allowed = require_privilege(privilege::filesystem);
+    auto allowed = require_permission(permissions::filesystem);
     if (!allowed) { throw runtime_error(std::string(allowed.message())); }
     return impl->app_cache_resolver ? impl->app_cache_resolver(app) : default_app_cache_dir(app);
 }
@@ -6220,27 +6160,27 @@ void engine::register_location_builtins() {
         if (root.empty() || root == "<script>") return {};
         std::error_code ec;
         return location_spelling(std::filesystem::absolute(root, ec));
-    }, privilege::filesystem);
+    }, permissions::filesystem);
     add_function("root_script_dir", [this]() -> std::string {
         std::string root = root_source_file();
         if (root.empty() || root == "<script>") return working_directory();
         std::error_code ec;
         return location_spelling(std::filesystem::absolute(root, ec).parent_path());
-    }, privilege::filesystem);
+    }, permissions::filesystem);
     add_function("current_script_path", [this]() -> std::string {
         std::string cur = current_source_file();
         if (cur.empty() || cur == "<script>") cur = root_source_file();
         if (cur.empty() || cur == "<script>") return {};
         std::error_code ec;
         return location_spelling(std::filesystem::absolute(cur, ec));
-    }, privilege::filesystem);
+    }, permissions::filesystem);
     add_function("current_script_dir", [this]() -> std::string {
         std::string cur = current_source_file();
         if (cur.empty() || cur == "<script>") cur = root_source_file();
         if (cur.empty() || cur == "<script>") return working_directory();
         std::error_code ec;
         return location_spelling(std::filesystem::absolute(cur, ec).parent_path());
-    }, privilege::filesystem);
+    }, permissions::filesystem);
     // resolve_path(name): the file import would load for `name` asked from the calling file,
     // "" when no rung of the ladder has it (the calling file's folder, the include paths in
     // order, the working directory; an absolute name stands or falls as given)
@@ -6260,23 +6200,23 @@ void engine::register_location_builtins() {
                 return result.error_value();
             }
             return script_value(location_spelling(result.value()), this);
-        }, privilege::filesystem), 1, {param_type_info(script_value_type::jai_string_type)});
-    add_function("executable_path", []() -> std::string { return location_spelling(executable_path()); }, privilege::filesystem);
+        }, permissions::filesystem), 1, {param_type_info(script_value_type::jai_string_type)});
+    add_function("executable_path", []() -> std::string { return location_spelling(executable_path()); }, permissions::filesystem);
     auto executable_dir = []() -> std::string {
         std::string exe = executable_path();
         return exe.empty() ? working_directory() : location_spelling(std::filesystem::path(exe).parent_path());
     };
-    add_function("executable_dir", executable_dir, privilege::filesystem);
-    add_function("bin_dir", executable_dir, privilege::filesystem);
-    add_function("working_dir", []() -> std::string { return working_directory(); }, privilege::filesystem);
+    add_function("executable_dir", executable_dir, permissions::filesystem);
+    add_function("bin_dir", executable_dir, permissions::filesystem);
+    add_function("working_dir", []() -> std::string { return working_directory(); }, permissions::filesystem);
     add_function("parent_dir", [](const std::string& path) -> std::string {
         std::filesystem::path p = std::filesystem::path(path).lexically_normal();
         if (p.filename().empty()) p = p.parent_path();
         return location_spelling(p.parent_path());
-    }, privilege::filesystem);
+    }, permissions::filesystem);
     add_function("file_name", [](const std::string& path) -> std::string {
         return std::filesystem::path(path).filename().generic_string();
-    }, privilege::filesystem);
+    }, permissions::filesystem);
     // file_data(path): a file's or folder's metadata, found by the resolve_path ladder; null when nothing is there
     add_function_with_arity_and_full_types("file_data", guard_function(
         [this](const std::vector<script_value>& args) -> checked_result<script_value> {
@@ -6304,7 +6244,7 @@ void engine::register_location_builtins() {
             m[script_value(std::string("size"), this)] = script_value(static_cast<script_int>(st.size), this);
             m[script_value(std::string("is_directory"), this)] = script_value(st.is_directory, this);
             return data;
-        }, privilege::filesystem), 1, {param_type_info(script_value_type::jai_string_type)});
+        }, permissions::filesystem), 1, {param_type_info(script_value_type::jai_string_type)});
     // import_recheck_interval(seconds) sets the import re-check window, import_recheck_interval() reads it (not a file operation)
     add_variadic_function("import_recheck_interval", [this](const std::vector<script_value>& args) -> checked_result<script_value> {
         if (args.empty()) { return script_value(import_recheck_interval(), this); }
@@ -6319,8 +6259,8 @@ void engine::register_location_builtins() {
         import_recheck_interval(seconds);
         return script_value(std::monostate{}, this);
     });
-    add_function("app_data_dir", [this](const std::string& app) -> std::string { return app_data_dir(app); }, privilege::filesystem);
-    add_function("app_cache_dir", [this](const std::string& app) -> std::string { return app_cache_dir(app); }, privilege::filesystem);
+    add_function("app_data_dir", [this](const std::string& app) -> std::string { return app_data_dir(app); }, permissions::filesystem);
+    add_function("app_cache_dir", [this](const std::string& app) -> std::string { return app_cache_dir(app); }, permissions::filesystem);
     // the file system, the import settings and the host's directory resolvers are shared
     for (const char* name : {"resolve_path", "file_data", "import_recheck_interval", "app_data_dir", "app_cache_dir"}) { serial_function(name); }
 }
@@ -6452,14 +6392,14 @@ namespace {
 bool engine::import_skips(const import_site& site) noexcept {
     const detail::execution_limits& limits = impl->limits_;
     return !limits.import_pass_open && site.seen_generation == impl->import_generation_ && limits.sampled_now < limits.import_window_until &&
-           impl->import_behavior != import_behavior::always && (impl->privileges_ & static_cast<uint64_t>(privilege::filesystem)) != 0 &&
+           impl->import_behavior != import_behavior::always && impl->permissions_.contains(detail::permission_id(permissions::filesystem)) &&
            impl->import_frames_.empty();   // a module's run records every import it reaches (its tree)
 }
 
 bool engine::import_skips(const import_site& site, const script_value* const* args, size_t count) {
     const detail::execution_limits& limits = impl->limits_;
     if (limits.import_pass_open || site.seen_paths_generation != impl->import_generation_ || limits.sampled_now >= limits.import_window_until ||
-        impl->import_behavior == import_behavior::always || (impl->privileges_ & static_cast<uint64_t>(privilege::filesystem)) == 0 ||
+        impl->import_behavior == import_behavior::always || !impl->permissions_.contains(detail::permission_id(permissions::filesystem)) ||
         !impl->import_frames_.empty()) {
         return false;
     }
@@ -6697,7 +6637,7 @@ std::optional<script_value> engine::caught_error_member(const script_value& rece
 // changed ones (a module whose current stamp failed its check holds the whole list back) are read, parsed and checked
 // before any of them runs, then run in order.
 checked_result<bool> engine::import_modules(import_site& site, const std::vector<std::string>& paths, bool force) {
-    auto allowed = require_privilege(privilege::filesystem);
+    auto allowed = require_permission(permissions::filesystem);
     if (!allowed) { return allowed.error_value(); }
     implementation& I = *impl;
     implementation::load_scope loading(I);
@@ -7126,7 +7066,7 @@ checked_result<std::string> resolve_on_ladder(const std::string& path, engine* e
 
 checked_result<std::string> resolve_include_path(const std::string& path, engine* engine_ptr, const std::string& from_file, bool for_import) {
     if (engine_ptr) {
-        auto allowed = engine_ptr->require_privilege(privilege::filesystem);
+        auto allowed = engine_ptr->require_permission(permissions::filesystem);
         if (!allowed) { return allowed.error_value(); }
     }
     return resolve_on_ladder(path, engine_ptr, from_file, for_import);
@@ -7180,7 +7120,7 @@ checked_result<std::string> resolve_on_ladder(const std::string& path, engine* e
         if (rung(p)) return out;
     }
     if (confined_out) {
-        return checked_result<std::string>(make_error_code(runtime_error_code::insufficient_privilege), "Path outside the confined roots: {0}",
+        return checked_result<std::string>(make_error_code(runtime_error_code::insufficient_permission), "Path outside the confined roots: {0}",
             detail::engine_access::symbolize(*engine_ptr, path));
     }
     return checked_result<std::string>(make_error_code(runtime_error_code::file_not_found),
@@ -7340,7 +7280,7 @@ std::vector<std::string> engine::get_imported_files() const {
 }
 
 script_value engine::execute_import(const std::string& resolved_path) {
-    auto allowed = require_privilege(privilege::filesystem);
+    auto allowed = require_permission(permissions::filesystem);
     if (!allowed) { throw runtime_error(format_error(allowed)); }
     // Check import behavior
     bool should_import = false;

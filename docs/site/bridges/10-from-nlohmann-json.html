@@ -301,7 +301,6 @@ int main() {
 <div class="tab-panel" id="save-intrusive" role="tabpanel" aria-labelledby="save-tab-intrusive" tabindex="0">
 <p>Each type derives <code>jai::property_owner</code> and declares its members with <code>JAI_PROPERTY</code>; no function is written.</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript, JAI_PROPERTY)</span><pre><code class="lang-cpp">#include &lt;jaiscript/properties/macros.hpp&gt;
-#include &lt;jaiscript/properties/property_serialization.hpp&gt;
 #include &lt;jaiscript/serialization/convenience.hpp&gt;
 #include &lt;string&gt;
 #include &lt;vector&gt;
@@ -341,7 +340,7 @@ int main() {
 </div>
 </div>
 <div class="tablewrap"><table><thead><tr><th></th><th>nlohmann: non-intrusive</th><th>nlohmann: intrusive</th><th>JaiScript: non-intrusive</th><th>JaiScript: intrusive</th><th>JaiScript: JAI_PROPERTY</th></tr></thead><tbody>
-<tr><td>Headers</td><td colspan="2"><code>nlohmann/json.hpp</code></td><td colspan="2"><code>convenience.hpp</code></td><td>plus <code>properties/macros.hpp</code> and <code>property_serialization.hpp</code></td></tr>
+<tr><td>Headers</td><td colspan="2"><code>nlohmann/json.hpp</code></td><td colspan="2"><code>convenience.hpp</code></td><td>plus <code>properties/macros.hpp</code></td></tr>
 <tr><td>Where the member list lives</td><td>a macro after the type</td><td>a macro inside the type</td><td>a free function after the type, found by ADL</td><td>a member function</td><td>the declarations themselves</td></tr>
 <tr><td>How a member is named</td><td colspan="2">its name in the macro</td><td><code>ar("hero", save.hero)</code></td><td><code>JAI_NVP(hero)</code></td><td>by its declaration</td></tr>
 <tr><td>When writing and reading differ</td><td colspan="2">free <code>to_json</code> and <code>from_json</code></td><td>free <code>save</code> and <code>load</code></td><td colspan="2">member <code>save</code> and <code>load</code></td></tr>

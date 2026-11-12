@@ -240,8 +240,8 @@ struct joined_script {
 };
 
 void set_filesystem_grant(engine& eng, bool enabled) {
-    if (enabled) { eng.enable(privilege::filesystem); }
-    else { eng.disable(privilege::filesystem); }
+    if (enabled) { eng.enable(permissions::filesystem); }
+    else { eng.disable(permissions::filesystem); }
 }
 
 } // namespace

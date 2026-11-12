@@ -530,19 +530,18 @@ private:
 	std::atomic<int64_t> received_{ 0 }, total_{ -1 };
 };
 
-// A download reaches the network and writes a file: start needs both privileges
+// A download reaches the network and writes a file: start needs both permissions
 inline void register_fetch(jai::engine& eng) {
-	eng.register_privilege("network");
 	jai::dynamic_binder<download>(eng, "Download")
 		.constructor<>()
-		.method("start", &download::start, {"filesystem", "network"})
+		.method("start", &download::start, jai::permissions::filesystem, jai::permissions::network)
 		.method("pump", &download::pump)
 		.method("done", &download::done)
 		.method("success", &download::success)
 		.method("error", &download::error)
 #if !defined(_WIN32) && !defined(JAISCRIPT_RUNNER_HAS_CURL)
 		// The curl-executable fallback polls file_size; WinHTTP/libcurl read counters.
-		.method("received", &download::received, jai::filesystem)
+		.method("received", &download::received, jai::permissions::filesystem)
 #else
 		.method("received", &download::received)
 #endif
@@ -550,10 +549,10 @@ inline void register_fetch(jai::engine& eng) {
 		.method("fraction", &download::fraction)
 		.method("cancel", &download::cancel)
 		.build();
-	eng.add_function("zip_entries", [](const std::string& zip) -> std::vector<std::string> { return zip_entries(zip); }, jai::filesystem);
+	eng.add_function("zip_entries", [](const std::string& zip) -> std::vector<std::string> { return zip_entries(zip); }, jai::permissions::filesystem);
 	eng.add_function("zip_extract", [](const std::string& zip, const std::string& entry, const std::string& dest) -> bool {
 		return zip_extract(zip, entry, dest);
-	}, jai::filesystem);
+	}, jai::permissions::filesystem);
 }
 
 } // namespace jai_runner

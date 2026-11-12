@@ -469,7 +469,9 @@ public:
 				const std::string name = "typed_path_" + std::to_string(index++);
 				check_eq((int64_t)1, run_int(*eng, "int " + name + "() { auto h = make_shared_vec(1); " + body + " } " + name + "()"),
 					std::string("a host handle stored into a Vec element is a copy: ") + body);
-				check_eq(1, capture_auto_copy::CopyCountedVec::copies, std::string("one copy-constructor call: ") + body);
+				// an element assignment runs the class's = into the element, as C++ does, and copy-constructs nothing
+				const int expected_copies = std::string(body).find("a[0] = h") != std::string::npos ? 0 : 1;
+				check_eq(expected_copies, capture_auto_copy::CopyCountedVec::copies, std::string("copy-constructor calls: ") + body);
 			}
 		});
 

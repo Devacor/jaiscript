@@ -297,6 +297,9 @@ namespace jai {
 				prop->serialize(type_erased);
 			}
 		}
+		if constexpr (std::is_base_of_v<serialization::archive_writer_core, Archive>) {
+			ar.write_bound_properties(type_erased, this);
+		}
 	}
 
 	template<typename Archive>
@@ -325,6 +328,9 @@ namespace jai {
 				}
 			}
 			type_erased.clear_property_value();
+		}
+		if constexpr (std::is_base_of_v<serialization::archive_reader_core, Archive>) {
+			ar.read_bound_properties(type_erased, this);
 		}
 	}
 

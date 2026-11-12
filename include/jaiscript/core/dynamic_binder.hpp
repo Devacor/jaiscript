@@ -4,6 +4,7 @@
 #define __JAISCRIPT_CORE_dynamic_binder_HPP__
 
 #include "engine.hpp"
+#include "engine_ref.hpp"
 #include "engine_impl.hpp"
 #include "value.hpp"
 #include "types.hpp"
@@ -14,6 +15,7 @@
 #include "bound_map.hpp"
 #include "bound_cpp_vector.hpp"
 #include "script_extensible.hpp"
+#include "declared_methods.hpp"
 #include <jaiscript/serialization/archive_impl.hpp>
 #include <jaiscript/detail/static_type_name.hpp>
 #include <jaiscript/detail/host_member.hpp>
@@ -21,6 +23,7 @@
 #include <jaiscript/properties/observable_property.hpp>
 #include <jaiscript/signals/signal_impl.hpp>
 #include <jaiscript/signals/signal_view.hpp>
+#include <jaiscript/signals/signal_serialization.hpp>
 #include <string>
 #include <memory>
 #include <optional>
@@ -183,6 +186,13 @@ namespace dynamic_binder_validation {
 
     template<typename Sig, typename Sync>
     struct is_signal_type<member_signal_emitter<Sig, Sync>> : std::true_type {};
+
+    // A view refers to an emitter elsewhere and holds nothing to save; an emitter saves its script-text receivers
+    template<typename T>
+    struct is_signal_view : std::false_type {};
+
+    template<typename Sig, typename Sync>
+    struct is_signal_view<signal<Sig, Sync>> : std::true_type {};
 
     // std::function members are callback hooks (script lambdas assign into them);
     // like signals, they are opaque to scripts and need no registration.
@@ -459,7 +469,7 @@ namespace detail {
 	void bind_schema_math_property(engine& a_engine, class_definition& class_def, serialization::class_metadata& metadata,
 		const std::string& prop_name, const math_property_bridge& bridge, const schema_property_access& access);
 
-	// A math property auto_bind defers to build(), where a bound method of the same name takes the spelling instead
+	// A math property the binder defers to build(), where a bound method of the same name takes the spelling instead
 	struct pending_math_property {
 		std::string name;
 		math_property_bridge bridge;
@@ -488,86 +498,179 @@ namespace detail {
 	};
 } // namespace detail
 
-// ============================================================================
-// Bind Mode for auto_build()
-// ============================================================================
-
-enum class bind_mode {
-    all,        // Base classes + properties + auto-detected methods/constructors
-    properties, // Base classes + properties only (no auto methods/constructors)
-    hierarchy   // Base classes only (no properties or auto methods)
-};
-
-// ============================================================================
-// Concepts for auto-detection (used by auto_build)
-// ============================================================================
+// What every binder binds by itself (dynamic_binder::bind_automatic_surface)
 
 template<typename U> class dynamic_binder;
 
 namespace auto_bind_concepts {
 
-// Detect if T has to_string() method
-template<typename T>
-concept has_to_string = requires(const T& t) {
-    { t.to_string() } -> std::convertible_to<std::string>;
-};
+// An operator T declares, as a member or a free function argument-dependent lookup finds: never a builtin operator reached
+// through a conversion, never one C++ rewrites from another (script derives those itself)
+#define JAI_DECLARED_BINARY_OPERATOR(name, op) template<typename T> concept declares_##name = requires(const T& a, const T& b) { a.operator op(b); } || requires(const T& a, const T& b) { operator op(a, b); };
+JAI_DECLARED_BINARY_OPERATOR(add, +)
+JAI_DECLARED_BINARY_OPERATOR(subtract, -)
+JAI_DECLARED_BINARY_OPERATOR(multiply, *)
+JAI_DECLARED_BINARY_OPERATOR(divide, /)
+JAI_DECLARED_BINARY_OPERATOR(modulo, %)
+JAI_DECLARED_BINARY_OPERATOR(bit_and, &)
+JAI_DECLARED_BINARY_OPERATOR(bit_or, |)
+JAI_DECLARED_BINARY_OPERATOR(bit_xor, ^)
+JAI_DECLARED_BINARY_OPERATOR(shift_left, <<)
+JAI_DECLARED_BINARY_OPERATOR(shift_right, >>)
+JAI_DECLARED_BINARY_OPERATOR(equal, ==)
+JAI_DECLARED_BINARY_OPERATOR(not_equal, !=)
+JAI_DECLARED_BINARY_OPERATOR(less, <)
+JAI_DECLARED_BINARY_OPERATOR(less_equal, <=)
+JAI_DECLARED_BINARY_OPERATOR(greater, >)
+JAI_DECLARED_BINARY_OPERATOR(greater_equal, >=)
+JAI_DECLARED_BINARY_OPERATOR(three_way, <=>)
+#undef JAI_DECLARED_BINARY_OPERATOR
 
-// Detect if T has size() method
-template<typename T>
-concept has_size = requires(const T& t) {
-    { t.size() } -> std::convertible_to<size_t>;
-};
+#define JAI_DECLARED_COMPOUND_OPERATOR(name, op) template<typename T> concept declares_##name = requires(T& a, const T& b) { a.operator op(b); } || requires(T& a, const T& b) { operator op(a, b); };
+JAI_DECLARED_COMPOUND_OPERATOR(add_assign, +=)
+JAI_DECLARED_COMPOUND_OPERATOR(subtract_assign, -=)
+JAI_DECLARED_COMPOUND_OPERATOR(multiply_assign, *=)
+JAI_DECLARED_COMPOUND_OPERATOR(divide_assign, /=)
+JAI_DECLARED_COMPOUND_OPERATOR(modulo_assign, %=)
+JAI_DECLARED_COMPOUND_OPERATOR(bit_and_assign, &=)
+JAI_DECLARED_COMPOUND_OPERATOR(bit_or_assign, |=)
+JAI_DECLARED_COMPOUND_OPERATOR(bit_xor_assign, ^=)
+JAI_DECLARED_COMPOUND_OPERATOR(shift_left_assign, <<=)
+JAI_DECLARED_COMPOUND_OPERATOR(shift_right_assign, >>=)
+#undef JAI_DECLARED_COMPOUND_OPERATOR
 
-// Detect if T has empty() method
-template<typename T>
-concept has_empty = requires(const T& t) {
-    { t.empty() } -> std::convertible_to<bool>;
-};
+#define JAI_DECLARED_UNARY_OPERATOR(name, op) template<typename T> concept declares_##name = requires(const T& a) { a.operator op(); } || requires(const T& a) { operator op(a); };
+JAI_DECLARED_UNARY_OPERATOR(negate, -)
+JAI_DECLARED_UNARY_OPERATOR(unary_plus, +)
+JAI_DECLARED_UNARY_OPERATOR(complement, ~)
+#undef JAI_DECLARED_UNARY_OPERATOR
 
-// Detect if T has operator==
 template<typename T>
-concept has_equality = requires(const T& a, const T& b) {
-    { a == b } -> std::convertible_to<bool>;
-};
+concept declares_prefix_increment = requires(T& a) { a.operator++(); } || requires(T& a) { operator++(a); };
+template<typename T>
+concept declares_postfix_increment = requires(T& a) { a.operator++(0); } || requires(T& a) { operator++(a, 0); };
+template<typename T>
+concept declares_prefix_decrement = requires(T& a) { a.operator--(); } || requires(T& a) { operator--(a); };
+template<typename T>
+concept declares_postfix_decrement = requires(T& a) { a.operator--(0); } || requires(T& a) { operator--(a, 0); };
 
-// Detect if T uses property_owner CRTP (has _jai_owner_type)
+// [] by an integer or a string index, read as a number, bool, string or class reference
+template<typename R>
+concept indexed_result = std::is_arithmetic_v<std::remove_cvref_t<R>> || std::is_same_v<std::remove_cvref_t<R>, std::string> ||
+    (std::is_class_v<std::remove_cvref_t<R>> && std::is_lvalue_reference_v<R>);
+template<typename T>
+concept declares_integer_index = requires(T& a, int64_t i) { { a.operator[](i) } -> indexed_result; };
+template<typename T>
+concept declares_string_index = !declares_integer_index<T> && requires(T& a, const std::string& k) { { a.operator[](k) } -> indexed_result; };
+
+// () when T has exactly one non-template call operator: its own signature is the script one
+template<typename T>
+concept declares_one_call_operator = requires { &T::operator(); } && std::is_member_function_pointer_v<decltype(&T::operator())>;
+
+// T is a property_owner level itself: a subclass inherits its base's _jai_owner_type and _jai_base_types
 template<typename T>
 concept is_property_owner = requires {
     typename T::_jai_owner_type;
-};
+} && std::is_same_v<typename T::_jai_owner_type, T>;
 
-// Detect if T has base types defined
 template<typename T>
-concept has_base_types = requires {
+concept has_base_types = is_property_owner<T> && requires {
     typename T::_jai_base_types;
 };
 
-// allows classes to register their own private members during auto_bind()
-// (needs the real jai::dynamic_binder — a fwd-decl in this namespace shadows it and falsifies the concept for every T)
+// T::jai_auto_bind binds what only T can reach (private members), after the automatic surface. A class declares one, non-template:
+// static void jai_auto_bind(jai::dynamic_binder<T>&) with no context, static void jai_auto_bind(jai::dynamic_binder<T>&, const C&)
+// with context C. A subclass that declares none finds its base's by name, which takes the base's binder: not the subclass's hook.
+// (needs the real jai::dynamic_binder — a fwd-decl in this namespace shadows it and falsifies the checks for every T)
+template<typename T, typename Hook>
+struct own_hook {
+    static constexpr int kind = 0;
+    using context = void;
+};
 template<typename T>
-concept has_jai_auto_bind = requires(dynamic_binder<T>& builder) {
-    { T::jai_auto_bind(builder) } -> std::same_as<void>;
+struct own_hook<T, void (*)(dynamic_binder<T>&)> {
+    static constexpr int kind = 1;
+    using context = void;
+};
+template<typename T, typename C>
+struct own_hook<T, void (*)(dynamic_binder<T>&, const C&)> {
+    static constexpr int kind = 2;
+    using context = C;
 };
 
+template<typename T>
+struct class_context {
+    using type = void;
+};
+template<typename T>
+    requires requires { typename T::_jai_context_type; }
+struct class_context<T> {
+    using type = typename T::_jai_context_type;
+};
+
+template<typename T>
+inline constexpr bool hook_check_failed = false;
+
+// 0: T has no hook of its own, 1: the plain hook, 2: the context hook; any other declaration is a compile error
+template<typename T>
+consteval int hook_kind() {
+    using context_type = typename class_context<T>::type;
+    if constexpr (requires { &T::jai_auto_bind; }) {
+        using hook = own_hook<T, decltype(&T::jai_auto_bind)>;
+        if constexpr (hook::kind == 1) {
+            static_assert(std::is_void_v<context_type>,
+                "jai_auto_bind: a class with a context C declares static void jai_auto_bind(jai::dynamic_binder<T>&, const C&)");
+        } else if constexpr (hook::kind == 2) {
+            static_assert(!std::is_void_v<context_type>,
+                "jai_auto_bind: a class with no context declares static void jai_auto_bind(jai::dynamic_binder<T>&), without a context");
+            static_assert(std::is_void_v<context_type> || std::is_same_v<typename hook::context, context_type>,
+                "jai_auto_bind(jai::dynamic_binder<T>&, const C&): C must be the class's context, the jai::context<C> it or a base is tagged with");
+            if constexpr (std::is_void_v<context_type> || !std::is_same_v<typename hook::context, context_type>) { return 0; }
+        }
+        if constexpr (hook::kind == 1 && !std::is_void_v<context_type>) { return 0; }
+        return hook::kind;
+    } else if constexpr (requires(dynamic_binder<T>& a_builder) { T::jai_auto_bind(a_builder); }) {
+        static_assert(hook_check_failed<T>, "jai_auto_bind: a class declares exactly one jai_auto_bind, and not a template");
+        return 0;
+    } else if constexpr (!std::is_void_v<context_type> && requires(dynamic_binder<T>& a_builder, const context_type& a_context) { T::jai_auto_bind(a_builder, a_context); }) {
+        static_assert(hook_check_failed<T>, "jai_auto_bind: a class declares exactly one jai_auto_bind, and not a template");
+        return 0;
+    } else {
+        return 0;
+    }
+}
+
 } // namespace auto_bind_concepts
+
+namespace detail {
+	// The registrar's naming ladder (registrar_auto_name): a jai_type_name pin, else the bare C++ class name
+	template<typename T>
+	std::string binder_auto_name() {
+		constexpr auto derived = declared_or_derived_type_name<T>();
+		static_assert(!derived.empty(),
+			"jai::dynamic_binder<T>(engine): T has no portable auto-name (template instantiation, lambda, or local type). "
+			"Pass an explicit name: jai::dynamic_binder<T>(engine, \"Name\").");
+		return std::string(derived);
+	}
+}
 
 // Builder pattern for registering C++ classes to JaiScript
 template<typename T>
 class dynamic_binder : private detail::pending_binder {
     static_assert(!math_adapted<T>, "T binds as a native math type (math_adapter); delete its dynamic_binder registration");
 public:
-    dynamic_binder(engine& engine, const std::string& class_name)
-        : detail::pending_binder(engine, class_name, &commit_pending), engine_(engine) {
+    dynamic_binder(engine_ref a_engine, const std::string& class_name)
+        : detail::pending_binder(*a_engine, class_name, &commit_pending), engine_(*a_engine) {
         // Extract base template name if this is a templated type
         std::string baseTemplateName = extract_base_template_name(class_name);
 
         // Register the base template name if it contains template syntax
         if (baseTemplateName != class_name) {
-            engine.register_template_type(baseTemplateName);
+            engine_.register_template_type(baseTemplateName);
         }
 
         // Intern the class name for fast type comparisons
-        uint64_t type_id = engine.symbolize(class_name);
+        uint64_t type_id = engine_.symbolize(class_name);
 
         // Adopt an auto-registered projection of this type (base_class<B> materializes
         // unregistered property_owner bases under their derived name): the explicit
@@ -577,7 +680,7 @@ public:
         // rename under live instances would break their interned type checks — so
         // explicit registrations must land before scripts construct auto-registered
         // placeholders. Violations throw here, loudly, at the registration site.
-        if (auto existing = engine.get_class_definition_by_type(std::type_index(typeid(T)));
+        if (auto existing = engine_.get_class_definition_by_type(std::type_index(typeid(T)));
             existing && existing->auto_registered()) {
             if (existing->has_live_instances()) {
                 throw std::runtime_error("dynamic_binder<T>(engine, \"" + class_name +
@@ -597,6 +700,8 @@ public:
         // Initialize serialization metadata
         serialization_metadata_.class_name = class_name;
         serialization_metadata_.current_version = 1;
+
+        bind_automatic_surface();
     }
     
     // shared_ptr / raw-pointer convenience (engine::make() returns a shared_ptr)
@@ -606,6 +711,9 @@ public:
     dynamic_binder(engine* engine_ptr, const std::string& class_name)
         : dynamic_binder(*engine_ptr, class_name) {
     }
+
+    // Named as the auto-named registrar names it, which is also the class's serialization $type
+    explicit dynamic_binder(engine_ref a_engine) : dynamic_binder(a_engine, detail::binder_auto_name<T>()) {}
 
     // The binding commits here unless build() or the engine's first load already committed it
     ~dynamic_binder() {
@@ -624,28 +732,33 @@ public:
         , class_def_(std::move(other.class_def_))
         , serialization_metadata_(std::move(other.serialization_metadata_))
         , pending_math_properties_(std::move(other.pending_math_properties_))
-        , has_explicit_constructor_(other.has_explicit_constructor_)
     {
     }
 
-    // Add constructor
-    template<typename... Args>
-    dynamic_binder& constructor() {
-        has_explicit_constructor_ = true;  // Track that user explicitly registered a constructor
-
-        // Register the constructor as an overloaded function
-        if constexpr (sizeof...(Args) == 0) {
-            engine_.add_overloaded_function(class_name_, 0, detail::host_method_call{ &native_constructor_call<>, constructor_state() });
-        } else {
-            engine_.add_overloaded_function_with_full_types(class_name_, sizeof...(Args),
-                writeback_tagged<detail::host_writeback_mask<Args...>()>(detail::host_method_call{ &native_constructor_call<Args...>, constructor_state() }),
-                std::vector<param_type_info>{ engine::map_cpp_type_to_param_info<std::decay_t<Args>>()... });
-        }
-
+    // The trailing options are .method's: permissions a construction requires, nodiscard (a dropped instance is an error) and
+    // serial (a parallel body may not construct the class, or a script class over it); nodiscard and serial cover every constructor
+    template<typename... Args, detail::function_option... Options>
+    dynamic_binder& constructor(const Options&... options) {
+        queue_own_binding();
+        const function_options folded = detail::fold_function_options(options...);
+        add_constructor<Args...>(folded.required);
+        if (folded.nodiscard) { engine_.nodiscard_function(class_name_); }
+        if (folded.serial) { class_def_->serial_only_construction(true); }
         return *this;
     }
 
 private:
+    template<typename... Args>
+    void add_constructor(const permission_set& required = {}) {
+        if constexpr (sizeof...(Args) == 0) {
+            engine_.add_overloaded_function(class_name_, 0, engine_.guard_function(detail::host_method_call{ &native_constructor_call<>, constructor_state() }, required));
+        } else {
+            engine_.add_overloaded_function_with_full_types(class_name_, sizeof...(Args),
+                writeback_tagged<detail::host_writeback_mask<Args...>()>(engine_.guard_function(detail::host_method_call{ &native_constructor_call<Args...>, constructor_state() }, required)),
+                std::vector<param_type_info>{ engine::map_cpp_type_to_param_info<std::decay_t<Args>>()... });
+        }
+    }
+
     std::shared_ptr<const void> constructor_state() const {
         return std::make_shared<const detail::native_constructor_state>(detail::native_constructor_state{ class_def_, class_name_, &engine_ });
     }
@@ -693,14 +806,6 @@ public:
         } else {
             return engine::map_cpp_type_to_param_info<std::remove_cvref_t<R>>();
         }
-    }
-
-    // The class's constructor or destructor touches state other objects share (a registry, a cache, a service lookup): a
-    // parallel body refuses to construct it, and any script class over it, before any element runs. Host construction is
-    // otherwise taken to be safe on any thread.
-    dynamic_binder& serial_only_constructor() {
-        class_def_->serial_only_construction(true);
-        return *this;
     }
 
     // Hold every bound method of this class to its C++ signature in the strict checker
@@ -771,11 +876,6 @@ public:
     template<typename ArgsTuple, size_t N>
     static bool self_lane_exact(const script_value* args, size_t argc) {
         return argc == N && self_lane_exact_impl<ArgsTuple>(args, std::make_index_sequence<N>{});
-    }
-    template<typename Requirements>
-    static bool lane_unguarded(const Requirements& required) {
-        if constexpr (std::is_same_v<std::decay_t<Requirements>, privilege>) { return required == privilege::none; }
-        else { return false; }
     }
     template<typename Method>
     using lane_state = detail::member_call_state<sizeof(Method)>;
@@ -898,9 +998,9 @@ public:
         // args[0] is 'this'; the class's dispatch called this overload for its arity
         T* cpp_obj = detail::extract_cpp_object_ptr<T>(args[0], st.native_type_id);
         if constexpr (IsConst) {
-            return dynamic_binder<T>::call_const_method(cpp_obj, std::bit_cast<Method>(st.method), args, std::index_sequence_for<Args...>{}, st.eng);
+            return dynamic_binder<T>::call_const_method<R, Args...>(cpp_obj, std::bit_cast<Method>(st.method), args, std::index_sequence_for<Args...>{}, st.eng);
         } else {
-            return dynamic_binder<T>::call_method(cpp_obj, std::bit_cast<Method>(st.method), args, std::index_sequence_for<Args...>{}, st.eng);
+            return dynamic_binder<T>::call_method<R, Args...>(cpp_obj, std::bit_cast<Method>(st.method), args, std::index_sequence_for<Args...>{}, st.eng);
         }
     }
 
@@ -918,8 +1018,9 @@ public:
         }
     }
 
-    template<bool IsConst, typename R, typename Method, typename... Args, typename Requirements>
-    dynamic_binder& bind_member_method(const std::string& name, Method method, Requirements required) {
+    template<bool IsConst, typename R, typename Method, typename... Args>
+    dynamic_binder& bind_member_method(const std::string& name, Method method, const function_options& options) {
+        queue_own_binding();
         constexpr uint64_t writeback = detail::host_writeback_mask<Args...>();
         using State = lane_state<Method>;
         auto state = std::make_shared<const State>(State{ std::bit_cast<std::array<std::byte, sizeof(Method)>>(method), &engine_, class_def_->get_type_id() });
@@ -927,62 +1028,84 @@ public:
         // Add method to the class definition (for object.method() calls), carrying the C++
         // parameter signature so same-arity overloads (e.g. set(float...) vs set(int...)) resolve
         // by argument type instead of the last registration silently winning.
-        const bool unguarded = lane_unguarded(required);
+        const bool unguarded = options.required.empty();
         class_def_->note_host_overload(engine_.symbolize(name), sizeof...(Args), IsConst);
-        class_def_->add_method(name, writeback_tagged<writeback>(engine_.guard_function(detail::host_method_call{ &member_method_call<IsConst, R, Method, Args...>, state }, std::move(required))), sizeof...(Args),
+        class_def_->add_method(name, writeback_tagged<writeback>(engine_.guard_function(detail::host_method_call{ &member_method_call<IsConst, R, Method, Args...>, state }, options.required)), sizeof...(Args),
             std::vector<param_type_info>{ engine::map_cpp_type_to_param_info<std::decay_t<Args>>()... }, result_info<R>());
         if constexpr (lane_result<R>() && (lane_param<Args>() && ...)) {
             if (unguarded) {
                 class_def_->add_native_lane(engine_.symbolize(name), &member_lane<std::conditional_t<IsConst, const T, T>, R, Method, Args...>, std::move(state),
                                             &lane_exact<Args...>);
-                return *this;
+                return apply_method_options(name, IsConst, options);
             }
         }
         class_def_->withdraw_native_lane(engine_.symbolize(name));
-        return *this;
+        return apply_method_options(name, IsConst, options);
     }
     template<typename ArgsTuple, size_t... Is>
     static constexpr bool self_lane_params(std::index_sequence<Is...>) { return (lane_param<std::tuple_element_t<Is + 1, ArgsTuple>>() && ...); }
 
-    // The trailing function_options: the privilege the call requires, nodiscard (Class.method drops no result) and serial (a
-    // parallel body may not call it). serial on a non-const overload covers the name's non-const overloads; on a const one, all.
-    template<typename R, typename... Args>
-    dynamic_binder& method(const std::string& name, R(T::*member)(Args...), function_options options) {
-        bind_member_method<false, R, R(T::*)(Args...), Args...>(name, member, options.required);
-        return apply_method_options(name, false, options);
+    // The trailing options: permissions the call requires, nodiscard (Class.method drops no result) and serial (a parallel body
+    // may not call it). serial on a non-const overload covers the name's non-const overloads; on a const one, all. A noexcept
+    // member binds as the same member without it.
+    template<typename R, typename... Args, bool Noexcept, detail::function_option... Options>
+    dynamic_binder& method(const std::string& name, R(T::*member)(Args...) noexcept(Noexcept), const Options&... options) {
+        return bind_member_method<false, R, R(T::*)(Args...), Args...>(name, member, detail::fold_function_options(options...));
     }
-    template<typename R, typename... Args>
-    dynamic_binder& method(const std::string& name, R(T::*member)(Args...) const, function_options options) {
-        bind_member_method<true, R, R(T::*)(Args...) const, Args...>(name, member, options.required);
-        return apply_method_options(name, true, options);
+    template<typename R, typename... Args, bool Noexcept, detail::function_option... Options>
+    dynamic_binder& method(const std::string& name, R(T::*member)(Args...) const noexcept(Noexcept), const Options&... options) {
+        return bind_member_method<true, R, R(T::*)(Args...) const, Args...>(name, member, detail::fold_function_options(options...));
     }
-    template<typename Callable>
-    dynamic_binder& method(const std::string& name, Callable&& callable, function_options options) {
-        constexpr bool is_const = !first_param_is_mutable_self<typename detail::function_traits<std::decay_t<Callable>>::argument_types>();
-        method(name, std::forward<Callable>(callable), options.required);
-        return apply_method_options(name, is_const, options);
+    // a script receiver is an lvalue: & and const & bind as the members they are, && cannot be called on one
+    template<typename R, typename... Args, bool Noexcept, detail::function_option... Options>
+    dynamic_binder& method(const std::string& name, R(T::*member)(Args...) & noexcept(Noexcept), const Options&... options) {
+        return bind_member_method<false, R, R(T::*)(Args...) &, Args...>(name, member, detail::fold_function_options(options...));
+    }
+    template<typename R, typename... Args, bool Noexcept, detail::function_option... Options>
+    dynamic_binder& method(const std::string& name, R(T::*member)(Args...) const & noexcept(Noexcept), const Options&... options) {
+        return bind_member_method<true, R, R(T::*)(Args...) const &, Args...>(name, member, detail::fold_function_options(options...));
+    }
+    template<typename R, typename... Args, bool Noexcept, detail::function_option... Options>
+    dynamic_binder& method(const std::string&, R(T::*)(Args...) && noexcept(Noexcept), const Options&...) {
+        static_assert(sizeof...(Args) != sizeof...(Args), "a && member cannot be called on a script receiver, which is an lvalue: bind it through a lambda");
+        return *this;
+    }
+    template<typename R, typename... Args, bool Noexcept, detail::function_option... Options>
+    dynamic_binder& method(const std::string&, R(T::*)(Args...) const && noexcept(Noexcept), const Options&...) {
+        static_assert(sizeof...(Args) != sizeof...(Args), "a && member cannot be called on a script receiver, which is an lvalue: bind it through a lambda");
+        return *this;
     }
 
-    // Add method binding - member function pointer version
-    template<typename R, typename... Args, typename Requirements = privilege>
-    dynamic_binder& method(const std::string& name, R(T::*method)(Args...), Requirements required = privilege::none) {
-        return bind_member_method<false, R, R(T::*)(Args...), Args...>(name, method, std::move(required));
+    // &Derived::f names the base that declares f: bound as the derived class's member, the same instantiation
+    template<typename B, typename R, typename... Args, bool Noexcept, detail::function_option... Options>
+        requires (!std::is_same_v<B, T> && std::is_base_of_v<B, T>)
+    dynamic_binder& method(const std::string& name, R(B::*member)(Args...) noexcept(Noexcept), const Options&... options) {
+        static_assert(std::is_convertible_v<R(B::*)(Args...), R(T::*)(Args...)>, "a member of a virtual or ambiguous base binds through a lambda");
+        return method(name, static_cast<R(T::*)(Args...)>(member), options...);
     }
-
-    // Add const method binding
-    template<typename R, typename... Args, typename Requirements = privilege>
-    dynamic_binder& method(const std::string& name, R(T::*method)(Args...) const, Requirements required = privilege::none) {
-        return bind_member_method<true, R, R(T::*)(Args...) const, Args...>(name, method, std::move(required));
+    template<typename B, typename R, typename... Args, bool Noexcept, detail::function_option... Options>
+        requires (!std::is_same_v<B, T> && std::is_base_of_v<B, T>)
+    dynamic_binder& method(const std::string& name, R(B::*member)(Args...) const noexcept(Noexcept), const Options&... options) {
+        static_assert(std::is_convertible_v<R(B::*)(Args...) const, R(T::*)(Args...) const>, "a member of a virtual or ambiguous base binds through a lambda");
+        return method(name, static_cast<R(T::*)(Args...) const>(member), options...);
     }
 
     // Add lambda/callable method binding
     // Supports: .method("setText", [](Button& self, const std::string& text) { self.setText(text); })
     // Note: First parameter can be a reference to self for accessing the object
-    template<typename Callable, typename Requirements = privilege>
-    dynamic_binder& method(const std::string& name, Callable&& callable, Requirements required = privilege::none) {
+    template<typename Callable, detail::function_option... Options>
+        requires (!std::is_member_function_pointer_v<std::decay_t<Callable>>)
+    dynamic_binder& method(const std::string& name, Callable&& callable, const Options&... options) {
         // Detect accidental use of member data pointers - use property() instead
         static_assert(!std::is_member_object_pointer_v<std::decay_t<Callable>>,
             "Member data pointers cannot be passed to method(). Use property() instead.");
+        return bind_callable_method(name, std::forward<Callable>(callable), detail::fold_function_options(options...));
+    }
+
+private:
+    template<typename Callable>
+    dynamic_binder& bind_callable_method(const std::string& name, Callable&& callable, const function_options& options) {
+        queue_own_binding();
 
         // Use function_traits to determine the signature
         using traits = detail::function_traits<std::decay_t<Callable>>;
@@ -994,13 +1117,13 @@ public:
             if constexpr (second_param_is_self<args_tuple>()) {
                 // C++'s free op(L, const T&) bound for T: the reflected operator `5 - t` reaches when 5 has none for t
                 if (binary_operator_token(name)) {
-                    return method(engine::reflected_operator_name(name), reflected<typename traits::return_type>(
-                        std::make_shared<CallableType>(std::forward<Callable>(callable)), static_cast<args_tuple*>(nullptr)), required);
+                    return bind_callable_method(engine::reflected_operator_name(name), reflected<typename traits::return_type>(
+                        std::make_shared<CallableType>(std::forward<Callable>(callable)), static_cast<args_tuple*>(nullptr)), options);
                 }
             }
             // a callable without a T& / const T& first parameter is a method that ignores its receiver
-            return method(name, receiver_ignoring<typename traits::return_type>(
-                std::make_shared<CallableType>(std::forward<Callable>(callable)), static_cast<args_tuple*>(nullptr)), required);
+            return bind_callable_method(name, receiver_ignoring<typename traits::return_type>(
+                std::make_shared<CallableType>(std::forward<Callable>(callable)), static_cast<args_tuple*>(nullptr)), options);
         } else {
             using R = typename traits::return_type;
             constexpr size_t script_arity = traits::arity - 1;
@@ -1015,23 +1138,26 @@ public:
                 state = std::make_shared<const detail::callable_call_state<CallableType>>(
                     detail::callable_call_state<CallableType>{ std::forward<Callable>(callable), &engine_, class_def_->get_type_id() });
             }
-            const bool lane = lane_shaped && lane_unguarded(required);
-            class_def_->note_host_overload(engine_.symbolize(name), script_arity, !std::is_same_v<std::tuple_element_t<0, args_tuple>, T&>);
+            const bool lane = lane_shaped && options.required.empty();
+            constexpr bool is_const = !std::is_same_v<std::tuple_element_t<0, args_tuple>, T&>;
+            class_def_->note_host_overload(engine_.symbolize(name), script_arity, is_const);
 
             // the C++ parameter signature after the self parameter, so same-arity lambda overloads resolve by argument type
-            class_def_->add_method(name, writeback_tagged<writeback>(engine_.guard_function(detail::host_method_call{ &callable_method_call<R, args_tuple, CallableType>, state }, std::move(required))), script_arity,
+            class_def_->add_method(name, writeback_tagged<writeback>(engine_.guard_function(detail::host_method_call{ &callable_method_call<R, args_tuple, CallableType>, state }, options.required)), script_arity,
                 param_sig_from_tuple<args_tuple, 1, script_arity>(), result_info<R>());
             if constexpr (lane_shaped) {
                 if (lane) {
                     class_def_->add_native_lane(engine_.symbolize(name), &self_lane<R, args_tuple, CallableType, script_arity>, std::move(state),
                                                 &self_lane_exact<args_tuple, script_arity>);
-                    return *this;
+                    return apply_method_options(name, is_const, options);
                 }
             }
             class_def_->withdraw_native_lane(engine_.symbolize(name));
-            return *this;
+            return apply_method_options(name, is_const, options);
         }
     }
+
+public:
 
     template<typename Tuple>
     static constexpr bool first_param_is_self() {
@@ -1079,31 +1205,26 @@ public:
         return [callable](const T&, Args... args) -> R { return (*callable)(std::forward<Args>(args)...); };
     }
     
-    template<typename Callable>
-    dynamic_binder& method(const std::string& name, Callable&& callable, std::initializer_list<std::string_view> names) {
-        return method(name, std::forward<Callable>(callable), std::span(names.begin(), names.size()));
-    }
-
-    // A static method marshals exactly like engine::add_function; the class adds the receiver-free call and its arity text
-    template<typename Callable>
-    dynamic_binder& static_method(const std::string& name, Callable&& callable) {
-        return static_method(name, std::forward<Callable>(callable), function_options{});
-    }
-    template<typename Callable>
-    dynamic_binder& static_method(const std::string& name, Callable&& callable, privilege required) {
-        return static_method(name, std::forward<Callable>(callable), function_options{required});
-    }
-    template<typename Callable>
-    dynamic_binder& static_method(const std::string& name, Callable&& callable, function_options options) {
+    // A static method marshals exactly like engine::add_function, with its trailing options; the class adds the receiver-free
+    // call and its arity text
+    template<typename Callable, detail::function_option... Options>
+    dynamic_binder& static_method(const std::string& name, Callable&& callable, const Options&... options) {
+        queue_own_binding();
         static_assert(!std::is_member_pointer_v<std::decay_t<Callable>>,
             "Member pointers cannot be passed to static_method(). Use method() or property() instead.");
-        binding_traits::check_binding_validity<Callable>(name);
+        const function_options folded = detail::fold_function_options(options...);
         using traits = detail::function_traits<std::decay_t<Callable>>;
         constexpr uint64_t writeback = detail::tuple_writeback_mask<typename traits::argument_types>::value;
-        class_def_->add_static_method(name, writeback_tagged<writeback>(engine_.guard_function(make_function_binder(std::forward<Callable>(callable), &engine_).bind(), options.required)), traits::arity);
-        if (options.nodiscard) { engine_.nodiscard_function(class_name_ + "." + name); }
-        if (options.serial) { class_def_->mark_serial_static_method(engine_.symbolize(name)); }
+        class_def_->add_static_method(name, writeback_tagged<writeback>(engine_.guard_function(make_function_binder(std::forward<Callable>(callable), &engine_).bind(), folded.required)), traits::arity);
+        if (folded.nodiscard) { engine_.nodiscard_function(class_name_ + "." + name); }
+        if (folded.serial) { class_def_->mark_serial_static_method(engine_.symbolize(name)); }
         return *this;
+    }
+
+    // A verb queues a property_owner's own binding, so the file that defines its jai_auto_bind queues the class even when no
+    // file constructs it
+    static void queue_own_binding() {
+        if constexpr (auto_bind_concepts::is_property_owner<T>) { T::register_inheritance(); }
     }
 
     // Set class version
@@ -1118,7 +1239,7 @@ public:
         return property_impl<P, true>(name, member);
     }
 
-    // A property scripts reach and the class's binding record leaves out, as a property_owner's leaves out a JAI_TRANSIENT_PROPERTY
+    // A property scripts reach and the class's archives leave out, as a property_owner's leave out a JAI_TRANSIENT_PROPERTY
     template<typename P>
     dynamic_binder& transient_property(const std::string& name, P T::*member) {
         return property_impl<P, false>(name, member);
@@ -1130,7 +1251,7 @@ public:
     }
 
 private:
-    dynamic_binder& apply_method_options(const std::string& name, bool is_const, function_options options) {
+    dynamic_binder& apply_method_options(const std::string& name, bool is_const, const function_options& options) {
         if (options.nodiscard) { engine_.nodiscard_function(class_name_ + "." + name); }
         if (options.serial) {
             const uint64_t name_id = engine_.symbolize(name);
@@ -1201,6 +1322,25 @@ private:
         return static_cast<Base*>(static_cast<T*>(object));
     }
 
+    // A binding record's properties are its record; a property_owner's travel with its property_mgr
+    static constexpr bool archives_bound_properties() {
+        return serialization::binding_record_v<T> || serialization_traits::is_property_owner_v<T>;
+    }
+
+    static const property_manager* own_property_manager(const void* object) {
+        return &static_cast<const T*>(object)->property_mgr;
+    }
+
+    template<typename Base>
+    void add_archive_base() {
+        for (const serialization::base_archive_route& base : serialization_metadata_.bases) {
+            if (base.type == std::type_index(typeid(Base))) {
+                return;
+            }
+        }
+        serialization_metadata_.bases.push_back({ std::type_index(typeid(Base)), &upcast_record<Base> });
+    }
+
     template<typename P>
     static checked_result<script_value> property_get_call(const void* state, const std::vector<script_value>& args) {
         const property_state<P>& st = *static_cast<const property_state<P>*>(state);
@@ -1223,6 +1363,10 @@ private:
             // when present; otherwise the generic "Signal" view serves the
             // member ceremony-free through the erased connect table.
             if (engine_ptr->template has_registered_class<P>()) {
+                // a copy of a view shares its emitter's state, so script keeps reaching it through the owner's moves
+                if constexpr (dynamic_binder_validation::is_signal_view<P>::value) {
+                    return convert_custom_type_with_registry<P>(cpp_obj->*member, engine_ptr);
+                }
                 return convert_reference_with_registry(cpp_obj->*member, engine_ptr);
             }
             return detail::make_signal_view(engine_ptr, make_signal_script_ops(cpp_obj->*member));
@@ -1286,6 +1430,7 @@ private:
 
     template<typename P, bool Archived>
     dynamic_binder& property_impl(const std::string& name, P T::*member) {
+        queue_own_binding();
         // Signal members may hand out the generic view at read time — make
         // sure its type exists before any getter can run.
         if constexpr (dynamic_binder_validation::is_signal_type<P>::value) {
@@ -1306,9 +1451,10 @@ private:
 
         using State = property_state<P>;
         auto state = std::make_shared<const State>(State{ std::bit_cast<std::array<std::byte, sizeof(P T::*)>>(member), &engine_, class_def_->get_type_id() });
-        // a const member cannot load back, and a signal or callback is a connect surface, not data: the record leaves them out
-        if constexpr (Archived && serialization::binding_record_v<T> && !std::is_const_v<P> &&
-                      !dynamic_binder_validation::is_signal_type<P>::value && !dynamic_binder_validation::is_std_function<P>::value) {
+        // a const member cannot load back, a signal view or callback holds no data, and a property_owner's own property is
+        // its property_mgr's: the archives leave them out
+        if constexpr (Archived && archives_bound_properties() && !std::is_const_v<P> && !std::is_base_of_v<property_base, P> &&
+                      !dynamic_binder_validation::is_signal_view<P>::value && !dynamic_binder_validation::is_std_function<P>::value) {
             prop_meta.archive = { &save_member_record<P>, &load_member_record<P>, state };
         }
         serialization_metadata_.properties.push_back(std::move(prop_meta));
@@ -1394,6 +1540,7 @@ public:
 private:
     template<bool Archived, typename Getter, typename Setter>
     dynamic_binder& accessor_property(const std::string& name, Getter&& getter, Setter&& setter) {
+        queue_own_binding();
         // Register the property as a field
         class_def_->add_field(name, script_value(std::monostate{}, &engine_)); // Register field name
 
@@ -1417,7 +1564,7 @@ private:
 
         using archived_getter = std::decay_t<Getter>;
         using archived_setter = std::decay_t<Setter>;
-        if constexpr (Archived && serialization::binding_record_v<T> && accessors_archive<archived_getter, archived_setter>()) {
+        if constexpr (Archived && archives_bound_properties() && accessors_archive<archived_getter, archived_setter>()) {
             using State = accessor_record_state<archived_getter, archived_setter>;
             prop_meta.archive = { &save_accessor_record<archived_getter, archived_setter>, &load_accessor_record<archived_getter, archived_setter>,
                 std::make_shared<const State>(State{ getter, setter }) };
@@ -1537,7 +1684,7 @@ public:
         if (!base_def) {
             // The property_owner declaration IS the inheritance truth: an unregistered
             // property_owner base is materialized NOW (recursively, through its own
-            // auto_bind) so the engine projection of the chain is always complete —
+            // binder) so the engine projection of the chain is always complete —
             // methods, schema properties, and signal views all resolve without any
             // registration-order rule. A later explicit registration ADOPTS this
             // definition (see the constructor) rather than competing with it. The name
@@ -1551,7 +1698,6 @@ public:
                     if (!engine_.get_class_definition(base_name)) {
                         dynamic_binder<Base> auto_bound(engine_, base_name);
                         auto_bound.class_def_->set_auto_registered(true);
-                        auto_bound.auto_bind();
                         auto_bound.build();
                         base_def = engine_.get_class_definition_by_type(std::type_index(typeid(Base)));
                     }
@@ -1580,8 +1726,8 @@ public:
         serialization::register_relation<T, Base>{};
 
         // a base with a route of its own hands it to T, so a binding record's bases are binding records
-        if constexpr (serialization::binding_record_v<T>) {
-            serialization_metadata_.bases.push_back({ std::type_index(typeid(Base)), &upcast_record<Base> });
+        if constexpr (archives_bound_properties()) {
+            add_archive_base<Base>();
         }
 
         return *this;
@@ -1734,62 +1880,103 @@ public:
     // bind_signal_type/globals (Services may not carry the engine yet at bind time).
     engine& bound_engine() const { return engine_; }
 
-    // ============================================================================
-    // auto_bind() - Apply auto-detection of base classes and common methods
-    // ============================================================================
-    //
-    // Usage:
-    //   dynamic_binder<Player>(eng, "Player")
-    //       .auto_bind()                       // Applies base classes + common methods
-    //       .method("custom", &Player::custom); // Add more custom bindings
-    //
-    //   dynamic_binder<Player>(eng, "Player")
-    //       .auto_bind(bind_mode::hierarchy);  // Just base classes, no auto methods
-    //
-    dynamic_binder& auto_bind(bind_mode mode = bind_mode::all) {
-        // Apply base classes from _jai_base_types if present
+private:
+    // The constructor binds what the class declares: a property_owner's base chain, properties and signals, the default
+    // constructor, the operators T declares over T operands, a trivial =, its JAI_METHODs, then T::jai_auto_bind (build()
+    // adds the copy a copyable class's values make). The binder's explicit bindings come after and replace these.
+    void bind_automatic_surface() {
         if constexpr (auto_bind_concepts::has_base_types<T>) {
             apply_base_classes_from_tuple(std::type_identity<typename T::_jai_base_types>{});
         }
 
-        // Bind properties from type_registry if T is a property_owner
         if constexpr (auto_bind_concepts::is_property_owner<T>) {
-            // The schema's base chain otherwise registers on FIRST CONSTRUCTION —
-            // registrar-time binding must see inherited properties before any instance
+            // the schema's base chain otherwise registers on first construction, after this binding has read it
             T::register_inheritance();
             bind_properties_from_schema();
         }
 
-        // Apply auto-detected methods if mode is 'all'
-        if (mode == bind_mode::all) {
-            if constexpr (auto_bind_concepts::has_to_string<T>) {
-                method("to_string", &T::to_string);
-            }
-            if constexpr (auto_bind_concepts::has_size<T>) {
-                method("size", &T::size);
-            }
-            if constexpr (auto_bind_concepts::has_empty<T>) {
-                method("empty", &T::empty);
-            }
-            if constexpr (auto_bind_concepts::has_equality<T>) {
-                method("==", [](const T& a, const T& b) -> bool { return a == b; });
-                method("!=", [](const T& a, const T& b) -> bool { return !(a == b); });
-            }
-            // copy assignment only where it cannot fail to compile; any other class binds "=" itself
-            if constexpr (std::is_trivially_copy_assignable_v<T> && !std::is_empty_v<T>) {
-                method("=", [](T& self, const T& other) -> T& { return self = other; });
-            }
+        if constexpr (!std::is_abstract_v<T> && (std::is_default_constructible_v<T> || has_engine_constructor<T>)) {
+            add_constructor<>();
         }
 
-        // Call T::jai_auto_bind(*this) if it exists - allows classes to register private members
-        if constexpr (auto_bind_concepts::has_jai_auto_bind<T>) {
+        bind_declared_operators();
+
+        // copy assignment only where it cannot fail to compile; any other class binds "=" itself
+        if constexpr (std::is_trivially_copy_assignable_v<T> && !std::is_empty_v<T>) {
+            method("=", [](T& self, const T& other) -> T& { return self = other; });
+        }
+
+        detail::method_access::bind(*this);
+
+        if constexpr (auto_bind_concepts::hook_kind<T>() == 1) {
             T::jai_auto_bind(*this);
         }
-
-        return *this;
     }
 
-private:
+    template<typename R>
+    static constexpr bool index_by_reference() {
+        return std::is_class_v<std::remove_cvref_t<R>> && !std::is_same_v<std::remove_cvref_t<R>, std::string>;
+    }
+
+    void bind_declared_operators() {
+        namespace c = auto_bind_concepts;
+        if constexpr (c::declares_add<T>) { method("+", [](const T& a, const T& b) { return a + b; }); }
+        if constexpr (c::declares_subtract<T>) { method("-", [](const T& a, const T& b) { return a - b; }); }
+        if constexpr (c::declares_multiply<T>) { method("*", [](const T& a, const T& b) { return a * b; }); }
+        if constexpr (c::declares_divide<T>) { method("/", [](const T& a, const T& b) { return a / b; }); }
+        if constexpr (c::declares_modulo<T>) { method("%", [](const T& a, const T& b) { return a % b; }); }
+        if constexpr (c::declares_bit_and<T>) { method("&", [](const T& a, const T& b) { return a & b; }); }
+        if constexpr (c::declares_bit_or<T>) { method("|", [](const T& a, const T& b) { return a | b; }); }
+        if constexpr (c::declares_bit_xor<T>) { method("^", [](const T& a, const T& b) { return a ^ b; }); }
+        if constexpr (c::declares_shift_left<T>) { method("<<", [](const T& a, const T& b) { return a << b; }); }
+        if constexpr (c::declares_shift_right<T>) { method(">>", [](const T& a, const T& b) { return a >> b; }); }
+        if constexpr (c::declares_equal<T>) { method("==", [](const T& a, const T& b) -> bool { return a == b; }); }
+        if constexpr (c::declares_not_equal<T>) { method("!=", [](const T& a, const T& b) -> bool { return a != b; }); }
+        if constexpr (c::declares_less<T>) { method("<", [](const T& a, const T& b) -> bool { return a < b; }); }
+        if constexpr (c::declares_less_equal<T>) { method("<=", [](const T& a, const T& b) -> bool { return a <= b; }); }
+        if constexpr (c::declares_greater<T>) { method(">", [](const T& a, const T& b) -> bool { return a > b; }); }
+        if constexpr (c::declares_greater_equal<T>) { method(">=", [](const T& a, const T& b) -> bool { return a >= b; }); }
+        if constexpr (c::declares_three_way<T>) {
+            method("<=>", [](const T& a, const T& b) -> int64_t {
+                const auto order = a <=> b;
+                return order < 0 ? -1 : (order > 0 ? 1 : 0);
+            });
+        }
+        if constexpr (c::declares_add_assign<T>) { method("+=", [](T& a, const T& b) -> T& { a += b; return a; }); }
+        if constexpr (c::declares_subtract_assign<T>) { method("-=", [](T& a, const T& b) -> T& { a -= b; return a; }); }
+        if constexpr (c::declares_multiply_assign<T>) { method("*=", [](T& a, const T& b) -> T& { a *= b; return a; }); }
+        if constexpr (c::declares_divide_assign<T>) { method("/=", [](T& a, const T& b) -> T& { a /= b; return a; }); }
+        if constexpr (c::declares_modulo_assign<T>) { method("%=", [](T& a, const T& b) -> T& { a %= b; return a; }); }
+        if constexpr (c::declares_bit_and_assign<T>) { method("&=", [](T& a, const T& b) -> T& { a &= b; return a; }); }
+        if constexpr (c::declares_bit_or_assign<T>) { method("|=", [](T& a, const T& b) -> T& { a |= b; return a; }); }
+        if constexpr (c::declares_bit_xor_assign<T>) { method("^=", [](T& a, const T& b) -> T& { a ^= b; return a; }); }
+        if constexpr (c::declares_shift_left_assign<T>) { method("<<=", [](T& a, const T& b) -> T& { a <<= b; return a; }); }
+        if constexpr (c::declares_shift_right_assign<T>) { method(">>=", [](T& a, const T& b) -> T& { a >>= b; return a; }); }
+        if constexpr (c::declares_negate<T>) { method("-", [](const T& a) { return -a; }); }
+        if constexpr (c::declares_unary_plus<T>) { method("+", [](const T& a) { return +a; }); }
+        if constexpr (c::declares_complement<T>) { method("~", [](const T& a) { return ~a; }); }
+        if constexpr (c::declares_prefix_increment<T>) { method("++", [](T& a) -> T& { ++a; return a; }); }
+        if constexpr (c::declares_postfix_increment<T>) { method("++", [](T& a, int64_t) { return a++; }); }
+        if constexpr (c::declares_prefix_decrement<T>) { method("--", [](T& a) -> T& { --a; return a; }); }
+        if constexpr (c::declares_postfix_decrement<T>) { method("--", [](T& a, int64_t) { return a--; }); }
+        if constexpr (c::declares_integer_index<T>) {
+            using R = decltype(std::declval<T&>()[int64_t{}]);
+            if constexpr (index_by_reference<R>()) {
+                method("[]", [](T& a, int64_t i) -> R { return a[i]; });
+            } else {
+                method("[]", [](T& a, int64_t i) -> std::remove_cvref_t<R> { return a[i]; });
+            }
+        } else if constexpr (c::declares_string_index<T>) {
+            using R = decltype(std::declval<T&>()[std::declval<const std::string&>()]);
+            if constexpr (index_by_reference<R>()) {
+                method("[]", [](T& a, const std::string& k) -> R { return a[k]; });
+            } else {
+                method("[]", [](T& a, const std::string& k) -> std::remove_cvref_t<R> { return a[k]; });
+            }
+        }
+        if constexpr (c::declares_one_call_operator<T>) { method("()", &T::operator()); }
+    }
+
     // Bind properties from type_registry schema for property_owner classes
     // This is called when T is complete, so we can directly access T's property_mgr
     void bind_properties_from_schema() {
@@ -1804,7 +1991,7 @@ private:
             const std::type_index value_type = prop_meta->value_type_id;
             const bool is_observable = prop_meta->is_observable;
 
-            // JAI_SIGNAL_PROPERTY entries expose the generic Signal view —
+            // JAI_SIGNAL entries expose the generic Signal view —
             // declaring the signal is the whole registration.
             if (prop_meta->is_signal) {
                 bind_signal_property_view(prop_name);
@@ -1821,7 +2008,7 @@ private:
         }
     }
 
-    // JAI_SIGNAL_PROPERTY schema entries become read-only properties returning
+    // JAI_SIGNAL schema entries become read-only properties returning
     // the generic Signal view over the live property's erased connect table.
     // Lookup is find_reflected_property (virtual, whole chain), so inherited
     // signal properties resolve against the most-derived live object.
@@ -1873,17 +2060,6 @@ public:
             class_def_->set_script_slot_hooks(hooks);
         }
 
-        // Auto-register default constructor if:
-        // 1. User didn't explicitly register any constructor
-        // 2. Type is default constructible
-        // 3. Type is not abstract
-        if constexpr (!std::is_abstract_v<T> && std::is_default_constructible_v<T>) {
-            if (!has_explicit_constructor_) {
-                // Auto-register default constructor (with the engine when T takes one)
-                engine_.add_overloaded_function(class_name_, 0, detail::host_method_call{ &native_constructor_call<>, constructor_state() });
-            }
-        }
-
         // Register automatic copy function for copyable types
         if constexpr (std::is_copy_constructible_v<T>) {
             class_def_->set_copy_function(&copy_native_object);
@@ -1893,6 +2069,9 @@ public:
         class_def_->set_cpp_type(&typeid(T));
         engine_.add_class<T>(class_name_, class_def_);
 
+        if constexpr (serialization_traits::is_property_owner_v<T>) {
+            serialization_metadata_.level_manager = &own_property_manager;
+        }
         // Register serialization metadata with the engine's registry (with type_index for runtime lookup)
         engine_.get_serialization_registry().register_class(class_name_, serialization_metadata_);
         if constexpr (serialization::binding_record_v<T>) {
@@ -1952,6 +2131,9 @@ private:
     template<typename Base>
     void collect_base_definition(std::vector<std::shared_ptr<class_definition>>& parent_defs) {
 		class_def_->template add_cpp_base_cast<T, Base>();
+        if constexpr (serialization_traits::is_property_owner_v<T>) {
+            add_archive_base<Base>();
+        }
         static_assert(std::is_base_of_v<Base, T>,
                       "Specified type is not a base class of this class");
         auto base_def = engine_.get_class_definition_by_type(std::type_index(typeid(Base)));
@@ -1964,7 +2146,6 @@ private:
     std::shared_ptr<class_definition> class_def_;
     serialization::class_metadata serialization_metadata_;
     std::vector<detail::pending_math_property> pending_math_properties_;
-    bool has_explicit_constructor_ = false;  // Track if user registered any constructor
 
     static void commit_pending(detail::pending_binder& link) {
         static_cast<dynamic_binder&>(link).build();
@@ -2103,8 +2284,8 @@ private:
     }
 
     // Helper method for calling member functions
-    template<typename R, typename... Args, size_t... Is>
-    static auto call_method(T* obj, R(T::*method)(Args...), const std::vector<script_value>& args, std::index_sequence<Is...>, engine* eng) {
+    template<typename R, typename... Args, typename Method, size_t... Is>
+    static auto call_method(T* obj, Method method, const std::vector<script_value>& args, std::index_sequence<Is...>, engine* eng) {
         // Create parameter storage on stack
         detail::parameter_storage storage;
         detail::parameter_storage::scope_guard guard(eng, &storage);
@@ -2122,8 +2303,8 @@ private:
     }
     
     // Helper method for calling const member functions
-    template<typename R, typename... Args, size_t... Is>
-    static auto call_const_method(const T* obj, R(T::*method)(Args...) const, const std::vector<script_value>& args, std::index_sequence<Is...>, engine* eng) {
+    template<typename R, typename... Args, typename Method, size_t... Is>
+    static auto call_const_method(const T* obj, Method method, const std::vector<script_value>& args, std::index_sequence<Is...>, engine* eng) {
         // Create parameter storage on stack
         detail::parameter_storage storage;
         detail::parameter_storage::scope_guard guard(eng, &storage);
@@ -2209,6 +2390,34 @@ private:
 // Context-based factory implementations use type erasure (see make_context_extractor above)
 // to avoid MSVC template instantiation issues with incomplete archive_reader type.
 // The make_context_extractor function is instantiated at call sites where archive_reader is fully defined.
+
+namespace detail {
+	template<typename T>
+	void run_context_hook(dynamic_binder<T>& a_builder, const void* a_context) {
+		if constexpr (auto_bind_concepts::hook_kind<T>() == 2) {
+			T::jai_auto_bind(a_builder, *static_cast<const typename T::_jai_context_type*>(a_context));
+		}
+	}
+
+	// A property_owner's own binding (property_manager.hpp queues it), named as its serialization $type; a_context is the
+	// bind_registrar call's context, as the class's context type
+	template<typename T>
+	void bind_declared_class(engine& a_engine, const void* a_context) {
+		dynamic_binder<T> builder(a_engine);
+		run_context_hook(builder, a_context);
+		builder.build();
+	}
+
+	template<typename T, typename Context>
+	void run_registrar_context_hook(dynamic_binder<T>& a_builder, const Context& a_context) {
+		if constexpr (requires { typename T::_jai_context_type; }) {
+			using class_context = typename T::_jai_context_type;
+			if constexpr (!std::is_void_v<class_context> && (std::is_same_v<class_context, Context> || std::is_base_of_v<class_context, Context>)) {
+				if constexpr (auto_bind_concepts::hook_kind<T>() == 2) { T::jai_auto_bind(a_builder, static_cast<const class_context&>(a_context)); }
+			}
+		}
+	}
+}
 
 } // namespace jai
 

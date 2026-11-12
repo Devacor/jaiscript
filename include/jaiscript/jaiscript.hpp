@@ -24,7 +24,6 @@
 #include "core/value.hpp"
 
 // 5. Binding traits and containers (depends on value)
-#include "core/binding_traits.hpp"
 #include "core/bound_array.hpp"
 #include "core/bound_map.hpp"
 
@@ -53,7 +52,7 @@ namespace jai {
     
     // Version string
     inline const std::string& version() {
-        static const std::string version_string = "0.5.3-beta";
+        static const std::string version_string = "0.5.4-beta";
         return version_string;
     }
     

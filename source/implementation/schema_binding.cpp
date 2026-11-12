@@ -183,7 +183,7 @@ void bind_observable_change_method(engine& a_engine, class_definition& class_def
 		return script_value(std::monostate{}, eng);
 	};
 
-	class_def.add_method(observe_method_name, engine_access::guard_function(a_engine, std::move(method_func), privilege::none), 1,
+	class_def.add_method(observe_method_name, engine_access::guard_function(a_engine, std::move(method_func), permission_set{}), 1,
 		std::vector<param_type_info>{ engine_access::map_cpp_type_to_param_info<script_value>() }, engine_access::map_cpp_type_to_param_info<script_value>());
 }
 
@@ -367,14 +367,13 @@ void ensure_signal_view_type_registered(engine& a_engine) {
 	dynamic_binder<signal_script_ops> builder(a_engine, "Signal");
 	// serial: a receiver list other objects' code reads and fires
 	builder.method("connect", [eng](signal_script_ops& self, const std::string& id, const script_value& cb) {
-		if (!self.valid()) { throw runtime_error("Signal view is not backed by a live signal"); }
-		self.connect_fn(self.source, id, cb, eng);
+		if (!self.valid() || !self.connect_fn(self.source.get(), id, cb, eng)) { throw runtime_error("Signal view is not backed by a live signal"); }
 	}, serial);
 	builder.method("disconnect", [](signal_script_ops& self, const std::string& id) {
-		if (self.disconnect_fn != nullptr) { self.disconnect_fn(self.source, id); }
+		if (self.disconnect_fn != nullptr) { self.disconnect_fn(self.source.get(), id); }
 	}, serial);
 	builder.method("connected", [](signal_script_ops& self, const std::string& id) {
-		return self.connected_fn != nullptr && self.connected_fn(self.source, id);
+		return self.connected_fn != nullptr && self.connected_fn(self.source.get(), id);
 	});
 	builder.build();
 }

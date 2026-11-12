@@ -274,7 +274,7 @@ public:
 			e->set_output_stream(out);
 			dynamic_binder<Lamp>(*e, "Lamp").constructor<>().property("watts", &Lamp::watts).method("to_string", &Lamp::to_string).build();
 			dynamic_binder<Crate>(*e, "Crate").constructor<>().property("items", &Crate::items).build();
-			dynamic_binder<Gauge>(*e, "Gauge").auto_bind().build();
+			dynamic_binder<Gauge>(*e, "Gauge").build();
 			e->add_global("gauge", e->make_object(std::make_shared<Gauge>()));
 			e->execute(R"JAI(
 				class Shelf : Crate { int label = 4; }

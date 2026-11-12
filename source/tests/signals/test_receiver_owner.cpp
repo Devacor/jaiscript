@@ -98,9 +98,10 @@ public:
             signal_emitter<void(int)> sig;
             int damage_taken = 0;
 
-            struct Player : public property_owner<Player> {
+            // every property_owner binds under its bare name, which a local class shares with any other of that name on GCC and Clang
+            struct TrackingPlayer : public property_owner<TrackingPlayer> {
                 int& damage_ref;
-                Player(signal<void(int)>& damage_signal, int& damage)
+                TrackingPlayer(signal<void(int)>& damage_signal, int& damage)
                     : damage_ref(damage) {
                     track(damage_signal.connect([this](int dmg) {
                         damage_ref += dmg;
@@ -111,7 +112,7 @@ public:
             signal<void(int)> damage_signal{sig};
 
             {
-                Player player(damage_signal, damage_taken);
+                TrackingPlayer player(damage_signal, damage_taken);
 
                 sig.emit(10);
                 check_eq(damage_taken, 10, "Player received damage");
@@ -133,10 +134,10 @@ public:
 
             int health = 100;
 
-            struct Entity : public property_owner<Entity> {
+            struct TrackingEntity : public property_owner<TrackingEntity> {
                 int& health_ref;
 
-                Entity(signal<void()>& heal, signal<void(int)>& damage, int& h)
+                TrackingEntity(signal<void()>& heal, signal<void(int)>& damage, int& h)
                     : health_ref(h) {
                     track(heal.connect([this]() { health_ref += 10; }));
                     track(damage.connect([this](int dmg) { health_ref -= dmg; }));
@@ -144,7 +145,7 @@ public:
             };
 
             {
-                Entity entity(heal_signal, damage_signal, health);
+                TrackingEntity entity(heal_signal, damage_signal, health);
 
                 damage_emitter.emit(30);
                 check_eq(health, 70, "Took 30 damage");

@@ -225,7 +225,7 @@ public:
         test("const_keys_follow_a_redeclaration", [this]() {
             // the same unit re-run (a reload of its file) re-initializes its consts in place: the table built from the old values goes stale
             auto engine = make_engine();
-            engine->disable(jai::filesystem);
+            engine->disable(jai::permissions::filesystem);
             const std::string path = "D:/virtual/switch/const_keys.jai";
             const std::string pick = R"(
                 int pick(int v) {

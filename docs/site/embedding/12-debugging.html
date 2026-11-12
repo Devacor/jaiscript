@@ -250,7 +250,7 @@ disconnects the client. While 4&nbsp;MB of replies wait unread, the connector st
 a <code>resume()</code>, a <code>step_*()</code> or a <code>post_command()</code> that races the stop still wakes it.</li>
 <li><strong>Breakpoint edits are published, not queued.</strong> An edit is acknowledged at once and applied by the script
 thread at its next sync point, in order. Breakpoints survive <code>set_enabled(false)</code> and a re-arm; only
-<code>clear_breakpoints()</code> removes them. The filesystem privilege is checked when an edit is applied, and a later
+<code>clear_breakpoints()</code> removes them. The filesystem permission is checked when an edit is applied, and a later
 revocation does not remove an installed breakpoint.</li>
 <li><strong><code>detach()</code> always wakes a parked thread</strong> and disarms. A client disconnect, a socket error
 and the connector's destructor all detach.</li>

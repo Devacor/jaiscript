@@ -103,7 +103,7 @@ want() {
 HASH_BACKENDS="${HASH_BACKENDS:-vm interp}"
 hash_on() { case " $HASH_BACKENDS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
-# JAI_TEST_SHARD=i/n runs one shard of the suites (jaiscript_tests --shard; tools/ci/ci_lib.sh jai_debug_suites); --progress prints a
+# JAI_TEST_SHARD=i/n runs one shard of the suites (jaiscript_tests --shard; tools/ci/ci_lib.sh jai_suites); --progress prints a
 # dot per test, the output the watchdog reads as progress. JAI_TEST_SHARDS=n runs a suite as n shards at once, each its own process
 # and log, printed in shard order when all have ended (the Debug suites are single-threaded: a 4-vCPU runner takes them in a third
 # of the time).
@@ -403,15 +403,22 @@ emscripten_root() {
 	[ -f "$emxx/cmake/Modules/Platform/Emscripten.cmake" ] && echo "$emxx"
 }
 
-gate_wasm() {
-	local emscripten node_bin build engine runner work
-	emscripten="$(emscripten_root)" || { echo "wasm: no Emscripten SDK found (set EMSDK), skipped"; return 0; }
+# wasm_setup: EMSCRIPTEN names the SDK's emscripten folder and PATH reaches its node; fails with WASM_MISSING saying what is not there
+wasm_setup() {
+	local node_bin
+	EMSCRIPTEN="$(emscripten_root)" || { WASM_MISSING="no Emscripten SDK found (set EMSDK)"; return 1; }
 	if [ -n "${EMSDK:-}" ]; then
 		export EM_CONFIG="$EMSDK/.emscripten"
 		for node_bin in "$EMSDK"/node/*/bin; do [ -d "$node_bin" ] && PATH="$node_bin:$PATH"; done
-		PATH="$emscripten:$PATH"
+		PATH="$EMSCRIPTEN:$PATH"
 	fi
-	command -v node > /dev/null 2>&1 || { echo "wasm: no node found, skipped"; return 0; }
+	command -v node > /dev/null 2>&1 || { WASM_MISSING="no node found"; return 1; }
+}
+
+gate_wasm() {
+	local emscripten build engine runner work
+	wasm_setup || { echo "wasm: $WASM_MISSING, skipped"; return 0; }
+	emscripten="$EMSCRIPTEN"
 	build="${WASM_BUILD_DIR:-build-wasm}"
 	case "$build" in /* | [A-Za-z]:*) ;; *) build="$ROOT/$build" ;; esac
 	echo "wasm: Emscripten $emscripten"
@@ -509,7 +516,7 @@ gate_headers() {
 			echo "::error::a page's C++ samples need an include the page does not show ($cxx)"
 			grep -A 6 "^FAIL" "$work/samples.log" | head -14 | cut -c1-240
 		fi
-		echo "headers: $cxx, the programs the serialization headers reject"
+		echo "headers: $cxx, the programs the headers reject"
 		must_not_compile "$cxx" "$work" || failed=1
 		echo "headers: $cxx, the host file under -Wall -Wextra -Werror"
 		if ! "$cxx" -std=c++20 -I"$ROOT/include" -Wall -Wextra -Werror -O2 -c "$ROOT/tools/ci/host_warnings.cpp" -o "$work/host_warnings.o" > "$work/host.log" 2>&1; then
@@ -595,6 +602,26 @@ gate_asan() {
 	fuzz_run --timeout-ms 2000
 	want "asan fuzz: expected no crash" "^crashes: +0\b"
 }
+
+# gates.sh --toolchain <gate>: what the gate finds on this machine beyond the CMake build, the part of a gate stamp's
+# toolchain key only the gate knows (tools/ci/ci_lib.sh): the header compilers, the Emscripten SDK and its node
+toolchain_of() {
+	local cxx
+	case "$1" in
+		headers)
+			while read -r cxx; do
+				[ -n "$cxx" ] && printf 'cxx=%s:%s ' "$cxx" "$("$cxx" --version 2> /dev/null | head -n 1 | tr -d '\r')"
+			done < <(header_compilers)
+			;;
+		wasm)
+			if ! wasm_setup; then printf 'emscripten=none'
+			elif [ -f "$EMSCRIPTEN/emscripten-version.txt" ]; then printf 'emscripten=%s node=%s' "$(tr -d '\r\n"' < "$EMSCRIPTEN/emscripten-version.txt")" "$(node --version | tr -d '\r')"
+			else printf 'emscripten=%s node=%s' "$(em++ --version 2> /dev/null | head -n 1 | tr -d '\r')" "$(node --version | tr -d '\r')"; fi
+			;;
+	esac
+	echo
+}
+if [ "${1:-}" = --toolchain ]; then toolchain_of "${2:?usage: gates.sh --toolchain <gate>}"; exit 0; fi
 
 ALL=(tests-interp tests-vm tests-vm-reference fuzz fuzz-vm-reference fuzz-order gloom demoreel crawler gatorquest embed-quickstart lsp lsp-latency spider selftest site)
 MILESTONE=(gloom-workers gloom-long timedemo amalgamation)

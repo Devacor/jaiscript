@@ -136,7 +136,8 @@ function julia_row(int y) -> array<int> {
 		}
 		float lg = math::log2(m2);
 		float nu = k + 1.0 - math::log2(lg * 0.5);
-		float unit = 1.0 / math::sqrt(m2 * d2);
+		// an odd grid's centre pixel starts on the critical point z = 0, where z' stays 0: the floor keeps it finite and far
+		float unit = 1.0 / math::sqrt(m2 * d2 + 1.0e-300);
 		// the distance to the set, in pixels: |z| ln|z| / |z'|
 		float de = m2 * unit * lg * 0.34657 * pixels;
 		// the potential's gradient runs along z * conj(z')

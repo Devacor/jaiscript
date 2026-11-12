@@ -1810,7 +1810,7 @@ namespace {
 			return found != host_classes.end() ? found->second : nullptr;
 		}
 		bool class_constant(uint64_t name_id, uint64_t member_id) { return class_constant_value(*eng, name_id, member_id).has_value(); }
-		// The first host class in cls's chain marked serial_only_constructor()
+		// The first host class in cls's chain with a constructor marked jai::serial
 		static const class_definition* serial_only_base(const class_definition* cls) {
 			if (!cls) { return nullptr; }
 			if (!cls->is_script_class() && cls->serial_only_construction()) { return cls; }
@@ -1846,10 +1846,10 @@ namespace {
 		bool admit_construction(uint64_t name_id, const std::shared_ptr<class_definition>& cls, size_t argc, const ast_node* site) {
 			if (const class_definition* serial = serial_only_base(cls.get())) {
 				if (serial == cls.get()) {
-					return fail(site, "C++ class '" + cls->get_name() + "' is marked serial_only_constructor() and cannot be constructed in a parallel body");
+					return fail(site, "C++ class '" + cls->get_name() + "' has a constructor marked jai::serial and cannot be constructed in a parallel body");
 				}
 				return fail(site, "class '" + cls->get_name() + "' has a C++ base '" + serial->get_name() +
-				                  "' marked serial_only_constructor() and cannot be constructed in a parallel body");
+				                  "' with a constructor marked jai::serial and cannot be constructed in a parallel body");
 			}
 			if (std::none_of(constructed_classes.begin(), constructed_classes.end(), [&](const constructed_class& c) { return c.cls == cls; })) {
 				constructed_classes.push_back({ name_id, cls });

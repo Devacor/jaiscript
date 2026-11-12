@@ -1138,7 +1138,7 @@ void register_library(engine& eng) {
 
 	eng.add_variadic_function(std::string(k_scoped), [lib](const std::vector<script_value>& a_args) -> R {
 		if (a_args.size() != 3 || !a_args[0].deref().is_string() || !a_args[1].deref().is_string()) { return lib->refused("scoped_template_text(text, map) takes a text and a map"); }
-		if (auto allowed = lib->eng->require_privilege(privilege::scoped_template); !allowed) { return allowed.error_value(); }
+		if (auto allowed = lib->eng->require_permission(permissions::scoped_template); !allowed) { return allowed.error_value(); }
 		std::string error;
 		auto program = compile_scoped(*lib, a_args[0].deref().as_string(), a_args[1].deref().as_string(), error);
 		if (!program) { return lib->refused(error); }
@@ -1148,7 +1148,7 @@ void register_library(engine& eng) {
 	eng.add_variadic_function(std::string(k_scoped_file), [lib](const std::vector<script_value>& a_args) -> R {
 		if (a_args.size() != 3 || !a_args[0].deref().is_string() || !a_args[1].deref().is_string()) { return lib->refused("scoped_template(path, map) takes a path and a map"); }
 		engine& e = *lib->eng;
-		if (auto allowed = e.require_privilege(privilege::scoped_template); !allowed) { return allowed.error_value(); }
+		if (auto allowed = e.require_permission(permissions::scoped_template); !allowed) { return allowed.error_value(); }
 		const scoped_file found = resolve_scoped_file(e, a_args[0].deref().as_string(), a_args[1].deref().as_string());
 		if (!found.error.empty()) { return lib->refused(found.error); }
 		const std::string& resolved_path = found.resolved;
@@ -1193,7 +1193,7 @@ void register_library(engine& eng) {
 		engine& e = *lib->eng;
 		if (!a_args[0].deref().is_string()) { return R(make_error_code(runtime_error_code::type_mismatch), "{0}", engine_access::park_error_text(e, "template() path is not a string")); }
 		const std::string path = a_args[0].deref().as_string();
-		if (auto allowed = e.require_privilege(privilege::filesystem); !allowed) { return allowed.error_value(); }
+		if (auto allowed = e.require_permission(permissions::filesystem); !allowed) { return allowed.error_value(); }
 		auto resolved = resolve_include_path(path, &e, a_args[2].deref().as_string());
 		if (!resolved) { return lib->refused("template file '" + path + "' not found"); }
 		const std::string names = a_args[1].deref().as_string();

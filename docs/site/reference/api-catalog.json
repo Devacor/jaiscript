@@ -6515,16 +6515,16 @@
       "display": "Download.fraction() -> float"
     },
     {
-      "owner": "reflect",
+      "owner": "jai::permissions",
       "name": "is_enabled",
-      "signature": "is_enabled(privileges: int or string...) -> bool",
+      "signature": "is_enabled(permissions: int...) -> bool",
       "provider": "core",
       "effect": "observe",
       "source": "source/implementation/engine.cpp",
-      "notes": "At least one privilege; scripts query grants, hosts change them.",
+      "notes": "At least one permission id; scripts query grants, hosts change them.",
       "form": "function",
       "availability": "Every engine",
-      "display": "reflect::is_enabled(privileges: int or string...) -> bool"
+      "display": "jai::permissions::is_enabled(permissions: int...) -> bool"
     },
     {
       "owner": "global",
@@ -7923,7 +7923,7 @@
       "notes": "Renders the template file at path, seeing each passed name by reference with its declared type, and the program; every splice HTML-escaped. A literal path compiles and checks at load; another path at its first render. A render writes at most engine::template_output_limit bytes.",
       "source": "source/implementation/parser.cpp",
       "form": "function",
-      "availability": "Every engine (reads the file under the filesystem privilege)",
+      "availability": "Every engine (reads the file under the filesystem permission)",
       "display": "template(path: string, names: variable names...) -> web::html"
     },
     {
@@ -7935,7 +7935,7 @@
       "notes": "Renders an untrusted template file over a copy of args, which is the only name it sees; it calls only built-in methods of built-in values and the string::, array:: and map:: functions, always escapes, and writes at most engine::scoped_template_output_limit bytes. The file is read only from engine::scoped_template_dirs(): a relative path with no .., the first folder in order that holds it, never through a link out.",
       "source": "source/implementation/parser.cpp",
       "form": "function",
-      "availability": "The scoped_template privilege (on by default)",
+      "availability": "The scoped_template permission (on by default)",
       "display": "scoped_template(path: string, args: map) -> web::html"
     },
     {
@@ -7947,7 +7947,7 @@
       "notes": "scoped_template over template text instead of a file.",
       "source": "source/implementation/parser.cpp",
       "form": "function",
-      "availability": "The scoped_template privilege (on by default)",
+      "availability": "The scoped_template permission (on by default)",
       "display": "scoped_template_text(text: string, args: map) -> web::html",
       "example": {
         "code": "print(scoped_template_text(\"<b>${args[\\\"name\\\"]}</b>\", {\"name\": \"<i>\"}));",
@@ -8067,12 +8067,60 @@
       "notes": "Space, tab, LF, VT, FF, CR; split() whitespace sentinel."
     },
     {
-      "owner": "jai",
+      "owner": "jai::permissions",
       "name": "filesystem",
-      "type": "int privilege flag",
+      "type": "int permission id",
       "provider": "core",
       "access": "constant",
       "notes": ""
+    },
+    {
+      "owner": "jai::permissions",
+      "name": "scoped_template",
+      "type": "int permission id",
+      "provider": "core",
+      "access": "constant",
+      "notes": ""
+    },
+    {
+      "owner": "jai::permissions",
+      "name": "network",
+      "type": "int permission id",
+      "provider": "core",
+      "access": "constant",
+      "notes": ""
+    },
+    {
+      "owner": "jai::permissions",
+      "name": "debug",
+      "type": "int permission id",
+      "provider": "core",
+      "access": "constant",
+      "notes": "A convention the engine enforces nothing with."
+    },
+    {
+      "owner": "jai::permissions",
+      "name": "trusted",
+      "type": "int permission id",
+      "provider": "core",
+      "access": "constant",
+      "notes": "A convention the engine enforces nothing with."
+    },
+    {
+      "owner": "jai::permissions",
+      "name": "untrusted",
+      "type": "int permission id",
+      "provider": "core",
+      "access": "constant",
+      "notes": "A convention the engine enforces nothing with."
+    },
+    {
+      "owner": "jai::permissions",
+      "name": "count",
+      "type": "int",
+      "provider": "core",
+      "access": "constant",
+      "notes": "The first id of a host's own permissions."
     },
     {
       "owner": "jai",

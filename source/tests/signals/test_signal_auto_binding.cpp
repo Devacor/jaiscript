@@ -1,4 +1,4 @@
-// Signal auto-binding: declaring a JAI_SIGNAL_PROPERTY (or exposing a plain
+// Signal auto-binding: declaring a JAI_SIGNAL (or exposing a plain
 // signal member via .property) is the whole registration — script connects
 // through the generic "Signal" view with no bind_signal_type ceremony, and
 // typed per-signature bindings keep precedence when present.
@@ -22,7 +22,7 @@ class scoreboard : public jai::property_owner<scoreboard> {
 public:
 	typedef void ScoreSignature(int);
 
-	JAI_SIGNAL_PROPERTY(ScoreSignature, on_scored);
+	JAI_SIGNAL(ScoreSignature, on_scored);
 
 	jai::signal_emitter<void(int)> onTickedSignal;   // plain pair, the Clickable onEnabled shape
 	jai::signal<void(int)> onTicked{ onTickedSignal };
@@ -32,11 +32,11 @@ public:
 };
 
 // A button shape: the signal lives on the BASE (a clickable base declares onAccept) and
-// script connects through a DERIVED registration (base_class + auto_bind).
+// script connects through a DERIVED registration.
 class base_widget : public jai::property_owner<base_widget> {
 public:
 	typedef void PressSignature(int);
-	JAI_SIGNAL_PROPERTY(PressSignature, on_press);
+	JAI_SIGNAL(PressSignature, on_press);
 	void press(int v) { on_pressSignal(v); }
 };
 
@@ -49,7 +49,7 @@ public:
 class door : public jai::property_owner<door> {
 public:
 	typedef void OpenSignature(int);
-	JAI_SIGNAL_PROPERTY_AS(OpenSignature, on_open, open_emitter);
+	JAI_SIGNAL_AS(OpenSignature, on_open, open_emitter);
 	void open(int v) { open_emitter(v); }
 	void add_text_receiver(const std::string& id, const std::string& script) { open_emitter.connect(id, script); }
 	bool has_receiver(const std::string& id) { return open_emitter.connected(id); }
@@ -59,7 +59,7 @@ public:
 class relay : public jai::property_owner<relay> {
 public:
 	typedef void PingSignature(int);
-	JAI_SYNCHRONIZED_SIGNAL_PROPERTY(PingSignature, on_ping);
+	JAI_SYNCHRONIZED_SIGNAL(PingSignature, on_ping);
 
 	jai::signal_emitter<void(int), jai::signal_synchronized> onPulseSignal;
 	jai::signal<void(int), jai::signal_synchronized> onPulse{ onPulseSignal };
@@ -81,7 +81,6 @@ public:
 			.method("score", &scoreboard::score)
 			.method("tick", &scoreboard::tick)
 			.property("onTicked", &scoreboard::onTicked)
-			.auto_bind()
 			.build();
 		return eng;
 	}
@@ -92,7 +91,6 @@ public:
 			dynamic_binder<door>(*eng, "Door")
 				.constructor<>()
 				.method("open", &door::open)
-				.auto_bind()
 				.build();
 			eng->execute("var got = -1; var d = new Door();");
 			eng->execute("d.on_open.connect(\"t\", [](var v) { got = v; });");
@@ -176,22 +174,20 @@ public:
 		});
 
 		// Red-locked from an editor panel host: loadButton.onAccept threw "Object has
-		// no member 'onAccept'" — onAccept is Clickable's, Button registers with
-		// base_class + auto_bind. Both registration orders (static registrar order is
+		// no member 'onAccept'" — onAccept is Clickable's, Button registers its
+		// base. Both registration orders (static registrar order is
 		// arbitrary in a host).
 		test("inherited_signal_property_through_derived_registration", [this]() {
 			auto bindBase = [](engine& a_engine) {
 				dynamic_binder<base_widget>(a_engine, "BaseWidget")
 					.constructor<>()
 					.method("press", &base_widget::press)
-					.auto_bind()
 					.build();
 			};
 			auto bindDerived = [](engine& a_engine) {
 				dynamic_binder<derived_widget>(a_engine, "DerivedWidget")
 					.constructor<>()
 					.base_class<base_widget>()
-					.auto_bind()
 					.build();
 			};
 			auto run = [&](bool a_baseFirst) {
@@ -238,7 +234,6 @@ public:
 				.method("ping", &relay::ping)
 				.method("pulse", &relay::pulse)
 				.property("onPulse", &relay::onPulse)
-				.auto_bind()
 				.build();
 			eng->execute("var got = 0; var r = new Relay();");
 			eng->execute("r.on_ping.connect(\"t\", [](var v) { got = got + v; });");

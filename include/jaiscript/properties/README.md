@@ -15,10 +15,7 @@ A generic, reflection-enabled property system with built-in serialization suppor
 ## Quick Start
 
 ```cpp
-#include <jaiscript/properties/property.hpp>
-#include <jaiscript/properties/property_manager.hpp>
 #include <jaiscript/properties/macros.hpp>
-#include <jaiscript/properties/property_serialization.hpp>
 
 // CRTP pattern: property_owner<DerivedClass, OptionalBases...>
 class Player : public jai::property_owner<Player> {
@@ -86,6 +83,22 @@ JAI_NAMED_PROPERTY((int), "healthPoints", health, 100);
 // Property name in serialization: "healthPoints"
 // Variable name in code: health
 ```
+
+### JAI_METHOD(return_type, name, (parameters) qualifiers, options...)
+Declares a member function and binds it to script under its name wherever the class binds, a `property_owner` or a
+registrar's class. A body or a `;` follows. It binds only: what the archives write does not change.
+
+```cpp
+JAI_METHOD(void, spawn_wave, ());                                    // defined in the .cpp
+JAI_METHOD(void, spawn_wave, (int64_t count, bool elite));           // an overload is one more line
+JAI_METHOD(int64_t, health, () const noexcept) { return hp; }
+JAI_METHOD((std::map<std::string, int64_t>), tallies, () const);     // a comma: parenthesize the type
+JAI_METHOD(void, save, (), jai::serial, jai::permissions::filesystem);
+JAI_METHOD(Vec, operator+, (const Vec& a_other) const);              // the script operator +
+```
+
+Default arguments, `virtual` and `static` members and other script names go in `jai_auto_bind`
+(`docs/site/embedding/02-dynamic-binder.html#jai-method`).
 
 ## Property Features
 
@@ -256,7 +269,7 @@ public:
 };
 ```
 
-The inheritance information is exposed via `_jai_base_types` and used by `dynamic_binder::auto_bind()` to automatically register base classes in JaiScript.
+The inheritance information is exposed via `_jai_base_types` and used by every `dynamic_binder` of the class to register its base classes in JaiScript.
 
 ## Version Migration
 
@@ -347,7 +360,7 @@ Player back = jai::from_json<Player>(*eng, jai::to_json(*eng, players.front()));
 - The new object's `property_mgr` registers its own properties; the source keeps its
   registrations and stays destructible and assignable.
 - A copy or assignment carries plain values. `clone_to_target` is the copy that runs a custom clone.
-- A move takes the receivers the owner tracks and those of its `JAI_SIGNAL_PROPERTY` and
+- A move takes the receivers the owner tracks and those of its `JAI_SIGNAL` and
   observable members; a copy starts with none.
 - A class that declares properties is a `property_owner` level: properties declared by a
   subclass that is not one are not registered in its copies.

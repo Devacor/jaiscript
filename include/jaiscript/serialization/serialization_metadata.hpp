@@ -14,6 +14,7 @@
 // Forward declarations to avoid circular dependencies
 namespace jai {
     class script_value;
+    class property_manager;
 }
 
 namespace jai {
@@ -118,6 +119,25 @@ inline constexpr writer_operations writer_operations_of {
     &archive_writer_thunks<Archive>::end_map,
     &archive_writer_thunks<Archive>::write_map_key,
     &archive_writer_thunks<Archive>::get_or_assign_shared_id,
+};
+
+// A property_owner record a member route writes or reads, open for the property_managers the route reaches; a class
+// with no property_mgr names none
+template<bool Named, typename Core>
+class record_scope {
+public:
+    template<typename Object>
+    record_scope(Core& a_core, Object* a_object, std::type_index a_type) : core(a_core) {
+        if constexpr (Named) { core.push_record(const_cast<std::remove_const_t<Object>*>(a_object), a_type); }
+    }
+    ~record_scope() {
+        if constexpr (Named) { core.pop_record(); }
+    }
+    record_scope(const record_scope&) = delete;
+    record_scope& operator=(const record_scope&) = delete;
+
+private:
+    Core& core;
 };
 
 // Only used for dynamic/runtime polymorphism - static code uses CRTP directly.
@@ -393,6 +413,8 @@ struct class_metadata {
     uint32_t current_version = 1;
     std::vector<property_metadata> properties;
     std::vector<base_archive_route> bases;
+    // A property_owner level's own property_mgr in an object of the bound type: the level's bound properties travel with it
+    const property_manager* (*level_manager)(const void* object) = nullptr;
 
     std::function<void(any_archive_writer&, const script_value&, uint32_t)> custom_save;
     std::function<script_value(any_archive_reader&, uint32_t)> custom_construct;

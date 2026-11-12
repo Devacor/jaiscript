@@ -7,7 +7,7 @@ executable, `jaiscript_tests`, whose `main` is `main_test_runner.cpp`.
 
 | folder | what it covers |
 |---|---|
-| `language/` | language features: functions, classes, control flow, coroutines, hot reload, imports, privileges, regressions |
+| `language/` | language features: functions, classes, control flow, coroutines, hot reload, imports, permissions, regressions |
 | `semantics/` | conversions, typed slots, value semantics, the lexer, parser and static checker, strong types |
 | `containers/` | arrays, maps and their builtin methods |
 | `stdlib/` | `math::`, strings, `time::`, `binary::`, reflection, I/O |

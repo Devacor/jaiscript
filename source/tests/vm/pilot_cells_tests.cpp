@@ -2175,7 +2175,7 @@ var probe = function(int n, int at) { int i = 0; while (i < n) { retag_at(i, at)
 				e->set_backend(vm ? backend_type::vm : backend_type::interpreter);
 				stdlib::register_all(*e); register_host_math_fixture(*e);
 				if (!proofs) { e->type_proofs(false); }
-				e->disable(jai::filesystem);
+				e->disable(jai::permissions::filesystem);
 				engine* raw = e.get();
 				const std::string path = "D:/virtual/pilot/retag_unit.jai";
 				e->add_function("host_retag", [raw, same_unit, path]() { if (same_unit) { raw->execute_file_source(path, "int G = 5;"); } else { raw->execute("int G = 5;"); } });
@@ -2227,7 +2227,7 @@ function probe(int n, int at, int how) -> string {
 				e->set_backend(vm ? backend_type::vm : backend_type::interpreter);
 				stdlib::register_all(*e); register_host_math_fixture(*e);
 				if (!proofs) { e->type_proofs(false); }
-				e->disable(jai::filesystem);
+				e->disable(jai::permissions::filesystem);
 				engine* raw = e.get();
 				script_int host_g = 11;
 				const std::string path = "D:/virtual/pilot/pinned_unit.jai";
@@ -2624,7 +2624,7 @@ function loop_scalar(int n) { int s = 0; for (int i = 0; i < n; ++i) { s = s + X
 				e->add_global_ref("box", source);
 				e->add_function("arm", [&source]() { source.armed = true; });
 				try {
-					e->disable(jai::filesystem);
+					e->disable(jai::permissions::filesystem);
 					const std::string path = "D:/virtual/pilot/reload_unit.jai";
 					const std::string before = e->execute_file_source(path, std::string(defs) + " " + first).as_string();   // compiled and run while the names are values
 					e->execute_file_source(path, "var& P = box.grid; var& X2 = box.number;");   // the same unit (a reload of the file) redeclares them in place as references to properties
@@ -2668,7 +2668,7 @@ function loop_scalar(int n) { int s = 0; for (int i = 0; i < n; ++i) { s = s + X
 					.build();
 				e->add_global_ref("box", source);
 				try {
-					e->disable(jai::filesystem);
+					e->disable(jai::permissions::filesystem);
 					const std::string path = "D:/virtual/pilot/null_unit.jai";
 					e->execute_file_source(path, "var VALUES = [10]; var P = [10]; function probe() { array<int> Q = [0]; return P[Q[0]]; } probe();");
 					e->execute_file_source(path, "var& P = box.values;");   // the same unit (a reload) redeclares P in place

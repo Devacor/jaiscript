@@ -1,6 +1,6 @@
 #pragma once
 // The host file IO the runner and the jai_spider host register: read_file, write_file, file_exists, delete_file,
-// move_file, dir_exists, make_dirs, writable_dir and list_dir, each requiring the engine's filesystem privilege.
+// move_file, dir_exists, make_dirs, writable_dir and list_dir, each requiring the engine's filesystem permission.
 #include <jaiscript/jaiscript.hpp>
 
 #include <algorithm>
@@ -63,15 +63,15 @@ inline bool spill_file(const std::string& path, const std::string& content) {
 
 inline void register_file_io(jai::engine& eng) {
 	namespace fs = std::filesystem;
-	eng.add_function("read_file", [](const std::string& path) -> std::string { return read_file_or_raise(path); }, jai::filesystem);
+	eng.add_function("read_file", [](const std::string& path) -> std::string { return read_file_or_raise(path); }, jai::permissions::filesystem);
 	eng.add_function("write_file", [](const std::string& path, const std::string& content) -> bool {
 		return spill_file(path, content);
-	}, jai::filesystem);
-	eng.add_function("file_exists", [](const std::string& path) -> bool { return fs::exists(path); }, jai::filesystem);
+	}, jai::permissions::filesystem);
+	eng.add_function("file_exists", [](const std::string& path) -> bool { return fs::exists(path); }, jai::permissions::filesystem);
 	eng.add_function("delete_file", [](const std::string& path) -> bool {
 		std::error_code ec;
 		return fs::remove(path, ec);
-	}, jai::filesystem);
+	}, jai::permissions::filesystem);
 	// the safe-save step: the destination is replaced in one operation on the same volume (MoveFileEx / rename(2)), a
 	// reader sees the old file or the new one; across volumes the move copies, then removes the source
 	eng.add_function("move_file", [](const std::string& from, const std::string& to) -> bool {
@@ -88,16 +88,16 @@ inline void register_file_io(jai::engine& eng) {
 		fs::copy_file(from, to, fs::copy_options::overwrite_existing, ec);
 		return !ec && fs::remove(from, ec);
 #endif
-	}, jai::filesystem);
+	}, jai::permissions::filesystem);
 	eng.add_function("dir_exists", [](const std::string& path) -> bool {
 		std::error_code ec;
 		return fs::is_directory(path, ec);
-	}, jai::filesystem);
+	}, jai::permissions::filesystem);
 	eng.add_function("make_dirs", [](const std::string& path) -> bool {
 		std::error_code ec;
 		fs::create_directories(path, ec);
 		return fs::is_directory(path, ec);
-	}, jai::filesystem);
+	}, jai::permissions::filesystem);
 	// The save-side question resolve_path cannot answer: can this folder take a file? Creates it
 	// if missing, writes and removes a probe. A program picks its save anchor with it:
 	// root_script_dir() when writable, app_data_dir(name) otherwise.
@@ -112,14 +112,14 @@ inline void register_file_io(jai::engine& eng) {
 		}
 		fs::remove(probe, ec);
 		return true;
-	}, jai::filesystem);
+	}, jai::permissions::filesystem);
 	eng.add_function("list_dir", [](const std::string& path) -> std::vector<std::string> {
 		std::vector<std::string> names;
 		std::error_code ec;
 		for (const auto& entry : fs::directory_iterator(path, ec)) { names.push_back(entry.path().filename().generic_string()); }
 		std::sort(names.begin(), names.end());
 		return names;
-	}, jai::filesystem);
+	}, jai::permissions::filesystem);
 }
 
 } // namespace jai_runner

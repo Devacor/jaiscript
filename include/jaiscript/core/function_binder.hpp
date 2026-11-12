@@ -773,6 +773,16 @@ class engine;
             static constexpr size_t arity = sizeof...(Args);
         };
         
+        // a noexcept function binds as the same function without it
+        template<typename R, typename... Args>
+        struct function_traits<R(*)(Args...) noexcept> : function_traits<R(*)(Args...)> {};
+        template<typename C, typename R, typename... Args>
+        struct function_traits<R(C::*)(Args...) noexcept> : function_traits<R(C::*)(Args...)> {};
+        template<typename C, typename R, typename... Args>
+        struct function_traits<R(C::*)(Args...) const noexcept> : function_traits<R(C::*)(Args...) const> {};
+        template<typename R, typename... Args>
+        struct function_traits<R(Args...) noexcept> : function_traits<R(Args...)> {};
+
         // Function types (not pointers)
         template<typename R, typename... Args>
         struct function_traits<R(Args...)> {
@@ -861,6 +871,8 @@ class engine;
                     return static_cast<const D&>(actual.as<const D&>());
                 } else if constexpr (std::is_same_v<D, char>) {
                     return value_converter<char>::from(actual, eng);
+                } else if constexpr (is_specialization_v<D, std::vector> || is_script_map_like_v<D>) {
+                    return value_converter<D>::from(actual, eng);
                 } else {
                     return D(actual.as<P>());
                 }
@@ -1127,6 +1139,9 @@ class engine;
                     return std::cref(const_cast<script_value&>(actual_arg).as<const std::string&>());   // the script's own string
                 } else if constexpr (std::is_same_v<base_type, char>) {
                     return detail::value_converter<char>::from(actual_arg, eng);
+                } else if constexpr (std::is_const_v<std::remove_reference_t<T>> && (is_specialization_v<base_type, std::vector> || is_script_map_like_v<base_type>)) {
+                    // the callee reads a converted copy, as a bound method's const container reference does
+                    return detail::value_converter<base_type>::from(actual_arg, eng);
                 } else {
                     // For built-in types and special types, use the non-const as<T&>() method
                     return const_cast<script_value&>(actual_arg).as<T>();

@@ -46,50 +46,59 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>05</nav>
 <article class="chapter"><h1 id="safety-rails">Safety Rails<a class="hlink" href="#safety-rails" aria-label="link">&#8203;</a></h1>
-<p>A host decides what a script can reach (two built-in privileges, plus named permissions for its own API) and what it can spend (time, memory, call depth, scan and render sizes). The model:</p>
+<p>A host decides what a script can reach (the engine&#x27;s permissions, plus its own for its API) and what it can spend (time, memory, call depth, scan and render sizes). The model:</p>
 <ul><li><strong>A default engine is not a sandbox.</strong> It reads any file the process can read (<code>include</code>, <code>import</code>, path queries), has no memory cap, a 5 second execution budget, and runs parallel loops on a pool of worker threads.</li>
 <li><strong>The host grants, the script only asks.</strong> A script reads these settings through <code>reflect::</code> and changes none of them.</li>
 <li><strong>A refusal is a catchable script error</strong>, except a budget overrun and a second memory-cap denial in one execute, which are terminal.</li>
 <li><strong>The rails bound script, not the process.</strong> Whatever the host binds reaches what its C++ reaches; process isolation is the operating system&#x27;s job.</li></ul>
 <p>The <a href="#putting-it-together-running-untrusted-script">untrusted-script recipe</a> puts every setting together.</p>
-<h2 id="filesystem-privilege">Filesystem access is a host choice<a class="hlink" href="#filesystem-privilege" aria-label="link">&#8203;</a></h2>
+<h2 id="filesystem-permission">Filesystem access is a host choice<a class="hlink" href="#filesystem-permission" aria-label="link">&#8203;</a></h2>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">auto eng = jai::engine::make();
-eng-&gt;disable(jai::filesystem);
-bool allowed = eng-&gt;is_enabled(jai::filesystem);  // false
+eng-&gt;disable(jai::permissions::filesystem);
+bool allowed = eng-&gt;is_enabled(jai::permissions::filesystem);  // false
 eng-&gt;execute(&quot;2 + 2&quot;);                          // in-memory code still works
-// eng-&gt;enable(jai::filesystem);                 // only the host can grant it again</code></pre></div>
-<p><code>jai::filesystem</code> (short for <code>jai::privilege::filesystem</code>) is enabled by default. The other built-in privilege, <code>jai::scoped_template</code>, gates untrusted templates (<a href="#6-scoped-templates">section 6</a>). With filesystem disabled:</p>
+// eng-&gt;enable(jai::permissions::filesystem);                 // only the host can grant it again</code></pre></div>
+<p>The engine&#x27;s permissions live in <code>jai::permissions</code>, in C++ and in script alike:</p>
+<div class="tablewrap"><table><thead><tr><th>Permission</th><th>Default</th><th>What it guards</th></tr></thead><tbody>
+<tr><td><code>jai::permissions::filesystem</code></td><td>on</td><td>Files and paths (below).</td></tr>
+<tr><td><code>jai::permissions::scoped_template</code></td><td>on</td><td>Untrusted templates (<a href="#6-scoped-templates">section 6</a>).</td></tr>
+<tr><td><code>jai::permissions::network</code></td><td>off</td><td>The <a href="17-host-api.html#http-transport"><code>spider::</code> HTTP client</a> and the runner&#x27;s downloads.</td></tr>
+<tr><td><code>jai::permissions::debug</code>, <code>trusted</code>, <code>untrusted</code></td><td>off</td><td>Nothing the engine enforces. They are conventions with built-in names: the host decides what each means, for example performance metrics under <code>debug</code>, or bundled scripts under <code>trusted</code> and downloaded ones under <code>untrusted</code>.</td></tr>
+</tbody></table></div>
+<p>With filesystem disabled:</p>
 <div class="tablewrap"><table><thead><tr><th>Operation</th><th>With filesystem disabled</th></tr></thead><tbody>
-<tr><td><code>include</code>, <code>import</code>, path queries (the lexical <code>file_name</code> included), <code>execute_file</code>, a <code>template()</code> file, explicit <code>jaibite_load</code> and <code>jaibite::save</code></td><td>Refused with the catchable <code>Insufficient privilege: filesystem.</code> on both backends. Uncaught, it leaves <code>execute()</code> and reaches the host.</td></tr>
+<tr><td><code>include</code>, <code>import</code>, path queries (the lexical <code>file_name</code> included), <code>execute_file</code>, a <code>template()</code> file, explicit <code>jaibite_load</code> and <code>jaibite::save</code></td><td>Refused with the catchable <code>Insufficient permission: filesystem.</code> on both backends. Uncaught, it leaves <code>execute()</code> and reaches the host.</td></tr>
 <tr><td>Automatic disk-cache reads, writes and metadata checks; the checker&#x27;s dependency discovery on disk</td><td>Skipped. In-memory source still parses and checks.</td></tr>
 <tr><td>Source strings, in-memory jaibite bytes, already-loaded script, host-supplied data</td><td>Usable. A file name supplied for diagnostics is a label, not permission to read it.</td></tr>
 </tbody></table></div>
-<p>A script asks with <code>reflect::is_enabled(requirements...)</code>, true only when every requirement is enabled (<a href="#custom-permissions">sample below</a>). It takes built-in flags such as <code>jai::filesystem</code>, permission-name strings or a mixture, and at least one argument. An unknown name is false (and is not registered); invalid bits or argument types raise an error.</p>
-<p><strong>Changing a privilege.</strong> The host enables, disables or registers privileges while the engine is idle or on its execution thread, a C++ callback included. Later gated operations see the change and work already started completes. An active parallel region refuses the change; changes from another thread are unsupported.</p>
-<p><strong>Gating your own functions.</strong> A registration takes an optional requirement. The check lives inside the callable, so an alias or a call through reflection does not bypass it:</p>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;add_function(&quot;read_asset&quot;, readAsset, jai::filesystem);
-eng-&gt;add_variadic_function(&quot;write_assets&quot;, writeAssets, jai::filesystem);</code></pre></div>
-<p><code>dynamic_binder::method(name, callable, requirement)</code> takes the same argument. A binding without one enforces what it needs itself. The standalone runner gates its file, directory, file-archive, download and audio-file start calls this way.</p>
-<p><strong>What filesystem does not cover.</strong> It is not a network or audio permission: the <a href="17-host-api.html#http-transport"><code>spider::</code> HTTP client</a> registers its own named permission, <code>network</code>, disabled until the host enables it. It cannot revoke a stream or C++ object the host already exposed. The runner&#x27;s download progress queries stay available, except <code>Download.received()</code> on the POSIX curl-executable fallback, which polls the output file and so requires filesystem.</p>
+<p>A script asks with <code>jai::permissions::is_enabled(permissions...)</code>, true only when every one is enabled (<a href="#custom-permissions">sample below</a>). It takes at least one id: a <code>jai::permissions</code> value or a host&#x27;s number. Anything else raises an error.</p>
+<p><strong>Changing a permission.</strong> The host enables, disables or names permissions while the engine is idle or on its execution thread, a C++ callback included. Later gated operations see the change and work already started completes. An active parallel region refuses the change; changes from another thread are unsupported.</p>
+<p><strong>Gating your own functions.</strong> A registration takes any number of trailing permissions. The check lives inside the callable, so an alias or a call through reflection does not bypass it:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;add_function(&quot;read_asset&quot;, readAsset, jai::permissions::filesystem);
+eng-&gt;add_variadic_function(&quot;write_assets&quot;, writeAssets, jai::permissions::filesystem);</code></pre></div>
+<p><code>.method</code>, <code>.static_method</code> and <code>.constructor</code> take the same trailing list, beside <code>jai::nodiscard</code> and <code>jai::serial</code>, in any order. A binding without one enforces what it needs itself. The standalone runner gates its file, directory, file-archive, download and audio-file start calls this way.</p>
+<p><strong>What filesystem does not cover.</strong> It is not a network or audio permission: the <a href="17-host-api.html#http-transport"><code>spider::</code> HTTP client</a> needs <code>jai::permissions::network</code>, disabled until the host enables it. It cannot revoke a stream or C++ object the host already exposed. The runner&#x27;s download progress queries stay available, except <code>Download.received()</code> on the POSIX curl-executable fallback, which polls the output file and so requires filesystem.</p>
 <h3 id="confine-paths">What filesystem access reaches<a class="hlink" href="#confine-paths" aria-label="link">&#8203;</a></h3>
 <p>Enabled, <code>include</code> and <code>import</code> open any file the process can read: an absolute path or a <code>..</code> step leaves the include paths. A file that fails to parse or check is quoted line by line in an error the script can catch, and a successful load writes a <code>.cache</code> folder beside the source. To narrow that, confine the engine to chosen folders:</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;add_include_path(&quot;scripts&quot;);
 eng-&gt;confine_paths({&quot;scripts&quot;, &quot;mods&quot;});   // canonical folders; empty (the default) confines nothing</code></pre></div>
 <p>Confined, <code>include</code>, <code>import</code>, <code>resolve_path</code> and <code>file_data</code> open only files whose canonical path (symbolic links followed) lies under one of the folders. A resolution step that finds the file outside them is skipped; when none finds it inside, the reach raises the catchable <code>Path outside the confined roots: &lt;path as written&gt;</code> and the file is never read. No <code>.cache</code> folder is written beside a source outside the folders (a <code>jaibite_cache_directory</code> still receives every cache). The host&#x27;s own <code>execute_file</code> runs whatever file it names.</p>
-<h3 id="custom-permissions">Named permissions for your APIs<a class="hlink" href="#custom-permissions" aria-label="link">&#8203;</a></h3>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">auto eng = jai::engine::make();
-eng-&gt;register_privilege(&quot;savegame.write&quot;);                // disabled initially
-eng-&gt;add_function(&quot;save_game&quot;, saveGame,
-    {&quot;filesystem&quot;, &quot;savegame.write&quot;});                    // BOTH are required
-eng-&gt;enable(&quot;savegame.write&quot;);                            // filesystem is on by default
-bool allowed = eng-&gt;is_enabled({&quot;filesystem&quot;, &quot;savegame.write&quot;});  // true
-auto checked = eng-&gt;require_privilege(&quot;savegame.write&quot;);  // checked_result&lt;void&gt;
-eng-&gt;disable(&quot;savegame.write&quot;);                           // later calls are refused</code></pre></div>
-<p><code>enable</code>, <code>disable</code>, <code>is_enabled</code>, <code>require_privilege</code> and the requirement of a free, variadic or bound-method registration each take a flag, one name, or an initializer list of names that must all pass.</p>
-<p>Registration, unknown names, the missing-permission text, several engines and the cost of a check: <a href="../reference/host.html#rails-permissions">named permissions</a>.</p>
-<p>A name intercepts nothing by itself: attach it to each callable it protects, or check it inside the host function. Scripts query names and flags alike; on an engine with no <code>savegame.write</code> registered:</p>
-<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(reflect::is_enabled("filesystem"));
-print(reflect::is_enabled(jai::filesystem, "savegame.write"));</code></pre></div>
+<h3 id="custom-permissions">Permissions for your APIs<a class="hlink" href="#custom-permissions" aria-label="link">&#8203;</a></h3>
+<p>Every permission is an <code>int32_t</code> id, and any enum passed where a permission goes is one: its underlying value is its id. The engine&#x27;s own take the ids below <code>jai::permissions::count</code>; by convention a host declares its own as an enum over <code>std::int32_t</code> starting there, and keeps the ids unique across its enums (two that share an id name one permission, and nothing checks):</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">enum class GamePermission : std::int32_t { saves = jai::permissions::count, cheats };
+
+auto eng = jai::engine::make();
+eng-&gt;add_function(&quot;save_game&quot;, saveGame, jai::permissions::filesystem, GamePermission::saves, jai::serial);  // BOTH are required
+eng-&gt;enable(GamePermission::saves);                          // a host permission starts disabled
+bool allowed = eng-&gt;is_enabled(jai::permissions::filesystem, GamePermission::saves);  // true
+auto checked = eng-&gt;require_permission(GamePermission::saves);  // checked_result&lt;void&gt;
+eng-&gt;register_permission(GamePermission::saves, &quot;savegame.write&quot;);  // the name a denial shows
+eng-&gt;disable(GamePermission::saves);                         // later calls are refused</code></pre></div>
+<p><code>enable</code>, <code>disable</code>, <code>is_enabled</code> and <code>require_permission</code> take any number of permissions, built-in or the host&#x27;s, that must all pass. A denial names the lowest missing id: <code>Insufficient permission: savegame.write.</code>, or its number while it has no name.</p>
+<p>The missing-permission text, several engines and the cost of a check: <a href="../reference/host.html#rails-permissions">host permissions</a>.</p>
+<p>A permission intercepts nothing by itself: attach it to each callable it protects, or check it inside the host function. Scripts query ids; a host&#x27;s is its enum&#x27;s value:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(jai::permissions::is_enabled(jai::permissions::filesystem));
+print(jai::permissions::is_enabled(jai::permissions::filesystem, 200));   // a host id no one granted</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true
 false</code></pre></div>
 <h2 id="1-execution-budget-terminal-uncatchable-by-script">1. Execution budget: terminal, uncatchable by script<a class="hlink" href="#1-execution-budget-terminal-uncatchable-by-script" aria-label="link">&#8203;</a></h2>
@@ -151,7 +160,7 @@ auto vmLimit = eng-&gt;max_call_depth(jai::backend_type::vm);</code></pre></div>
                                       // DEFAULT: 1 MiB (1048576); there is no unlimited setting
 auto limit = eng-&gt;binary_scan_limit();</code></pre></div>
 <p>A <code>binary::reader</code>&#x27;s <code>text()</code> reads a C string, so it scans for a NUL over at most the remaining bytes and this limit. A scan that ends without one raises the catchable <code>Cannot read null-terminated text at position 0: no NUL terminator within 65536 bytes (the engine's binary scan limit; raise it from C++ with engine-&gt;binary_scan_limit)</code> and leaves the cursor where it was. The field form <code>text(n)</code> reads exactly <code>n</code> bytes and needs no bound.</p>
-<h2 id="6-template-output-limits">6. Templates: output limits, the scoped_template privilege and its folders<a class="hlink" href="#6-template-output-limits" aria-label="link">&#8203;</a></h2>
+<h2 id="6-template-output-limits">6. Templates: output limits, the scoped_template permission and its folders<a class="hlink" href="#6-template-output-limits" aria-label="link">&#8203;</a></h2>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;template_output_limit(4 * 1024 * 1024);      // the most bytes one template() render writes
                                                    // DEFAULT: 10 MiB (10485760); 0 = no limit
 eng-&gt;scoped_template_output_limit(256 * 1024);     // the most bytes one scoped_template or scoped_template_text render writes
@@ -159,16 +168,16 @@ eng-&gt;scoped_template_output_limit(256 * 1024);     // the most bytes one scop
 auto page = eng-&gt;template_output_limit();
 auto untrusted = eng-&gt;scoped_template_output_limit();</code></pre></div>
 <p>A render (<a href="../guide/19-templates.html">HTML Templates</a>) counts the bytes it writes: every splice, and a nested template&#x27;s text each time it is spliced. A scoped render also counts a built-in method that would make a string longer than the limit. Passing a limit raises a catchable error naming it: <code>template()&#x27;s output passed its 4194304-byte limit: the host raises it with engine::template_output_limit</code>, or <code>a scoped template&#x27;s output passed its 262144-byte limit: the host raises it with engine::scoped_template_output_limit</code>.</p>
-<p>The limits change under the privilege rules, and a render already started keeps the limit it started with. A render also runs under the execution budget and the memory cap. Scripts read the limits with <code>reflect::template_output_limit()</code> and <code>reflect::scoped_template_output_limit()</code>.</p>
-<p><strong>What a template reaches.</strong> A <code>template()</code> file is code the program compiles, as an import is, so it needs the filesystem privilege and reaches what the program reaches. A scoped template reaches a fixed set: <code>args</code> (its own copy of the map), the built-in methods of built-in values, and the engine&#x27;s <code>string::</code>, <code>array::</code> and <code>map::</code> functions, which act on copies. Its <code>x =&gt; expr</code> lambdas follow the same rule. No global, other function, host binding or class code runs: a call is refused with <code>a scoped template calls only built-in methods and the string::, array:: and map:: functions: &#x27;leak(...)&#x27; is not allowed</code> (<a href="../reference/errors.html#errors-templates">the reference</a> lists the other refusals).</p>
-<h3 id="6-scoped-templates">The scoped_template privilege and its folders<a class="hlink" href="#6-scoped-templates" aria-label="link">&#8203;</a></h3>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;disable(jai::filesystem);                   // scripts read no file ...
+<p>The limits change under the permission rules, and a render already started keeps the limit it started with. A render also runs under the execution budget and the memory cap. Scripts read the limits with <code>reflect::template_output_limit()</code> and <code>reflect::scoped_template_output_limit()</code>.</p>
+<p><strong>What a template reaches.</strong> A <code>template()</code> file is code the program compiles, as an import is, so it needs the filesystem permission and reaches what the program reaches. A scoped template reaches a fixed set: <code>args</code> (its own copy of the map), the built-in methods of built-in values, and the engine&#x27;s <code>string::</code>, <code>array::</code> and <code>map::</code> functions, which act on copies. Its <code>x =&gt; expr</code> lambdas follow the same rule. No global, other function, host binding or class code runs: a call is refused with <code>a scoped template calls only built-in methods and the string::, array:: and map:: functions: &#x27;leak(...)&#x27; is not allowed</code> (<a href="../reference/errors.html#errors-templates">the reference</a> lists the other refusals).</p>
+<h3 id="6-scoped-templates">The scoped_template permission and its folders<a class="hlink" href="#6-scoped-templates" aria-label="link">&#8203;</a></h3>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;disable(jai::permissions::filesystem);                   // scripts read no file ...
 eng-&gt;set_scoped_template_dirs({&quot;themes&quot;, &quot;template&quot;});   // ... but untrusted templates load from these folders
 eng-&gt;add_scoped_template_dir(&quot;/srv/app/shared_templates&quot;);
 eng-&gt;remove_scoped_template_dir(&quot;themes&quot;);
 const std::vector&lt;std::string&gt;&amp; dirs = eng-&gt;scoped_template_dirs();   // DEFAULT: {&quot;template&quot;}
-eng-&gt;disable(jai::scoped_template);              // and with this, no untrusted template renders at all</code></pre></div>
-<p><code>scoped_template</code> and <code>scoped_template_text</code> run on their own privilege, <code>jai::scoped_template</code> (the name <code>&quot;scoped_template&quot;</code>), <strong>enabled by default</strong>, with the API and change rules of <code>filesystem</code>. Disabled, both raise <code>Insufficient privilege: scoped_template.</code> where they render. They need no other privilege: with filesystem off, a script still renders, and so reads, the files in the template folders.</p>
+eng-&gt;disable(jai::permissions::scoped_template);              // and with this, no untrusted template renders at all</code></pre></div>
+<p><code>scoped_template</code> and <code>scoped_template_text</code> run on their own permission, <code>jai::permissions::scoped_template</code>, <strong>enabled by default</strong>, with the API and change rules of <code>filesystem</code>. Disabled, both raise <code>Insufficient permission: scoped_template.</code> where they render. They need no other permission: with filesystem off, a script still renders, and so reads, the files in the template folders.</p>
 <p>A <code>scoped_template(path, map)</code> file is read only from the host&#x27;s template folders, with or without filesystem enabled. Its path is checked before any file opens, and each refusal has its own catchable text (<a href="../reference/errors.html#errors-templates">template errors</a>):</p>
 <ul><li>a <code>..</code> segment anywhere, even one that stays inside;</li>
 <li>an absolute path, a drive (<code>C:</code>), a UNC name (<code>//server/share</code>), a leading <code>/</code> or <code>\</code>;</li>
@@ -177,11 +186,11 @@ eng-&gt;disable(jai::scoped_template);              // and with this, no untrust
 <ul><li>Folders are tried in list order; the first file that exists and lies inside its folder is the template.</li>
 <li>A relative folder resolves as an import&#x27;s file does (<a href="../guide/10-modules.html#invalidation-and-tracking-host-api">the ladder an import walks</a>): the calling script&#x27;s folder, then the include paths, then the working directory. The default <code>{&quot;template&quot;}</code> is the <code>template</code> folder there, so a <code>jai_spider</code> app reads its own <code>template/</code>.</li>
 <li>A folder that does not exist holds nothing, and is no error.</li>
-<li>Scripts read the list with <code>reflect::scoped_template_dirs()</code>. The host changes it under the privilege rules.</li></ul>
+<li>Scripts read the list with <code>reflect::scoped_template_dirs()</code>. The host changes it under the permission rules.</li></ul>
 <h2 id="putting-it-together-running-untrusted-script">Putting it together: running untrusted script<a class="hlink" href="#putting-it-together-running-untrusted-script" aria-label="link">&#8203;</a></h2>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">auto eng = jai::engine::make();
-eng-&gt;disable(jai::filesystem);          // no include, import or path query: source arrives in memory
-eng-&gt;disable(jai::scoped_template);     // no template files either (or keep it and choose the folders)
+eng-&gt;disable(jai::permissions::filesystem);          // no include, import or path query: source arrives in memory
+eng-&gt;disable(jai::permissions::scoped_template);     // no template files either (or keep it and choose the folders)
 eng-&gt;execution_budget(0.005);            // 5 ms per execute
 eng-&gt;memory_cap(16 * 1024 * 1024);       // 16 MB high-water
 eng-&gt;parallel_thread_count(1);           // parallel loops stay on the calling thread
@@ -192,13 +201,13 @@ eng-&gt;set_output_stream(myLogStream);     // print speaks only into this strea
 // register ONLY the API surface the script should have
 eng-&gt;add_function(&quot;move_to&quot;, [](jai::script_int x, jai::script_int y) { return x + y; });</code></pre></div>
 <p>What the lines close, and what stays open:</p>
-<ul><li><strong>Files.</strong> With both privileges off the script opens no file. With <code>scoped_template</code> left on, it can render, and so read, any file under <code>scoped_template_dirs()</code> (the <code>template</code> folder by default).</li>
+<ul><li><strong>Files.</strong> With both permissions off the script opens no file. With <code>scoped_template</code> left on, it can render, and so read, any file under <code>scoped_template_dirs()</code> (the <code>template</code> folder by default).</li>
 <li><strong>Threads.</strong> At its default (0), <code>parallel_thread_count</code> lets a parallel loop use every performance core. The budget and the cap apply per worker, and each worker may spend the whole memory allowance left when the region starts. A count of 1 keeps loops on the calling thread; results never depend on the count.</li>
 <li><strong>Waiting.</strong> Under a plain <code>execute()</code>, <code>sleep(seconds)</code> blocks the host thread, and the budget is next checked when it returns. A host that must not block replaces the engine&#x27;s sleep provider (<code>eng-&gt;time().source</code>) or starts the script as a <a href="17-host-api.html#suspendable-runs">suspendable run</a>.</li>
-<li><strong>Names.</strong> Strict checking rejects an undeclared name before anything runs, with a <code>jai::static_check_error</code> naming the line (<a href="06-static-checking.html">Static Checking</a>). It is a diagnostic aid, not a privilege boundary: <code>extern</code> defers a name to run time and grants nothing.</li>
+<li><strong>Names.</strong> Strict checking rejects an undeclared name before anything runs, with a <code>jai::static_check_error</code> naming the line (<a href="06-static-checking.html">Static Checking</a>). It is a diagnostic aid, not a permission boundary: <code>extern</code> defers a name to run time and grants nothing.</li>
 <li><strong>The host&#x27;s API.</strong> A host type enters an engine only through an explicit <code>bind_registrar</code> or <code>dynamic_binder</code> call (the binder chapter&#x27;s <a href="02-dynamic-binder.html#three-doors">three doors</a>). Engines isolate script environments, not the process or shared native objects: review every callback, stream and C++ object you expose.</li>
 <li><strong>Hostile data.</strong> The serializers never execute type or property names arriving in a payload, and reject oversized array and map length prefixes instead of pre-allocating (<a href="08-serialization.html">Serialization</a>). A signal property&#x27;s saved script-text receivers are code that runs when the signal fires, so an object carrying them loads from a trusted source or into an engine under these rails (<a href="08-serialization.html#saved-receivers-are-script">saved receivers are script</a>).</li></ul>
-<p>Which errors a script can catch: a privilege refusal, checked overflow, the recursion and nesting limits, the scan and template limits, and the first memory-cap denial of an execute. A budget overrun and a second memory-cap denial are terminal.</p>
+<p>Which errors a script can catch: a permission refusal, checked overflow, the recursion and nesting limits, the scan and template limits, and the first memory-cap denial of an execute. A budget overrun and a second memory-cap denial are terminal.</p>
 <nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/04-jaibite.html"><span>&larr; previous</span>jaibite: Parse Once, Ship Precompiled</a><a class="next" rel="next" href="../embedding/06-static-checking.html"><span>next &rarr;</span>Static Checking</a></nav></article>
 </main>
 </div>

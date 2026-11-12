@@ -59,7 +59,7 @@ public:
 		auto result = make_engine();
 		stdlib::register_all(*result);
 		stdlib::register_spider(*result);
-		result->enable("network");
+		result->enable(jai::permissions::network);
 		result->http_transport(a_transport);
 		return result;
 	}
@@ -74,7 +74,7 @@ public:
 			auto e = make_engine();
 			stdlib::register_all(*e);
 			stdlib::register_spider(*e);
-			e->enable("network");
+			e->enable(jai::permissions::network);
 			check_eq(std::string("spider::get: no HTTP transport installed: the host provides one with engine::http_transport()"), caught(e, "spider::get(\"http://example.org/\");"));
 			check_eq(std::string("spider::post: no HTTP transport installed: the host provides one with engine::http_transport()"), caught(e, "spider::post(\"http://example.org/\", \"x\");"));
 			check_eq(std::string("spider::sling: no HTTP transport installed: the host provides one with engine::http_transport()"), caught(e, "spider::sling(\"x\", \"http://example.org/\");"));
@@ -86,11 +86,11 @@ public:
 			stdlib::register_all(*e);
 			stdlib::register_spider(*e);
 			e->http_transport(transport);
-			check_eq(std::string("false"), text(e, "to_string(reflect::is_enabled(\"network\"));"));
-			check_eq(std::string("Insufficient privilege: network."), caught(e, "spider::get(\"http://example.org/\");"));
-			check_eq(std::string("Insufficient privilege: network."), caught(e, "spider::post(\"http://example.org/\", \"x\");"));
+			check_eq(std::string("false"), text(e, "to_string(jai::permissions::is_enabled(jai::permissions::network));"));
+			check_eq(std::string("Insufficient permission: network."), caught(e, "spider::get(\"http://example.org/\");"));
+			check_eq(std::string("Insufficient permission: network."), caught(e, "spider::post(\"http://example.org/\", \"x\");"));
 			check_eq(size_t{0}, transport->seen.size());
-			e->enable("network");
+			e->enable(jai::permissions::network);
 			check_eq(std::string("200"), text(e, "to_string(spider::get(\"http://example.org/\").status);"));
 			check_eq(size_t{1}, transport->seen.size());
 		});

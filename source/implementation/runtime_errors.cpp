@@ -162,8 +162,8 @@ std::string runtime_error_category_impl::message(int ev) const {
             return "File not found";
         case runtime_error_code::include_path_invalid:
             return "Include path must be a string";
-        case runtime_error_code::insufficient_privilege:
-            return "Insufficient privilege";
+        case runtime_error_code::insufficient_permission:
+            return "Insufficient permission";
 
         // Control flow errors
 

@@ -36,6 +36,27 @@ namespace bound_operator_hosts {
 		tally(const tally&) = delete;
 		tally& operator=(const tally&) = delete;
 	};
+	// Operators the class declares, as members and as free functions, which its binder binds with no line of its own
+	struct cents {
+		int64_t n = 0;
+		cents() = default;
+		explicit cents(int64_t a_n) : n(a_n) {}
+		cents operator+(const cents& a_other) const { return cents(n + a_other.n); }
+		cents operator-() const { return cents(-n); }
+		cents& operator+=(const cents& a_other) { n += a_other.n; return *this; }
+		cents& operator++() { ++n; return *this; }
+		bool operator==(const cents& a_other) const = default;
+		auto operator<=>(const cents& a_other) const { return n <=> a_other.n; }
+		int64_t operator[](int64_t a_digit) const { return (n / (a_digit == 0 ? 1 : 10 * a_digit)) % 10; }
+		int64_t operator()(int64_t a_times) const { return n * a_times; }
+		std::string to_string() const { return std::to_string(n) + "c"; }
+	};
+	inline cents operator*(const cents& a_left, const cents& a_right) { return cents(a_left.n * a_right.n); }
+	// converts to an int, which gives no class operator of its own
+	struct handle {
+		int64_t id = 0;
+		operator int64_t() const { return id; }
+	};
 }
 
 namespace jai::foundry::tests {
@@ -260,6 +281,55 @@ public:
 				check_true(d.message.find("int - Meter") == std::string::npos, d.message);
 			}
 			check_eq((size_t)1, warned);
+		});
+
+		test("a_binder_binds_the_constructors_and_operators_its_class_declares", [this]() {
+			using bound_operator_hosts::cents;
+			using bound_operator_hosts::handle;
+			auto eng = make_engine();
+			stdlib::register_all(eng);
+			dynamic_binder<cents>(*eng, "Cents").constructor<int64_t>().property("n", &cents::n);
+			dynamic_binder<handle>(*eng, "Handle").property("id", &handle::id);
+			eng->execute(R"(
+				Cents a = Cents(12); Cents b = Cents(3);
+				Cents copy = a;
+				Cents zero = Cents();
+				Cents sum = a + b; Cents product = a * b; Cents negative = -a;
+				Cents counted = Cents(1); counted += b; ++counted;
+			)");
+			check_eq((int64_t)12, eng->execute("copy.n").as_int());
+			check_eq((int64_t)0, eng->execute("zero.n").as_int());
+			check_eq((int64_t)15, eng->execute("sum.n").as_int());
+			check_eq((int64_t)36, eng->execute("product.n").as_int());
+			check_eq((int64_t)-12, eng->execute("negative.n").as_int());
+			check_eq((int64_t)5, eng->execute("counted.n").as_int());
+			check_eq(true, eng->execute("a == Cents(12) && a != b && b < a && a >= b && !(a < b)").as_bool());
+			check_eq((int64_t)21, eng->execute("a[0] * 10 + a[1]").as_int());
+			check_eq((int64_t)36, eng->execute("a(3)").as_int());
+			check_eq(false, eng->execute("reflect::has_method(a, \"to_string\")").as_bool());
+			check_eq(false, eng->execute("Handle h = Handle(); h.id = 2; reflect::has_method(h, \"+\")").as_bool());
+			// a script class over it assigns its own fields too: the base's = is hidden, as C++'s implicit operator= hides it
+			check_eq((int64_t)37, eng->execute(R"(
+				class Purse : Cents { int extra = 0; }
+				var from = Purse(); from.n = 7; from.extra = 3;
+				var into = Purse(); into = from;
+				into.extra * 10 + into.n
+			)").as_int());
+		});
+
+		test("an_explicit_binding_replaces_the_automatic_one", [this]() {
+			using bound_operator_hosts::cents;
+			auto eng = make_engine();
+			stdlib::register_all(eng);
+			dynamic_binder<cents>(*eng, "Cents")
+				.constructor<int64_t>(jai::nodiscard)
+				.property("n", &cents::n)
+				.method("+", [](const cents& a_self, const cents& a_other) { return cents(a_self.n + a_other.n + 100); })
+				.method("to_string", &cents::to_string);
+			check_eq((int64_t)105, eng->execute("(Cents(2) + Cents(3)).n").as_int());
+			check_eq(std::string("2c"), eng->execute("to_string(Cents(2))").as<std::string>());
+			check_true(eng->check("Cents(4); int after = 1;").has_errors());
+			check_false(eng->check("Cents kept = Cents(4);").has_errors());
 		});
 
 		test("a_script_operator_that_cannot_take_the_operand_yields_to_the_bound_base", [this]() {

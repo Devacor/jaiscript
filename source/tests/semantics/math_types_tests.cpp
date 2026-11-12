@@ -842,7 +842,7 @@ public:
             for (bool use_vm : {false, true}) {
                 using adapter_hosts::shape;
                 auto e = host(use_vm);
-                jai::dynamic_binder<shape>(*e, "Shape").auto_bind().build();
+                jai::dynamic_binder<shape>(*e, "Shape").build();
                 auto s = std::make_shared<shape>();
                 e->add_global("s", e->make_value(s));
                 const std::string label = use_vm ? " (vm)" : " (interpreter)";
@@ -865,7 +865,7 @@ public:
             for (bool use_vm : {false, true}) {
                 using adapter_hosts::shape;
                 auto e = host(use_vm);
-                jai::dynamic_binder<shape>(*e, "Shape").auto_bind().method("hue", [](shape& self) { return self.currentHue.get(); }).build();
+                jai::dynamic_binder<shape>(*e, "Shape").method("hue", [](shape& self) { return self.currentHue.get(); }).build();
                 auto s = std::make_shared<shape>();
                 e->add_global("s", e->make_value(s));
                 const std::string label = use_vm ? " (vm)" : " (interpreter)";

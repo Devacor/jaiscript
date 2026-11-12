@@ -29,7 +29,7 @@ if [ "${BATTERY_SKIP_DEBUG:-0}" = 1 ]; then
 	echo "skipped: the Debug suites (already green at this commit)"
 	: > "$JAI_CI_LOG_DIR/battery_debug.out"
 else
-	{ jai_debug_suites interp vm vm-reference || echo "DEBUG-SUITES-RED"; } > "$JAI_CI_LOG_DIR/battery_debug.out" 2>&1 &
+	{ jai_suites debug interp vm vm-reference || echo "DEBUG-SUITES-RED"; } > "$JAI_CI_LOG_DIR/battery_debug.out" 2>&1 &
 	debug_pid=$!
 fi
 jai_gates_side_by_side release tests-interp tests-vm tests-vm-reference fuzz fuzz-vm-reference fuzz-order gloom gloom-workers gloom-long demoreel crawler gatorquest timedemo embed-quickstart lsp amalgamation selftest site

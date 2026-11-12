@@ -36,12 +36,15 @@ public:
 	observable_property(observable_property&& a_other) noexcept requires std::is_move_constructible_v<T>
 		: base_type(std::move(a_other))
 		, on_change_(std::move(a_other.on_change_)) {
+		a_other.on_change = signal<void(const T&, const T&)>{a_other.on_change_};
 	}
 
 	observable_property& operator=(observable_property&& a_other) noexcept requires std::is_move_assignable_v<T> {
 		if (this != &a_other) {
 			this->m_value = std::move(a_other.m_value);
 			on_change_ = std::move(a_other.on_change_);
+			on_change = signal<void(const T&, const T&)>{on_change_};
+			a_other.on_change = signal<void(const T&, const T&)>{a_other.on_change_};
 		}
 		return *this;
 	}
@@ -165,10 +168,11 @@ public:
 		return old_value;
 	}
 
-	signal<void(const T&, const T&)> on_change{on_change_};
-
 private:
 	change_signal_type on_change_;
+
+public:
+	signal<void(const T&, const T&)> on_change{on_change_};
 };
 
 

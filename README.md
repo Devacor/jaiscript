@@ -293,7 +293,7 @@ Bugs and questions: [github.com/Devacor/jaiscript/issues](https://github.com/Dev
 
 ## Status
 
-JaiScript 0.5 beta, released 11 November 2026. The language, both backends, the embedding API and
+JaiScript 0.5 beta, released 12 November 2026. The language, both backends, the embedding API and
 the `.jaibite` format are complete and covered by 3,900+ tests run on both backends and a
 differential fuzzer. Beta means the C++ API may still change between minor versions;
 [`docs/site/stability.html`](docs/site/stability.html) lists what is settled and what may change

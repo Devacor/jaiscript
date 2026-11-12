@@ -400,7 +400,7 @@ jai::dynamic_binder&lt;Inventory&gt;(*eng, "Inventory")
 <a href="../guide/06-functions.html#nodiscard">[[nodiscard]]</a> rule: <code>the result of 'try_connect' is discarded,
 but 'try_connect' is [[nodiscard]]: use it, or keep it in the placeholder (auto _ = try_connect(...);)</code>. For a
 method this holds wherever the checker knows the receiver's class. <code>add_variadic_function</code> and <code>.static_method</code>
-take the option too, and it combines with the others: <code>jai::nodiscard | jai::serial | jai::filesystem</code>.
+take the option too, in a list with the others: <code>jai::nodiscard, jai::serial, jai::permissions::filesystem</code>.
 <code>is_nodiscard_function(callable)</code> asks, by <code>"name"</code> or <code>"Class.method"</code>. A
 namespace entry described with a <code>host_entry_signature</code> sets its <code>nodiscard</code> field;
 <code>in_place_twin</code> adds that the entry copies what the same-named method changes in place, and the error then
@@ -498,11 +498,11 @@ itself: the host supplies the HTTP stack. Three calls make a working client:</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/stdlib/spider.hpp&gt;
 #include &lt;jaiscript/net/http_socket_transport.hpp&gt;   // or your own jai::http_transport
 
-jai::stdlib::register_spider(*eng);                  // the functions, spider::Response, the "network" permission
+jai::stdlib::register_spider(*eng);                  // the functions and spider::Response
 eng-&gt;http_transport(std::make_shared&lt;jai::net::http_socket_transport&gt;());
-eng-&gt;enable(&quot;network&quot;);                              // registered disabled: the host grants it</code></pre></div>
+eng-&gt;enable(jai::permissions::network);                           // off by default: the host grants it</code></pre></div>
 <p>Without a transport a call raises <code>spider::catch: no HTTP transport installed: the host provides one with
-engine::http_transport()</code>; without the permission, <code>Insufficient privilege: network.</code></p>
+engine::http_transport()</code>; without the permission, <code>Insufficient permission: network.</code></p>
 <p>A transport implements one function of <code>jai::http_transport</code>
 (<code>&lt;jaiscript/core/http_transport.hpp&gt;</code>): <code>http_reply exchange(const http_request&amp;)</code>.</p>
 <ul>

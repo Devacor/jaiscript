@@ -485,7 +485,6 @@ namespace spider_detail {
 		using namespace spider_detail;
 		using svt = script_value_type;
 		engine* eng = &eng_ref;
-		eng_ref.register_privilege("network");
 
 		dynamic_binder<response_record>(eng_ref, "spider::Response")
 			.constructor<>()
@@ -550,7 +549,7 @@ namespace spider_detail {
 		if (!ns) { ns = std::make_shared<script_namespace_data>(); }
 		auto def = [&](const char* a_name, uint8_t a_min, uint8_t a_max, std::vector<svt> a_params, script_function a_call, bool a_network) {
 			const uint64_t id = detail::engine_access::symbolize(eng_ref, a_name);
-			ns->variables[id] = script_value::make_function(a_network ? detail::engine_access::guard_function(eng_ref, std::move(a_call), "network") : std::move(a_call), &eng_ref);
+			ns->variables[id] = script_value::make_function(a_network ? detail::engine_access::guard_function(eng_ref, std::move(a_call), permissions::network) : std::move(a_call), &eng_ref);
 			host_entry_signature signature;
 			signature.min_args = a_min;
 			signature.max_args = a_max;

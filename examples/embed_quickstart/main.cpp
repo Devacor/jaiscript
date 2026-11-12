@@ -34,6 +34,9 @@
 
 namespace fs = std::filesystem;
 
+// the host's own permissions take the slots after the engine's
+enum class GamePermission : std::int32_t { cheats = jai::permissions::count };
+
 struct Vec2 {
 	double x = 0, y = 0;
 	Vec2() = default;
@@ -298,23 +301,23 @@ static int run(int argc, char** argv) {
 	auto sandbox = jai::engine::make();
 	sandbox->set_backend(eng->get_backend_type());
 	jai::stdlib::register_all(sandbox);
-	sandbox->disable(jai::filesystem);
-	sandbox->register_privilege("game.cheats");
-	sandbox->add_function("give_gold", [](int64_t n) { return n * 2; }, "game.cheats");
+	sandbox->disable(jai::permissions::filesystem);
+	sandbox->register_permission(GamePermission::cheats, "game.cheats");
+	sandbox->add_function("give_gold", [](int64_t n) { return n * 2; }, GamePermission::cheats);
 	try {
 		sandbox->execute("import \"rules.jai\";");
-		expect(false, "import should be refused without the filesystem privilege");
+		expect(false, "import should be refused without the filesystem permission");
 	} catch (const std::exception& e) {
-		expect(std::string(e.what()).find("Insufficient privilege: filesystem.") != std::string::npos,
+		expect(std::string(e.what()).find("Insufficient permission: filesystem.") != std::string::npos,
 			std::string("sandbox import refused: ") + e.what());
 	}
 	try {
 		sandbox->execute("give_gold(5)");
 		expect(false, "give_gold should need game.cheats");
 	} catch (const std::exception& e) {
-		expect(true, std::string("custom privilege enforced: ") + e.what());
+		expect(true, std::string("custom permission enforced: ") + e.what());
 	}
-	sandbox->enable("game.cheats");
+	sandbox->enable(GamePermission::cheats);
 	expect(sandbox->execute("give_gold(5)").as_int() == 10, "give_gold works once game.cheats is enabled");
 
 	section("script errors in C++");

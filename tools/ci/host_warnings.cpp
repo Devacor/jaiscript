@@ -33,10 +33,12 @@ public:
 	JAI_PROPERTY((int64_t), count, 0);
 	JAI_PROPERTY((double), scale, 1.5);
 	JAI_OBSERVABLE_PROPERTY((int), level, 1);
-	JAI_SIGNAL_PROPERTY(void(int64_t), onPoke);
-	void poke(int64_t a_amount) { count = count + a_amount; onPokeSignal(count); }
-	int64_t total() const { return count; }
-	std::string label(const std::string& a_prefix) const { return a_prefix + name.get(); }
+	JAI_SIGNAL(void(int64_t), onPoke);
+	JAI_METHOD(void, poke, (int64_t a_amount)) { count = count + a_amount; onPokeSignal(count); }
+	JAI_METHOD(void, poke, ()) { poke(1); }
+	JAI_METHOD(int64_t, total, () const noexcept) { return count; }
+	JAI_METHOD(std::string, label, (const std::string& a_prefix) const, jai::nodiscard) { return a_prefix + name.get(); }
+	JAI_METHOD(int64_t, operator*, (int64_t a_factor) const) { return count * a_factor; }
 	static int64_t twice(int64_t a_value) { return a_value * 2; }
 	static std::shared_ptr<Widget> make() { return std::make_shared<Widget>(); }
 protected:
@@ -60,9 +62,6 @@ int64_t sum(std::vector<int64_t> a_values) {
 
 static jai::registrar<host_warnings::Widget, void> registerWidget("Widget", [](jai::dynamic_binder<host_warnings::Widget>& a_binder) {
 	a_binder.constructor<>();
-	a_binder.method("poke", &host_warnings::Widget::poke);
-	a_binder.method("total", &host_warnings::Widget::total);
-	a_binder.method("label", &host_warnings::Widget::label);
 	a_binder.static_method("twice", &host_warnings::Widget::twice);
 	a_binder.static_method("make", &host_warnings::Widget::make);
 });

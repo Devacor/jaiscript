@@ -9,7 +9,7 @@ namespace stdlib {
 	// its plain name spider::get, spider::sling(content, url[, options]) and its plain name spider::post(url, content
 	// [, options]), the spider::Response class and its spider::Response(status, body) constructor
 	// (source/implementation/stdlib/spider.cpp). The calls send through the host's engine::http_transport and require the
-	// "network" permission, which this call registers (disabled until the host enables it).
+	// jai::permissions::network permission, disabled until the host enables it.
 	void register_spider(engine& eng_ref);
 	inline void register_spider(const std::shared_ptr<engine>& e) { register_spider(*e); }
 	inline void register_spider(engine* e) { register_spider(*e); }

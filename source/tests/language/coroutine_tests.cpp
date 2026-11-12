@@ -72,7 +72,7 @@ public:
             // the coroutine body belongs to the unit that declared it: another unit's
             // `var g` shadows and the body keeps its own g; the same unit (a reload of the file) writes in place
             auto engine = make_engine();
-            engine->disable(jai::filesystem);
+            engine->disable(jai::permissions::filesystem);
             const std::string path = "D:/virtual/coroutine/redeclare_unit.jai";
             engine->execute_file_source(path, "var g = 1; coroutine int co() { yield g; yield g; yield g; yield g; }");
             engine->execute("var c = co();");

@@ -104,7 +104,7 @@ brain handle. Movement = `move_toward(tx, ty)`: normalized step
 | 0 | GRUNT | 30 | 3.1 | 0.34 | 55 | roll(4,10) |
 | 1 | SPITTER | 45 | 2.2 | 0.36 | 40 | roll(3,7) shove |
 | 2 | TURRET | 60 | 0 | 0.38 | 15 | — |
-| 3 | WARDEN | 520 | 2.0 (×1.5 enraged) | 0.45 | 8 | roll(10,22) |
+| 3 | WARDEN | 260 | 2.0 (×1.5 enraged) | 0.45 | 8 | roll(10,22) |
 
 Damage intake (`hurt(dmg)`): `hp -= dmg; flash = 4;` blood burst of
 `min(6, 2 + dmg/6)` particles. hp ≤ 0 → death: `alive = false`,

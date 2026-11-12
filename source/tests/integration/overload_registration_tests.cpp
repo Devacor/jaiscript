@@ -175,7 +175,7 @@ public:
                     .method("tagged", [](const Acc& self, bool upper) -> std::string { return upper ? self.tag + "!" : self.tag; })
                     .method("pick", &Acc::pick_i)
                     .method("pick", &Acc::pick_s)
-                    .method("guarded", &Acc::get_total, jai::filesystem)
+                    .method("guarded", &Acc::get_total, jai::permissions::filesystem)
                     .build();
                 if (lanes) {
                     auto def = detail::engine_access::get_class_definition(*e, "Acc");

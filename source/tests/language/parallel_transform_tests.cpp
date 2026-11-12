@@ -3329,17 +3329,17 @@ public:
 				auto e = make_engine();
 				jai::stdlib::register_all(*e);
 				e->set_backend(vm ? jai::backend_type::vm : jai::backend_type::interpreter);
-				dynamic_binder<host_registry>(*e, "HostRegistry").constructor<>().serial_only_constructor().property("v", &host_registry::v).build();
+				dynamic_binder<host_registry>(*e, "HostRegistry").constructor<>(jai::serial).property("v", &host_registry::v).build();
 				e->parallel_thread_count(8);
 				auto refused = [&](const char* src) -> std::string {
 					try { e->execute(src); } catch (const std::exception& ex) { return ex.what(); }
 					return "no error";
 				};
 				const std::string derived = refused("class Script : HostRegistry { int w = 1; Script() : super() {} } array<int> xs = [1, 2]; parallel_for (auto& x : xs) { Script s; x = s.w; }");
-				check_true(derived.rfind("parallel_for: class 'Script' has a C++ base 'HostRegistry' marked serial_only_constructor() and cannot be constructed in a parallel body at 1:", 0) == 0,
+				check_true(derived.rfind("parallel_for: class 'Script' has a C++ base 'HostRegistry' with a constructor marked jai::serial and cannot be constructed in a parallel body at 1:", 0) == 0,
 				           std::string("serial-only base ") + (vm ? "vm" : "interp") + ": " + derived);
 				const std::string host = refused("array<int> xs = [1, 2]; parallel_for (auto& x : xs) { HostRegistry r; x = 1; }");
-				check_true(host.rfind("parallel_for: C++ class 'HostRegistry' is marked serial_only_constructor() and cannot be constructed in a parallel body at 1:", 0) == 0,
+				check_true(host.rfind("parallel_for: C++ class 'HostRegistry' has a constructor marked jai::serial and cannot be constructed in a parallel body at 1:", 0) == 0,
 				           std::string("serial-only class ") + (vm ? "vm" : "interp") + ": " + host);
 			}
 		});
@@ -3413,8 +3413,8 @@ public:
 			                  "Glowing one;                              // a serial construction is unaffected\n"
 			                  "print(\"{} {}\", one.alpha, one.glow);\n";
 			const std::string expected =
-				"parallel_for: C++ class 'Sprite' is marked serial_only_constructor() and cannot be constructed in a parallel body at 3:48\n"
-				"parallel_for: class 'Glowing' has a C++ base 'Sprite' marked serial_only_constructor() and cannot be constructed in a parallel body at 4:49\n"
+				"parallel_for: C++ class 'Sprite' has a constructor marked jai::serial and cannot be constructed in a parallel body at 3:48\n"
+				"parallel_for: class 'Glowing' has a C++ base 'Sprite' with a constructor marked jai::serial and cannot be constructed in a parallel body at 4:49\n"
 				"1.0 0.5\n";
 			for (bool vm : {false, true}) {
 				auto e = make_engine();
@@ -3422,7 +3422,7 @@ public:
 				e->set_backend(vm ? jai::backend_type::vm : jai::backend_type::interpreter);
 				auto out = std::make_shared<std::ostringstream>();
 				e->set_output_stream(out);
-				jai::dynamic_binder<doc_sprite>(*e, "Sprite").constructor<>().serial_only_constructor().property("alpha", &doc_sprite::alpha).build();
+				jai::dynamic_binder<doc_sprite>(*e, "Sprite").constructor<>(jai::serial).property("alpha", &doc_sprite::alpha).build();
 				try { e->execute(src); } catch (const std::exception& ex) { *out << "threw: " << ex.what(); }
 				check_eq(expected, out->str(), vm ? "vm" : "interp");
 			}
@@ -3444,7 +3444,7 @@ public:
 				parallel_serial_deaths.clear();
 				auto e = make_engine();
 				e->set_backend(vm ? jai::backend_type::vm : jai::backend_type::interpreter);
-				dynamic_binder<serial_host>(*e, "SerialHost").constructor<>().serial_only_constructor().property("id", &serial_host::id).build();
+				dynamic_binder<serial_host>(*e, "SerialHost").constructor<>(jai::serial).property("id", &serial_host::id).build();
 				dynamic_binder<plain_host>(*e, "PlainHost").constructor<>().property("id", &plain_host::id).build();
 				e->execute("class Glow : SerialHost { int glow = 1; Glow() : super() {} }\n"
 				           "SerialHost serial(int k) { SerialHost s; s.id = k; return s; }\n"
@@ -3631,7 +3631,7 @@ public:
 				"parallel_transform", "print", "reflect::bases", "reflect::bind", "reflect::call", "reflect::classes",
 				"reflect::construct", "reflect::construct_shared", "reflect::fields", "reflect::function_arguments",
 				"reflect::functions", "reflect::generation", "reflect::get", "reflect::globals", "reflect::has_field",
-				"reflect::has_method", "reflect::instances", "reflect::invoke", "reflect::is_a", "reflect::is_cpp_bound", "reflect::is_enabled",
+				"reflect::has_method", "reflect::instances", "reflect::invoke", "reflect::is_a", "reflect::is_cpp_bound",
 				"reflect::method_arguments", "reflect::methods", "reflect::scoped_template_dirs",
 				"reflect::scoped_template_output_limit", "reflect::set", "reflect::template_output_limit", "reflect::type_name",
 				"resolve_path", "sleep", "spider::Response", "spider::catch", "spider::get", "spider::post", "spider::sling",
@@ -3648,7 +3648,7 @@ public:
 				"crypto::random_bytes", "crypto::random_hex", "crypto::random_int", "crypto::sha1", "crypto::sha1_bytes",
 				"crypto::sha256", "crypto::sha256_bytes", "crypto::sha512", "crypto::sha512_bytes", "current_script_dir",
 				"current_script_path", "executable_dir", "executable_path", "file_name", "format", "format_value",
-				"is_registered_type", "math::abs", "math::acos", "math::angle", "math::angle_between", "math::asin", "math::atan", "math::atan2",
+				"is_registered_type", "jai::permissions::is_enabled", "math::abs", "math::acos", "math::angle", "math::angle_between", "math::asin", "math::atan", "math::atan2",
 				"math::cbrt", "math::ceil", "math::clamp", "math::color", "math::cos", "math::cosh", "math::cross", "math::degrees",
 				"math::degrees_to_radians", "math::distance", "math::distance_squared", "math::dot", "math::exp", "math::exp2",
 				"math::floor", "math::fmod", "math::from_angle", "math::hypot", "math::ifloor", "math::is_inf", "math::is_nan", "math::itrunc",
@@ -3728,7 +3728,7 @@ public:
 					.property("v", &host_counter::v).build();
 				e.add_function("scale", [](int64_t x) { return x * 3; });
 				e.add_function("log_it", [](int64_t) {}, jai::serial);
-				e.add_function("try_log", [](int64_t) { return true; }, jai::serial | jai::nodiscard);
+				e.add_function("try_log", [](int64_t) { return true; }, jai::serial, jai::nodiscard);
 				e.add_variadic_function("log_all", [&e](const std::vector<script_value>&) -> script_value { return e.make_null(); }, jai::serial);
 				e.add_function("fill", [](int64_t& out) { out = 7; });
 				e.add_function("shared_counter", [shared]() { return shared; });

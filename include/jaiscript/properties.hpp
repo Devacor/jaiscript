@@ -7,7 +7,6 @@
 #include <jaiscript/properties/property.hpp>
 #include <jaiscript/properties/property_manager.hpp>
 #include <jaiscript/properties/macros.hpp>
-// Include property_serialization.hpp explicitly in .cpp files that serialize properties.
 
 // For custom types (like game::Point<float>), provide
 // save() and load() free functions in the same namespace as your type (ADL):

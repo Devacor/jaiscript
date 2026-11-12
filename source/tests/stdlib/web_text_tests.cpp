@@ -85,11 +85,11 @@ public:
 			}
 		});
 
-		test("the_html_functions_need_no_filesystem_privilege", [this]() {
+		test("the_html_functions_need_no_filesystem_permission", [this]() {
 			auto engine = make_engine();
 			stdlib::register_all(*engine);
 			stdlib::register_web(*engine);
-			engine->disable(privilege::filesystem);
+			engine->disable(permissions::filesystem);
 			check_eq(std::string("&lt; <"), engine->execute("web::html_escape(\"<\") + \" \" + web::html_unescape(\"&lt;\");").as<std::string>());
 		});
 

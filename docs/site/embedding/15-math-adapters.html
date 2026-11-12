@@ -166,7 +166,7 @@ public:
     JAI_OBSERVABLE_PROPERTY((game::Vec3), velocity);
     JAI_PROPERTY((game::Rgba), tint);
 };</code></pre></div>
-<div class="codeblock cb-cpp" data-sample="math-marker"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::dynamic_binder&lt;Marker&gt;(*eng, &quot;Marker&quot;).auto_bind();
+<div class="codeblock cb-cpp" data-sample="math-marker"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::dynamic_binder&lt;Marker&gt;(*eng, &quot;Marker&quot;);
 
 auto marker = std::make_shared&lt;Marker&gt;();
 int changes = 0;

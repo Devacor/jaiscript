@@ -34,7 +34,7 @@ struct property_meta {
 	std::type_index value_type_id;     // typeid(T) - the actual value type
 	bool default_allow_serialization = true;
 	bool is_observable = false;        // True if this is an observable_property
-	bool is_signal = false;            // True for JAI_SIGNAL_PROPERTY (binds the generic Signal view)
+	bool is_signal = false;            // True for JAI_SIGNAL (binds the generic Signal view)
 	math_property_bridge math;         // set when the value type is math-adapted (script reads and writes the math kind)
 
 	// Default constructor for containers

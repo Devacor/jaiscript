@@ -78,6 +78,7 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 <tr><td><code>"hp", sol::property(&amp;T::health, &amp;T::setHealth)</code></td><td><code>.property("hp", &amp;T::health, &amp;T::setHealth)</code></td></tr>
 <tr><td><code>sol::readonly(&amp;T::field)</code>, <code>sol::readonly_property(getter)</code></td><td><code>.property("name", getter, nullptr)</code>; a store raises <code>Cannot assign to 'name': it is read-only</code></td></tr>
 <tr><td><code>"damage", sol::overload(...)</code></td><td><code>.method("damage", ...)</code> once per overload</td></tr>
+<tr><td><code>sol::resolve&lt;void(int64_t)&gt;(&amp;Monster::damage)</code></td><td><code>jai::overload&lt;int64_t&gt;(&amp;Monster::damage)</code>: the parameters alone pick the overload; <code>jai::const_overload&lt;...&gt;</code> picks the const one</td></tr>
 <tr><td><code>sol::base_classes, sol::bases&lt;Base&gt;()</code></td><td><code>.base_class&lt;Base&gt;()</code></td></tr>
 <tr><td><code>sol::meta_function::addition</code>, <code>equal_to</code>, <code>less_than</code>, <code>index</code></td><td><code>.method("+", ...)</code>, <code>.method("==", ...)</code>, <code>.method("&lt;", ...)</code>, <code>.method("[]", ...)</code></td></tr>
 <tr><td>a static function in the usertype table, <code>T.axes()</code></td><td><code>.static_method("axes", fn)</code>, called as <code>T::axes()</code></td></tr>

@@ -910,6 +910,11 @@ print(vformat(pattern, &quot;orc&quot;, 7));</code></pre></div>
 <p>Checks CRC-32.</p>
 </div>
 </section>
+<section class="api-group"><h2 id="group-jai-permissions">jai::permissions</h2>
+<div class="api-entry" data-provider="core" data-search="jai::permissions::is_enabled(permissions: int...) -&gt; bool observe at least one permission id; scripts query grants, hosts change them. every engine"><h3 id="api-612eb7636c65"><code>jai::permissions::is_enabled(permissions: int...) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>At least one permission id; scripts query grants, hosts change them.</p>
+</div>
+</section>
 <section class="api-group"><h2 id="group-language">language</h2>
 <div class="api-entry" data-provider="core" data-search="cast&lt;t&gt;(value: var) -&gt; t convert explicit conversion; cast&lt;t&amp;&gt; binds compatible storage; handle casts check class compatibility. every engine"><h3 id="api-09b99a5b19ba"><code>cast&lt;T&gt;(value: var) -&gt; T</code></h3><p><strong>Every engine</strong> &middot; convert</p>
 <p>Explicit conversion; cast&lt;T&amp;&gt; binds compatible storage; handle casts check class compatibility.</p>
@@ -923,15 +928,15 @@ print(vformat(pattern, &quot;orc&quot;, 7));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="raw(text: var) -&gt; web::html copy inside a template(...) only: the text spliced unescaped. a scoped template refuses it. inside a template"><h3 id="api-1affd0c545bd"><code>raw(text: var) -&gt; web::html</code></h3><p><strong>Inside a template</strong> &middot; copy</p>
 <p>Inside a template(...) only: the text spliced unescaped. A scoped template refuses it.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="scoped_template(path: string, args: map) -&gt; web::html execute renders an untrusted template file over a copy of args, which is the only name it sees; it calls only built-in methods of built-in values and the string::, array:: and map:: functions, always escapes, and writes at most engine::scoped_template_output_limit bytes. the file is read only from engine::scoped_template_dirs(): a relative path with no .., the first folder in order that holds it, never through a link out. the scoped_template privilege (on by default)"><h3 id="api-2f436a0847fa"><code>scoped_template(path: string, args: map) -&gt; web::html</code></h3><p><strong>The scoped_template privilege (on by default)</strong> &middot; execute</p>
+<div class="api-entry" data-provider="core" data-search="scoped_template(path: string, args: map) -&gt; web::html execute renders an untrusted template file over a copy of args, which is the only name it sees; it calls only built-in methods of built-in values and the string::, array:: and map:: functions, always escapes, and writes at most engine::scoped_template_output_limit bytes. the file is read only from engine::scoped_template_dirs(): a relative path with no .., the first folder in order that holds it, never through a link out. the scoped_template permission (on by default)"><h3 id="api-2f436a0847fa"><code>scoped_template(path: string, args: map) -&gt; web::html</code></h3><p><strong>The scoped_template permission (on by default)</strong> &middot; execute</p>
 <p>Renders an untrusted template file over a copy of args, which is the only name it sees; it calls only built-in methods of built-in values and the string::, array:: and map:: functions, always escapes, and writes at most engine::scoped_template_output_limit bytes. The file is read only from engine::scoped_template_dirs(): a relative path with no .., the first folder in order that holds it, never through a link out.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="scoped_template_text(text: string, args: map) -&gt; web::html execute scoped_template over template text instead of a file. the scoped_template privilege (on by default)"><h3 id="api-326c54513600"><code>scoped_template_text(text: string, args: map) -&gt; web::html</code></h3><p><strong>The scoped_template privilege (on by default)</strong> &middot; execute</p>
+<div class="api-entry" data-provider="core" data-search="scoped_template_text(text: string, args: map) -&gt; web::html execute scoped_template over template text instead of a file. the scoped_template permission (on by default)"><h3 id="api-326c54513600"><code>scoped_template_text(text: string, args: map) -&gt; web::html</code></h3><p><strong>The scoped_template permission (on by default)</strong> &middot; execute</p>
 <p>scoped_template over template text instead of a file.</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(scoped_template_text(&quot;&lt;b&gt;${args[\&quot;name\&quot;]}&lt;/b&gt;&quot;, {&quot;name&quot;: &quot;&lt;i&gt;&quot;}));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;b&gt;&amp;lt;i&amp;gt;&lt;/b&gt;</code></pre></div>
 </div>
-<div class="api-entry" data-provider="core" data-search="template(path: string, names: variable names...) -&gt; web::html execute renders the template file at path, seeing each passed name by reference with its declared type, and the program; every splice html-escaped. a literal path compiles and checks at load; another path at its first render. a render writes at most engine::template_output_limit bytes. every engine (reads the file under the filesystem privilege)"><h3 id="api-f26ca47e3461"><code>template(path: string, names: variable names...) -&gt; web::html</code></h3><p><strong>Every engine (reads the file under the filesystem privilege)</strong> &middot; execute</p>
+<div class="api-entry" data-provider="core" data-search="template(path: string, names: variable names...) -&gt; web::html execute renders the template file at path, seeing each passed name by reference with its declared type, and the program; every splice html-escaped. a literal path compiles and checks at load; another path at its first render. a render writes at most engine::template_output_limit bytes. every engine (reads the file under the filesystem permission)"><h3 id="api-f26ca47e3461"><code>template(path: string, names: variable names...) -&gt; web::html</code></h3><p><strong>Every engine (reads the file under the filesystem permission)</strong> &middot; execute</p>
 <p>Renders the template file at path, seeing each passed name by reference with its declared type, and the program; every splice HTML-escaped. A literal path compiles and checks at load; another path at its first render. A render writes at most engine::template_output_limit bytes.</p>
 </div>
 </section>
@@ -1412,9 +1417,6 @@ print(reflect::invoke(Orc(), &quot;add&quot;, 2, 3));</code></pre></div>
 <p>instanceof for a class named at run time: true for an object of the class or of one derived from it, false for any other value. An unknown class name raises.</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::is_cpp_bound(value: var) -&gt; bool observe  register_all() or area registration"><h3 id="api-15481cb7ffa0"><code>reflect::is_cpp_bound(value: var) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
-</div>
-<div class="api-entry" data-provider="core" data-search="reflect::is_enabled(privileges: int or string...) -&gt; bool observe at least one privilege; scripts query grants, hosts change them. every engine"><h3 id="api-40e9deee02a2"><code>reflect::is_enabled(privileges: int or string...) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-<p>At least one privilege; scripts query grants, hosts change them.</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::method_arguments(object_or_class: var, name: string) -&gt; array&lt;array&lt;map&lt;string,var&gt;&gt;&gt; observe one parameter-description array per overload. register_all() or area registration"><h3 id="api-2fb244a65849"><code>reflect::method_arguments(object_or_class: var, name: string) -&gt; array&lt;array&lt;map&lt;string,var&gt;&gt;&gt;</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
 <p>One parameter-description array per overload.</p>
@@ -2125,8 +2127,14 @@ print(u.to_string());</code></pre></div>
 <tr><td><code>ARGS</code></td><td>array&lt;string&gt;</td><td>read/write / runner</td><td>Arguments following --, not the executable flags.</td></tr>
 <tr><td><code>skip_flush</code></td><td>print token</td><td>constant / stdlib</td><td></td></tr>
 <tr><td><code>skip_newline</code></td><td>print token</td><td>constant / stdlib</td><td></td></tr>
-<tr><td><code>jai::filesystem</code></td><td>int privilege flag</td><td>constant / core</td><td></td></tr>
 <tr><td><code>jai::force</code></td><td>import directive</td><td>constant / core</td><td>Trailing argument to import(paths, jai::force).</td></tr>
+<tr><td><code>jai::permissions.count</code></td><td>int</td><td>constant / core</td><td>The first id of a host&#x27;s own permissions.</td></tr>
+<tr><td><code>jai::permissions.debug</code></td><td>int permission id</td><td>constant / core</td><td>A convention the engine enforces nothing with.</td></tr>
+<tr><td><code>jai::permissions.filesystem</code></td><td>int permission id</td><td>constant / core</td><td></td></tr>
+<tr><td><code>jai::permissions.network</code></td><td>int permission id</td><td>constant / core</td><td></td></tr>
+<tr><td><code>jai::permissions.scoped_template</code></td><td>int permission id</td><td>constant / core</td><td></td></tr>
+<tr><td><code>jai::permissions.trusted</code></td><td>int permission id</td><td>constant / core</td><td>A convention the engine enforces nothing with.</td></tr>
+<tr><td><code>jai::permissions.untrusted</code></td><td>int permission id</td><td>constant / core</td><td>A convention the engine enforces nothing with.</td></tr>
 <tr><td><code>math::E</code></td><td>float</td><td>constant / core</td><td>Engine-core math constant; use math::E.</td></tr>
 <tr><td><code>math::PI</code></td><td>float</td><td>constant / core</td><td>Engine-core math constant; use math::PI.</td></tr>
 <tr><td><code>math::color.a</code></td><td>float</td><td>read/write / core</td><td>float32 component.</td></tr>

@@ -848,7 +848,7 @@ int runner_exit(int code) {
 
 // -------------------------------------------------------------- networking ---
 // A generic length-framed TCP channel for scripts: a 4-byte big-endian header + content
-// framing on the wire, and the property_owner + JAI_SIGNAL_PROPERTY pattern on the API. No threads: the
+// framing on the wire, and the property_owner + JAI_SIGNAL pattern on the API. No threads: the
 // channel owns non-blocking sockets and a script-called pump() drains them,
 // firing signals inside the script's own call stack. Protocol semantics
 // (actions, lockstep, handshakes) live entirely in script.
@@ -860,9 +860,9 @@ public:
 	typedef void ConnectSignature();
 	typedef void DisconnectSignature(const std::string&);
 
-	JAI_SIGNAL_PROPERTY(PacketSignature, on_packet);
-	JAI_SIGNAL_PROPERTY(ConnectSignature, on_connect);
-	JAI_SIGNAL_PROPERTY(DisconnectSignature, on_disconnect);
+	JAI_SIGNAL(PacketSignature, on_packet);
+	JAI_SIGNAL(ConnectSignature, on_connect);
+	JAI_SIGNAL(DisconnectSignature, on_disconnect);
 
 	net_channel() = default;
 	~net_channel() { drop_sockets(); }
@@ -1052,9 +1052,9 @@ public:
 	typedef void ClientPacketSignature(jai::script_int, const std::string&);
 	typedef void ClientDropSignature(jai::script_int, const std::string&);
 
-	JAI_SIGNAL_PROPERTY(ClientSignature, on_client_connect);
-	JAI_SIGNAL_PROPERTY(ClientPacketSignature, on_client_packet);
-	JAI_SIGNAL_PROPERTY(ClientDropSignature, on_client_disconnect);
+	JAI_SIGNAL(ClientSignature, on_client_connect);
+	JAI_SIGNAL(ClientPacketSignature, on_client_packet);
+	JAI_SIGNAL(ClientDropSignature, on_client_disconnect);
 
 	net_server() = default;
 	~net_server() { close(); }
@@ -1219,7 +1219,6 @@ void register_net_channel(jai::engine& eng) {
 		.method("client_count", &net_server::client_count)
 		.method("listening", &net_server::listening)
 		.method("close", &net_server::close)
-		.auto_bind()
 		.build();
 	jai::dynamic_binder<net_channel>(eng, "NetChannel")
 		.constructor<>()
@@ -1230,7 +1229,6 @@ void register_net_channel(jai::engine& eng) {
 		.method("close", &net_channel::close)
 		.method("connected", &net_channel::connected)
 		.method("status", &net_channel::status)
-		.auto_bind()   // JAI_SIGNAL_PROPERTYs expose the generic Signal view
 		.build();
 	// what a host shows its players so they know what to type: the machine's name and its IPv4 addresses
 	eng.add_function("net_host_name", []() -> std::string {
@@ -2152,15 +2150,15 @@ int run_selftest(const console_state& con) {
 	for (const char* backend : {"interp", "vm"}) {
 		// Process-owned fixtures only. The invalid URL is rejected before Download
 		// starts a worker, and missing audio files cannot produce audible output.
-		const fs::path fixture = dir / (std::string("filesystem privilege ") + backend);
-		auto expect_privilege = [&](bool ok, const std::string& name) {
+		const fs::path fixture = dir / (std::string("filesystem permission ") + backend);
+		auto expect_permission = [&](bool ok, const std::string& name) {
 			expect(ok, (std::string("filesystem [") + backend + "]: " + name).c_str());
 		};
 		try {
 			const fs::path content = fixture / "content.txt";
 			const fs::path removable = fixture / "removable.txt";
 			if (!spill_file(content.string(), "unchanged") || !spill_file(removable.string(), "keep")) {
-				throw std::runtime_error("cannot create filesystem privilege fixtures");
+				throw std::runtime_error("cannot create filesystem permission fixtures");
 			}
 			options restricted_opt = opt;
 			restricted_opt.backend = backend;
@@ -2171,27 +2169,27 @@ int run_selftest(const console_state& con) {
 			int guarded_calls = 0;
 			eng->add_function("revoke_filesystem", [engine_ptr = eng.get(), &revoke_calls]() {
 				++revoke_calls;
-				engine_ptr->disable(jai::filesystem);
+				engine_ptr->disable(jai::permissions::filesystem);
 			});
 			eng->add_function("guarded_probe", [&guarded_calls]() {
 				++guarded_calls;
 				return true;
-			}, jai::filesystem);
-			expect_privilege(eng->execute("read_file(fixture + \"/content.txt\");").as_string() == "unchanged",
+			}, jai::permissions::filesystem);
+			expect_permission(eng->execute("read_file(fixture + \"/content.txt\");").as_string() == "unchanged",
 				"default file access remains enabled");
 			eng->execute("var saved_read = read_file; var pending = Download(); var saved_start = reflect::bind(pending, \"start\");");
 			eng->execute("revoke_filesystem();");
-			expect_privilege(revoke_calls == 1 && !eng->is_enabled(jai::filesystem),
+			expect_permission(revoke_calls == 1 && !eng->is_enabled(jai::permissions::filesystem),
 				"host callback revokes subsequent access");
-			const std::string denial = "Insufficient privilege: filesystem.";
+			const std::string denial = "Insufficient permission: filesystem.";
 			auto expect_denied = [&](const std::string& expression, const char* name) {
 				try {
 					const auto result = eng->execute("try { " + expression +
 						"; } catch (error) { return error; } return \"not denied\";").as_string();
-					expect_privilege(result == denial, std::string("denied ") + name);
+					expect_permission(result == denial, std::string("denied ") + name);
 					if (result != denial) { std::printf("        actual: %s\n", result.c_str()); }
 				} catch (const std::exception& error) {
-					expect_privilege(false, std::string("catchable denial ") + name);
+					expect_permission(false, std::string("catchable denial ") + name);
 					std::printf("        unexpected: %s\n", error.what());
 				}
 			};
@@ -2218,60 +2216,60 @@ int run_selftest(const console_state& con) {
 			};
 			for (const auto& [expression, name] : denied_calls) { expect_denied(expression, name); }
 			expect_denied("guarded_probe()", "host callback");
-			expect_privilege(guarded_calls == 0, "denied host callback never entered");
+			expect_permission(guarded_calls == 0, "denied host callback never entered");
 			bool uncaught_denial = false;
 			try {
 				eng->execute("saved_read(fixture + \"/content.txt\");");
 			} catch (const std::exception& error) {
 				uncaught_denial = error.what() == denial;
 			}
-			expect_privilege(uncaught_denial, "uncaught denial reads as the caught text (no repeated category)");
-			expect_privilege(slurp_file(content.string()) == "unchanged", "denied write leaves bytes unchanged");
-			expect_privilege(fs::exists(removable), "denied delete preserves file");
-			expect_privilege(!fs::exists(fixture / "created") && !fs::exists(fixture / "probe-created"),
+			expect_permission(uncaught_denial, "uncaught denial reads as the caught text (no repeated category)");
+			expect_permission(slurp_file(content.string()) == "unchanged", "denied write leaves bytes unchanged");
+			expect_permission(fs::exists(removable), "denied delete preserves file");
+			expect_permission(!fs::exists(fixture / "created") && !fs::exists(fixture / "probe-created"),
 				"denied directory operations create nothing");
-			expect_privilege(!fs::exists(fixture / "extracted.txt") && !fs::exists(fixture / "download.bin")
+			expect_permission(!fs::exists(fixture / "extracted.txt") && !fs::exists(fixture / "download.bin")
 				&& !fs::exists(fixture / "alias.bin") && !fs::exists(fixture / "reflected.bin"),
 				"denied archive/download operations create nothing");
-			expect_privilege(eng->execute("!pending.pump() && !pending.done() && !pending.success() && "
+			expect_permission(eng->execute("!pending.pump() && !pending.done() && !pending.success() && "
 				"pending.error() == \"\" && pending.total() == -1 && pending.fraction() == 0;").as_bool(),
 				"denied start does not alter Download state; memory queries remain available");
 #if !defined(_WIN32) && !defined(JAISCRIPT_RUNNER_HAS_CURL)
 			// Only the curl-executable fallback polls the output file for progress.
 			expect_denied("pending.received()", "Download.received filesystem fallback");
 #else
-			expect_privilege(eng->execute("pending.received();").as_int() == 0,
+			expect_permission(eng->execute("pending.received();").as_int() == 0,
 				"Download.received remains available when progress is memory-only");
 #endif
-			expect_privilege(eng->execute("pending.cancel(); stop_sounds(); true;").as_bool(),
+			expect_permission(eng->execute("pending.cancel(); stop_sounds(); true;").as_bool(),
 				"explicit cancel, stop and status remain available");
-			expect_privilege(output.str().empty(), "denials produce no unexpected script output");
-			eng->enable(jai::filesystem);
-			expect_privilege(eng->execute("saved_read(fixture + \"/content.txt\");").as_string() == "unchanged",
+			expect_permission(output.str().empty(), "denials produce no unexpected script output");
+			eng->enable(jai::permissions::filesystem);
+			expect_permission(eng->execute("saved_read(fixture + \"/content.txt\");").as_string() == "unchanged",
 				"saved callable works after re-enable");
-			expect_privilege(eng->execute("write_file(fixture + \"/reenabled.txt\", \"enabled\") && "
+			expect_permission(eng->execute("write_file(fixture + \"/reenabled.txt\", \"enabled\") && "
 				"file_exists(fixture + \"/reenabled.txt\");").as_bool()
 				&& slurp_file((fixture / "reenabled.txt").string()) == "enabled",
 				"reenabled file operations retain normal behavior");
-			expect_privilege(eng->execute("write_file(fixture + \"/save.tmp\", \"new\") && write_file(fixture + \"/save.txt\", \"old\") && "
+			expect_permission(eng->execute("write_file(fixture + \"/save.tmp\", \"new\") && write_file(fixture + \"/save.txt\", \"old\") && "
 				"move_file(fixture + \"/save.tmp\", fixture + \"/save.txt\") && !file_exists(fixture + \"/save.tmp\") && "
 				"read_file(fixture + \"/save.txt\") == \"new\" && !move_file(fixture + \"/save.tmp\", fixture + \"/save.txt\");").as_bool(),
 				"move_file replaces the destination and answers false for a missing source");
-			expect_privilege(eng->execute("load_sound(fixture + \"/missing.wav\") == null && play_sound(fixture + \"/missing.mid\") == null;").as_bool(),
+			expect_permission(eng->execute("load_sound(fixture + \"/missing.wav\") == null && play_sound(fixture + \"/missing.mid\") == null;").as_bool(),
 				"load_sound and play_sound answer null for a missing file");
-			expect_privilege(!eng->execute("saved_start(\"jaiscript-selftest://never-network\", "
+			expect_permission(!eng->execute("saved_start(\"jaiscript-selftest://never-network\", "
 				"fixture + \"/reenabled-download.bin\");").as_bool()
 				&& eng->execute("pending.error();").as_string() == "download: only http and https URLs are supported",
 				"reenabled Download alias reaches its original validation without network access");
-			expect_privilege(eng->execute("guarded_probe();").as_bool() && guarded_calls == 1,
+			expect_permission(eng->execute("guarded_probe();").as_bool() && guarded_calls == 1,
 				"reenabled callback enters exactly once");
-			eng->disable("network");
-			expect_privilege(eng->execute("var m = \"\"; try { auto d = Download(); d.start(\"http://127.0.0.1:1/\", fixture + \"/net.bin\"); } "
+			eng->disable(jai::permissions::network);
+			expect_permission(eng->execute("var m = \"\"; try { auto d = Download(); d.start(\"http://127.0.0.1:1/\", fixture + \"/net.bin\"); } "
 				"catch (e) { m = e; } m;").as_string().find("network") != std::string::npos && !fs::exists(fixture / "net.bin"),
-				"Download.start needs the network privilege too");
-			eng->enable("network");
+				"Download.start needs the network permission too");
+			eng->enable(jai::permissions::network);
 		} catch (const std::exception& error) {
-			expect_privilege(false, "fixture/setup or recovery");
+			expect_permission(false, "fixture/setup or recovery");
 			std::printf("        unexpected: %s\n", error.what());
 		}
 	}

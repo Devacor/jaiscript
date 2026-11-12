@@ -17,7 +17,6 @@
   var label = document.getElementById("demo-label");
   var live = document.getElementById("demo-live");
   var code = demo.querySelector("pre");
-  var engineNote = document.getElementById("demo-engine");
   var cv = document.getElementById("demo-scene");
   var g = cv && cv.getContext && cv.getContext("2d");
   if (!g || !spdIn || !slicesIn || !sayIns.length) return;
@@ -119,10 +118,10 @@
     var w = cv.width, x = still ? goal() : gator.x;
     g.clearRect(0, 0, w, cv.height);
     g.fillStyle = colors.ground;
-    for (var i = 0; i < w; i += 32) g.fillRect(i, 118, 28, 6);
-    cake(cakeX(), 88, gator.slices);
-    drawGator(x, 92, nom > 0 ? CHEW[(frameNo >> 2) % CHEW.length] : 0);
-    if (nom > 0 || still) bubble(x + 18, 86, gator.says);
+    for (var i = 0; i < w; i += 32) g.fillRect(i, 76, 28, 6);
+    cake(cakeX(), 46, gator.slices);
+    drawGator(x, 50, nom > 0 ? CHEW[(frameNo >> 2) % CHEW.length] : 0);
+    if (nom > 0 || still) bubble(x + 18, 44, gator.says);
   }
 
   // stage.jai's state(): "x spd slices chewing words"
@@ -294,7 +293,6 @@
         adopt(engineCall("jaiweb_live_eval", "state()").value);
         IDLE = "live in WebAssembly";
         status.textContent = IDLE;
-        if (engineNote) engineNote.hidden = false;
         setLabel();
         if (!running) draw();
       }).catch(function (error) {

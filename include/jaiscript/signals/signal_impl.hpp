@@ -40,18 +40,11 @@ inline instance_variables build_script_locals(
 } // namespace detail
 
 template<typename T, typename Sync>
-typename signal_emitter<T, Sync>::shared_receiver_type signal_emitter<T, Sync>::connect(const std::string& id, const script_value& fn_callback) {
+typename detail::signal_state<T, Sync>::shared_receiver_type detail::signal_state<T, Sync>::connect(const std::string& a_id, const script_value& a_function, bool a_joinsRunningEmits) {
 	// bound before it is published: a synchronized emitter's other threads may emit to it once connect_named returns
-	auto recv = receiver<T>::make(convert_script_function<T>(fn_callback));
-	recv->bind_engine(fn_callback.payload_engine(), engine_lifetime_token(fn_callback.payload_engine()));
-	return connect_named(id, std::move(recv), false);
-}
-
-template<typename T, typename Sync>
-typename signal_emitter<T, Sync>::shared_receiver_type signal_emitter<T, Sync>::connect_immediate(const std::string& id, const script_value& fn_callback) {
-	auto recv = receiver<T>::make(convert_script_function<T>(fn_callback));
-	recv->bind_engine(fn_callback.payload_engine(), engine_lifetime_token(fn_callback.payload_engine()));
-	return connect_named(id, std::move(recv), true);
+	auto recv = receiver<T>::make(convert_script_function<T>(a_function));
+	recv->bind_engine(a_function.payload_engine(), engine_lifetime_token(a_function.payload_engine()));
+	return connect_named(a_id, std::move(recv), a_joinsRunningEmits);
 }
 
 // A text receiver's failure throws out of the emit as a direct execute() of its text would (a function receiver's throws as

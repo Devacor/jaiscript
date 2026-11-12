@@ -82,8 +82,7 @@ Gator gator;  <span class="tk-com">// kept by every reload</span>
         <label><input type="radio" name="demo-say" value="Chomp."><span>Chomp.</span></label>
       </div>
     </div>
-    <div class="scene"><canvas id="demo-scene" width="640" height="150" role="img" aria-label="A pixel gator walks toward a cake at the speed spd gives it, eats a slice and says what the script tells it to; the cake refills after its last slice"></canvas><span class="scene-label" id="demo-label">gator at spd 1 &middot; slices 3</span></div>
-    <p class="demo-engine" id="demo-engine" hidden>This is the file the page runs, on the JaiScript engine compiled to WebAssembly: <a href="assets/gator/world.jai">world.jai</a> gives it <code>Mob</code> and <code>cake</code>, and <a href="assets/gator/stage.jai">stage.jai</a> calls <code>tick()</code> every frame.</p>
+    <div class="scene"><canvas id="demo-scene" width="640" height="108" role="img" aria-label="A pixel gator walks toward a cake at the speed spd gives it, eats a slice and says what the script tells it to; the cake refills after its last slice"></canvas><span class="scene-label" id="demo-label">gator at spd 1 &middot; slices 3</span></div>
     <p class="demo-live" id="demo-live" role="status"></p>
   </div>
 </section>
@@ -97,47 +96,106 @@ Gator gator;  <span class="tk-com">// kept by every reload</span>
 <button type="button" role="tab" id="bind-tab-external" aria-controls="bind-external" aria-selected="false" tabindex="-1">Non-intrusive: a class you don&#x27;t own</button>
 </div>
 <div class="tab-panel" id="bind-intrusive" role="tabpanel" aria-labelledby="bind-tab-intrusive" tabindex="0">
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">class Spawner : public jai::property_owner&lt;Spawner&gt; {
+<div class="codeblock cb-cpp" data-sample="home-bind-intrusive"><span class="cb-label">C++</span><pre><code class="lang-cpp">class Spawner : public jai::property_owner&lt;Spawner&gt; {
 public:
     JAI_PROPERTY((std::string), id, "north-gate");   // scripted and saved
     JAI_PROPERTY((int64_t), level, 1);
-    JAI_SIGNAL_PROPERTY(void(int64_t), onWave);      // script-connectable, saved too
-    void spawn_wave();
-    void spawn_wave(int64_t count, bool elite);       // overloaded in C++
-};
+    JAI_SIGNAL(void(int64_t), onWave);               // script-connectable, saved too
+    JAI_METHOD(void, spawn_wave, ()) { spawn_wave(level, false); }
+    JAI_METHOD(void, spawn_wave, (int64_t size, bool elite)) { level = size; onWaveSignal(elite ? size * 2 : size); }
+};</code></pre></div>
+<div class="codeblock cb-cpp" data-sample="home-bind-run-intrusive"><span class="cb-label">C++ &middot; the host, the same in both tabs</span><pre><code class="lang-cpp">int main() {
+    auto engine = jai::engine::make();
+    jai::bind_registrar(engine);   // every property_owner and registrar in the program
+    auto gate = engine-&gt;execute&lt;std::shared_ptr&lt;Spawner&gt;&gt;(R"(
+        Spawner gate;
+        gate.onWave.connect("hud", [](int size) { print("wave of ", size); });
+        gate.level = 3;
+        gate.spawn_wave();
+        gate.spawn_wave(4, true);
+        gate
+    )");
+    gate-&gt;spawn_wave(5, false);     // Emits and is caught by the script-bound lambda
 
-static jai::registrar&lt;Spawner, void&gt; _regSpawner("Spawner",
-    [](jai::dynamic_binder&lt;Spawner&gt;&amp; b) {
-        b.method("spawn_wave", [](Spawner&amp; s) { s.spawn_wave(); })   // a lambda picks the overload
-         .method("spawn_elites", [](Spawner&amp; s, int64_t count) { s.spawn_wave(count, true); });
-    });</code></pre></div>
-<p>Each <code>JAI_PROPERTY</code> is the field, its script binding, its save key and its reflection, so the four never drift apart.</p>
+    //Serialization Example:
+    std::string spawnerJson = jai::to_json(engine, *gate);
+    Spawner roundTrip = jai::from_json&lt;Spawner&gt;(engine, spawnerJson);
+    std::cout &lt;&lt; "Wave Level: " &lt;&lt; roundTrip.level &lt;&lt; "\nContents:\n" &lt;&lt; spawnerJson &lt;&lt; "\n";
+    return 0;
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">wave of 3
+wave of 8
+wave of 5
+Wave Level: 5
+Contents:
+{
+  "id": "north-gate",
+  "level": 5,
+  "onWave": {
+    "parameter_names": [],
+    "observers": [],
+    "owned_observers": {}
+  }
+}</code></pre></div>
+<p>Each <code>JAI_PROPERTY</code> is the field, its script binding, its save key and its reflection; each <code>JAI_METHOD</code> is the member function and its script binding. No registrar, no glue, nothing to drift.</p>
 </div>
 <div class="tab-panel" id="bind-external" role="tabpanel" aria-labelledby="bind-tab-external" tabindex="0">
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">// turret.h comes from a library you can't edit
-struct Turret {
-    std::string name = "north";
-    int64_t ammo = 10;
-    void fire();
-    void aim(float yaw, float pitch);
+<div class="codeblock cb-cpp" data-sample="home-bind-external"><span class="cb-label">C++</span><pre><code class="lang-cpp">// spawner.h belongs to another module: you bind it without editing it
+class Spawner {
+public:
+    std::string id = "north-gate";
+    int64_t level = 1;
+    jai::signal_emitter&lt;void(int64_t)&gt; onWave;
+    void spawn_wave() { spawn_wave(level, false); }
+    void spawn_wave(int64_t size, bool elite) { level = size; onWave(elite ? size * 2 : size); }
 };
 
-// your binding file: the class stays untouched
-static jai::registrar&lt;Turret, void&gt; _regTurret("Turret",
-    [](jai::dynamic_binder&lt;Turret&gt;&amp; b) {
-        b.constructor&lt;&gt;()
-         .property("name", &amp;Turret::name)   // scripted and saved
-         .property("ammo", &amp;Turret::ammo)
-         .method("fire", &amp;Turret::fire)            // a method is one line
-         .method("aim", [](Turret&amp; t, double yaw) {    // a lambda adapts any signature
-             t.aim(float(yaw), 0.0f);
-         });
-    });</code></pre></div>
-<p>Third-party and engine types bind from the outside, with the same script access and saves keyed by the property names.</p>
+// your binding file
+static jai::registrar&lt;Spawner, void&gt; spawnerBinding("Spawner", [](jai::dynamic_binder&lt;Spawner&gt;&amp; b) {
+    b.property("id", &amp;Spawner::id)          // scripted and saved
+     .property("level", &amp;Spawner::level)
+     .property("onWave", &amp;Spawner::onWave)  // script-connectable, saved too
+     .method("spawn_wave", jai::overload&lt;&gt;(&amp;Spawner::spawn_wave))
+     .method("spawn_wave", jai::overload&lt;int64_t, bool&gt;(&amp;Spawner::spawn_wave));
+});</code></pre></div>
+<div class="codeblock cb-cpp" data-sample="home-bind-run-external"><span class="cb-label">C++ &middot; the host, the same in both tabs</span><pre><code class="lang-cpp">int main() {
+    auto engine = jai::engine::make();
+    jai::bind_registrar(engine);   // every property_owner and registrar in the program
+    auto gate = engine-&gt;execute&lt;std::shared_ptr&lt;Spawner&gt;&gt;(R"(
+        Spawner gate;
+        gate.onWave.connect("hud", [](int size) { print("wave of ", size); });
+        gate.level = 3;
+        gate.spawn_wave();
+        gate.spawn_wave(4, true);
+        gate
+    )");
+    gate-&gt;spawn_wave(5, false);     // Emits and is caught by the script-bound lambda
+
+    //Serialization Example:
+    std::string spawnerJson = jai::to_json(engine, *gate);
+    Spawner roundTrip = jai::from_json&lt;Spawner&gt;(engine, spawnerJson);
+    std::cout &lt;&lt; "Wave Level: " &lt;&lt; roundTrip.level &lt;&lt; "\nContents:\n" &lt;&lt; spawnerJson &lt;&lt; "\n";
+    return 0;
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">wave of 3
+wave of 8
+wave of 5
+Wave Level: 5
+Contents:
+{
+  "id": "north-gate",
+  "level": 5,
+  "onWave": {
+    "parameter_names": [],
+    "observers": [],
+    "owned_observers": {}
+  }
+}</code></pre></div>
+<p>Third-party and engine types bind from the outside: the same names reach script, and saves are keyed by the property names.</p>
 </div>
 </div>
-<p>Either way, script sees a native class (<code>auto t = Turret(); t.ammo = 3;</code>) and the same object saves
-to JSON or binary. <a href="embedding/02-dynamic-binder.html">The Dynamic Binder</a> walks a class through being <a href="embedding/02-dynamic-binder.html#scripted">scripted</a>,
+<p>Either way, the script is the same five lines and sees the same native class, C++ gets the script's own object back, and the same object saves to JSON or
+binary. <a href="embedding/02-dynamic-binder.html">The Dynamic Binder</a> walks a class through being <a href="embedding/02-dynamic-binder.html#scripted">scripted</a>,
 <a href="embedding/02-dynamic-binder.html#reflected">reflected</a>,
 <a href="embedding/02-dynamic-binder.html#serialized">serialized</a> and
 <a href="embedding/02-dynamic-binder.html#hot-reload-with-state-intact">hot-reloaded with its state intact</a>.</p>
@@ -173,7 +231,8 @@ saved edit to the next request.</p>
 <div class="home-section">
 <h2 id="get-jaiscript">Get JaiScript</h2>
 <p class="section-lead">git, CMake 3.25+ and a C++20 compiler: Visual Studio 2022 or newer with the C++ workload, the Xcode
-command line tools, or GCC 11 / Clang 14.</p>
+command line tools, or GCC 11 / Clang 14. CI runs the suites on Windows, Linux and macOS; a gate cross-compiles the library and
+suites for Android; and the engine runs in your browser as WebAssembly on the <a href="play/index.html">Play</a> page.</p>
 <div class="tabs" id="get-tabs">
 <div class="tab-list" role="tablist" aria-label="Ways to get JaiScript" hidden>
 <button type="button" role="tab" id="get-tab-script" aria-controls="get-script" aria-selected="true">Install script (recommended)</button>
@@ -246,10 +305,10 @@ from a fresh install to a C++ program that runs a script.</p>
 </div>
 
 <div class="home-section">
-<h2 id="pillars">Six pillars</h2>
+<h2 id="pillars">Seven pillars</h2>
 <div class="pillars">
   <div class="pillar"><h3><span class="pnum">01</span>Zero-code binding</h3>
-    <p>One <code>JAI_PROPERTY</code>, or one binder chain for a class you don&#x27;t own, makes a field scripted, saved and reflected.</p>
+    <p>One <code>JAI_PROPERTY</code> or <code>JAI_METHOD</code>, or one binder chain for a class you don&#x27;t own, makes a field scripted, saved and reflected and a method callable.</p>
     <p><a href="embedding/02-dynamic-binder.html">The Dynamic Binder →</a></p></div>
   <div class="pillar"><h3><span class="pnum">02</span>Hot reload that keeps the world</h3>
     <p>Edit a class mid-game and live instances migrate with their fields. An edit that doesn&#x27;t check is rejected, and the old code keeps running.</p>
@@ -266,6 +325,9 @@ from a fresh install to a C++ program that runs a script.</p>
   <div class="pillar"><h3><span class="pnum">06</span>Safe to embed</h3>
     <p>No global state, so engines run side by side on threads. Scripts reach only what you bind, under a time budget and an optional memory cap.</p>
     <p><a href="embedding/05-safety-rails.html">Safety Rails →</a></p></div>
+  <div class="pillar"><h3><span class="pnum">07</span>Debug it like C++</h3>
+    <p>Breakpoints, stepping and locals in VS Code, attached to a running host; completion and diagnostics from the language server.</p>
+    <p><a href="embedding/12-debugging.html">Debugging →</a> · <a href="embedding/14-language-server.html">Language Server →</a></p></div>
 </div>
 </div>
 
@@ -288,6 +350,50 @@ from a fresh install to a C++ program that runs a script.</p>
 idiom. <a href="bridges/index.html#code-migrations">Code Migrations</a> convert real code off Cereal,
 Boost.Serialization, Boost.Signals2, ChaiScript, sol2, Squirrel, pybind11, nlohmann::json, Qt properties, RTTR or a
 coroutine scheduler.</p>
+<p>Against the others, on the <a href="embedding/11-performance.html">Performance</a> page: ChaiScript 6.1 takes 23 to 137
+times the VM's time on whole programs, and 124 to 1,750 times on recursive calls, a gap that widens as the run grows.
+Squirrel 3.2 runs 1.2 to 2.2 times faster than the VM on most whole programs; the VM is 1.5 times faster on GLOOM's
+reference look and 1.8 times faster on a bytecode interpreter written in script. On one core the VM takes 1.09 times
+Lua 5.5.1's time on average over sixteen kernels and 0.86 to 4.9 times Lua 5.4's on whole programs. Its parallel loops
+change that where a program has them: on eight cores the demoreel's raymarched OSSUARY runs in 0.40 of Lua's time.</p>
+<details>
+<summary>The benchmark tables: whole programs, kernels, recursion, microbenchmarks</summary>
+<p><strong>Whole programs</strong> measure what a host ships: complete games and demo scenes ported whole to every
+language, hash-checked frame for frame, timing each frame or tick. Green is the VM's faster run (eight workers or one
+core) over Lua's; grey is its one-core run.</p>
+<div class="tablewrap" data-shared="headline"><table><thead><tr><th>program</th><th>shape</th><th>Jai VM</th><th>Jai VM, N workers</th><th>Lua 5.4</th><th>Squirrel 3.2</th><th>ChaiScript 6.1</th><th>Python 3.11</th><th>VM / Lua (best &middot; serial)</th></tr></thead><tbody>
+<tr><td>OSSUARY, the demoreel's raymarched skull-spider</td><td>a per-pixel float raymarch: small distance functions over float arguments, called tens of thousands of times a frame</td><td>117.2 ms/frame</td><td>18.5 (8)</td><td>45.7</td><td>97.6</td><td>5,964<sup><a href="embedding/11-performance.html#headline-footnotes">a</a></sup></td><td>143.0<sup><a href="embedding/11-performance.html#headline-footnotes">b</a></sup></td><td><span class="ratio-best">0.40</span> &middot; <span class="ratio-serial">2.56</span></td></tr>
+<tr><td>MAELSTROM, the demoreel's fluid simulation</td><td>a fluid grid: stencil passes (ripples, advection, pressure) over float arrays, then a ray per column</td><td>24.5 ms/frame</td><td>9.5 (8)</td><td>7.08</td><td>13.7</td><td>768<sup><a href="embedding/11-performance.html#headline-footnotes">a</a></sup></td><td>23.8<sup><a href="embedding/11-performance.html#headline-footnotes">b</a></sup></td><td><span class="ratio-best">1.34</span> &middot; <span class="ratio-serial">3.46</span></td></tr>
+<tr><td>GLOOM, reference look</td><td>a raycaster: a ray per cell column over a prebaked floor and ceiling, cached wall strips, many small entity updates</td><td>0.773 ms/tick</td><td>0.606 (8)</td><td>0.413</td><td>1.177</td><td>106.2<sup><a href="embedding/11-performance.html#headline-footnotes">a</a></sup></td><td>0.985<sup><a href="embedding/11-performance.html#headline-footnotes">b</a></sup></td><td><span class="ratio-best">1.47</span> &middot; <span class="ratio-serial">1.87</span></td></tr>
+<tr><td>GLOBHUNTER, the demoreel's textured raycaster</td><td>a grid raycaster: integer DDA and per-pixel floor and ceiling texture lookups through class fields; no parallel loop</td><td>6.53 ms/frame</td><td>n/a</td><td>2.20</td><td>4.40</td><td>152<sup><a href="embedding/11-performance.html#headline-footnotes">a</a></sup></td><td>5.87<sup><a href="embedding/11-performance.html#headline-footnotes">b</a></sup></td><td><span class="ratio-best">2.97</span></td></tr>
+<tr><td>GLOOM, the game as played (showcase look)</td><td>a raycaster: a ray per pixel column, textured lamp-lit floor and ceiling spans per pixel, a light grid, sprites, many small entity updates</td><td>10.94 ms/tick</td><td>11.51 (8)</td><td>2.21</td><td>5.08</td><td>407.5<sup><a href="embedding/11-performance.html#headline-footnotes">a</a></sup></td><td>5.19<sup><a href="embedding/11-performance.html#headline-footnotes">b</a></sup></td><td><span class="ratio-best">4.94</span></td></tr>
+</tbody></table></div>
+<p><strong>Kernels</strong> measure the interpreter on sixteen small, single-purpose programs (daScript's dasProfile
+suite: sorting, hashing, trees, number formatting), each the VM's time over Lua 5.5.1's. Their geometric mean is
+1.09.</p>
+<div class="tablewrap" data-shared="kernels"><table><thead><tr><th>VM time / Lua time</th><th>kernels</th></tr></thead><tbody>
+<tr><td>widest wins</td><td>mandelbrot 0.04 (two float locals against Lua's complex-number tables), sha256 0.13, float-to-string 0.32, string-to-float 0.93</td></tr>
+<tr><td>widest losses</td><td>treap 5.5, host calls 4.1, n-queens 3.2, dictionary 2.5, n-bodies 2.4, sort 1.9, recursive fibonacci 1.5</td></tr>
+<tr><td>LuaJIT's JIT, for scale</td><td>0.01 to 0.73 across the suite</td></tr>
+</tbody></table></div>
+<p><strong>Recursion against ChaiScript</strong> measures the cost of a script function call: <code>fib(n)</code>,
+called from C++, in milliseconds per call tree.</p>
+<div class="tablewrap" data-shared="chai-recursion"><table><thead><tr><th>call</th><th>Jai VM</th><th>ChaiScript 6.1</th><th>ChaiScript / VM</th></tr></thead><tbody>
+<tr><td>fib(15): 1,973 calls</td><td>0.040 ms</td><td>4.99 ms</td><td>124</td></tr>
+<tr><td>fib(20): 21,891 calls</td><td>0.397 ms</td><td>108 ms</td><td>273</td></tr>
+<tr><td>fib(25): 242,785 calls</td><td>4.37 ms</td><td>7,668 ms</td><td>1,750</td></tr>
+</tbody></table></div>
+<p><strong>Microbenchmarks</strong> measure single operations in tight loops, µs per iteration, the fastest of five
+runs; the harness prints whole microseconds, so only these rows resolve.</p>
+<div class="tablewrap" data-shared="micro"><table><thead><tr><th>benchmark</th><th>Jai VM</th><th>Lua 5.4</th><th>Squirrel</th><th>ChaiScript</th></tr></thead><tbody>
+<tr><td>Hot loop, 1000 iterations (<code>sum += i</code>)</td><td>9</td><td>3</td><td>10</td><td>n/a</td></tr>
+<tr><td>BST 15 nodes, <code>&amp;</code> parameters</td><td>18</td><td>8</td><td>11</td><td>n/a</td></tr>
+<tr><td>Fibonacci(15)</td><td>69</td><td>25</td><td>55</td><td>n/a</td></tr>
+<tr><td>For loop, 100 iterations</td><td>1</td><td>1</td><td>3</td><td>12</td></tr>
+<tr><td>String concat, 20 iterations</td><td>1</td><td>1</td><td>3</td><td>19</td></tr>
+</tbody></table></div>
+<p>Protocols, dates and footnotes are on the <a href="embedding/11-performance.html#measured-results">Performance</a> page.</p>
+</details>
 </div>
 
 <div class="home-section">

@@ -1917,9 +1917,9 @@ public:
                 check_eq(std::string("module failed"), eng->execute("var m2 = \"\";\ntry { load(); } catch (e) { m2 = e; }\nm2;").to_string(), "a runtime error in the run is catchable");
                 check_eq(3, runs);
                 write_module("ia_mod.jai", "module_ran();\nint ia_value() { return 11; }\n");
-                eng->disable(jai::filesystem);
-                check_eq(std::string("Insufficient privilege: filesystem."), eng->execute("var m3 = \"\";\ntry { load(); } catch (e) { m3 = e; }\nm3;").to_string());
-                eng->enable(jai::filesystem);
+                eng->disable(jai::permissions::filesystem);
+                check_eq(std::string("Insufficient permission: filesystem."), eng->execute("var m3 = \"\";\ntry { load(); } catch (e) { m3 = e; }\nm3;").to_string());
+                eng->enable(jai::permissions::filesystem);
                 eng->execute("load();");
                 check_eq(4, runs);
                 const std::string walled = eng->execute("array<int> xs = [1, 2, 3];\nvar m4 = \"\";\ntry { parallel_for (auto& x : xs) { import \"ia_mod.jai\"; x = x + 1; } } catch (e) { m4 = e; }\nm4;").to_string();
@@ -2094,9 +2094,9 @@ public:
                 eng->execute("for (int i = 0; i < 4; i++) { import \"pp_one.jai\"; }");
                 check_eq(zero + 4, detail::engine_access::import_stat_count(*eng), "0 checks on every reach");
                 check_near(0.0, eng->execute("import_recheck_interval();").as_float(), 1e-12);
-                eng->disable(jai::filesystem);
-                check_eq(std::string("Insufficient privilege: filesystem."), eng->execute("var m = \"\";\ntry { frame(); } catch (e) { m = e; }\nm;").to_string(), "a disabled privilege is never skipped");
-                eng->enable(jai::filesystem);
+                eng->disable(jai::permissions::filesystem);
+                check_eq(std::string("Insufficient permission: filesystem."), eng->execute("var m = \"\";\ntry { frame(); } catch (e) { m = e; }\nm;").to_string(), "a disabled permission is never skipped");
+                eng->enable(jai::permissions::filesystem);
             }
             for (const char* f : {"pp_one.jai", "pp_two.jai", "pp_nest.jai", "pp_late.jai"}) { cleanup_temp_file((dir / f).string()); }
         });
@@ -2684,10 +2684,10 @@ public:
                 check_eq(script_int(7), eng->execute("file_data(\"save.dat\")[\"size\"];").as_int());
                 check_true(eng->execute("file_data(\"no_such_file.dat\") == null;").as_bool(), "missing -> null");
                 check_eq(std::string("true|0|"), eng->execute("var f = file_data(\"" + dir.generic_string() + "\"); to_string(f[\"is_directory\"]) + \"|\" + to_string(f[\"size\"]) + \"|\" + f[\"extension\"];").to_string());
-                eng->disable(jai::filesystem);
+                eng->disable(jai::permissions::filesystem);
                 std::string denied;
                 try { denied = eng->execute("var m = \"\"; try { file_data(\"save.dat\"); } catch (e) { m = e; } m;").to_string(); } catch (const std::exception& ex) { denied = ex.what(); }
-                check_eq(std::string("Insufficient privilege: filesystem."), denied);
+                check_eq(std::string("Insufficient permission: filesystem."), denied);
             }
             std::filesystem::remove_all(dir);
         });

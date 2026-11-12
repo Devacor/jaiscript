@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gloom {
@@ -33,6 +34,7 @@ struct host_options {
 	int64_t bench = 0;               // run N frames of the real loop headless-input, report sim/draw split
 	int64_t dump_frame = -1;         // smoke: write frame N to gloom_frame_<backend>.txt
 	int64_t coverage_reset_tick = -1; // smoke: restart the VM's coverage counters at tick N (a coverage build; hashes unchanged)
+	std::vector<std::pair<int64_t, int64_t>> time_slices; // smoke: time only these [from, to) ticks; every tick still runs and hashes
 	bool god = false;
 	std::string pix = "quad";        // sub-cell pixel mode: half (1x2) | quad (2x2) | sext (2x3)
 	// Presentation only: the ports draw the reference look and may ignore all three.

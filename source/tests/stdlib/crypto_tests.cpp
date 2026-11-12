@@ -246,11 +246,11 @@ public:
 			fs::remove_all(dir, error);
 		});
 
-		test("sha256_file_needs_the_filesystem_privilege_and_the_rest_do_not", [this]() {
+		test("sha256_file_needs_the_filesystem_permission_and_the_rest_do_not", [this]() {
 			auto engine = make_engine();
 			stdlib::register_all(*engine);
-			engine->disable(privilege::filesystem);
-			check_eq(std::string("Insufficient privilege: filesystem."), engine->execute("string m = \"\"; try { crypto::sha256_file(\"anything.bin\"); } catch (e) { m = e; } m;").as<std::string>());
+			engine->disable(permissions::filesystem);
+			check_eq(std::string("Insufficient permission: filesystem."), engine->execute("string m = \"\"; try { crypto::sha256_file(\"anything.bin\"); } catch (e) { m = e; } m;").as<std::string>());
 			check_eq(std::string("ba7816bf 4"), engine->execute("`${crypto::sha256(\"abc\").substr(0, 8)} ${crypto::random_bytes(4).size()}`;").as<std::string>());
 		});
 

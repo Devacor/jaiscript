@@ -3594,7 +3594,7 @@ public:
             auto host = make_engine();
             host->add_function("try_open", [](script_int n) -> bool { return n > 0; }, jai::nodiscard);
             host->add_function("plain_open", [](script_int n) -> bool { return n > 0; });
-            host->add_function("try_read", [](const std::string& path) -> bool { return !path.empty(); }, jai::nodiscard | jai::filesystem);
+            host->add_function("try_read", [](const std::string& path) -> bool { return !path.empty(); }, jai::nodiscard, jai::permissions::filesystem);
             host->add_variadic_function("try_any", [h = host.get()](const std::vector<script_value>& args) -> script_value { return h->make_value(!args.empty()); }, jai::nodiscard);
             dynamic_binder<probe_object>(*host, "ProbeObject").constructor<>()
                 .method("doubled", &probe_object::doubled, jai::nodiscard)

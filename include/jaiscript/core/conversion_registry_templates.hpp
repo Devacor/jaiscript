@@ -71,7 +71,7 @@ template<typename T>
 inline T conversion_registry::convert_from_script(const script_value& v) const {
     const conversion_entry* entry = find_entry(type_id::of<T>());
     if (!entry) {
-        throw_unregistered_conversion("No conversion registered in convert_from_script for type: ", typeid(T).name());
+        throw_unregistered_conversion("No conversion registered in convert_from_script for type: ", std::type_index(typeid(T)));
     }
     std::optional<T> result;
     if constexpr (standard_shape<T>::value) {
@@ -94,7 +94,7 @@ template<typename T>
 inline script_value conversion_registry::convert_to_script(const T& value) const {
     const conversion_entry* entry = find_entry(type_id::of<T>());
     if (!entry) {
-        throw_unregistered_conversion("No conversion registered for type: ", typeid(T).name());
+        throw_unregistered_conversion("No conversion registered for type: ", std::type_index(typeid(T)));
     }
     if constexpr (standard_shape<T>::value) {
         if (!entry->to_script) {

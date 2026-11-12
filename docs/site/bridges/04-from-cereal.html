@@ -65,8 +65,7 @@ Boost.Serialization</a> lists its spellings. The archives are documented in
 <p>Headers: <code>&lt;jaiscript/serialization/convenience.hpp&gt;</code> for the archives and the one-call entry
 points, <code>&lt;jaiscript/serialization/construct.hpp&gt;</code> for <code>load_and_construct</code>,
 <code>&lt;jaiscript/core/registrar.hpp&gt;</code> for registrars, and
-<code>&lt;jaiscript/properties/macros.hpp&gt;</code> with
-<code>&lt;jaiscript/properties/property_serialization.hpp&gt;</code> for properties.</p>
+<code>&lt;jaiscript/properties/macros.hpp&gt;</code> for properties.</p>
 
 <h3 id="archives-and-entry-points">Archives and entry points<a class="hlink" href="#archives-and-entry-points" aria-label="link">&#8203;</a></h3>
 <div class="tablewrap"><table><thead><tr><th>Cereal</th><th>JaiScript</th></tr></thead><tbody>
@@ -389,7 +388,6 @@ int main() {
 <p>Each type derives <code>jai::property_owner</code> and declares its fields with <code>JAI_PROPERTY</code>, which also makes them reflected and visible to scripts. The one function left is the <code>load</code> that derives <code>hpFraction</code>.</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++ (JaiScript, JAI_PROPERTY)</span><pre><code class="lang-cpp">#include &lt;jaiscript/core/engine.hpp&gt;
 #include &lt;jaiscript/properties/macros.hpp&gt;
-#include &lt;jaiscript/properties/property_serialization.hpp&gt;
 #include &lt;jaiscript/serialization/convenience.hpp&gt;
 #include &lt;memory&gt;
 #include &lt;string&gt;
@@ -515,7 +513,7 @@ int main() {
 <p><code>Inventory</code>'s fields are private, so the non-intrusive forms declare the free function a friend (or
 make the fields public); <code>JAI_PROPERTY</code> declarations need no friend.</p>
 <div class="tablewrap"><table><thead><tr><th></th><th>Cereal: intrusive</th><th>Cereal: non-intrusive</th><th>JaiScript: intrusive</th><th>JaiScript: JAI_PROPERTY</th><th>JaiScript: non-intrusive</th></tr></thead><tbody>
-<tr><td>Headers</td><td colspan="2"><code>cereal/archives/json.hpp</code> and a <code>cereal/types/</code> header per standard type</td><td><code>convenience.hpp</code> alone</td><td>plus <code>properties/macros.hpp</code> and <code>property_serialization.hpp</code></td><td><code>convenience.hpp</code> alone</td></tr>
+<tr><td>Headers</td><td colspan="2"><code>cereal/archives/json.hpp</code> and a <code>cereal/types/</code> header per standard type</td><td><code>convenience.hpp</code> alone</td><td>plus <code>properties/macros.hpp</code></td><td><code>convenience.hpp</code> alone</td></tr>
 <tr><td>Access to private fields</td><td><code>friend class cereal::access;</code></td><td>a <code>friend</code> declaration of the free function</td><td><code>friend jai::access;</code> (left out: a compile error, as in Cereal)</td><td>none</td><td>a <code>friend</code> declaration of the free function</td></tr>
 <tr><td>Where the member list lives</td><td>functions inside the type</td><td>functions after the type</td><td>functions inside the type</td><td>the declarations themselves</td><td>functions after the type</td></tr>
 <tr><td>How a member is named</td><td><code>CEREAL_NVP(hp)</code></td><td><code>cereal::make_nvp("hp", player.hp)</code></td><td><code>JAI_NVP(hp)</code></td><td>by its declaration</td><td><code>ar("hp", player.hp)</code></td></tr>
@@ -649,7 +647,6 @@ needs no function: the archives save and load every property by name, the same d
 reflected and script-visible (<a href="../embedding/02-dynamic-binder.html">dynamic_binder</a>), and the class
 carries its own polymorphic identity. It suits types whose functions only list their fields.</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/properties/macros.hpp&gt;
-#include &lt;jaiscript/properties/property_serialization.hpp&gt;
 
 class Effect : public jai::property_owner&lt;Effect&gt; {
 public:

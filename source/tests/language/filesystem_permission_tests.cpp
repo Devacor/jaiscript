@@ -15,13 +15,13 @@ struct filesystem_binding_probe {
     script_int query() const { return 23; }
 };
 
-class filesystem_privilege_tests : public suite {
+class filesystem_permission_tests : public suite {
 public:
-    filesystem_privilege_tests() : suite("Filesystem Privilege") {}
+    filesystem_permission_tests() : suite("Filesystem Permission") {}
 
     static void filesystem_enabled(engine& eng, bool enabled) {
-        if (enabled) { eng.enable(privilege::filesystem); }
-        else { eng.disable(privilege::filesystem); }
+        if (enabled) { eng.enable(permissions::filesystem); }
+        else { eng.disable(permissions::filesystem); }
     }
 
     template<class F>
@@ -31,22 +31,22 @@ public:
         return {};
     }
 
-    static std::string denied() { return "Insufficient privilege: filesystem."; }
+    static std::string denied() { return "Insufficient permission: filesystem."; }
     // The host boundary drops a category the text already begins with, so an uncaught
     // denial reads exactly as the caught one.
     static std::string runtime_denied() { return denied(); }
 
     template<class Function>
     static void add_protected(engine& eng, const std::string& name, Function function) {
-        eng.add_function(name, std::move(function), privilege::filesystem);
+        eng.add_function(name, std::move(function), permissions::filesystem);
     }
 
     static void bind_probe(engine& eng) {
         dynamic_binder<filesystem_binding_probe> binder(eng, "FilesystemProbe");
         binder.constructor<>();
-        binder.method("read", &filesystem_binding_probe::read, privilege::filesystem)
-            .method("query", &filesystem_binding_probe::query, privilege::filesystem)
-            .method("lambda", [](filesystem_binding_probe& self) { return self.read(); }, privilege::filesystem);
+        binder.method("read", &filesystem_binding_probe::read, permissions::filesystem)
+            .method("query", &filesystem_binding_probe::query, permissions::filesystem)
+            .method("lambda", [](filesystem_binding_probe& self) { return self.read(); }, permissions::filesystem);
         binder.build();
     }
 
@@ -60,12 +60,13 @@ public:
         test("default_enabled_and_engine_local", [this]() {
             auto restricted = make_engine();
             auto trusted = make_engine();
-            check_true(trusted->execute("reflect::is_enabled(jai::filesystem)").as_bool());
+            check_true(trusted->execute("jai::permissions::is_enabled(jai::permissions::filesystem)").as_bool());
             filesystem_enabled(*restricted, false);
-            check_false(restricted->execute("reflect::is_enabled(jai::filesystem)").as_bool());
-            check_true(trusted->execute("reflect::is_enabled(jai::filesystem, jai::filesystem)").as_bool());
+            check_false(restricted->execute("jai::permissions::is_enabled(jai::permissions::filesystem)").as_bool());
+            check_true(trusted->execute("jai::permissions::is_enabled(jai::permissions::filesystem, jai::permissions::filesystem)").as_bool());
             filesystem_enabled(*restricted, true);
-            check_true(restricted->execute("reflect::is_enabled(jai::filesystem | jai::filesystem)").as_bool());
+            check_true(restricted->execute("jai::permissions::is_enabled(jai::permissions::filesystem, jai::permissions::scoped_template)").as_bool());
+            check_false(restricted->execute("jai::permissions::is_enabled(jai::permissions::filesystem, jai::permissions::network)").as_bool());
         });
 
         test("all_location_queries_are_gated", [this]() {
@@ -130,7 +131,7 @@ public:
         });
 
         test("include_import_and_resolver_share_denial", [this]() {
-            const auto path = fixture("privilege_include.jai", "40 + 2;");
+            const auto path = fixture("permission_include.jai", "40 + 2;");
             const auto spelling = path.generic_string();
             const std::string operations[] = {
                 "include \"" + spelling + "\";", "include(\"" + spelling + "\");",
@@ -150,8 +151,8 @@ public:
         });
 
         test("warm_file_import_and_bytecode_apis_cannot_bypass", [this]() {
-            const auto path = fixture("privilege_host.jai", "40 + 2;");
-            const auto bite_path = fixture("privilege_host.jaibite", "sentinel");
+            const auto path = fixture("permission_host.jai", "40 + 2;");
+            const auto bite_path = fixture("permission_host.jaibite", "sentinel");
             auto eng = make_engine();
             eng->jaibite_cache(false);
             check_eq(script_int(42), eng->execute_file(path.string()).as_int());
@@ -171,7 +172,7 @@ public:
         test("supplied_source_labels_do_not_create_disk_cache", [this]() {
             auto eng = make_engine();
             filesystem_enabled(*eng, false);
-            const auto path = test_temp_directory() / "privilege_virtual.jai";
+            const auto path = test_temp_directory() / "permission_virtual.jai";
             const auto sibling = jaibite_cache_beside(path);
             check_eq(script_int(42), eng->execute_file_source(path.string(), "40 + 2;").as_int());
             check_false(std::filesystem::exists(sibling));
@@ -179,7 +180,7 @@ public:
         });
 
         test("restricted_source_ignores_fresh_disk_sibling", [this]() {
-            const auto path = fixture("privilege_stale.jai", "40 + 2;");
+            const auto path = fixture("permission_stale.jai", "40 + 2;");
             const auto sibling = jaibite_cache_beside(path);
             std::filesystem::create_directories(sibling.parent_path());
             auto eng = make_engine();
@@ -191,7 +192,7 @@ public:
         });
 
         test("checker_does_not_discover_disk_dependencies_when_restricted", [this]() {
-            const auto path = fixture("privilege_check.jai", "function disk_only_name() -> int { return 42; }");
+            const auto path = fixture("permission_check.jai", "function disk_only_name() -> int { return 42; }");
             const auto source = "import \"" + path.generic_string() + "\"; disk_only_name();";
             auto restricted = make_engine();
             filesystem_enabled(*restricted, false);
@@ -202,11 +203,11 @@ public:
 
         test("reflection_query_validates_arguments", [this]() {
             auto eng = make_engine();
-            check_eq(std::string("reflect::is_enabled expects at least 1 argument"),
-                failure([&]() { eng->execute("reflect::is_enabled()"); }));
-            for (const char* args : {"true", "-1", "4", "jai::filesystem, 4"}) {
-                check_eq(std::string("reflect::is_enabled expects valid privilege flags"),
-                    failure([&]() { eng->execute(std::string("reflect::is_enabled(") + args + ")"); }));
+            check_eq(std::string("jai::permissions::is_enabled expects at least 1 argument"),
+                failure([&]() { eng->execute("jai::permissions::is_enabled()"); }));
+            for (const char* args : {"true", "2.5", "-2147483649", "\"filesystem\"", "jai::permissions::filesystem, 2147483648"}) {
+                check_eq(std::string("jai::permissions::is_enabled expects permission ids"),
+                    failure([&]() { eng->execute(std::string("jai::permissions::is_enabled(") + args + ")"); }));
             }
         });
 
@@ -291,5 +292,5 @@ public:
 
 } // namespace jai::foundry::tests
 
-using filesystem_privilege_tests = jai::foundry::tests::filesystem_privilege_tests;
-FOUNDRY_REGISTER(filesystem_privilege_tests)
+using filesystem_permission_tests = jai::foundry::tests::filesystem_permission_tests;
+FOUNDRY_REGISTER(filesystem_permission_tests)

@@ -1009,19 +1009,246 @@ public:
             check_eq((size_t)1, second.observer_count());
         });
 
-        test("an_emitter_never_moves", [this]() {
+        test("a_moved_emitter_keeps_every_receiver", [this]() {
+            static_assert(std::is_nothrow_move_constructible_v<signal_emitter<void(int)>> && std::is_nothrow_move_assignable_v<signal_emitter<void(int)>>);
+            static_assert(!std::is_copy_constructible_v<signal_emitter<void(int)>> && !std::is_copy_assignable_v<signal_emitter<void(int)>>);
+            auto eng = jai::foundry::make_engine();
+            int noted = 0;
+            eng->add_function("note", [&noted](int v) { noted += v; });
+            signal_emitter<void(int)> source;
+            source.script_engine(eng.get()).parameter_names({ "v" });
+            int cpp = 0;
+            auto unnamed = source.connect([&cpp](int v) { cpp += v; });
+            source.connect("named", [&cpp](int v) { cpp += 10 * v; });
+            auto text = source.connect("note(v);");
+            source.connect("named_text", "note(100 * v);");
+            source.connect("fn", eng->execute("[](int v) { note(1000 * v); };"));
+
+            signal_emitter<void(int)> moved = std::move(source);
+            check_eq((size_t)5, moved.observer_count(), "a move takes every receiver");
+            check_true(unnamed->connected() && text->connected());
+            check_true(moved.connected("named") && moved.connected("named_text") && moved.connected("fn"));
+            check_true(moved.script_engine() == eng.get() && moved.has_parameter_names(), "and the settings");
+            moved.emit(1);
+            check_eq(11, cpp);
+            check_eq(1101, noted);
+
+            signal_emitter<void(int)> assigned;
+            int dropped = 0;
+            auto droppedReceiver = assigned.connect([&dropped](int v) { dropped += v; });
+            assigned.connect("dropped_named", [&dropped](int v) { dropped += v; });
+            assigned = std::move(moved);
+            check_false(droppedReceiver->connected(), "move assignment lets go of the target's receivers");
+            check_false(assigned.connected("dropped_named"));
+            check_eq((size_t)5, assigned.observer_count());
+            assigned.emit(2);
+            check_eq(33, cpp);
+            check_eq(3303, noted);
+            check_eq(0, dropped);
+        });
+
+        test("a_moved_from_emitter_is_empty_and_usable", [this]() {
+            signal_emitter<void(int)> source;
+            source.parameter_names({ "v" });
+            int heard = 0;
+            auto first = source.connect([&heard](int v) { heard += v; });
+            source.connect("named", [&heard](int v) { heard += v; });
+            source.block();
+            signal_emitter<void(int)> moved = std::move(source);
+            check_eq((size_t)0, source.observer_count());
+            check_false(source.connected("named"));
+            check_false(source.has_parameter_names());
+            check_false(source.blocked());
+            check_true(moved.blocked(), "the block moves with the receivers");
+            moved.unblock();
+            source.emit(5);
+            check_eq(0, heard, "the moved-from emitter emits to nobody");
+            int again = 0;
+            auto second = source.connect([&again](int v) { again += v; });
+            source.emit(3);
+            check_eq(3, again, "and takes new receivers");
+            check_eq(0, heard);
+            moved.emit(1);
+            check_eq(2, heard);
+            check_eq(3, again);
+        });
+
+        test("a_class_holding_an_emitter_and_its_view_moves_with_defaulted_moves", [this]() {
+            static_assert(std::is_nothrow_move_constructible_v<emit_board> && std::is_nothrow_move_assignable_v<emit_board>);
+            static_assert(!std::is_copy_constructible_v<emit_board> && !std::is_copy_assignable_v<emit_board>);
+            emit_board source;
+            int heard = 0;
+            auto before = source.onTicked.connect([&heard](int v) { heard += v; });
+            emit_board moved = std::move(source);
+            auto after = moved.onTicked.connect([&heard](int v) { heard += 10 * v; });
+            check_eq((size_t)2, moved.onTicked.observer_count(), "the moved view serves the moved emitter");
+            check_eq((size_t)0, source.onTickedSignal.observer_count(), "the moved-from emitter starts over empty");
+            check_eq((size_t)2, source.onTicked.observer_count(), "a moved-from owner's view stays on the emitter that moved");
+            moved.onTickedSignal(1);
+            check_eq(11, heard);
+
+            emit_board assigned;
+            int dropped = 0;
+            auto droppedReceiver = assigned.onTicked.connect([&dropped](int v) { dropped += v; });
+            assigned = std::move(moved);
+            auto third = assigned.onTicked.connect([&heard](int v) { heard += 100 * v; });
+            assigned.onTickedSignal(1);
+            check_eq(122, heard);
+            check_eq(0, dropped);
+            check_false(droppedReceiver->connected());
+
+            std::vector<emit_board> boards;
+            std::vector<signal<void(int)>::shared_receiver_type> held;
+            int total = 0;
+            for (int i = 0; i < 64; ++i) {
+                boards.emplace_back();
+                held.push_back(boards.back().onTicked.connect([&total](int v) { total += v; }));
+            }
+            for (auto& board : boards) {
+                board.onTickedSignal(1);
+                check_eq((size_t)1, board.onTicked.observer_count());
+            }
+            check_eq(64, total, "every view and receiver survives the vector's reallocations");
+        });
+
+        test("a_move_during_an_emit_carries_the_emit_to_the_moved_to_emitter", [this]() {
+            auto source = std::make_unique<emit_board>();
+            std::unique_ptr<emit_board> moved;
+            int later = 0;
+            auto mover = source->onTicked.connect([&](int) {
+                if (!moved) { moved = std::make_unique<emit_board>(std::move(*source)); }
+            });
+            auto after = source->onTicked.connect([&](int v) { later += v; });
+            source->onTickedSignal.emit(1);
+            check_eq(1, later, "the emit in progress runs on to the receivers still to come");
+            check_eq((size_t)0, source->onTickedSignal.observer_count());
+            source->onTickedSignal.emit(5);
+            check_eq(1, later, "the moved-from emitter emits to nobody");
+            moved->onTickedSignal.emit(2);
+            check_eq(3, later);
+            source.reset();
+            moved->onTickedSignal.emit(3);
+            check_eq(6, later);
+
+            auto target = std::make_unique<emit_board>();
+            int dropped = 0;
+            auto replace = target->onTicked.connect([&](int) { *target = emit_board{}; });
+            auto droppedAfter = target->onTicked.connect([&](int v) { dropped += v; });
+            target->onTickedSignal.emit(1);
+            check_eq(0, dropped, "assigning over the emitter mid-emit lets go of the receivers still to come");
+            check_false(replace->connected() || droppedAfter->connected());
+            auto fresh = target->onTicked.connect([&](int v) { dropped += 10 * v; });
+            target->onTickedSignal.emit(1);
+            check_eq(10, dropped, "the assigned emitter serves its view");
+
+            auto nested = std::make_unique<emit_board>();
+            std::unique_ptr<emit_board> nestedMoved;
+            int depth = 0;
+            auto reenter = nested->onTicked.connect([&](int v) {
+                ++depth;
+                if (v == 2) { nestedMoved = std::make_unique<emit_board>(std::move(*nested)); }
+                if (v > 0) { nestedMoved ? nestedMoved->onTickedSignal.emit(v - 1) : nested->onTickedSignal.emit(v - 1); }
+                if (v == 0) { nestedMoved.reset(); }
+            });
+            nested->onTickedSignal.emit(3);
+            check_eq(4, depth, "a reentrant emit that moves and then destroys the emitter unwinds every level");
+            check_false(reenter->connected());
+        });
+
+        test("a_synchronized_emitter_moves", [this]() {
             struct sync_door {
                 signal_emitter<void(int), signal_synchronized> onOpenSignal;
                 signal<void(int), signal_synchronized> onOpen{ onOpenSignal };
             };
-            static_assert(!std::is_move_constructible_v<emit_board> && !std::is_move_assignable_v<emit_board>);
-            static_assert(!std::is_move_constructible_v<sync_door> && !std::is_move_assignable_v<sync_door>);
+            static_assert(std::is_nothrow_move_constructible_v<sync_door> && std::is_nothrow_move_assignable_v<sync_door>);
             static_assert(std::is_empty_v<signal_unsynchronized::mutex_type>);
             sync_door door;
-            int got = 0;
-            auto recv = door.onOpen.connect([&](int v) { got = v; });
-            door.onOpenSignal(7);
-            check_eq(7, got);
+            std::atomic<int> got { 0 };
+            auto recv = door.onOpen.connect([&](int v) { got += v; });
+            sync_door moved = std::move(door);
+            std::thread other([&]() {
+                for (int i = 0; i < 100; ++i) { moved.onOpenSignal(1); }
+            });
+            for (int i = 0; i < 100; ++i) {
+                auto passing = moved.onOpen.connect([](int) {});
+            }
+            other.join();
+            check_eq(100, got.load());
+            sync_door assigned;
+            assigned = std::move(moved);
+            assigned.onOpenSignal(7);
+            check_eq(107, got.load());
+            check_eq((size_t)1, assigned.onOpen.observer_count());
+        });
+
+        // A view shares its emitter's state, so a view that outlives the emitter acts on a signal that no longer emits
+        test("a_view_that_outlives_its_emitter_connects_nothing", [this]() {
+            auto board = std::make_unique<emit_board>();
+            signal<void(int)> kept = board->onTicked;
+            auto receiver = kept.connect([](int) {});
+            board.reset();
+            check_false(receiver->connected(), "the emitter's death lets go of its receivers");
+            auto late = kept.connect([](int) {});
+            check_false(late->connected(), "a connect after the emitter's death attaches nothing");
+            check_false(kept.connect(late));
+            auto named = kept.connect("named", [](int) {});
+            check_false(named->connected());
+            check_false(kept.connected("named"));
+            check_eq((size_t)0, kept.observer_count());
+            kept.disconnect("named");
+            kept.disconnect(late);
+
+            signal_emitter<void(int)> replaced;
+            signal<void(int)> old_view{ replaced };
+            replaced = signal_emitter<void(int)>{};
+            check_false(old_view.connect([](int) {})->connected(), "an emitter assigned over leaves its old views behind");
+        });
+
+        test("a_script_view_follows_its_emitter_through_a_move", [this]() {
+            auto eng = jai::foundry::make_engine();
+            dynamic_binder<emit_board>(*eng, "EmitBoard")
+                .constructor<>()
+                .property("onTicked", &emit_board::onTicked)
+                .property("onTickedEmitter", &emit_board::onTickedSignal)
+                .build();
+            auto board = std::make_shared<emit_board>();
+            eng->add_global("board", eng->make_object(board));
+            eng->execute("int got = 0; var view = board.onTicked; var emitterView = board.onTickedEmitter;");
+            emit_board moved = std::move(*board);
+            eng->execute("view.connect(\"a\", [](int v) { got += v; }); emitterView.connect(\"b\", [](int v) { got += 10 * v; });");
+            check_true(moved.onTicked.connected("a") && moved.onTicked.connected("b"), "both script views reach the moved-to emitter");
+            check_false(board->onTickedSignal.connected("a"), "the moved-from emitter has none");
+            moved.onTickedSignal(1);
+            check_eq((int64_t)11, eng->execute("got").as_int());
+            check_true(eng->execute("view.connected(\"a\")").as<bool>());
+
+            { emit_board gone = std::move(moved); }
+            check_false(eng->execute("view.connected(\"a\")").as<bool>());
+            check_throws([&]() { eng->execute("view.connect(\"c\", [](int v) { got += v; });"); },
+                "a view of a destroyed emitter fails to connect");
+            eng->execute("view.disconnect(\"a\");");
+        });
+
+        test("a_typed_script_view_follows_its_emitter_through_a_move", [this]() {
+            auto eng = jai::foundry::make_engine();
+            bind_signal_type<void(int)>(*eng, "SignalInt");
+            dynamic_binder<emit_board>(*eng, "EmitBoard")
+                .constructor<>()
+                .property("onTicked", &emit_board::onTicked)
+                .build();
+            auto board = std::make_shared<emit_board>();
+            eng->add_global("board", eng->make_object(board));
+            eng->execute("int got = 0; var view = board.onTicked;");
+            emit_board moved = std::move(*board);
+            eng->execute("view.connect(\"a\", [](int v) { got += v; });");
+            check_true(moved.onTicked.connected("a"));
+            moved.onTickedSignal(4);
+            check_eq((int64_t)4, eng->execute("got").as_int());
+
+            { emit_board gone = std::move(moved); }
+            check_false(eng->execute("view.connected(\"a\")").as<bool>());
+            check_throws([&]() { eng->execute("view.connect(\"c\", [](int v) { got += v; });"); },
+                "a typed view of a destroyed emitter fails to connect");
         });
 
         test("a_synchronized_emitter_takes_calls_from_several_threads", [this]() {

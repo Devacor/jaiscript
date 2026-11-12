@@ -14,6 +14,7 @@
 #include <jaiscript/stdlib/stdlib.hpp>
 #include <jaiscript/core/engine_time.hpp>
 #include <jaiscript/core/script_run.hpp>
+#include <jaiscript/testing/temporary_directory.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -97,13 +98,11 @@ struct Player {
 // [sample binder-spawner-class]
 #include <jaiscript/core/registrar.hpp>
 #include <jaiscript/properties/macros.hpp>
-#include <jaiscript/properties/property_serialization.hpp>
 #include <jaiscript/signals/signal_property.hpp>
 #include <jaiscript/serialization/convenience.hpp>   // to_json / from_json / to_binary below
 // [/sample]
 // [sample signals-observable]
 #include <jaiscript/properties/property_manager.hpp>
-#include <jaiscript/properties/property_serialization.hpp>   // property<T> vtable lives here
 #include <jaiscript/properties/observable_property.hpp>
 // [/sample]
 // [sample math-marker-class]
@@ -193,21 +192,39 @@ public:
     JAI_PROPERTY((int64_t), level, 1);
     JAI_PROPERTY((double), interval, 2.5);
     JAI_OBSERVABLE_PROPERTY((int64_t), threat, 0);     // emits on_change(old, new)
-    JAI_SIGNAL_PROPERTY(void(int64_t), onWave);        // script-connectable, serializable
+    JAI_SIGNAL(void(int64_t), onWave);                 // script-connectable, serializable
 
-    void spawn_wave() { total_waves_ += 1; onWaveSignal(total_waves_); }
-    int64_t total_waves() const { return total_waves_; }
+    JAI_METHOD(void, spawn_wave, ()) { total_waves_ += 1; onWaveSignal(total_waves_); }
+    JAI_METHOD(int64_t, total_waves, () const) { return total_waves_; }
 
 private:
     int64_t total_waves_ = 0;   // not a property: private, unreflected, unsaved
 };
-
-static jai::registrar<Spawner, void> _regSpawner("Spawner",
-    [](jai::dynamic_binder<Spawner>& b) {
-        b.method("spawn_wave", &Spawner::spawn_wave);
-        b.method("total_waves", &Spawner::total_waves);
-    });
 // [/sample]
+}
+
+namespace doc_binder_watchtower {
+// [sample binder-jai-method]
+class Watchtower : public jai::property_owner<Watchtower> {
+public:
+    JAI_PROPERTY((int64_t), arrows, 10);
+
+    JAI_METHOD(void, fire, ()) { fire(1); }
+    JAI_METHOD(void, fire, (int64_t volley));                     // defined in the .cpp
+    JAI_METHOD(int64_t, range, () const noexcept) { return 4 + arrows / 5; }
+    JAI_METHOD((std::map<std::string, int64_t>), report, () const) { return {{"arrows", arrows}}; }
+    JAI_METHOD(void, restock, (), jai::serial, jai::permissions::filesystem);
+    JAI_METHOD(Watchtower&, operator+=, (int64_t extra)) { arrows += extra; return *this; }
+
+    static int64_t built() { return 3; }
+    static void jai_auto_bind(jai::dynamic_binder<Watchtower>& b) {   // what JAI_METHOD does not say
+        b.static_method("built", &Watchtower::built);
+        b.method("volley", jai::overload<int64_t>(&Watchtower::fire));
+    }
+};
+// [/sample]
+inline void Watchtower::fire(int64_t volley) { arrows -= volley; }
+inline void Watchtower::restock() { arrows = 10; }
 }
 
 namespace doc_binder_vec2 {
@@ -218,6 +235,7 @@ struct Vec2 {
     Vec2(double x, double y) : x(x), y(y) {}
     double length() const { return std::sqrt(x * x + y * y); }
     Vec2& scale(double k) { x *= k; y *= k; return *this; }
+    Vec2& scale(double kx, double ky) { x *= kx; y *= ky; return *this; }
     Vec2& translate(double dx, double dy) { x += dx; y += dy; return *this; }
     Vec2 operator+(const Vec2& o) const { return {x + o.x, y + o.y}; }
     bool operator==(const Vec2& o) const { return x == o.x && y == o.y; }
@@ -488,9 +506,9 @@ std::string dedent(const std::vector<std::string>& lines) {
 	return result;
 }
 
-// The regions of this file marked with the id, each dedented, joined with a blank line
-std::string sample_source(const std::string& id) {
-	const std::string self = read_file(source_root() / "source" / "tests" / "integration" / "doc_samples_tests.cpp");
+// The regions of this file (or of a_file, under source/tests) marked with the id, each dedented, joined with a blank line
+std::string sample_source(const std::string& id, const std::string& a_file = "integration/doc_samples_tests.cpp") {
+	const std::string self = read_file(source_root() / "source" / "tests" / a_file);
 	std::istringstream in(self);
 	std::string line, result;
 	std::vector<std::string> region;
@@ -560,6 +578,26 @@ std::string missing_lines(const std::string& expected, const std::string& got) {
 void dump(const std::string& id, const std::string& got) {
 	const char* dir = std::getenv("JAI_DOC_SAMPLES_DUMP");
 	if (dir && *dir) { std::ofstream(std::filesystem::path(dir) / (id + ".txt"), std::ios::binary) << got; }
+}
+
+// A program's exit code and everything it printed, its arguments quoted
+struct program_run {
+	int exit_code = -1;
+	std::string output;
+};
+
+program_run run_program(const std::string& a_program, const std::vector<std::string>& a_arguments) {
+	const std::filesystem::path captured = jai::foundry::test_temp_directory() / "doc_program_output.txt";
+	std::string command = "\"" + a_program + "\"";
+	for (const std::string& argument : a_arguments) { command += " \"" + argument + "\""; }
+	command += " > \"" + captured.string() + "\" 2>&1";
+#ifdef _WIN32
+	command = "\"" + command + "\"";   // cmd.exe strips one pair of outer quotes
+#endif
+	program_run result;
+	result.exit_code = std::system(command.c_str());
+	result.output = read_file(captured);
+	return result;
 }
 
 class cout_capture {
@@ -906,6 +944,56 @@ public:
 			});
 		});
 
+		// The landing page's binding tabs: two programs (source/tests/home_page), one class surface, the same host code and script
+		test("home_binding_tabs", [this]() {
+#if defined(JAI_HOME_INTRUSIVE) && defined(JAI_HOME_EXTERNAL)
+			const std::string page = "index.html";
+			const auto intrusive_run = doc_samples::find_block(page, "home-bind-run-intrusive");
+			const auto external_run = doc_samples::find_block(page, "home-bind-run-external");
+			check_true(intrusive_run.found && external_run.found, page + ": a tab has no run block");
+			check_eq(intrusive_run.code, external_run.code, page + ": the two tabs run different host code");
+			check_eq(intrusive_run.output, external_run.output, page + ": the two tabs show different output");
+			const bool interpreted = make_engine()->get_backend_type() == backend_type::interpreter;
+			const size_t script_start = intrusive_run.code.find("R\"(");
+			const size_t script_end = intrusive_run.code.find(")\"", script_start);
+			check_true(script_start != std::string::npos && script_end != std::string::npos, page + ": the run block holds no raw-string script");
+			const std::filesystem::path script = jai::foundry::test_temp_directory() / "home_binding_tab.jai";
+			std::ofstream(script, std::ios::binary) << intrusive_run.code.substr(script_start + 3, script_end - script_start - 3);
+			const std::pair<const char*, const char*> tabs[] = { {"intrusive", JAI_HOME_INTRUSIVE}, {"external", JAI_HOME_EXTERNAL} };
+			for (const auto& [tab, program] : tabs) {
+				const std::string file = std::string("home_page/home_") + tab + ".cpp";
+				for (const std::string id : {std::string("home-bind-") + tab, std::string("home-bind-run-") + tab}) {
+					const auto block = doc_samples::find_block(page, id);
+					check_true(block.found, page + ": no block marked data-sample=\"" + id + "\"");
+					check_eq(doc_samples::trim_lines(doc_samples::sample_source(id, file)), doc_samples::trim_lines(block.code),
+						page + " " + id + ": the page's code and " + file + " differ");
+				}
+				const auto run = doc_samples::run_program(program, interpreted ? std::vector<std::string>{ "--interpreter", script.string() } : std::vector<std::string>{});
+				check_eq(0, run.exit_code, std::string(tab) + ": " + run.output);
+				// The interpreter run feeds only the script: its output opens the page's, and the C++ after it prints the rest
+				const std::string expected = doc_samples::trim_lines(intrusive_run.output);
+				const std::string got = doc_samples::trim_lines(run.output);
+				if (interpreted) {
+					check_true(intrusive_run.code.find("gate->spawn_wave(5, false);") != std::string::npos, page + ": the C++ call on the returned object moved");
+					check_true(!got.empty() && got.size() < expected.size() && expected.compare(0, got.size(), got) == 0 && expected[got.size()] == '\n',
+						page + " " + tab + ": the script's output does not open the page's: " + got);
+				} else {
+					check_eq(expected, got, page + " " + tab + ": output");
+				}
+			}
+#endif
+		});
+
+		test("binder_jai_method", [this]() {
+			const std::string page = "embedding/02-dynamic-binder.html";
+			cpp_sample class_block(*this, page, "binder-jai-method");
+			class_block.finish();
+			auto eng = make_engine();
+			jai::stdlib::register_all(eng);
+			jai::bind_registrar(*eng);
+			expect_script(page, "binder-jai-method-script", eng);
+		});
+
 		test("binder_turret", [this]() {
 			cpp_sample run(*this, "embedding/02-dynamic-binder.html", "binder-turret");
 			doc_binder_turret::main();
@@ -922,7 +1010,7 @@ public:
 			// [sample binder-spawner-engine]
 			auto eng = jai::engine::make();
 			jai::stdlib::register_all(eng);   // formatted print, containers, math, json
-			jai::bind_registrar(*eng);         // every jai::registrar in the binary, one call
+			jai::bind_registrar(*eng);         // every property_owner and jai::registrar in the binary, one call
 			// [/sample]
 			engine_block.finish();
 			expect_script(page, "binder-spawner", eng);
@@ -975,7 +1063,7 @@ public:
 
 			cpp_sample from_json_block(*this, page, "binder-from-json");
 			// [sample binder-from-json]
-			auto loaded = jai::from_json<std::shared_ptr<Spawner>>(*eng, json, *eng);
+			auto loaded = jai::from_json<std::shared_ptr<Spawner>>(*eng, json);
 			// loaded->id.get() == "east-gate", level 7, threat 9
 			loaded->spawn_wave();   // the receiver came back from the save file
 			// [/sample]
@@ -984,7 +1072,7 @@ public:
 			cpp_sample to_binary_block(*this, page, "binder-to-binary");
 			// [sample binder-to-binary]
 			auto bytes  = jai::to_binary(*eng, gate);                                   // std::vector<uint8_t>
-			auto again  = jai::from_binary<std::shared_ptr<Spawner>>(*eng, bytes, *eng);
+			auto again  = jai::from_binary<std::shared_ptr<Spawner>>(*eng, bytes);
 			again->spawn_wave();   // receivers persist in binary too
 			// [/sample]
 			to_binary_block.finish();
@@ -1023,14 +1111,12 @@ public:
 			jai::stdlib::register_all(eng);
 			cpp_sample host(*this, "embedding/02-dynamic-binder.html", "binder-vec2-host");
 			// [sample binder-vec2-host]
-			jai::dynamic_binder<Vec2>(*eng, "Vec2")
-			    .constructor<>()
+			jai::dynamic_binder<Vec2>(*eng, "Vec2")         // Vec2(), a copy, + and == bind by themselves
 			    .constructor<double, double>()             // overloaded ctors resolve by arity + type
 			    .method("length", &Vec2::length)
-			    .method("scale", &Vec2::scale)             // Vec2& scale(double) -> chainable
+			    .method("scale", jai::overload<double>(&Vec2::scale))           // Vec2& scale(double) -> chainable
+			    .method("scale", jai::overload<double, double>(&Vec2::scale))   // an overload, picked by its parameters
 			    .method("translate", &Vec2::translate)
-			    .method("+", &Vec2::operator+)             // operators are methods named by token
-			    .method("==", &Vec2::operator==)
 			    .static_method("axes", []() { return 2; })
 			    .static_method("dot", [](const Vec2& a, const Vec2& b) { return a.x * b.x + a.y * b.y; })
 			    .property("x", &Vec2::x)
@@ -1047,8 +1133,7 @@ public:
 			cpp_sample host(*this, "embedding/02-dynamic-binder.html", "binder-sprite-host");
 			// [sample binder-sprite-host]
 			jai::dynamic_binder<Sprite>(*eng, "Sprite")
-			    .constructor<>()
-			    .serial_only_constructor()
+			    .constructor<>(jai::serial)
 			    .property("alpha", &Sprite::alpha);
 			// [/sample]
 			host.finish();
@@ -1106,10 +1191,8 @@ public:
 			// Registration order does not matter — either class may register first, or the base
 			// not at all: a derived registration materializes an unregistered property_owner base.
 			jai::dynamic_binder<Pickup>(*eng, "Pickup")
-			    .auto_bind()
 			    .method("kind", [](Pickup& p) { return std::string("pickup:") + p.name.get(); });
-			jai::dynamic_binder<HealthPickup>(*eng, "HealthPickup")
-			    .auto_bind();     // derives the Pickup base edge: healing and the inherited name both bind
+			jai::dynamic_binder<HealthPickup>(*eng, "HealthPickup");   // derives the Pickup base edge: healing and the inherited name both bind
 			// [/sample]
 			host.finish();
 			cpp_sample json_block(*this, page, "binder-pickup-json");
@@ -1221,7 +1304,7 @@ public:
 			expect_script(page, "math-body-script", eng);
 			cpp_sample marker_block(*this, page, "math-marker");
 			// [sample math-marker]
-			jai::dynamic_binder<Marker>(*eng, "Marker").auto_bind();
+			jai::dynamic_binder<Marker>(*eng, "Marker");
 
 			auto marker = std::make_shared<Marker>();
 			int changes = 0;
@@ -1324,8 +1407,8 @@ public:
 			    .base_class<Entity>()
 			    .constructor<>()
 			    .constructor<std::string, int64_t>()
-			    .method("damage", static_cast<void (Monster::*)(int64_t)>(&Monster::damage))
-			    .method("damage", static_cast<void (Monster::*)(int64_t, double)>(&Monster::damage))
+			    .method("damage", jai::overload<int64_t>(&Monster::damage))
+			    .method("damage", jai::overload<int64_t, double>(&Monster::damage))
 			    .method("alive", &Monster::alive)
 			    .method("==", &Monster::operator==)
 			    .property("hp", &Monster::health, &Monster::setHealth)

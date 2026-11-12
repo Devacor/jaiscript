@@ -5746,6 +5746,7 @@ private:
             if (extra_global(name)) { note_global_use(id->name); return {}; }
             if (name == "regex") { check_regex_constant(c); }
             if (eng_.is_type_name(name) || eng_.find_script_class(name)) {
+                note_host_nodiscard(name);
                 check_strict_host_constructor(name, args, c->location);
                 return object_of(id->name);   // registered class ctor: args lenient unless the host class is strict
             }

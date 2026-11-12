@@ -139,7 +139,6 @@ public:
             auto eng = make_engine();
 
             dynamic_binder<Entity>(*eng, "Entity")
-                .auto_bind()
                 .constructor<>()
                 .constructor<int, const std::string&>()
                 .method("is_alive", &Entity::is_alive)
@@ -162,7 +161,6 @@ public:
             auto eng = make_engine();
 
             dynamic_binder<Entity>(*eng, "Entity")
-                .auto_bind()
                 .constructor<>()
                 .method("is_alive", &Entity::is_alive)
                 .method("damage", &Entity::damage)
@@ -189,7 +187,6 @@ public:
             auto eng = make_engine();
 
             dynamic_binder<Entity>(*eng, "Entity")
-                .auto_bind()
                 .constructor<>()
                 .method("is_alive", &Entity::is_alive)
                 .method("damage", &Entity::damage)
@@ -242,7 +239,6 @@ public:
             auto eng = make_engine();
 
             dynamic_binder<Player>(*eng, "Player")
-                .auto_bind()
                 .constructor<>()
                 .method("add_experience", &Player::add_experience)
                 .method("level_up_threshold", &Player::level_up_threshold)
@@ -368,7 +364,6 @@ public:
             auto eng = make_engine();
 
             dynamic_binder<Entity>(*eng, "Entity")
-                .auto_bind()
                 .constructor<int, const std::string&>()
                 .method("is_alive", &Entity::is_alive)
                 .method("damage", &Entity::damage)
@@ -398,7 +393,6 @@ public:
             auto eng = make_engine();
 
             dynamic_binder<Entity>(*eng, "Entity")
-                .auto_bind()
                 .constructor<>()
                 .build();
 
@@ -419,13 +413,11 @@ public:
             auto eng = make_engine();
 
             dynamic_binder<Entity>(*eng, "Entity")
-                .auto_bind()
                 .constructor<int, const std::string&>()
                 .method("status", &Entity::status)
                 .build();
 
             dynamic_binder<Player>(*eng, "Player")
-                .auto_bind()
                 .constructor<>()
                 .method("level_up_threshold", &Player::level_up_threshold)
                 .build();

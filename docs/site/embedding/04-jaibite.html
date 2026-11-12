@@ -75,7 +75,7 @@ eng-&gt;execute(bite);      // 300 — equivalent engine-side form</code></pre><
 <tr><td>Two engines or processes share a cache</td><td>Safe: a cache is written to a temporary file and renamed into place.</td></tr>
 <tr><td><code>execute(string)</code></td><td>Never touches disk. A host that reads files through its own VFS keeps the cache by calling <code>eng-&gt;execute_file_source(resolvedPath, content)</code>.</td></tr>
 <tr><td><code>eng-&gt;jaibite_cache(false)</code></td><td>Turns the cache off for that engine.</td></tr>
-<tr><td><code>eng-&gt;disable(jai::filesystem)</code> (<a href="05-safety-rails.html">Safety Rails</a>)</td><td>The cache is skipped, and <code>jaibite_load(path)</code> and <code>bite.save(path)</code> throw <code>jai::runtime_error</code> <code>Insufficient privilege: filesystem.</code> The byte forms <code>save_bytes</code> and <code>jaibite_load_bytes</code> still work.</td></tr>
+<tr><td><code>eng-&gt;disable(jai::permissions::filesystem)</code> (<a href="05-safety-rails.html">Safety Rails</a>)</td><td>The cache is skipped, and <code>jaibite_load(path)</code> and <code>bite.save(path)</code> throw <code>jai::runtime_error</code> <code>Insufficient permission: filesystem.</code> The byte forms <code>save_bytes</code> and <code>jaibite_load_bytes</code> still work.</td></tr>
 </tbody></table></div>
 <h3 id="cache-directory">Read-only sources: the cache directory<a class="hlink" href="#cache-directory" aria-label="link">&#8203;</a></h3>
 <p>Where scripts ship read-only (an iOS bundle, an Android APK, an installed game folder), point the cache at a folder the app can write:</p>

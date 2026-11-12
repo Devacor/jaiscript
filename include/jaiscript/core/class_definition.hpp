@@ -793,6 +793,9 @@ public:
     // get_method's binding without a copy (a parallel worker reads the class's method values and never touches their counts); null when
     // the chain binds none
     inline const script_value* method_ptr(uint64_t id) const;
+    // The "=" an assignment into an instance runs. A script class's comes from a script class: a host base's "=" is hidden, as
+    // a C++ derived class's implicit operator= hides the base's and assigns the derived members too.
+    inline const script_value* assignment_operator_ptr(uint64_t id) const;
 
     // kind + name + "' not found in class '" + class + "'", out of line so the chain walks stay lean
     [[noreturn]] inline JAI_NOINLINE void throw_method_missing(const char* kind, uint64_t id) const;
@@ -1215,7 +1218,7 @@ public:
     inline bool nocopy() const;
 
     // A host class whose constructor or destructor touches state other objects share (a registry, a cache, a service): a
-    // parallel body may not construct it, nor any script class over it (dynamic_binder::serial_only_constructor)
+    // parallel body may not construct it, nor any script class over it (a dynamic_binder constructor bound with jai::serial)
     // A host method or static method that touches state other objects share (bound jai::serial): a parallel body may not call
     // it. A method's mark covers its non-const overloads, or every one
     void mark_serial_method(uint64_t name_id, serial_overloads which) { serial_methods_[name_id] = which; }

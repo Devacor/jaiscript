@@ -1,6 +1,7 @@
 #include <jaiscript/serialization/archive_impl.hpp>
 #include <jaiscript/detail/class_runtime.hpp>
 #include <jaiscript/detail/engine_access.hpp>
+#include <jaiscript/properties/property_manager.hpp>
 
 #include <charconv>
 #include <cmath>
@@ -20,6 +21,25 @@ void throw_not_serializable(std::type_index type) {
 void throw_not_deserializable(std::type_index type) {
     throw serialization_error("Type '" + detail::readable_cpp_type_name(type) + "' is not deserializable. "
         "Add save/load, serialize, property_owner, or ADL functions, bind it in the archive's engine — or mark the property transient.");
+}
+
+void throw_unregistered_hybrid_base(const std::string& hybrid_type, std::type_index base) {
+    throw serialization_error("Cannot serialize hybrid script class '" + hybrid_type + "': its C++ base '" + detail::readable_cpp_type_name(base) +
+        "' is not registered. Register it with jai::registrar<T, Context>(\"Name\") or derive from jai::property_owner<T, ...>.");
+}
+
+void throw_unregistered_polymorphic(std::type_index actual, std::type_index base) {
+    throw serialization_error("Cannot serialize unregistered polymorphic type '" + detail::readable_cpp_type_name(actual) + "' through pointer-to-base '" +
+        detail::readable_cpp_type_name(base) + "'. Register it with jai::registrar<T, Context, jai::bases<Base>>(\"Name\") or derive from jai::property_owner<T, Base>.");
+}
+
+void throw_unrelated_polymorphic(const std::string& poly_type, std::type_index base) {
+    throw serialization_error("Polymorphic type '" + poly_type + "' is not a registered subtype of requested base '" + detail::readable_cpp_type_name(base) +
+        "' (declare it: static jai::serialization::register_relation<" + poly_type + ", Base>, or .base<Base>() on its registrar)");
+}
+
+void throw_no_construct_route(std::type_index type) {
+    throw serialization_error("Cannot deserialize shared_ptr<" + detail::readable_cpp_type_name(type) + ">: type is not default constructible and has no load_and_construct");
 }
 
 namespace {
@@ -89,6 +109,37 @@ void read_binding_record(any_archive_reader& ar, engine* eng, std::type_index ty
     }
 }
 
+namespace {
+
+    // Each level of type's binding in eng, bases first, with that level's object
+    template<typename Fn>
+    void visit_bound_levels(engine* eng, std::type_index type, const void* object, Fn& fn) {
+        const class_metadata* record = nullptr;
+        if (!binding_of(eng, type, record)) {
+            return;
+        }
+        for (const base_archive_route& base : record->bases) {
+            visit_bound_levels(eng, base.type, base.upcast(const_cast<void*>(object)), fn);
+        }
+        fn(*record, object);
+    }
+
+    // A bound name a property_mgr of the object holds is that property's key, so the binding's stays out
+    bool held_by_property_mgr(engine* eng, std::type_index type, const void* object, const std::string& name) {
+        bool result = false;
+        auto find = [&result, &name](const class_metadata& record, const void* level) {
+            result = result || (record.level_manager && record.level_manager(level)->get(name));
+        };
+        visit_bound_levels(eng, type, object, find);
+        return result;
+    }
+
+    bool owns_level(const class_metadata& record, const void* object, const property_manager* level) {
+        return !level || (record.level_manager && record.level_manager(object) == level);
+    }
+
+}
+
 std::string bound_type_name(engine* eng, std::type_index type) {
     const class_metadata* record = nullptr;
     const std::shared_ptr<class_definition> binding = binding_of(eng, type, record);
@@ -126,6 +177,32 @@ archive_writer_core::archive_writer_core(engine* eng) : engine_ref_(eng) {
 }
 
 archive_writer_core::~archive_writer_core() = default;
+
+void archive_writer_core::push_record(const void* object, std::type_index type) {
+    records_.push_back({ object, type });
+}
+
+void archive_writer_core::pop_record() {
+    records_.pop_back();
+}
+
+void archive_writer_core::write_bound_properties(any_archive_writer& ar, const property_manager* level) {
+    if (records_.empty() || !records_.back().object || !engine_ref_) {
+        return;
+    }
+    const record_frame frame = records_.back();
+    auto write = [this, &ar, &frame, level](const class_metadata& record, const void* object) {
+        if (!owns_level(record, object, level)) {
+            return;
+        }
+        for (const property_metadata& property : record.properties) {
+            if (property.archive.save && !held_by_property_mgr(engine_ref_, frame.type, frame.object, property.name)) {
+                property.archive.save(property.archive.state.get(), property.name.c_str(), object, ar);
+            }
+        }
+    };
+    visit_bound_levels(engine_ref_, frame.type, frame.object, write);
+}
 
 std::pair<uint32_t, bool> archive_writer_core::track_shared_ptr(const void* raw_ptr) {
     if (raw_ptr == nullptr) {
@@ -213,6 +290,41 @@ uint32_t archive_writer_core::lookup_shared_id(const void* raw_ptr) const {
 archive_reader_core::archive_reader_core(engine* eng) : engine_ref_(eng) {}
 
 archive_reader_core::~archive_reader_core() = default;
+
+void archive_reader_core::push_record(void* object, std::type_index type) {
+    records_.push_back({ object, type });
+}
+
+void archive_reader_core::pop_record() {
+    records_.pop_back();
+}
+
+void archive_reader_core::set_record_object(void* object) {
+    records_.back().object = object;
+}
+
+void archive_reader_core::read_bound_properties(any_archive_reader& ar, const property_manager* level) {
+    if (records_.empty() || !records_.back().object || !engine_ref_) {
+        return;
+    }
+    const record_frame frame = records_.back();
+    bool sought = false;
+    auto read = [this, &ar, &frame, &sought, level](const class_metadata& record, const void* object) {
+        if (!owns_level(record, object, level)) {
+            return;
+        }
+        for (const property_metadata& property : record.properties) {
+            if (property.archive.load && !held_by_property_mgr(engine_ref_, frame.type, frame.object, property.name) && ar.seek_property(property.name)) {
+                sought = true;
+                property.archive.load(property.archive.state.get(), const_cast<void*>(object), ar);
+            }
+        }
+    };
+    visit_bound_levels(engine_ref_, frame.type, frame.object, read);
+    if (sought) {
+        ar.clear_property_value();
+    }
+}
 
 void archive_reader_core::store_deserialized(uint32_t id, std::shared_ptr<void> complete, std::type_index type) {
     if (!cpp_shared_ptrs_) { cpp_shared_ptrs_ = std::make_unique<std::unordered_map<uint32_t, deserialized_entry>>(); }

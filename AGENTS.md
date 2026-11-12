@@ -79,16 +79,20 @@ rather than throw, so "deep nesting does not crash" is tested as "execute return
   `BIN=build/bin bash tools/ci/gates.sh all` (or name gates: `tests-vm gloom crawler demoreel gatorquest lsp`).
 - A library or header change: `bash tools/ci/gates.sh android` cross-compiles the library and the suites with the
   Android NDK (libc++, the standard library Apple platforms use, and 32-bit armeabi-v7a); it skips when no NDK is
-  installed, and targeted.sh picks it.
+  installed. It runs by hand: targeted.sh never picks it.
 - `bash tools/ci/gates.sh wasm` builds the engine with Emscripten (`tools/jaiscript_web`, a 32-bit libc++ target that runs) and
   plays the GLOOM, crawler and demoreel shims under Node to the native gates' hashes; it skips when no Emscripten SDK
-  is found, and targeted.sh picks it wherever it picks android. `bash tools/ci/gates.sh headers` compiles every public header alone and
+  is found, and targeted.sh picks it for a library change. `bash tools/ci/gates.sh headers` compiles every public header alone and
   `tools/ci/host_warnings.cpp` under `-Wall -Wextra -Werror` with each g++ and clang++ it finds, and wants each case of
   `tools/ci/must_not_compile.cpp` (a program the headers reject) to fail with its message; targeted.sh picks it for
   any `include/jaiscript` change.
 - A compiler change: dump `jaiscript --manifest=<file> <script>` before and after over the affected programs; the
   manifests (every chunk field, exact constant bits) change only where the change intends.
 - A change to what the AST serializer writes bumps `k_jaibite_version` (`include/jaiscript/detail/ast_serializer.hpp`).
+- `tools/ci/targeted.sh --build <base>..HEAD` on a committed tree writes a stamp for each gate it passes, keyed by the
+  tree, the gate, its configuration and the toolchain (`tools/ci/ci_lib.sh`). A landing runs `targeted.sh --landing`,
+  which skips every gate stamped for the tree it lands and runs the suites on the Release build only;
+  `targeted.sh --build --landing <base>..HEAD` in a worktree stamps those Release suites as well.
 - Docs: `python docs/site_tools/verify_site.py --runner <bin>/jaiscript` (links, structure, leakage, retired error texts,
   and every sample run on both backends under strict). A sample shows its real output.
 
