@@ -71,7 +71,7 @@ public:
                 {"array_map_untyped_and_typed", R"JS(
                 var a = [1, 2, 3];
                 var d = array::map(a, (x) => x * 2);
-                print(to_json(d), " ", type_of(d));
+                print(to_json(d), " ", reflect::type_of(d));
                 array<int> b = [5, 6];
                 auto t = array::map(b, [](int x) -> int { return x + 1; });
                 print(to_json(t));
@@ -333,6 +333,52 @@ public:
             )JS", "null 1\nno inner 2\n30 30\n"},
             };
             check_runs(cases);
+        });
+
+        // the chain is what the program wrote: no '!=' it did not write, no conditional, no lambda in a trace
+        test("an_optional_chain_reads_as_written_in_texts_and_traces", [this]() {
+            const char* prelude = R"JS(
+                class W { int x = 1; int boom() { throw "boom"; } int bad() { array<int> a; return a[3]; } }
+                class C { shared_ptr<W> w = make_shared<W>(); }
+                shared_ptr<C> hc = make_shared<C>();
+                shared_ptr<C> mk() { return make_shared<C>(); }
+                C vc;
+            )JS";
+            const std::string chain_store = "assign to a '?.' chain: it names no storage (test the value before '?.' and assign through '.')";
+            const std::tuple<const char*, std::string, std::string> cases[] = {
+                {"a value base reads as '.'", "print(vc?.w.x, \" \", vc?.w);", "1 W{x: 1}\n"},
+                {"a store", "hc?.w.x = 5;", "ERROR error: cannot " + chain_store},
+                {"a compound store", "hc?.w.x += 5;", "ERROR error: cannot " + chain_store},
+                {"an increment", "++hc?.w.x;", "ERROR error: cannot " + chain_store},
+                {"a postfix increment", "hc?.w.x++;", "ERROR error: cannot " + chain_store},
+                {"a postfix decrement", "int y = hc?.w.x--;", "ERROR error: cannot " + chain_store},
+                {"a postfix increment over a call base", "[[warn_mode]] { try { mk()?.w.x++; } catch (e) { print(e); } }", "Cannot " + chain_store + "\n"},
+                {"a postfix increment of a single link stays its store", "class N { int x = 1; } shared_ptr<N> n = make_shared<N>(); n?.x++; print(n.x);", "2\n"},
+                {"a store over a value base", "vc?.w.x = 5;", "ERROR error: cannot " + chain_store},
+                {"a store over a call base", "[[warn_mode]] { try { mk()?.w.x = 5; } catch (e) { print(e); } }", "Cannot " + chain_store + "\n"},
+                {"a throw through a call base",
+                 "void f() { print(mk()?.w.boom()); }\ntry { f(); } catch (e) { print(e, \" \", e.stack.size()); }",
+                 "boom 3\n"},
+                {"a raise through a call base",
+                 "void g() { print(mk()?.w.bad()); }\ntry { g(); } catch (e) { print(e, \" \", e.stack.size()); }",
+                 "Array index 3 out of bounds for array of size 0 3\n"},
+            };
+            check_each(cases, [&](const auto& c) {
+                const std::string source = std::string(prelude) + std::get<1>(c);
+                const std::string& expected = std::get<2>(c);
+                if (expected.rfind("ERROR ", 0) == 0) {
+                    const std::string err = error_text(source);
+                    check_true(contains(err, expected.substr(6)) && !contains(err, "'!='") && !contains(err, "conditional"), std::get<0>(c) + std::string(": ") + err);
+                } else {
+                    check_eq(expected, run_output(source), std::get<0>(c));
+                }
+            });
+            auto e = make_engine();
+            stdlib::register_all(*e);
+            std::string text;
+            try { e->execute(std::string(prelude) + "void g() { print(mk()?.w.bad()); }\ng();"); } catch (const std::exception& ex) { text = ex.what(); }
+            const std::string trace = e->format_stack_trace();
+            check_true(contains(trace, "at bad") && contains(trace, "at g") && !contains(trace, "<lambda>"), trace);
         });
 
         // ------------------------------------------------------------------ print

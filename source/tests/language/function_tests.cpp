@@ -404,7 +404,7 @@ public:
                 int identity() { Def d = G; return same_object(d, G) ? 1 : 0; }
                 int callee_writes() { Def d = G; bump(); int c = d.atk; G.atk = 3; return c; }
                 int local_source_written() { Def a = Def(); Def b = a; [[warn_mode]] a.atk = 8; return b.atk; }
-                int handle_alias() { shared_ptr<Def> hp = G; Def d = G; hp.atk = 77; int c = d.atk; G.atk = 3; return c; }
+                int handle_alias() { shared_ptr<Def> hp = make_shared<Def>(G); Def d = G; hp.atk = 77; int c = d.atk; G.atk = 3; return c; }
                 int ref_arg_write() { Def d = G; write_ref(G.atk); int c = d.atk; G.atk = 3; return c; }
                 int ref_param_write(Def& q) { Def d = G; q.atk = 44; int c = d.atk; return c; }
                 int getter() { Acc a = Acc(); Def d = G; int h = a.hp; int c = d.atk; G.atk = 3; return c + h; }
@@ -553,7 +553,7 @@ public:
                 class Foo { int x = 1; Foo() {} }
                 class Holder { Foo foo = Foo(); Holder() {} }
                 class Tracked { int v = 2; ~Tracked() { DEAD = DEAD + 1; } }
-                shared_ptr<Holder> H = Holder();
+                shared_ptr<Holder> H = make_shared<Holder>();
                 Foo G = Foo();
                 Tracked T = Tracked();
                 int other_ref(Foo p, Foo& q) { q.x = 5; return p.x; }
@@ -826,6 +826,91 @@ public:
             });
         });
 
+        // function<R(A...)> and coroutine<Y> wherever a type goes: locals, fields, statics, parameters, returns, elements, map values,
+        // namespace members, casts
+        test("signature_slots_hold_callables_wherever_a_type_goes", [this]() {
+            const std::pair<const char*, int64_t> cases[] = {
+                {"function<int(int)> f = x => x * 2; f(21);", 42},
+                {"function<int(int)> f; f = (int x) => x + 1; f(41);", 42},
+                {"int g(int x) { return x * 3; } function<int(int)> f = g; f(14);", 42},
+                {"int apply(function<int(int)> g, int v) { return g(v); } apply(x => x + 2, 40);", 42},
+                {"function<int(int)> adder(int n) { return x => x + n; } adder(40)(2);", 42},
+                {"array<function<int(int)>> fs = [x => x + 1, x => x * 2]; fs.push(x => x - 1); fs[0](fs[1](fs[2](21)));", 41},
+                {"map<string, function<int(int)>> ops = {\"neg\": x => -x}; ops[\"neg\"](-42);", 42},
+                {"class K { function<int(int)> cb = x => x * 7; static function<int()> made = () => 6; } K k; k.cb(K::made());", 42},
+                {"namespace n { function<int(int)> sq = x => x * x; } n::sq(6) + 6;", 42},
+                {"var raw = (int x) => x; auto f = cast<function<int(int)>>(raw); f(42);", 42},
+                {"function<int(int, int)> pick = true ? (a, b) => a : (a, b) => b; pick(42, 0);", 42},
+                {"function<void(int)> sink = x => x * 2; sink(1); 42;", 42},
+                {"function<var(var)> any = x => x; any(42);", 42},
+                {"function<int(int)> f = x => x; function<int(int)> g = f; g(42);", 42},
+                {"function<int(int)> f = x => x; f = null; f == null ? 42 : 0;", 42},
+                {"coroutine int gen() { yield 40; return 2; } coroutine<int> h = gen(); h.next() + h.next();", 42},
+                {"coroutine int gen() { yield 21; } class B { coroutine<int> brain; } B b; b.brain = gen(); b.brain.next() * 2;", 42},
+                {"coroutine int gen() { yield 21; } coroutine<int> make() { return gen(); } array<coroutine<int>> hs = [make(), make()]; hs[0].next() + hs[1].next();", 42},
+                {"coroutine int gen() { yield 21; } function<coroutine<int>()> mk = gen; mk().next() * 2;", 42},
+                {"coroutine int gen() { yield 21; yield 21; } int total = 0; coroutine<int> h = gen(); for (int v : h) { total += v; } total;", 42},
+                // a member initializer list's lambda takes its types from the field
+                {"class Button { function<int(int)> on_click; Button() : on_click(x => x * 2) {} } Button b; b.on_click(21);", 42},
+                // a copy's signature slot holds the lambda rebound to the copy, typed as the original
+                {"class Counter { int n = 0; function<int(int)> bump; Counter() { bump = [this](x) { n += x; return n; }; } } "
+                 "Counter a; a.bump(1); Counter b = a; b.bump(10); a.n * 100 + b.n;", 111},
+                // flow narrowing: a narrowed name is an argument beside a typed lambda and through a slot, a by-value capture stays
+                // narrowed in a typed lambda's body, and a signature's parameter narrows like any other
+                {"class Unit { } class Hero : Unit { int hp = 5; }\nint measure(function<int(Hero)> key, Hero h) { return key(h); }\nfunction<int(Hero)> slot = h => h.hp * 2;\n"
+                 "int run(Unit u) { int total = 0; if (dynamic_cast<Hero>(u)) { total += measure(h => h.hp, u); function<int(int)> add = [u](x) { return u.hp + x; }; "
+                 "total += add(1); total += slot(u); } return total; }\nrun(Hero()) * 2 + run(Unit());", 42},
+                {"class Unit { } class Hero : Unit { int hp = 21; }\nfunction<int(Unit)> f = u => { if (dynamic_cast<Hero>(u)) { return u.hp * 2; } return 0; };\nf(Hero()) + f(Unit());", 42},
+            };
+            check_each(cases, [&](const auto& c) {
+                auto engine = make_engine();
+                check_eq(c.second, engine->execute(c.first).as_int(), c.first);
+            });
+        });
+
+        // an untyped parameter takes the signature's type, so its body is checked with it and its argument converts as that
+        // parameter's would; a typed one and a reference keep their own
+        test("a_lambda_takes_its_parameter_types_from_the_signature_it_initializes", [this]() {
+            const std::pair<const char*, const char*> cases[] = {
+                {"function<float(int)> half = x => x / 2.0; to_string(half(3));", "1.5"},
+                {"function<string(int)> name = x => reflect::type_of(x); name(1);", "int"},
+                {"function<int(float)> f = x => cast<int>(x * 2); to_string(f(3));", "6"},
+                {"function<string(float)> f = x => reflect::type_of(x); f(3);", "float"},
+                {"function<void(string)> f; string seen = \"\"; f = s => { seen = string::to_upper(s); }; f(\"ok\"); seen;", "OK"},
+                {"class Hero { string name; int hp; Hero(string n, int h) { name = n; hp = h; } }\n"
+                 "array<Hero> sort_by(array<Hero> heroes, function<int(Hero)> key) { heroes.sort((a, b) => key(a) < key(b)); return heroes; }\n"
+                 "string order = \"\"; for (auto h : sort_by([Hero(\"b\", 7), Hero(\"a\", 3)], h => h.hp)) { order += h.name; } order;", "ab"},
+                {"var dyn = (x) => reflect::type_of(x); function<string(int)> typed = x => reflect::type_of(x); dyn(\"s\") + typed(1);", "stringint"},
+                {"var f = 0; function<string(int)> g = x => { var t = x; return reflect::type_of(t); }; g(5);", "int"},
+            };
+            check_each(cases, [&](const auto& c) {
+                auto engine = make_engine();
+                jai::stdlib::register_all(engine);
+                check_eq(std::string(c.second), engine->execute(c.first).to_string(), c.first);
+            });
+        });
+
+        // a store the load cannot see (through a var) is judged by what the callable declares; a call through a slot converts each
+        // argument as the callable's own parameter does
+        test("a_signature_slot_refuses_at_the_store_what_the_load_could_not_see", [this]() {
+            const std::pair<const char*, const char*> cases[] = {
+                {"var v = (int a, int b) => a + b; function<int(int)> f = v;", "Cannot use a lambda as function<int(int)>: it takes 2 arguments, the signature passes 1"},
+                {"var w = (string s) => 1; function<int(int)> f = w;", "Cannot use a lambda as function<int(int)>: parameter 's' (declared string) does not take int"},
+                {"float half(int x) { return x / 2.0; } var h = half; function<int(int)> f = h;", "Cannot use 'half' as function<int(int)>: it returns float, the signature returns int"},
+                {"var r = (int& x) => x; function<int(int)> f = r;", "Cannot use a lambda as function<int(int)>: parameter 'x' is a reference (int&), the signature passes int by value"},
+                {"var n = 5; function<int(int)> f = n;", "Cannot initialize 'f' (declared function<int(int)>) with int"},
+                {"coroutine g() { yield 1; } var h = g(); coroutine<int> c = h;", "Cannot initialize 'c' (declared coroutine<int>) with coroutine<var>"},
+                {"coroutine int g() { yield 1; } var h = g(); h.resume();", "coroutine<int> has no member 'resume'"},
+                {"function<int(int)> f = x => x; var d = f; d(\"s\");", "Cannot pass string to parameter 'x' of lambda (declared int)"},
+            };
+            check_each(cases, [&](const auto& c) {
+                auto engine = make_engine();
+                std::string message;
+                try { engine->execute(c.first); } catch (const std::exception& e) { message = e.what(); }
+                check_true(message.find(c.second) != std::string::npos, std::string(c.first) + " -> " + message);
+            });
+        });
+
         // ---- return-type conflicts (contradictory leading +
         // trailing types = parse error; a matching pair is redundant-legal) ----
 
@@ -1051,7 +1136,7 @@ public:
                     var iv = 3; string err = "";
                     try { setf(iv, 2); } catch (e) { err = e; }
                     int& rx = x; bump(rx, 10);
-                    return to_string(x) + " " + to_string(a.size()) + to_string(a[0]) + to_string(a[3]) + " " + to_string(v) + type_of(v) + " " +
+                    return to_string(x) + " " + to_string(a.size()) + to_string(a[0]) + to_string(a[3]) + " " + to_string(v) + reflect::type_of(v) + " " +
                            to_string(k) + "/" + to_string(got) + " [" + err + "] " + to_string(iv);
                 }
                 run();

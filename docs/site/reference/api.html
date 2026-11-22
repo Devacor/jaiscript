@@ -64,108 +64,6 @@ print(to_json(values));</code></pre></div>
 <h2 id="api-browser">Browse callable signatures</h2>
 <div class="api-controls"><label>Find an API <input id="api-query" type="search" placeholder="slice, sort, read_key, time, mutate..." autocomplete="off"></label><label>Provider <select id="api-provider"><option value="">All providers</option><option value="core">Core</option><option value="stdlib">Standard library</option><option value="runner">Standalone runner</option><option value="host-bound">Host-bound signals</option></select></label><p id="api-count" role="status" aria-live="polite"></p></div>
 <div id="api-entries">
-<section class="api-group"><h2 id="group-download">Download</h2>
-<div class="api-entry" data-provider="runner" data-search="download.cancel() -&gt; void mutate  standalone jaiscript.exe"><h3 id="api-f1a854d8cc80"><code>Download.cancel() -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; mutate</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="download.done() -&gt; bool observe  standalone jaiscript.exe"><h3 id="api-6a8640302b6c"><code>Download.done() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="download.error() -&gt; string observe completed failure description; empty before completion. standalone jaiscript.exe"><h3 id="api-bf7d436baba1"><code>Download.error() -&gt; string</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-<p>Completed failure description; empty before completion.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="download.fraction() -&gt; float observe progress ratio when total is known. standalone jaiscript.exe"><h3 id="api-278220bd424a"><code>Download.fraction() -&gt; float</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-<p>Progress ratio when total is known.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="download.pump() -&gt; bool advance, callback polls completion; returns done state. standalone jaiscript.exe"><h3 id="api-3e041e8c950e"><code>Download.pump() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; advance, callback</p>
-<p>Polls completion; returns done state.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="download.received() -&gt; int observe bytes received so far. standalone jaiscript.exe"><h3 id="api-7a3dc7425501"><code>Download.received() -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-<p>Bytes received so far.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="download.start(url: string, destination: string) -&gt; bool network, filesystem  standalone jaiscript.exe"><h3 id="api-ada9dcc99b3c"><code>Download.start(url: string, destination: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network, filesystem</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="download.success() -&gt; bool observe true only after successful completion. standalone jaiscript.exe"><h3 id="api-d4d82ee87c1e"><code>Download.success() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-<p>True only after successful completion.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="download.total() -&gt; int observe expected total bytes when known. standalone jaiscript.exe"><h3 id="api-cc013f7db807"><code>Download.total() -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-<p>Expected total bytes when known.</p>
-</div>
-</section>
-<section class="api-group"><h2 id="group-netchannel">NetChannel</h2>
-<div class="api-entry" data-provider="runner" data-search="netchannel.close() -&gt; void network  standalone jaiscript.exe"><h3 id="api-e75502deda4b"><code>NetChannel.close() -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netchannel.connect(host: string, port: int) -&gt; bool network asynchronous: true while the connection is being made; pump() then fires on_connect(), or on_disconnect(&quot;connect refused&quot;). false when the attempt fails at once. standalone jaiscript.exe"><h3 id="api-0d2650104b26"><code>NetChannel.connect(host: string, port: int) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
-<p>Asynchronous: true while the connection is being made; pump() then fires on_connect(), or on_disconnect(&quot;connect refused&quot;). False when the attempt fails at once.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netchannel.connected() -&gt; bool observe  standalone jaiscript.exe"><h3 id="api-42413fcb379e"><code>NetChannel.connected() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netchannel.listen(port: int) -&gt; bool network  standalone jaiscript.exe"><h3 id="api-79b40f151402"><code>NetChannel.listen(port: int) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netchannel.pump() -&gt; int network, callback pumps networking and returns fired event count. standalone jaiscript.exe"><h3 id="api-33f02bf39d70"><code>NetChannel.pump() -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network, callback</p>
-<p>Pumps networking and returns fired event count.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netchannel.send(bytes: string) -&gt; bool network length-prefixed packet, not raw stream writes. standalone jaiscript.exe"><h3 id="api-f4ef6b064885"><code>NetChannel.send(bytes: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
-<p>Length-prefixed packet, not raw stream writes.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netchannel.status() -&gt; string observe  standalone jaiscript.exe"><h3 id="api-6f8bd704efa2"><code>NetChannel.status() -&gt; string</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-</div>
-</section>
-<section class="api-group"><h2 id="group-netserver">NetServer</h2>
-<div class="api-entry" data-provider="runner" data-search="netserver.broadcast(bytes: string) -&gt; int network returns reached-client count. standalone jaiscript.exe"><h3 id="api-31881d61bdd5"><code>NetServer.broadcast(bytes: string) -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
-<p>Returns reached-client count.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netserver.client_count() -&gt; int observe  standalone jaiscript.exe"><h3 id="api-428f72e85fb9"><code>NetServer.client_count() -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netserver.close() -&gt; void network  standalone jaiscript.exe"><h3 id="api-28c6ac8fb42d"><code>NetServer.close() -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netserver.kick(client: int) -&gt; void network  standalone jaiscript.exe"><h3 id="api-ceb52a5722ef"><code>NetServer.kick(client: int) -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netserver.listen(port: int) -&gt; bool network  standalone jaiscript.exe"><h3 id="api-f4c8ffeb1327"><code>NetServer.listen(port: int) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netserver.listening() -&gt; bool observe  standalone jaiscript.exe"><h3 id="api-7e7f0a8d5b18"><code>NetServer.listening() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netserver.pump() -&gt; int network, callback pumps networking and returns fired event count. standalone jaiscript.exe"><h3 id="api-86ed785c45f7"><code>NetServer.pump() -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network, callback</p>
-<p>Pumps networking and returns fired event count.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netserver.send(client: int, bytes: string) -&gt; bool network  standalone jaiscript.exe"><h3 id="api-ef300320bad7"><code>NetServer.send(client: int, bytes: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
-</div>
-</section>
-<section class="api-group"><h2 id="group-signal">Signal</h2>
-<div class="api-entry" data-provider="host-bound" data-search="signal.connect(id: string, callback: function or string) -&gt; void mutate callback or script text; named connection remains owned by the signal. when the host binds this signal type"><h3 id="api-0828bac49654"><code>Signal.connect(id: string, callback: function or string) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; mutate</p>
-<p>Callback or script text; named connection remains owned by the signal.</p>
-</div>
-<div class="api-entry" data-provider="host-bound" data-search="signal.connected(id: string) -&gt; bool observe  when the host binds this signal type"><h3 id="api-4ac264dd6916"><code>Signal.connected(id: string) -&gt; bool</code></h3><p><strong>When the host binds this signal type</strong> &middot; observe</p>
-</div>
-<div class="api-entry" data-provider="host-bound" data-search="signal.disconnect(id: string) -&gt; void mutate  when the host binds this signal type"><h3 id="api-c1a0ec9e9fd7"><code>Signal.disconnect(id: string) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; mutate</p>
-</div>
-</section>
-<section class="api-group"><h2 id="group-signalemitter">SignalEmitter</h2>
-<div class="api-entry" data-provider="host-bound" data-search="signalemitter.connect(id: string, callback: function or string) -&gt; void mutate callback or script text; named connection remains owned by the signal. when the host binds this signal type"><h3 id="api-8dabd05bf511"><code>SignalEmitter.connect(id: string, callback: function or string) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; mutate</p>
-<p>Callback or script text; named connection remains owned by the signal.</p>
-</div>
-<div class="api-entry" data-provider="host-bound" data-search="signalemitter.connected(id: string) -&gt; bool observe  when the host binds this signal type"><h3 id="api-35adce8a1502"><code>SignalEmitter.connected(id: string) -&gt; bool</code></h3><p><strong>When the host binds this signal type</strong> &middot; observe</p>
-</div>
-<div class="api-entry" data-provider="host-bound" data-search="signalemitter.disconnect(id: string) -&gt; void mutate  when the host binds this signal type"><h3 id="api-a360d2439106"><code>SignalEmitter.disconnect(id: string) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; mutate</p>
-</div>
-<div class="api-entry" data-provider="host-bound" data-search="signalemitter.emit(payload: bound_signal_arguments...) -&gt; void callback argument types follow the host-bound signal signature; emit discards receiver return values. when the host binds this signal type"><h3 id="api-9f902e97d856"><code>SignalEmitter.emit(payload: bound_signal_arguments...) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; callback</p>
-<p>Argument types follow the host-bound signal signature; emit discards receiver return values.</p>
-</div>
-</section>
-<section class="api-group"><h2 id="group-sound">Sound</h2>
-<div class="api-entry" data-provider="runner" data-search="sound.format() -&gt; string observe &quot;wav&quot;, &quot;midi&quot; or &quot;mp3&quot;. standalone jaiscript.exe"><h3 id="api-e9b797f3a37a"><code>Sound.format() -&gt; string</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-<p>&quot;wav&quot;, &quot;midi&quot; or &quot;mp3&quot;.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="sound.play(loop: bool = false) -&gt; bool audio starts from the beginning (a playing sound restarts), looping when loop is true, and returns at once; false once the file proved unplayable. standalone jaiscript.exe"><h3 id="api-ca75aea910f1"><code>Sound.play(loop: bool = false) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; audio</p>
-<p>Starts from the beginning (a playing Sound restarts), looping when loop is true, and returns at once; false once the file proved unplayable.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="sound.playing() -&gt; bool observe true from play() until stop(), stop_sounds() or the end of a sound played once. standalone jaiscript.exe"><h3 id="api-863e24d4a433"><code>Sound.playing() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
-<p>True from play() until stop(), stop_sounds() or the end of a sound played once.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="sound.stop() -&gt; void audio  standalone jaiscript.exe"><h3 id="api-0465eceec7f6"><code>Sound.stop() -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; audio</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="sound.volume(level: float) -&gt; void audio level 0..1, clamped; 1 until set. standalone jaiscript.exe"><h3 id="api-ba2f6fa3934e"><code>Sound.volume(level: float) -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; audio</p>
-<p>Level 0..1, clamped; 1 until set.</p>
-</div>
-</section>
 <section class="api-group"><h2 id="group-array">array</h2>
 <div class="api-entry" data-provider="core" data-search="array::append(values: array&lt;t&gt;, other: array&lt;t&gt; or array&lt;var&gt;) -&gt; array&lt;t&gt; copy returns a new array, preserving the first input constraints; inputs do not mutate. same-kind typed buffers avoid boxing. handles retain identity. every engine"><h3 id="api-0d8c5b6c2d8d"><code>array::append(values: array&lt;T&gt;, other: array&lt;T&gt; or array&lt;var&gt;) -&gt; array&lt;T&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 <p>Returns a new array, preserving the first input constraints; inputs do not mutate. Same-kind typed buffers avoid boxing. Handles retain identity.</p>
@@ -628,7 +526,7 @@ print(w.size(), &quot; &quot;, to_json(w.to_string().to_bytes()));</code></pre><
 </div>
 </section>
 <section class="api-group"><h2 id="group-crypto">crypto</h2>
-<div class="api-entry" data-provider="stdlib" data-search="crypto::equals(a: text, b: text) -&gt; bool observe equal bytes, compared in time that depends only on the length. register_all() or area registration"><h3 id="api-5c2154e147fe"><code>crypto::equals(a: text, b: text) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
+<div class="api-entry" data-provider="stdlib" data-search="crypto::constant_time_equals(a: text, b: text) -&gt; bool observe equal bytes, compared in time that depends only on the length. register_all() or area registration"><h3 id="api-2eab2700ab48"><code>crypto::constant_time_equals(a: text, b: text) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
 <p>Equal bytes, compared in time that depends only on the length.</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="crypto::hmac_sha256(key: text, message: text) -&gt; string observe hmac-sha-256 (rfc 2104), hex. register_all() or area registration"><h3 id="api-af163614ee82"><code>crypto::hmac_sha256(key: text, message: text) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
@@ -688,13 +586,78 @@ print(w.size(), &quot; &quot;, to_json(w.to_string().to_bytes()));</code></pre><
 <p>The 64 raw digest bytes.</p>
 </div>
 </section>
+<section class="api-group"><h2 id="group-debug">debug</h2>
+<div class="api-entry" data-provider="core" data-search="debug::locals(frame: int = 0) -&gt; map&lt;string, var&gt; observe a frame&#x27;s locals as name -&gt; a copy of the value: 0 is the caller&#x27;s, 1 its caller&#x27;s, as debug::stack() lists them. every engine"><h3 id="api-3b9635f2225f"><code>debug::locals(frame: int = 0) -&gt; map&lt;string, var&gt;</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>A frame&#x27;s locals as name -&gt; a copy of the value: 0 is the caller&#x27;s, 1 its caller&#x27;s, as debug::stack() lists them.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function f(int n) -&gt; int {
+    array&lt;int&gt; xs = [n, n * 2];
+    print(debug::locals());
+    return 0;
+}
+f(3);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{&quot;n&quot;: 3, &quot;xs&quot;: [3, 6]}</code></pre></div>
+</div>
+<div class="api-entry" data-provider="core" data-search="debug::stack() -&gt; array&lt;string&gt; observe the running code&#x27;s call stack, innermost first; each frame as an uncaught error&#x27;s trace names it, &quot;function (file:line)&quot;. every engine"><h3 id="api-1abdd887b634"><code>debug::stack() -&gt; array&lt;string&gt;</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>The running code&#x27;s call stack, innermost first; each frame as an uncaught error&#x27;s trace names it, &quot;function (file:line)&quot;.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function where() -&gt; int { return debug::stack().size(); }
+print(where(), &quot; &quot;, debug::stack().size());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 1</code></pre></div>
+</div>
+</section>
+<section class="api-group"><h2 id="group-download">download</h2>
+<div class="api-entry" data-provider="runner" data-search="download.cancel() -&gt; void mutate  standalone jaiscript.exe"><h3 id="api-17b1cc565cb5"><code>download.cancel() -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; mutate</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="download.done() -&gt; bool observe  standalone jaiscript.exe"><h3 id="api-5dc86910f37c"><code>download.done() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="download.error() -&gt; string observe completed failure description; empty before completion. standalone jaiscript.exe"><h3 id="api-ba833f104261"><code>download.error() -&gt; string</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+<p>Completed failure description; empty before completion.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="download.fraction() -&gt; float observe progress ratio when total is known. standalone jaiscript.exe"><h3 id="api-293a66903f63"><code>download.fraction() -&gt; float</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+<p>Progress ratio when total is known.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="download.pump() -&gt; bool advance, callback polls completion; returns done state. standalone jaiscript.exe"><h3 id="api-e625c83928b7"><code>download.pump() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; advance, callback</p>
+<p>Polls completion; returns done state.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="download.received() -&gt; int observe bytes received so far. standalone jaiscript.exe"><h3 id="api-38767c5cf614"><code>download.received() -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+<p>Bytes received so far.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="download.start(url: string, destination: string) -&gt; bool network, filesystem  standalone jaiscript.exe"><h3 id="api-c00df09f049e"><code>download.start(url: string, destination: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network, filesystem</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="download.success() -&gt; bool observe true only after successful completion. standalone jaiscript.exe"><h3 id="api-6e5caa076b91"><code>download.success() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+<p>True only after successful completion.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="download.total() -&gt; int observe expected total bytes when known. standalone jaiscript.exe"><h3 id="api-faf512573d80"><code>download.total() -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+<p>Expected total bytes when known.</p>
+</div>
+</section>
+<section class="api-group"><h2 id="group-file">file</h2>
+<div class="api-entry" data-provider="core" data-search="file::data(path: string) -&gt; map&lt;string,var&gt; or null filesystem resolved path metadata: path, filename, extension, created, modified and entry flags. every engine"><h3 id="api-3a3647deb328"><code>file::data(path: string) -&gt; map&lt;string,var&gt; or null</code></h3><p><strong>Every engine</strong> &middot; filesystem</p>
+<p>Resolved path metadata: path, filename, extension, created, modified and entry flags.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="file::directory_exists(path: string) -&gt; bool filesystem  standalone jaiscript.exe"><h3 id="api-734393dc9c72"><code>file::directory_exists(path: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="file::ensure_writable_directory(path: string) -&gt; bool filesystem creates folder and performs a write/remove probe. standalone jaiscript.exe"><h3 id="api-8613abf24bf0"><code>file::ensure_writable_directory(path: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
+<p>Creates folder and performs a write/remove probe.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="file::exists(path: string) -&gt; bool filesystem  standalone jaiscript.exe"><h3 id="api-40619191ef2b"><code>file::exists(path: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="file::list_directory(path: string) -&gt; array&lt;string&gt; filesystem  standalone jaiscript.exe"><h3 id="api-035c55426ee9"><code>file::list_directory(path: string) -&gt; array&lt;string&gt;</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="file::make_directories(path: string) -&gt; bool filesystem  standalone jaiscript.exe"><h3 id="api-c504b75e2140"><code>file::make_directories(path: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="file::move(from: string, to: string) -&gt; bool filesystem replaces destination; may copy across volumes. standalone jaiscript.exe"><h3 id="api-cb27fb329cea"><code>file::move(from: string, to: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
+<p>Replaces destination; may copy across volumes.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="file::read(path: string) -&gt; string filesystem missing/unreadable file raises; empty file returns empty string. standalone jaiscript.exe"><h3 id="api-4158e6cdb875"><code>file::read(path: string) -&gt; string</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
+<p>Missing/unreadable file raises; empty file returns empty string.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="file::remove(path: string) -&gt; bool filesystem  standalone jaiscript.exe"><h3 id="api-87e573d52c89"><code>file::remove(path: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="file::write(path: string, content: string) -&gt; bool filesystem creates missing parent folders. standalone jaiscript.exe"><h3 id="api-3d08db8bfec4"><code>file::write(path: string, content: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
+<p>Creates missing parent folders.</p>
+</div>
+</section>
 <section class="api-group"><h2 id="group-global">global</h2>
-<div class="api-entry" data-provider="runner" data-search="download() -&gt; download construct  standalone jaiscript.exe"><h3 id="api-1b5bc6ffcc92"><code>Download() -&gt; Download</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; construct</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netchannel() -&gt; netchannel construct  standalone jaiscript.exe"><h3 id="api-495f18642911"><code>NetChannel() -&gt; NetChannel</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; construct</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="netserver() -&gt; netserver construct  standalone jaiscript.exe"><h3 id="api-418c46145f3d"><code>NetServer() -&gt; NetServer</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; construct</p>
-</div>
 <div class="api-entry" data-provider="core" data-search="app_cache_dir(application: string) -&gt; string filesystem creates application cache folder. every engine"><h3 id="api-87d9f4cbaef7"><code>app_cache_dir(application: string) -&gt; string</code></h3><p><strong>Every engine</strong> &middot; filesystem</p>
 <p>Creates application cache folder.</p>
 </div>
@@ -713,9 +676,7 @@ print(w.size(), &quot; &quot;, to_json(w.to_string().to_bytes()));</code></pre><
 </div>
 <div class="api-entry" data-provider="core" data-search="current_script_path() -&gt; string observe  every engine"><h3 id="api-9e3c5b2e5dac"><code>current_script_path() -&gt; string</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="runner" data-search="delete_file(path: string) -&gt; bool filesystem  standalone jaiscript.exe"><h3 id="api-37d5a3333a5b"><code>delete_file(path: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="dir_exists(path: string) -&gt; bool filesystem  standalone jaiscript.exe"><h3 id="api-a917560eb590"><code>dir_exists(path: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
+<div class="api-entry" data-provider="runner" data-search="download() -&gt; download construct  standalone jaiscript.exe"><h3 id="api-19233a58dc8d"><code>download() -&gt; download</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; construct</p>
 </div>
 <div class="api-entry" data-provider="runner" data-search="env_var(name: string) -&gt; string observe &quot;&quot; when unset standalone jaiscript.exe"><h3 id="api-37dc8fda946f"><code>env_var(name: string) -&gt; string</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
 <p>&quot;&quot; when unset</p>
@@ -726,11 +687,6 @@ print(w.size(), &quot; &quot;, to_json(w.to_string().to_bytes()));</code></pre><
 </div>
 <div class="api-entry" data-provider="core" data-search="extend(object: var, class: class) -&gt; var mutate attaches/re-derives script behavior to a native or script object. every engine"><h3 id="api-ccfef8579b7a"><code>extend(object: var, class: class) -&gt; var</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Attaches/re-derives script behavior to a native or script object.</p>
-</div>
-<div class="api-entry" data-provider="core" data-search="file_data(path: string) -&gt; map&lt;string,var&gt; or null filesystem resolved path metadata: path, filename, extension, created, modified and entry flags. every engine"><h3 id="api-c00c61c5bdc3"><code>file_data(path: string) -&gt; map&lt;string,var&gt; or null</code></h3><p><strong>Every engine</strong> &middot; filesystem</p>
-<p>Resolved path metadata: path, filename, extension, created, modified and entry flags.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="file_exists(path: string) -&gt; bool filesystem  standalone jaiscript.exe"><h3 id="api-16f4448fc25e"><code>file_exists(path: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="file_name(path: string) -&gt; string observe  every engine"><h3 id="api-ac1a6b423ff4"><code>file_name(path: string) -&gt; string</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(file_name(&quot;assets/maps/e1m1.jai&quot;));</code></pre></div>
@@ -743,9 +699,16 @@ print(w.size(), &quot; &quot;, to_json(w.to_string().to_bytes()));</code></pre><
 </div>
 <div class="api-entry" data-provider="core" data-search="format_value(value: var, specification: string) -&gt; string observe  every engine"><h3 id="api-497d9b94d285"><code>format_value(value: var, specification: string) -&gt; string</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="from_base64(text: string) -&gt; var deserialize  register_all() or area registration"><h3 id="api-2eb250be61c8"><code>from_base64(text: string) -&gt; var</code></h3><p><strong>register_all() or area registration</strong> &middot; deserialize</p>
-</div>
 <div class="api-entry" data-provider="stdlib" data-search="from_binary(bytes: string) -&gt; var deserialize  register_all() or area registration"><h3 id="api-5079eb33ba75"><code>from_binary(bytes: string) -&gt; var</code></h3><p><strong>register_all() or area registration</strong> &middot; deserialize</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="from_binary&lt;t&gt;(bytes: string) -&gt; t deserialize the archive&#x27;s value as a t, by from_json&lt;t&gt;&#x27;s rules: a class is built with t() and its fields stored by name (from_binary&lt;array&lt;t&gt;&gt;, shared_ptr&lt;t&gt; and maps alike); a key the class has no field for is skipped. register_all() or area registration"><h3 id="api-01eaac138aeb"><code>from_binary&lt;T&gt;(bytes: string) -&gt; T</code></h3><p><strong>register_all() or area registration</strong> &middot; deserialize</p>
+<p>The archive&#x27;s value as a T, by from_json&lt;T&gt;&#x27;s rules: a class is built with T() and its fields stored by name (from_binary&lt;array&lt;T&gt;&gt;, shared_ptr&lt;T&gt; and maps alike); a key the class has no field for is skipped.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Pet { string name; int age = 1; }
+Pet rex;
+rex.name = &quot;rex&quot;;
+Pet back = from_binary&lt;Pet&gt;(to_binary(rex));
+print(back.name, &quot; &quot;, back.age);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">rex 1</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="from_json(text: string) -&gt; var deserialize reconstructs registered classes when tagged; otherwise values/maps/arrays. register_all() or area registration"><h3 id="api-a94ccf3230d6"><code>from_json(text: string) -&gt; var</code></h3><p><strong>register_all() or area registration</strong> &middot; deserialize</p>
 <p>Reconstructs registered classes when tagged; otherwise values/maps/arrays.</p>
@@ -753,36 +716,33 @@ print(w.size(), &quot; &quot;, to_json(w.to_string().to_bytes()));</code></pre><
 print(v[&quot;hp&quot;], &quot; &quot;, v[&quot;tags&quot;][0]);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3 a</code></pre></div>
 </div>
+<div class="api-entry" data-provider="stdlib" data-search="from_json&lt;t&gt;(text: string) -&gt; t deserialize the document as a t: a class is built with t() and its fields stored by name (from_json&lt;array&lt;t&gt;&gt;, shared_ptr&lt;t&gt; and maps alike); a key the class has no field for is skipped. register_all() or area registration"><h3 id="api-bb431b116690"><code>from_json&lt;T&gt;(text: string) -&gt; T</code></h3><p><strong>register_all() or area registration</strong> &middot; deserialize</p>
+<p>The document as a T: a class is built with T() and its fields stored by name (from_json&lt;array&lt;T&gt;&gt;, shared_ptr&lt;T&gt; and maps alike); a key the class has no field for is skipped.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Pet { string name; int age = 1; }
+Pet p = from_json&lt;Pet&gt;(&quot;{\&quot;name\&quot;: \&quot;rex\&quot;}&quot;);
+print(p.name, &quot; &quot;, p.age);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">rex 1</code></pre></div>
+</div>
 <div class="api-entry" data-provider="core" data-search="import_recheck_interval() -&gt; float configure queries import polling window in seconds. every engine"><h3 id="api-0d92d601292e"><code>import_recheck_interval() -&gt; float</code></h3><p><strong>Every engine</strong> &middot; configure</p>
 <p>Queries import polling window in seconds.</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="import_recheck_interval(seconds: number) -&gt; void configure sets polling window; zero checks every reach. every engine"><h3 id="api-adb3a6ddd041"><code>import_recheck_interval(seconds: number) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; configure</p>
 <p>Sets polling window; zero checks every reach.</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="is_registered_type(value: var) -&gt; bool observe  register_all() or area registration"><h3 id="api-3d1626c826fd"><code>is_registered_type(value: var) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
-</div>
 <div class="api-entry" data-provider="runner" data-search="key_down(name: string) -&gt; bool input current held key; arrows and named keys or letters; console/platform dependent. standalone jaiscript.exe"><h3 id="api-44a58c408539"><code>key_down(name: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; input</p>
 <p>Current held key; arrows and named keys or letters; console/platform dependent.</p>
 </div>
-<div class="api-entry" data-provider="runner" data-search="list_dir(path: string) -&gt; array&lt;string&gt; filesystem  standalone jaiscript.exe"><h3 id="api-ac8ad6d95fb5"><code>list_dir(path: string) -&gt; array&lt;string&gt;</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="load_sound(path: string) -&gt; sound audio opens a wav, midi or mp3 file (the header decides, else the extension) and preloads it in the background; null for a missing file, an unknown format, or off windows. standalone jaiscript.exe"><h3 id="api-6b298ba89ccf"><code>load_sound(path: string) -&gt; Sound</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; audio</p>
+<div class="api-entry" data-provider="runner" data-search="load_sound(path: string) -&gt; sound audio opens a wav, midi or mp3 file (the header decides, else the extension) and preloads it in the background; null for a missing file, an unknown format, or off windows. standalone jaiscript.exe"><h3 id="api-579b6cf87920"><code>load_sound(path: string) -&gt; sound</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; audio</p>
 <p>Opens a WAV, MIDI or MP3 file (the header decides, else the extension) and preloads it in the background; null for a missing file, an unknown format, or off Windows.</p>
 </div>
-<div class="api-entry" data-provider="runner" data-search="make_dirs(path: string) -&gt; bool filesystem  standalone jaiscript.exe"><h3 id="api-dda73883f287"><code>make_dirs(path: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
-</div>
-<div class="api-entry" data-provider="stdlib" data-search="merge(first: map&lt;k,v&gt;, second: map) -&gt; map&lt;k,v&gt; copy preserves the first input key/value constraints and converts selected second values through normal map-store rules. second entries replace colliding keys. only values retained in the result copy; explicit handles retain identity. inputs do not mutate. register_all() or area registration"><h3 id="api-723e9adc001f"><code>merge(first: map&lt;K,V&gt;, second: map) -&gt; map&lt;K,V&gt;</code></h3><p><strong>register_all() or area registration</strong> &middot; copy</p>
-<p>Preserves the first input key/value constraints and converts selected second values through normal map-store rules. Second entries replace colliding keys. Only values retained in the result copy; explicit handles retain identity. Inputs do not mutate.</p>
-<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_json(merge({&quot;a&quot;: 1, &quot;b&quot;: 2}, {&quot;b&quot;: 3})));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{&quot;a&quot;:1,&quot;b&quot;:3}</code></pre></div>
-</div>
-<div class="api-entry" data-provider="runner" data-search="move_file(from: string, to: string) -&gt; bool filesystem replaces destination; may copy across volumes. standalone jaiscript.exe"><h3 id="api-dee472e46d06"><code>move_file(from: string, to: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
-<p>Replaces destination; may copy across volumes.</p>
+<div class="api-entry" data-provider="runner" data-search="net_channel() -&gt; net_channel construct  standalone jaiscript.exe"><h3 id="api-72916627be92"><code>net_channel() -&gt; net_channel</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; construct</p>
 </div>
 <div class="api-entry" data-provider="runner" data-search="net_host_name() -&gt; string observe  standalone jaiscript.exe"><h3 id="api-0d74c1840472"><code>net_host_name() -&gt; string</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="runner" data-search="net_local_addresses() -&gt; array&lt;string&gt; observe non-loopback ipv4 addresses. standalone jaiscript.exe"><h3 id="api-4a24dda0f9a6"><code>net_local_addresses() -&gt; array&lt;string&gt;</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
 <p>Non-loopback IPv4 addresses.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_server() -&gt; net_server construct  standalone jaiscript.exe"><h3 id="api-3e7b59af880b"><code>net_server() -&gt; net_server</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; construct</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="pair(first: var, second: var) -&gt; pair construct the element type of a range-for over a map; pair() holds two nulls. register_all() or area registration"><h3 id="api-d95dce9ea7cb"><code>pair(first: var, second: var) -&gt; pair</code></h3><p><strong>register_all() or area registration</strong> &middot; construct</p>
 <p>The element type of a range-for over a map; pair() holds two nulls.</p>
@@ -795,8 +755,8 @@ print(v[&quot;hp&quot;], &quot; &quot;, v[&quot;tags&quot;][0]);</code></pre></d
 </div>
 <div class="api-entry" data-provider="core" data-search="parent_dir(path: string) -&gt; string observe  every engine"><h3 id="api-9a65d35e1a8d"><code>parent_dir(path: string) -&gt; string</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
-<div class="api-entry" data-provider="runner" data-search="play_sound(path: string, loop: bool = false) -&gt; sound audio load_sound then play: the sound keeps playing when the result is dropped, and stops with stop() or stop_sounds(); null as load_sound. standalone jaiscript.exe"><h3 id="api-4370eefab32f"><code>play_sound(path: string, loop: bool = false) -&gt; Sound</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; audio</p>
-<p>load_sound then play: the Sound keeps playing when the result is dropped, and stops with stop() or stop_sounds(); null as load_sound.</p>
+<div class="api-entry" data-provider="runner" data-search="play_sound(path: string, loop: bool = false) -&gt; sound audio load_sound then play: the sound keeps playing when the result is dropped, and stops with stop() or stop_sounds(); null as load_sound. standalone jaiscript.exe"><h3 id="api-81830284d2a0"><code>play_sound(path: string, loop: bool = false) -&gt; sound</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; audio</p>
+<p>load_sound then play: the sound keeps playing when the result is dropped, and stops with stop() or stop_sounds(); null as load_sound.</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="print(format_or_values: var...) -&gt; void output, callback a string literal first argument holding a {} placeholder is a format string (c++20&#x27;s constant format string); any other first argument prints as text like the rest; each value prints its display text (containers their contents, instances their to_string methods or fields); skip_newline/skip_flush are control tokens. register_all() or area registration"><h3 id="api-3fd5504ea777"><code>print(format_or_values: var...) -&gt; void</code></h3><p><strong>register_all() or area registration</strong> &middot; output, callback</p>
 <p>A string literal first argument holding a {} placeholder is a format string (C++20&#x27;s constant format string); any other first argument prints as text like the rest; each value prints its display text (containers their contents, instances their to_string methods or fields); skip_newline/skip_flush are control tokens.</p>
@@ -812,9 +772,6 @@ print(v[&quot;hp&quot;], &quot; &quot;, v[&quot;tags&quot;][0]);</code></pre></d
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">random r(42);
 print(r.next_int(1, 6), &quot; &quot;, r.next_int(1, 6), &quot; &quot;, r.next_int(1, 6));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 3 5</code></pre></div>
-</div>
-<div class="api-entry" data-provider="runner" data-search="read_file(path: string) -&gt; string filesystem missing/unreadable file raises; empty file returns empty string. standalone jaiscript.exe"><h3 id="api-191b68a91927"><code>read_file(path: string) -&gt; string</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
-<p>Missing/unreadable file raises; empty file returns empty string.</p>
 </div>
 <div class="api-entry" data-provider="runner" data-search="read_key() -&gt; string input nonblocking; consumes one queued edge; empty string if idle; named arrows and lowercase letters. standalone jaiscript.exe"><h3 id="api-12416cbcb301"><code>read_key() -&gt; string</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; input</p>
 <p>Nonblocking; consumes one queued edge; empty string if idle; named arrows and lowercase letters.</p>
@@ -840,14 +797,14 @@ auto&amp; r = a;
 print(same_object(a, b), &quot; &quot;, same_object(a, r), &quot; &quot;, a == b);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">false true true</code></pre></div>
 </div>
-<div class="api-entry" data-provider="core" data-search="shared_from_this() -&gt; shared_ptr&lt;t&gt; observe method context only. every engine"><h3 id="api-0cb76b5518ef"><code>shared_from_this() -&gt; shared_ptr&lt;T&gt;</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-<p>Method context only.</p>
+<div class="api-entry" data-provider="core" data-search="shared_from_this() -&gt; shared_ptr&lt;t&gt; observe method context only, on an object reached through a shared_ptr; on a class value it raises. every engine"><h3 id="api-0cb76b5518ef"><code>shared_from_this() -&gt; shared_ptr&lt;T&gt;</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>Method context only, on an object reached through a shared_ptr; on a class value it raises.</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="sleep(seconds: number) -&gt; void wait waits seconds on the engine&#x27;s time source: inside a run engine::start began, the run suspends and returns to the host until then; elsewhere it blocks. every engine"><h3 id="api-556785430d43"><code>sleep(seconds: number) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; wait</p>
 <p>Waits seconds on the engine&#x27;s time source: inside a run engine::start began, the run suspends and returns to the host until then; elsewhere it blocks.</p>
 </div>
 <div class="api-entry" data-provider="runner" data-search="stop_sounds() -&gt; void audio stops every sound. standalone jaiscript.exe"><h3 id="api-acd1d9db6d7c"><code>stop_sounds() -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; audio</p>
-<p>Stops every Sound.</p>
+<p>Stops every sound.</p>
 </div>
 <div class="api-entry" data-provider="runner" data-search="term_cols() -&gt; int observe  standalone jaiscript.exe"><h3 id="api-2462ec1c8c81"><code>term_cols() -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
 </div>
@@ -856,15 +813,12 @@ print(same_object(a, b), &quot; &quot;, same_object(a, r), &quot; &quot;, a == b
 <div class="api-entry" data-provider="core" data-search="thread_count() -&gt; int observe the threads a parallel region runs on: the count the host set, else the performance cores, at most one fewer than the hardware threads. every engine"><h3 id="api-727520fe6e22"><code>thread_count() -&gt; int</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>The threads a parallel region runs on: the count the host set, else the performance cores, at most one fewer than the hardware threads.</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="to_base64(value: var) -&gt; string serialize binary archive encoded as base64. register_all() or area registration"><h3 id="api-cb32484c788c"><code>to_base64(value: var) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; serialize</p>
-<p>Binary archive encoded as Base64.</p>
-</div>
 <div class="api-entry" data-provider="stdlib" data-search="to_binary(value: var) -&gt; string serialize binary archive bytes, not a human-readable format. register_all() or area registration"><h3 id="api-0cf6cbcdbc2e"><code>to_binary(value: var) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; serialize</p>
 <p>Binary archive bytes, not a human-readable format.</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="to_char(code: int) -&gt; char convert byte code conversion. register_all() or area registration"><h3 id="api-28005c097351"><code>to_char(code: int) -&gt; char</code></h3><p><strong>register_all() or area registration</strong> &middot; convert</p>
 <p>Byte code conversion.</p>
-<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_char(65), &quot; &quot;, type_of(to_char(65)));</code></pre></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_char(65), &quot; &quot;, reflect::type_of(to_char(65)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">A char</code></pre></div>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="to_json(value: var, indent: int = -1) -&gt; string serialize  register_all() or area registration"><h3 id="api-78e34a34fc6d"><code>to_json(value: var, indent: int = -1) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; serialize</p>
@@ -881,10 +835,6 @@ print(to_json([1, 2], 2));</code></pre></div>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(to_string(3) + &quot;!&quot;, &quot; &quot;, to_string(2.5), &quot; &quot;, to_string([1, &quot;two&quot;]));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3! 2.5 [1, &quot;two&quot;]</code></pre></div>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="type_of(value: var) -&gt; string observe  register_all() or area registration"><h3 id="api-b30f6412a259"><code>type_of(value: var) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
-<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(type_of(1), &quot; &quot;, type_of(1.5), &quot; &quot;, type_of(&quot;s&quot;), &quot; &quot;, type_of([1]));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">int float string array</code></pre></div>
-</div>
 <div class="api-entry" data-provider="stdlib" data-search="utf8_string(value: var) -&gt; utf8_string convert  register_all() or area registration"><h3 id="api-ecc77b2a8369"><code>utf8_string(value: var) -&gt; utf8_string</code></h3><p><strong>register_all() or area registration</strong> &middot; convert</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="vformat(format: string, values: var...) -&gt; string callback formats a run-time format text the way format formats a literal (c++&#x27;s std::vformat). register_all() or area registration"><h3 id="api-daeba915bd3e"><code>vformat(format: string, values: var...) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; callback</p>
@@ -893,21 +843,44 @@ print(to_json([1, 2], 2));</code></pre></div>
 print(vformat(pattern, &quot;orc&quot;, 7));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">orc has 7 hp</code></pre></div>
 </div>
-<div class="api-entry" data-provider="core" data-search="weak_from_this() -&gt; weak_ptr&lt;t&gt; observe method context only. every engine"><h3 id="api-c099161bf101"><code>weak_from_this() -&gt; weak_ptr&lt;T&gt;</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-<p>Method context only.</p>
+<div class="api-entry" data-provider="core" data-search="weak_from_this() -&gt; weak_ptr&lt;t&gt; observe method context only, on an object reached through a shared_ptr; on a class value it raises. every engine"><h3 id="api-c099161bf101"><code>weak_from_this() -&gt; weak_ptr&lt;T&gt;</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>Method context only, on an object reached through a shared_ptr; on a class value it raises.</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="working_dir() -&gt; string observe  every engine"><h3 id="api-e0d948fd29b5"><code>working_dir() -&gt; string</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="writable_dir(path: string) -&gt; bool filesystem creates folder and performs a write/remove probe. standalone jaiscript.exe"><h3 id="api-bdbb802ce23e"><code>writable_dir(path: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
-<p>Creates folder and performs a write/remove probe.</p>
-</div>
-<div class="api-entry" data-provider="runner" data-search="write_file(path: string, content: string) -&gt; bool filesystem creates missing parent folders. standalone jaiscript.exe"><h3 id="api-20d8c81da63e"><code>write_file(path: string, content: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
-<p>Creates missing parent folders.</p>
 </div>
 <div class="api-entry" data-provider="runner" data-search="zip_entries(path: string) -&gt; array&lt;string&gt; filesystem  standalone jaiscript.exe"><h3 id="api-c635c85f9b59"><code>zip_entries(path: string) -&gt; array&lt;string&gt;</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
 </div>
 <div class="api-entry" data-provider="runner" data-search="zip_extract(zip: string, entry: string, destination: string) -&gt; bool filesystem checks crc-32. standalone jaiscript.exe"><h3 id="api-0c75f55c3602"><code>zip_extract(zip: string, entry: string, destination: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; filesystem</p>
 <p>Checks CRC-32.</p>
+</div>
+</section>
+<section class="api-group"><h2 id="group-image">image</h2>
+<div class="api-entry" data-provider="stdlib" data-search="image::data(bytes: string or array&lt;uint8&gt;) -&gt; map&lt;string, var&gt; observe format, width and height from the header alone, no pixel decoded; the size is the upright one image::load gives. register_image()"><h3 id="api-38a9630aed65"><code>image::data(bytes: string or array&lt;uint8&gt;) -&gt; map&lt;string, var&gt;</code></h3><p><strong>register_image()</strong> &middot; observe</p>
+<p>format, width and height from the header alone, no pixel decoded; the size is the upright one image::load gives.</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="image::load(bytes: string or array&lt;uint8&gt;) -&gt; image construct the whole image as 8-bit rgba, turned upright by its exif orientation. the argument is the file&#x27;s bytes, never a path: a file is image::load(file::read(path)). register_image()"><h3 id="api-03ccab2da6e4"><code>image::load(bytes: string or array&lt;uint8&gt;) -&gt; image</code></h3><p><strong>register_image()</strong> &middot; construct</p>
+<p>The whole image as 8-bit RGBA, turned upright by its EXIF orientation. The argument is the file&#x27;s bytes, never a path: a file is image::load(file::read(path)).</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="image.crop(x: int, y: int, width: int, height: int) -&gt; void mutate the rectangle, which must lie inside the image. returns nothing; image::crop returns a copy. register_image()"><h3 id="api-c8163dc21342"><code>image.crop(x: int, y: int, width: int, height: int) -&gt; void</code></h3><p><strong>register_image()</strong> &middot; mutate</p>
+<p>The rectangle, which must lie inside the image. Returns nothing; image::crop returns a copy.</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="image.crop_fill(width: int, height: int) -&gt; void mutate exactly width x height: the centred part with that shape, scaled (enlarged when smaller). returns nothing; image::crop_fill returns a copy. register_image()"><h3 id="api-1f36efd1a9b7"><code>image.crop_fill(width: int, height: int) -&gt; void</code></h3><p><strong>register_image()</strong> &middot; mutate</p>
+<p>Exactly width x height: the centred part with that shape, scaled (enlarged when smaller). Returns nothing; image::crop_fill returns a copy.</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="image.encode(format: string[, quality: int]) -&gt; string observe the image as a file&#x27;s bytes: &quot;jpeg&quot; is baseline at quality 1 to 100 (90 by default), 4:2:0 below 90 and 4:4:4 from it; &quot;png&quot; is lossless 8-bit, grey, rgb or rgba as the pixels need. no metadata is written. register_image()"><h3 id="api-d05645feba29"><code>image.encode(format: string[, quality: int]) -&gt; string</code></h3><p><strong>register_image()</strong> &middot; observe</p>
+<p>The image as a file&#x27;s bytes: &quot;jpeg&quot; is baseline at quality 1 to 100 (90 by default), 4:2:0 below 90 and 4:4:4 from it; &quot;png&quot; is lossless 8-bit, grey, RGB or RGBA as the pixels need. No metadata is written.</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="image.fit(width: int, height: int) -&gt; void mutate scales to fit inside the box with the shape kept; never enlarges. returns nothing; image::fit returns a copy. register_image()"><h3 id="api-ac0e03d4cf73"><code>image.fit(width: int, height: int) -&gt; void</code></h3><p><strong>register_image()</strong> &middot; mutate</p>
+<p>Scales to fit inside the box with the shape kept; never enlarges. Returns nothing; image::fit returns a copy.</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="image::crop(img: image, x: int, y: int, width: int, height: int) -&gt; image copy img.crop as a new image; img is unchanged. register_image()"><h3 id="api-526479b894c4"><code>image::crop(img: image, x: int, y: int, width: int, height: int) -&gt; image</code></h3><p><strong>register_image()</strong> &middot; copy</p>
+<p>img.crop as a new image; img is unchanged.</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="image::crop_fill(img: image, width: int, height: int) -&gt; image copy img.crop_fill as a new image; img is unchanged. register_image()"><h3 id="api-70f1ee4b727b"><code>image::crop_fill(img: image, width: int, height: int) -&gt; image</code></h3><p><strong>register_image()</strong> &middot; copy</p>
+<p>img.crop_fill as a new image; img is unchanged.</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="image::fit(img: image, width: int, height: int) -&gt; image copy img.fit as a new image; img is unchanged. register_image()"><h3 id="api-d87fe5d1dd71"><code>image::fit(img: image, width: int, height: int) -&gt; image</code></h3><p><strong>register_image()</strong> &middot; copy</p>
+<p>img.fit as a new image; img is unchanged.</p>
 </div>
 </section>
 <section class="api-group"><h2 id="group-jai-permissions">jai::permissions</h2>
@@ -925,24 +898,27 @@ print(vformat(pattern, &quot;orc&quot;, 7));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="include(path: string) -&gt; var execute executes included source every reach; literal function-body include is textual. every engine"><h3 id="api-3acb3fdf45f6"><code>include(path: string) -&gt; var</code></h3><p><strong>Every engine</strong> &middot; execute</p>
 <p>Executes included source every reach; literal function-body include is textual.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="raw(text: var) -&gt; web::html copy inside a template(...) only: the text spliced unescaped. a scoped template refuses it. inside a template"><h3 id="api-1affd0c545bd"><code>raw(text: var) -&gt; web::html</code></h3><p><strong>Inside a template</strong> &middot; copy</p>
-<p>Inside a template(...) only: the text spliced unescaped. A scoped template refuses it.</p>
-</div>
-<div class="api-entry" data-provider="core" data-search="scoped_template(path: string, args: map) -&gt; web::html execute renders an untrusted template file over a copy of args, which is the only name it sees; it calls only built-in methods of built-in values and the string::, array:: and map:: functions, always escapes, and writes at most engine::scoped_template_output_limit bytes. the file is read only from engine::scoped_template_dirs(): a relative path with no .., the first folder in order that holds it, never through a link out. the scoped_template permission (on by default)"><h3 id="api-2f436a0847fa"><code>scoped_template(path: string, args: map) -&gt; web::html</code></h3><p><strong>The scoped_template permission (on by default)</strong> &middot; execute</p>
-<p>Renders an untrusted template file over a copy of args, which is the only name it sees; it calls only built-in methods of built-in values and the string::, array:: and map:: functions, always escapes, and writes at most engine::scoped_template_output_limit bytes. The file is read only from engine::scoped_template_dirs(): a relative path with no .., the first folder in order that holds it, never through a link out.</p>
-</div>
-<div class="api-entry" data-provider="core" data-search="scoped_template_text(text: string, args: map) -&gt; web::html execute scoped_template over template text instead of a file. the scoped_template permission (on by default)"><h3 id="api-326c54513600"><code>scoped_template_text(text: string, args: map) -&gt; web::html</code></h3><p><strong>The scoped_template permission (on by default)</strong> &middot; execute</p>
-<p>scoped_template over template text instead of a file.</p>
-<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(scoped_template_text(&quot;&lt;b&gt;${args[\&quot;name\&quot;]}&lt;/b&gt;&quot;, {&quot;name&quot;: &quot;&lt;i&gt;&quot;}));</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;b&gt;&amp;lt;i&amp;gt;&lt;/b&gt;</code></pre></div>
+<div class="api-entry" data-provider="core" data-search="raw(text: var) -&gt; web::html copy inside a template(...) only: the text spliced unescaped. an untrusted template refuses it. inside a template"><h3 id="api-1affd0c545bd"><code>raw(text: var) -&gt; web::html</code></h3><p><strong>Inside a template</strong> &middot; copy</p>
+<p>Inside a template(...) only: the text spliced unescaped. An untrusted template refuses it.</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="template(path: string, names: variable names...) -&gt; web::html execute renders the template file at path, seeing each passed name by reference with its declared type, and the program; every splice html-escaped. a literal path compiles and checks at load; another path at its first render. a render writes at most engine::template_output_limit bytes. every engine (reads the file under the filesystem permission)"><h3 id="api-f26ca47e3461"><code>template(path: string, names: variable names...) -&gt; web::html</code></h3><p><strong>Every engine (reads the file under the filesystem permission)</strong> &middot; execute</p>
 <p>Renders the template file at path, seeing each passed name by reference with its declared type, and the program; every splice HTML-escaped. A literal path compiles and checks at load; another path at its first render. A render writes at most engine::template_output_limit bytes.</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="untrusted_template(path: string, args: map) -&gt; web::html execute renders an untrusted template file over a copy of args, which is the only name it sees; it calls only built-in methods of built-in values and the string::, array:: and map:: functions, always escapes, and writes at most engine::untrusted_template_output_limit bytes. the file is read only from engine::untrusted_template_dirs(): a relative path with no .., the first folder in order that holds it, never through a link out. the untrusted_template permission (on by default)"><h3 id="api-15ba6c420764"><code>untrusted_template(path: string, args: map) -&gt; web::html</code></h3><p><strong>The untrusted_template permission (on by default)</strong> &middot; execute</p>
+<p>Renders an untrusted template file over a copy of args, which is the only name it sees; it calls only built-in methods of built-in values and the string::, array:: and map:: functions, always escapes, and writes at most engine::untrusted_template_output_limit bytes. The file is read only from engine::untrusted_template_dirs(): a relative path with no .., the first folder in order that holds it, never through a link out.</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="untrusted_template_text(text: string, args: map) -&gt; web::html execute untrusted_template over template text instead of a file. the untrusted_template permission (on by default)"><h3 id="api-b5a6f7fda699"><code>untrusted_template_text(text: string, args: map) -&gt; web::html</code></h3><p><strong>The untrusted_template permission (on by default)</strong> &middot; execute</p>
+<p>untrusted_template over template text instead of a file.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(untrusted_template_text(&quot;&lt;b&gt;${args[\&quot;name\&quot;]}&lt;/b&gt;&quot;, {&quot;name&quot;: &quot;&lt;i&gt;&quot;}));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;b&gt;&amp;lt;i&amp;gt;&lt;/b&gt;</code></pre></div>
 </div>
 </section>
 <section class="api-group"><h2 id="group-map">map</h2>
 <div class="api-entry" data-provider="core" data-search="map::filter(values: map&lt;k,v&gt;, predicate: function(k, v) -&gt; bool) -&gt; map&lt;k,v&gt; copy, callback returns a new map of the entries the predicate accepts, preserving key/value constraints; the input does not mutate. only selected value elements copy; explicit handles retain identity. every engine"><h3 id="api-b8f32f5469d5"><code>map::filter(values: map&lt;K,V&gt;, predicate: function(K, V) -&gt; bool) -&gt; map&lt;K,V&gt;</code></h3><p><strong>Every engine</strong> &middot; copy, callback</p>
 <p>Returns a new map of the entries the predicate accepts, preserving key/value constraints; the input does not mutate. Only selected value elements copy; explicit handles retain identity.</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="map::merge(values: map&lt;k,v&gt;, other: map) -&gt; map&lt;k,v&gt; copy returns a new map of values&#x27; entries and other&#x27;s, other&#x27;s values replacing colliding keys, held to values&#x27; key/value constraints; neither input mutates. only values retained in the result copy; explicit handles retain identity. every engine"><h3 id="api-54acb62f7c0f"><code>map::merge(values: map&lt;K,V&gt;, other: map) -&gt; map&lt;K,V&gt;</code></h3><p><strong>Every engine</strong> &middot; copy</p>
+<p>Returns a new map of values&#x27; entries and other&#x27;s, other&#x27;s values replacing colliding keys, held to values&#x27; key/value constraints; neither input mutates. Only values retained in the result copy; explicit handles retain identity.</p>
 </div>
 </section>
 <section class="api-group"><h2 id="group-map-k-v">map&lt;K,V&gt;</h2>
@@ -987,6 +963,14 @@ print(to_json(stock.keys()), &quot; &quot;, to_json(stock.values()));</code></pr
 </div>
 <div class="api-entry" data-provider="core" data-search="map&lt;k,v&gt;.length() -&gt; int observe alias of size. every engine"><h3 id="api-9599618ab78c"><code>map&lt;K,V&gt;.length() -&gt; int</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Alias of size.</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="map&lt;k,v&gt;.merge(other: map) -&gt; void mutate puts other&#x27;s entries into the map in place, other&#x27;s values replacing colliding keys, held to the map&#x27;s key/value constraints through normal map-store rules, and returns nothing; map::merge returns a copy. every entry is converted before any is stored, so a refused entry raises with the map unchanged. other does not mutate. every engine"><h3 id="api-338f8b7169c0"><code>map&lt;K,V&gt;.merge(other: map) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
+<p>Puts other&#x27;s entries into the map in place, other&#x27;s values replacing colliding keys, held to the map&#x27;s key/value constraints through normal map-store rules, and returns nothing; map::merge returns a copy. Every entry is converted before any is stored, so a refused entry raises with the map unchanged. other does not mutate.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">map&lt;string, int&gt; base = {&quot;a&quot;: 1, &quot;b&quot;: 2};
+map&lt;string, int&gt; both = map::merge(base, {&quot;b&quot;: 3, &quot;c&quot;: 4});   // a copy
+base.merge({&quot;b&quot;: 3});                                         // in place
+print(to_json(both), &quot; &quot;, to_json(base));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">{&quot;a&quot;:1,&quot;b&quot;:3,&quot;c&quot;:4} {&quot;a&quot;:1,&quot;b&quot;:3}</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="map&lt;k,v&gt;.remove(key: k) -&gt; bool mutate true if an entry was removed; false when absent. every engine"><h3 id="api-fb840d75cef0"><code>map&lt;K,V&gt;.remove(key: K) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>True if an entry was removed; false when absent.</p>
@@ -1325,6 +1309,45 @@ print(to_json(stock.to_array()));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="math::vec4.normalized() -&gt; floating_vector copy  every engine"><h3 id="api-e3748054c19a"><code>math::vec4.normalized() -&gt; floating_vector</code></h3><p><strong>Every engine</strong> &middot; copy</p>
 </div>
 </section>
+<section class="api-group"><h2 id="group-net-channel">net_channel</h2>
+<div class="api-entry" data-provider="runner" data-search="net_channel.close() -&gt; void network  standalone jaiscript.exe"><h3 id="api-24536378a972"><code>net_channel.close() -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_channel.connect(host: string, port: int) -&gt; bool network asynchronous: true while the connection is being made; pump() then fires on_connect(), or on_disconnect(&quot;connect refused&quot;). false when the attempt fails at once. standalone jaiscript.exe"><h3 id="api-cdc19796887d"><code>net_channel.connect(host: string, port: int) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
+<p>Asynchronous: true while the connection is being made; pump() then fires on_connect(), or on_disconnect(&quot;connect refused&quot;). False when the attempt fails at once.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_channel.connected() -&gt; bool observe  standalone jaiscript.exe"><h3 id="api-c6dd4c9016e8"><code>net_channel.connected() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_channel.listen(port: int) -&gt; bool network  standalone jaiscript.exe"><h3 id="api-422e2ef9fa92"><code>net_channel.listen(port: int) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_channel.pump() -&gt; int network, callback pumps networking and returns fired event count. standalone jaiscript.exe"><h3 id="api-b1b94132c49c"><code>net_channel.pump() -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network, callback</p>
+<p>Pumps networking and returns fired event count.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_channel.send(bytes: string) -&gt; bool network length-prefixed packet, not raw stream writes. standalone jaiscript.exe"><h3 id="api-3e628e0d7aef"><code>net_channel.send(bytes: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
+<p>Length-prefixed packet, not raw stream writes.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_channel.status() -&gt; string observe  standalone jaiscript.exe"><h3 id="api-103790f3ef50"><code>net_channel.status() -&gt; string</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+</div>
+</section>
+<section class="api-group"><h2 id="group-net-server">net_server</h2>
+<div class="api-entry" data-provider="runner" data-search="net_server.broadcast(bytes: string) -&gt; int network returns reached-client count. standalone jaiscript.exe"><h3 id="api-7a037474b831"><code>net_server.broadcast(bytes: string) -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
+<p>Returns reached-client count.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_server.client_count() -&gt; int observe  standalone jaiscript.exe"><h3 id="api-2dbe1fbbf906"><code>net_server.client_count() -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_server.close() -&gt; void network  standalone jaiscript.exe"><h3 id="api-22e5b55acb59"><code>net_server.close() -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_server.kick(client: int) -&gt; void network  standalone jaiscript.exe"><h3 id="api-cc62e7f4a5b4"><code>net_server.kick(client: int) -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_server.listen(port: int) -&gt; bool network  standalone jaiscript.exe"><h3 id="api-902e43f2f944"><code>net_server.listen(port: int) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_server.listening() -&gt; bool observe  standalone jaiscript.exe"><h3 id="api-38d33f8c90af"><code>net_server.listening() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_server.pump() -&gt; int network, callback pumps networking and returns fired event count. standalone jaiscript.exe"><h3 id="api-cafef380dc3d"><code>net_server.pump() -&gt; int</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network, callback</p>
+<p>Pumps networking and returns fired event count.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="net_server.send(client: int, bytes: string) -&gt; bool network  standalone jaiscript.exe"><h3 id="api-7e4904706907"><code>net_server.send(client: int, bytes: string) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; network</p>
+</div>
+</section>
 <section class="api-group"><h2 id="group-random">random</h2>
 <div class="api-entry" data-provider="stdlib" data-search="random.next_bool() -&gt; bool random the top bit of a draw. register_all() or area registration"><h3 id="api-87a20d34c768"><code>random.next_bool() -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; random</p>
 <p>The top bit of a draw.</p>
@@ -1413,21 +1436,17 @@ print(reflect::has_field(Orc(), &quot;hp&quot;), &quot; &quot;, reflect::has_met
 print(reflect::invoke(Orc(), &quot;add&quot;, 2, 3));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">5</code></pre></div>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="reflect::is_a(value: var, class_name: string) -&gt; bool observe instanceof for a class named at run time: true for an object of the class or of one derived from it, false for any other value. an unknown class name raises. register_all() or area registration"><h3 id="api-1309fbc7f473"><code>reflect::is_a(value: var, class_name: string) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
-<p>instanceof for a class named at run time: true for an object of the class or of one derived from it, false for any other value. An unknown class name raises.</p>
-</div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::is_cpp_bound(value: var) -&gt; bool observe  register_all() or area registration"><h3 id="api-15481cb7ffa0"><code>reflect::is_cpp_bound(value: var) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="reflect::is_instance_of(value: var, class_name: string) -&gt; bool observe true for an object of the class or of one derived from it, false for any other value. an unknown class name raises. register_all() or area registration"><h3 id="api-681163e55228"><code>reflect::is_instance_of(value: var, class_name: string) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
+<p>True for an object of the class or of one derived from it, false for any other value. An unknown class name raises.</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="reflect::is_registered_type(value: var) -&gt; bool observe  register_all() or area registration"><h3 id="api-1d15a1486daf"><code>reflect::is_registered_type(value: var) -&gt; bool</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::method_arguments(object_or_class: var, name: string) -&gt; array&lt;array&lt;map&lt;string,var&gt;&gt;&gt; observe one parameter-description array per overload. register_all() or area registration"><h3 id="api-2fb244a65849"><code>reflect::method_arguments(object_or_class: var, name: string) -&gt; array&lt;array&lt;map&lt;string,var&gt;&gt;&gt;</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
 <p>One parameter-description array per overload.</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::methods(object_or_class: var) -&gt; array&lt;map&lt;string,var&gt;&gt; observe  register_all() or area registration"><h3 id="api-3ac20065216c"><code>reflect::methods(object_or_class: var) -&gt; array&lt;map&lt;string,var&gt;&gt;</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
-</div>
-<div class="api-entry" data-provider="core" data-search="reflect::scoped_template_dirs() -&gt; array&lt;string&gt; observe the folders a scoped_template file is read from, in the order they are tried, as the host set them (default [&quot;template&quot;]); scripts read the list, hosts change it. every engine"><h3 id="api-0a0441326a41"><code>reflect::scoped_template_dirs() -&gt; array&lt;string&gt;</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-<p>The folders a scoped_template file is read from, in the order they are tried, as the host set them (default [&quot;template&quot;]); scripts read the list, hosts change it.</p>
-</div>
-<div class="api-entry" data-provider="core" data-search="reflect::scoped_template_output_limit() -&gt; int observe the bytes one scoped_template / scoped_template_text render may write, as the host set it (default 1048576; 0 = no limit); scripts read it, hosts change it. every engine"><h3 id="api-aac38d570fd3"><code>reflect::scoped_template_output_limit() -&gt; int</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-<p>The bytes one scoped_template / scoped_template_text render may write, as the host set it (default 1048576; 0 = no limit); scripts read it, hosts change it.</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::set(object: var, field: string, value: var) -&gt; void mutate, callback  register_all() or area registration"><h3 id="api-e5b9ac9bcd76"><code>reflect::set(object: var, field: string, value: var) -&gt; void</code></h3><p><strong>register_all() or area registration</strong> &middot; mutate, callback</p>
 </div>
@@ -1435,6 +1454,24 @@ print(reflect::invoke(Orc(), &quot;add&quot;, 2, 3));</code></pre></div>
 <p>The bytes one template() render may write, as the host set it (default 10485760; 0 = no limit); scripts read it, hosts change it.</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="reflect::type_name(value: var) -&gt; string observe  register_all() or area registration"><h3 id="api-3fc8abef3afe"><code>reflect::type_name(value: var) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="reflect::type_of(value: var) -&gt; string observe  register_all() or area registration"><h3 id="api-d649f461f606"><code>reflect::type_of(value: var) -&gt; string</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">print(reflect::type_of(1), &quot; &quot;, reflect::type_of(1.5), &quot; &quot;, reflect::type_of(&quot;s&quot;), &quot; &quot;, reflect::type_of([1]));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">int float string array</code></pre></div>
+</div>
+<div class="api-entry" data-provider="core" data-search="reflect::untrusted_template_dirs() -&gt; array&lt;string&gt; observe the folders a untrusted_template file is read from, in the order they are tried, as the host set them (default [&quot;template&quot;]); scripts read the list, hosts change it. every engine"><h3 id="api-b96db668529b"><code>reflect::untrusted_template_dirs() -&gt; array&lt;string&gt;</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>The folders a untrusted_template file is read from, in the order they are tried, as the host set them (default [&quot;template&quot;]); scripts read the list, hosts change it.</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="reflect::untrusted_template_output_limit() -&gt; int observe the bytes one untrusted_template / untrusted_template_text render may write, as the host set it (default 1048576; 0 = no limit); scripts read it, hosts change it. every engine"><h3 id="api-4818076ac1f1"><code>reflect::untrusted_template_output_limit() -&gt; int</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>The bytes one untrusted_template / untrusted_template_text render may write, as the host set it (default 1048576; 0 = no limit); scripts read it, hosts change it.</p>
+</div>
+</section>
+<section class="api-group"><h2 id="group-reflect-type">reflect::type</h2>
+<div class="api-entry" data-provider="core" data-search="reflect::type.name() -&gt; string observe the type&#x27;s canonical spelling: user, array&lt;user&gt;, shared_ptr&lt;shop::product&gt;. every engine"><h3 id="api-be9d06ed8f79"><code>reflect::type.name() -&gt; string</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>The type&#x27;s canonical spelling: User, array&lt;User&gt;, shared_ptr&lt;shop::Product&gt;.</p>
+</div>
+<div class="api-entry" data-provider="core" data-search="reflect::type.to_string() -&gt; string observe the same spelling. every engine"><h3 id="api-6c89edb5e207"><code>reflect::type.to_string() -&gt; string</code></h3><p><strong>Every engine</strong> &middot; observe</p>
+<p>The same spelling.</p>
 </div>
 </section>
 <section class="api-group"><h2 id="group-regex">regex</h2>
@@ -1501,48 +1538,88 @@ print(reflect::invoke(Orc(), &quot;add&quot;, 2, 3));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="shared_ptr&lt;t&gt;.reset(shared_ptr&lt;t&gt; h) -&gt; void mutate points the handle its receiver names at h&#x27;s object, as c++ p.reset(new t()) does: the object it held stays with its other owners, nothing writes through it and no operator= runs. h is a handle (new t(), make_shared&lt;t&gt;() or a shared_ptr; a null one empties the receiver) of a class the receiver admits as a shared_ptr&lt;t&gt; assignment does; a value or a primitive raises. every engine"><h3 id="api-fd8e55043764"><code>shared_ptr&lt;T&gt;.reset(shared_ptr&lt;T&gt; h) -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Points the handle its receiver names at h&#x27;s object, as C++ p.reset(new T()) does: the object it held stays with its other owners, nothing writes through it and no operator= runs. h is a handle (new T(), make_shared&lt;T&gt;() or a shared_ptr; a null one empties the receiver) of a class the receiver admits as a shared_ptr&lt;T&gt; assignment does; a value or a primitive raises.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="shared_ptr&lt;t&gt;.same_as(other: var) -&gt; bool observe true when both handles share one object. same_object(x, y) asks the same question of any two values. every engine"><h3 id="api-939cea7bd1cb"><code>shared_ptr&lt;T&gt;.same_as(other: var) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-<p>True when both handles share one object. same_object(x, y) asks the same question of any two values.</p>
-</div>
 <div class="api-entry" data-provider="core" data-search="shared_ptr&lt;t&gt;.unique() -&gt; bool observe  every engine"><h3 id="api-fc6a62bf89d0"><code>shared_ptr&lt;T&gt;.unique() -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 <div class="api-entry" data-provider="core" data-search="shared_ptr&lt;t&gt;.use_count() -&gt; int observe  every engine"><h3 id="api-c15caac1cc5a"><code>shared_ptr&lt;T&gt;.use_count() -&gt; int</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 </div>
 </section>
-<section class="api-group"><h2 id="group-spider">spider</h2>
-<div class="api-entry" data-provider="stdlib" data-search="spider::response(status: int = 200, body: string = &quot;&quot;) -&gt; spider::response construct a new response, as a server handler builds one. register_spider() + a host transport + the network permission"><h3 id="api-2d3deb4ac004"><code>spider::Response(status: int = 200, body: string = &quot;&quot;) -&gt; spider::Response</code></h3><p><strong>register_spider() + a host transport + the network permission</strong> &middot; construct</p>
-<p>A new response, as a server handler builds one.</p>
+<section class="api-group"><h2 id="group-signal">signal</h2>
+<div class="api-entry" data-provider="host-bound" data-search="signal.connect(id: string, callback: function or string) -&gt; void mutate callback or script text; named connection remains owned by the signal. a named function saves by name; text requires jai::permissions::source_receivers. when the host binds this signal type"><h3 id="api-39f992e5c532"><code>signal.connect(id: string, callback: function or string) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; mutate</p>
+<p>Callback or script text; named connection remains owned by the signal. A named function saves by name; text requires jai::permissions::source_receivers.</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="spider::catch(url: string, options: map = {}) -&gt; spider::response network a get (options.method overrides) through the host&#x27;s transport; options method, headers, timeout (30 s), type, redirects (5). errors name the call, the url and the reason. register_spider() + a host transport + the network permission"><h3 id="api-88985606faf4"><code>spider::catch(url: string, options: map = {}) -&gt; spider::Response</code></h3><p><strong>register_spider() + a host transport + the network permission</strong> &middot; network</p>
+<div class="api-entry" data-provider="host-bound" data-search="signal.connect_source(id: string, lambda: function) -&gt; void mutate a [value captures](parameters) { body } lambda; a save writes its body, parameter names and captures as source. requires jai::permissions::source_receivers. when the host binds this signal type"><h3 id="api-c45f77d2c974"><code>signal.connect_source(id: string, lambda: function) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; mutate</p>
+<p>A [value captures](parameters) { body } lambda; a save writes its body, parameter names and captures as source. Requires jai::permissions::source_receivers.</p>
+</div>
+<div class="api-entry" data-provider="host-bound" data-search="signal.connected(id: string) -&gt; bool observe  when the host binds this signal type"><h3 id="api-703e297e70f2"><code>signal.connected(id: string) -&gt; bool</code></h3><p><strong>When the host binds this signal type</strong> &middot; observe</p>
+</div>
+<div class="api-entry" data-provider="host-bound" data-search="signal.disconnect(id: string) -&gt; void mutate  when the host binds this signal type"><h3 id="api-c16a6bf6738d"><code>signal.disconnect(id: string) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; mutate</p>
+</div>
+</section>
+<section class="api-group"><h2 id="group-signal-emitter">signal_emitter</h2>
+<div class="api-entry" data-provider="host-bound" data-search="signal_emitter.connect(id: string, callback: function or string) -&gt; void mutate callback or script text; named connection remains owned by the signal. a named function saves by name; text requires jai::permissions::source_receivers. when the host binds this signal type"><h3 id="api-a09031b1f1b1"><code>signal_emitter.connect(id: string, callback: function or string) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; mutate</p>
+<p>Callback or script text; named connection remains owned by the signal. A named function saves by name; text requires jai::permissions::source_receivers.</p>
+</div>
+<div class="api-entry" data-provider="host-bound" data-search="signal_emitter.connect_source(id: string, lambda: function) -&gt; void mutate a [value captures](parameters) { body } lambda; a save writes its body, parameter names and captures as source. requires jai::permissions::source_receivers. when the host binds this signal type"><h3 id="api-4830fd52edfc"><code>signal_emitter.connect_source(id: string, lambda: function) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; mutate</p>
+<p>A [value captures](parameters) { body } lambda; a save writes its body, parameter names and captures as source. Requires jai::permissions::source_receivers.</p>
+</div>
+<div class="api-entry" data-provider="host-bound" data-search="signal_emitter.connected(id: string) -&gt; bool observe  when the host binds this signal type"><h3 id="api-c505d7bd948a"><code>signal_emitter.connected(id: string) -&gt; bool</code></h3><p><strong>When the host binds this signal type</strong> &middot; observe</p>
+</div>
+<div class="api-entry" data-provider="host-bound" data-search="signal_emitter.disconnect(id: string) -&gt; void mutate  when the host binds this signal type"><h3 id="api-0fabc8ae5aef"><code>signal_emitter.disconnect(id: string) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; mutate</p>
+</div>
+<div class="api-entry" data-provider="host-bound" data-search="signal_emitter.emit(payload: bound_signal_arguments...) -&gt; void callback argument types follow the host-bound signal signature; emit discards receiver return values. when the host binds this signal type"><h3 id="api-8d7eee933592"><code>signal_emitter.emit(payload: bound_signal_arguments...) -&gt; void</code></h3><p><strong>When the host binds this signal type</strong> &middot; callback</p>
+<p>Argument types follow the host-bound signal signature; emit discards receiver return values.</p>
+</div>
+</section>
+<section class="api-group"><h2 id="group-sound">sound</h2>
+<div class="api-entry" data-provider="runner" data-search="sound.format() -&gt; string observe &quot;wav&quot;, &quot;midi&quot; or &quot;mp3&quot;. standalone jaiscript.exe"><h3 id="api-0bc132f2f365"><code>sound.format() -&gt; string</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+<p>&quot;wav&quot;, &quot;midi&quot; or &quot;mp3&quot;.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="sound.play(loop: bool = false) -&gt; bool audio starts from the beginning (a playing sound restarts), looping when loop is true, and returns at once; false once the file proved unplayable. standalone jaiscript.exe"><h3 id="api-cad31e818f96"><code>sound.play(loop: bool = false) -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; audio</p>
+<p>Starts from the beginning (a playing sound restarts), looping when loop is true, and returns at once; false once the file proved unplayable.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="sound.playing() -&gt; bool observe true from play() until stop(), stop_sounds() or the end of a sound played once. standalone jaiscript.exe"><h3 id="api-a0bd5dcccdaf"><code>sound.playing() -&gt; bool</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; observe</p>
+<p>True from play() until stop(), stop_sounds() or the end of a sound played once.</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="sound.stop() -&gt; void audio  standalone jaiscript.exe"><h3 id="api-ef630c1c4923"><code>sound.stop() -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; audio</p>
+</div>
+<div class="api-entry" data-provider="runner" data-search="sound.volume(level: float) -&gt; void audio level 0..1, clamped; 1 until set. standalone jaiscript.exe"><h3 id="api-4053af9419c6"><code>sound.volume(level: float) -&gt; void</code></h3><p><strong>Standalone jaiscript.exe</strong> &middot; audio</p>
+<p>Level 0..1, clamped; 1 until set.</p>
+</div>
+</section>
+<section class="api-group"><h2 id="group-spider">spider</h2>
+<div class="api-entry" data-provider="stdlib" data-search="spider::catch(url: string, options: map = {}) -&gt; spider::response network a get (options.method overrides) through the host&#x27;s transport; options method, headers, timeout (30 s), type, redirects (5). errors name the call, the url and the reason. register_spider() + a host transport + the network permission"><h3 id="api-525fe953ca6f"><code>spider::catch(url: string, options: map = {}) -&gt; spider::response</code></h3><p><strong>register_spider() + a host transport + the network permission</strong> &middot; network</p>
 <p>A GET (options.method overrides) through the host&#x27;s transport; options method, headers, timeout (30 s), type, redirects (5). Errors name the call, the URL and the reason.</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="spider::get(url: string, options: map = {}) -&gt; spider::response network the plain name of spider::catch. register_spider() + a host transport + the network permission"><h3 id="api-93df3bc222a3"><code>spider::get(url: string, options: map = {}) -&gt; spider::Response</code></h3><p><strong>register_spider() + a host transport + the network permission</strong> &middot; network</p>
+<div class="api-entry" data-provider="stdlib" data-search="spider::get(url: string, options: map = {}) -&gt; spider::response network the plain name of spider::catch. register_spider() + a host transport + the network permission"><h3 id="api-0e08464ea0c3"><code>spider::get(url: string, options: map = {}) -&gt; spider::response</code></h3><p><strong>register_spider() + a host transport + the network permission</strong> &middot; network</p>
 <p>The plain name of spider::catch.</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="spider::post(url: string, content: var, options: map = {}) -&gt; spider::response network the plain name of spider::sling, url first. register_spider() + a host transport + the network permission"><h3 id="api-24b7ea6f3ca9"><code>spider::post(url: string, content: var, options: map = {}) -&gt; spider::Response</code></h3><p><strong>register_spider() + a host transport + the network permission</strong> &middot; network</p>
+<div class="api-entry" data-provider="stdlib" data-search="spider::post(url: string, content: var, options: map = {}) -&gt; spider::response network the plain name of spider::sling, url first. register_spider() + a host transport + the network permission"><h3 id="api-6dfa7a58a6b3"><code>spider::post(url: string, content: var, options: map = {}) -&gt; spider::response</code></h3><p><strong>register_spider() + a host transport + the network permission</strong> &middot; network</p>
 <p>The plain name of spider::sling, URL first.</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="spider::sling(content: var, url: string, options: map = {}) -&gt; spider::response network a post carrying content: text as text/plain, anything else as json, a map as a form with type &quot;form&quot;. register_spider() + a host transport + the network permission"><h3 id="api-2de86d0c2a09"><code>spider::sling(content: var, url: string, options: map = {}) -&gt; spider::Response</code></h3><p><strong>register_spider() + a host transport + the network permission</strong> &middot; network</p>
+<div class="api-entry" data-provider="stdlib" data-search="spider::response(status: int = 200, body: string = &quot;&quot;) -&gt; spider::response construct a new response, as a server handler builds one. register_spider() + a host transport + the network permission"><h3 id="api-30279e0c2b21"><code>spider::response(status: int = 200, body: string = &quot;&quot;) -&gt; spider::response</code></h3><p><strong>register_spider() + a host transport + the network permission</strong> &middot; construct</p>
+<p>A new response, as a server handler builds one.</p>
+</div>
+<div class="api-entry" data-provider="stdlib" data-search="spider::sling(content: var, url: string, options: map = {}) -&gt; spider::response network a post carrying content: text as text/plain, anything else as json, a map as a form with type &quot;form&quot;. register_spider() + a host transport + the network permission"><h3 id="api-4edfb3cd976c"><code>spider::sling(content: var, url: string, options: map = {}) -&gt; spider::response</code></h3><p><strong>register_spider() + a host transport + the network permission</strong> &middot; network</p>
 <p>A POST carrying content: text as text/plain, anything else as JSON, a map as a form with type &quot;form&quot;.</p>
 </div>
 </section>
-<section class="api-group"><h2 id="group-spider-response">spider::Response</h2>
-<div class="api-entry" data-provider="stdlib" data-search="spider::response.clear_cookie(name: string, options: map = {}) -&gt; void mutate adds a set-cookie line with max-age=0. register_spider()"><h3 id="api-6031c96552a1"><code>spider::Response.clear_cookie(name: string, options: map = {}) -&gt; void</code></h3><p><strong>register_spider()</strong> &middot; mutate</p>
+<section class="api-group"><h2 id="group-spider-response">spider::response</h2>
+<div class="api-entry" data-provider="stdlib" data-search="spider::response.clear_cookie(name: string, options: map = {}) -&gt; void mutate adds a set-cookie line with max-age=0. register_spider()"><h3 id="api-250bdc2dda70"><code>spider::response.clear_cookie(name: string, options: map = {}) -&gt; void</code></h3><p><strong>register_spider()</strong> &middot; mutate</p>
 <p>Adds a Set-Cookie line with Max-Age=0.</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="spider::response.header(name: string) -&gt; string observe the header in any spelling of its name; &quot;&quot; when absent. register_spider()"><h3 id="api-26b9cd34bbf4"><code>spider::Response.header(name: string) -&gt; string</code></h3><p><strong>register_spider()</strong> &middot; observe</p>
+<div class="api-entry" data-provider="stdlib" data-search="spider::response.header(name: string) -&gt; string observe the header in any spelling of its name; &quot;&quot; when absent. register_spider()"><h3 id="api-e7cd91f991a1"><code>spider::response.header(name: string) -&gt; string</code></h3><p><strong>register_spider()</strong> &middot; observe</p>
 <p>The header in any spelling of its name; &quot;&quot; when absent.</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="spider::response.header(name: string, value: string) -&gt; spider::response&amp; mutate sets a header, replacing one of the same name in any spelling; chains. register_spider()"><h3 id="api-57dd2e748053"><code>spider::Response.header(name: string, value: string) -&gt; spider::Response&amp;</code></h3><p><strong>register_spider()</strong> &middot; mutate</p>
+<div class="api-entry" data-provider="stdlib" data-search="spider::response.header(name: string, value: string) -&gt; spider::response&amp; mutate sets a header, replacing one of the same name in any spelling; chains. register_spider()"><h3 id="api-aba94acd649d"><code>spider::response.header(name: string, value: string) -&gt; spider::response&amp;</code></h3><p><strong>register_spider()</strong> &middot; mutate</p>
 <p>Sets a header, replacing one of the same name in any spelling; chains.</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="spider::response.json() -&gt; var deserialize from_json of the body. register_spider()"><h3 id="api-7aceef9147d1"><code>spider::Response.json() -&gt; var</code></h3><p><strong>register_spider()</strong> &middot; deserialize</p>
+<div class="api-entry" data-provider="stdlib" data-search="spider::response.json() -&gt; var deserialize from_json of the body. register_spider()"><h3 id="api-79ea06612b61"><code>spider::response.json() -&gt; var</code></h3><p><strong>register_spider()</strong> &middot; deserialize</p>
 <p>from_json of the body.</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="spider::response.ok() -&gt; bool observe true for a 2xx status. register_spider()"><h3 id="api-2ff8934182f4"><code>spider::Response.ok() -&gt; bool</code></h3><p><strong>register_spider()</strong> &middot; observe</p>
+<div class="api-entry" data-provider="stdlib" data-search="spider::response.ok() -&gt; bool observe true for a 2xx status. register_spider()"><h3 id="api-9c0bfd3e16fe"><code>spider::response.ok() -&gt; bool</code></h3><p><strong>register_spider()</strong> &middot; observe</p>
 <p>True for a 2xx status.</p>
 </div>
-<div class="api-entry" data-provider="stdlib" data-search="spider::response.set_cookie(name: string, value: string, options: map = {}) -&gt; void mutate adds a set-cookie line, the value percent-encoded; options max_age, expires, path, domain, secure, http_only (true), same_site (&quot;lax&quot;). register_spider()"><h3 id="api-107f9c2e4fac"><code>spider::Response.set_cookie(name: string, value: string, options: map = {}) -&gt; void</code></h3><p><strong>register_spider()</strong> &middot; mutate</p>
+<div class="api-entry" data-provider="stdlib" data-search="spider::response.set_cookie(name: string, value: string, options: map = {}) -&gt; void mutate adds a set-cookie line, the value percent-encoded; options max_age, expires, path, domain, secure, http_only (true), same_site (&quot;lax&quot;). register_spider()"><h3 id="api-c3fc7a7aeb93"><code>spider::response.set_cookie(name: string, value: string, options: map = {}) -&gt; void</code></h3><p><strong>register_spider()</strong> &middot; mutate</p>
 <p>Adds a Set-Cookie line, the value percent-encoded; options max_age, expires, path, domain, secure, http_only (true), same_site (&quot;Lax&quot;).</p>
 </div>
 </section>
@@ -1582,7 +1659,7 @@ print(reflect::invoke(Orc(), &quot;add&quot;, 2, 3));</code></pre></div>
 <div class="api-entry" data-provider="core" data-search="string.at(index: int) -&gt; char observe returns an inline byte char like []; no temporary string allocation. negative indices count from end; out-of-range raises. every engine"><h3 id="api-b5c09b083fa9"><code>string.at(index: int) -&gt; char</code></h3><p><strong>Every engine</strong> &middot; observe</p>
 <p>Returns an inline byte char like []; no temporary string allocation. Negative indices count from end; out-of-range raises.</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">string s = &quot;abc&quot;;
-print(s.at(1), &quot; &quot;, s[2], &quot; &quot;, type_of(s.at(0)));</code></pre></div>
+print(s.at(1), &quot; &quot;, s[2], &quot; &quot;, reflect::type_of(s.at(0)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">b c char</code></pre></div>
 </div>
 <div class="api-entry" data-provider="core" data-search="string.back() -&gt; char observe returns an inline byte char like []; no temporary string allocation. empty text raises. every engine"><h3 id="api-4a239136f77a"><code>string.back() -&gt; char</code></h3><p><strong>Every engine</strong> &middot; observe</p>
@@ -1796,9 +1873,6 @@ print(&quot;[&quot;, s, &quot;] [&quot;, t, &quot;] [&quot;, string::trim(&quot;
 <div class="api-entry" data-provider="stdlib" data-search="time::local_date(year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0, millisecond: int = 0) -&gt; time::date construct  register_all() or area registration"><h3 id="api-20cce77cec84"><code>time::local_date(year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0, millisecond: int = 0) -&gt; time::date</code></h3><p><strong>register_all() or area registration</strong> &middot; construct</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="time::local_now() -&gt; time::date construct  register_all() or area registration"><h3 id="api-f838d4c6ce29"><code>time::local_now() -&gt; time::date</code></h3><p><strong>register_all() or area registration</strong> &middot; construct</p>
-</div>
-<div class="api-entry" data-provider="stdlib" data-search="time::now() -&gt; float observe engine elapsed seconds, monotonic. register_all() or area registration"><h3 id="api-0503c71d0dd9"><code>time::now() -&gt; float</code></h3><p><strong>register_all() or area registration</strong> &middot; observe</p>
-<p>Engine elapsed seconds, monotonic.</p>
 </div>
 <div class="api-entry" data-provider="stdlib" data-search="time::stopwatch() -&gt; time::stopwatch construct  register_all() or area registration"><h3 id="api-3fea913b0a98"><code>time::stopwatch() -&gt; time::stopwatch</code></h3><p><strong>register_all() or area registration</strong> &middot; construct</p>
 </div>
@@ -2030,8 +2104,6 @@ print(&quot;[&quot;, s, &quot;] [&quot;, t, &quot;] [&quot;, string::trim(&quot;
 <div class="api-entry" data-provider="core" data-search="weak_ptr&lt;t&gt;.reset() -&gt; void mutate empties the weak handle its receiver names, as c++ w.reset() does; the object is untouched. every engine"><h3 id="api-5a6cdfcc3a13"><code>weak_ptr&lt;T&gt;.reset() -&gt; void</code></h3><p><strong>Every engine</strong> &middot; mutate</p>
 <p>Empties the weak handle its receiver names, as C++ w.reset() does; the object is untouched.</p>
 </div>
-<div class="api-entry" data-provider="core" data-search="weak_ptr&lt;t&gt;.same_as(other: var) -&gt; bool observe  every engine"><h3 id="api-3dcbafae7ec3"><code>weak_ptr&lt;T&gt;.same_as(other: var) -&gt; bool</code></h3><p><strong>Every engine</strong> &middot; observe</p>
-</div>
 </section>
 <section class="api-group"><h2 id="group-web">web</h2>
 <div class="api-entry" data-provider="stdlib" data-search="web::build_query(fields: map) -&gt; string copy keys and values form-encoded in the map&#x27;s key order; a number or bool as to_string writes it, an array repeats its key, a null value is left out; anything else raises. register_web()"><h3 id="api-8b3aff6e4f58"><code>web::build_query(fields: map) -&gt; string</code></h3><p><strong>register_web()</strong> &middot; copy</p>
@@ -2103,12 +2175,6 @@ print(u.to_string());</code></pre></div>
 </div>
 <h2 id="fields-constants">Fields, constants, and tokens</h2>
 <div class="tablewrap"><table><thead><tr><th>Name</th><th>Type</th><th>Access / provider</th><th>Contract</th></tr></thead><tbody>
-<tr><td><code>NetChannel.on_connect</code></td><td>Signal</td><td>receiver view / runner</td><td>Packets carry bytes; disconnect carries reason; connect has no payload.</td></tr>
-<tr><td><code>NetChannel.on_disconnect</code></td><td>Signal</td><td>receiver view / runner</td><td>Packets carry bytes; disconnect carries reason; connect has no payload.</td></tr>
-<tr><td><code>NetChannel.on_packet</code></td><td>Signal</td><td>receiver view / runner</td><td>Packets carry bytes; disconnect carries reason; connect has no payload.</td></tr>
-<tr><td><code>NetServer.on_client_connect</code></td><td>Signal</td><td>receiver view / runner</td><td>Payload starts with client id, then bytes or reason where applicable.</td></tr>
-<tr><td><code>NetServer.on_client_disconnect</code></td><td>Signal</td><td>receiver view / runner</td><td>Payload starts with client id, then bytes or reason where applicable.</td></tr>
-<tr><td><code>NetServer.on_client_packet</code></td><td>Signal</td><td>receiver view / runner</td><td>Payload starts with client id, then bytes or reason where applicable.</td></tr>
 <tr><td><code>binary::float32</code></td><td>binary::width</td><td>constant / core</td><td></td></tr>
 <tr><td><code>binary::float64</code></td><td>binary::width</td><td>constant / core</td><td></td></tr>
 <tr><td><code>binary::int16</code></td><td>binary::width</td><td>constant / core</td><td></td></tr>
@@ -2124,19 +2190,23 @@ print(u.to_string());</code></pre></div>
 <tr><td><code>caught error.message</code></td><td>string</td><td>read-only / core</td><td>Available on the caught error value, not ordinary text.</td></tr>
 <tr><td><code>caught error.stack</code></td><td>array&lt;string&gt;</td><td>read-only / core</td><td>Available on the caught error value, not ordinary text.</td></tr>
 <tr><td><code>caught error.value</code></td><td>var</td><td>read-only / core</td><td>Available on the caught error value, not ordinary text.</td></tr>
-<tr><td><code>ARGS</code></td><td>array&lt;string&gt;</td><td>read/write / runner</td><td>Arguments following --, not the executable flags.</td></tr>
+<tr><td><code>args</code></td><td>array&lt;string&gt;</td><td>read/write / runner</td><td>Arguments following --, not the executable flags.</td></tr>
 <tr><td><code>skip_flush</code></td><td>print token</td><td>constant / stdlib</td><td></td></tr>
 <tr><td><code>skip_newline</code></td><td>print token</td><td>constant / stdlib</td><td></td></tr>
+<tr><td><code>image.format</code></td><td>string</td><td>read-only / stdlib</td><td>The source file&#x27;s format: &quot;jpeg&quot;, &quot;png&quot; or &quot;gif&quot;; &quot;&quot; for an empty image.</td></tr>
+<tr><td><code>image.height</code></td><td>int</td><td>read-only / stdlib</td><td>Pixels down, after the EXIF orientation.</td></tr>
+<tr><td><code>image.width</code></td><td>int</td><td>read-only / stdlib</td><td>Pixels across, after the EXIF orientation.</td></tr>
 <tr><td><code>jai::force</code></td><td>import directive</td><td>constant / core</td><td>Trailing argument to import(paths, jai::force).</td></tr>
 <tr><td><code>jai::permissions.count</code></td><td>int</td><td>constant / core</td><td>The first id of a host&#x27;s own permissions.</td></tr>
 <tr><td><code>jai::permissions.debug</code></td><td>int permission id</td><td>constant / core</td><td>A convention the engine enforces nothing with.</td></tr>
 <tr><td><code>jai::permissions.filesystem</code></td><td>int permission id</td><td>constant / core</td><td></td></tr>
 <tr><td><code>jai::permissions.network</code></td><td>int permission id</td><td>constant / core</td><td></td></tr>
-<tr><td><code>jai::permissions.scoped_template</code></td><td>int permission id</td><td>constant / core</td><td></td></tr>
+<tr><td><code>jai::permissions.source_receivers</code></td><td>int permission id</td><td>constant / core</td><td>Signal receivers made of source: connect_source, a text connect, and a load that arms one (on by default).</td></tr>
 <tr><td><code>jai::permissions.trusted</code></td><td>int permission id</td><td>constant / core</td><td>A convention the engine enforces nothing with.</td></tr>
 <tr><td><code>jai::permissions.untrusted</code></td><td>int permission id</td><td>constant / core</td><td>A convention the engine enforces nothing with.</td></tr>
-<tr><td><code>math::E</code></td><td>float</td><td>constant / core</td><td>Engine-core math constant; use math::E.</td></tr>
-<tr><td><code>math::PI</code></td><td>float</td><td>constant / core</td><td>Engine-core math constant; use math::PI.</td></tr>
+<tr><td><code>jai::permissions.untrusted_template</code></td><td>int permission id</td><td>constant / core</td><td></td></tr>
+<tr><td><code>math::e</code></td><td>float</td><td>constant / core</td><td>Engine-core math constant; use math::e.</td></tr>
+<tr><td><code>math::pi</code></td><td>float</td><td>constant / core</td><td>Engine-core math constant; use math::pi.</td></tr>
 <tr><td><code>math::color.a</code></td><td>float</td><td>read/write / core</td><td>float32 component.</td></tr>
 <tr><td><code>math::color.b</code></td><td>float</td><td>read/write / core</td><td>float32 component.</td></tr>
 <tr><td><code>math::color.g</code></td><td>float</td><td>read/write / core</td><td>float32 component.</td></tr>
@@ -2168,16 +2238,22 @@ print(u.to_string());</code></pre></div>
 <tr><td><code>math::vec4.x</code></td><td>float</td><td>read/write / core</td><td>Component narrows to int32 or float32.</td></tr>
 <tr><td><code>math::vec4.y</code></td><td>float</td><td>read/write / core</td><td>Component narrows to int32 or float32.</td></tr>
 <tr><td><code>math::vec4.z</code></td><td>float</td><td>read/write / core</td><td>Component narrows to int32 or float32.</td></tr>
+<tr><td><code>net_channel.on_connect</code></td><td>signal</td><td>receiver view / runner</td><td>Packets carry bytes; disconnect carries reason; connect has no payload.</td></tr>
+<tr><td><code>net_channel.on_disconnect</code></td><td>signal</td><td>receiver view / runner</td><td>Packets carry bytes; disconnect carries reason; connect has no payload.</td></tr>
+<tr><td><code>net_channel.on_packet</code></td><td>signal</td><td>receiver view / runner</td><td>Packets carry bytes; disconnect carries reason; connect has no payload.</td></tr>
+<tr><td><code>net_server.on_client_connect</code></td><td>signal</td><td>receiver view / runner</td><td>Payload starts with client id, then bytes or reason where applicable.</td></tr>
+<tr><td><code>net_server.on_client_disconnect</code></td><td>signal</td><td>receiver view / runner</td><td>Payload starts with client id, then bytes or reason where applicable.</td></tr>
+<tr><td><code>net_server.on_client_packet</code></td><td>signal</td><td>receiver view / runner</td><td>Payload starts with client id, then bytes or reason where applicable.</td></tr>
 <tr><td><code>pair.first</code></td><td>var</td><td>read/write / stdlib</td><td>Map iteration keys remain protected from mutation.</td></tr>
 <tr><td><code>pair.second</code></td><td>var</td><td>read/write / stdlib</td><td>Map iteration keys remain protected from mutation.</td></tr>
 <tr><td><code>random.state</code></td><td>string</td><td>read/write / stdlib</td><td>The generator&#x27;s state as 64 hex digits; storing it resumes the stream exactly.</td></tr>
 <tr><td><code>regex.flags</code></td><td>string</td><td>read-only / core</td><td></td></tr>
 <tr><td><code>regex.pattern</code></td><td>string</td><td>read-only / core</td><td>Saved by to_json and from_json.</td></tr>
-<tr><td><code>spider::Response.body</code></td><td>string</td><td>read/write / stdlib</td><td></td></tr>
-<tr><td><code>spider::Response.cookies</code></td><td>array&lt;string&gt;</td><td>read/write / stdlib</td><td>The Set-Cookie lines, one per cookie.</td></tr>
-<tr><td><code>spider::Response.headers</code></td><td>map&lt;string, string&gt;</td><td>read/write / stdlib</td><td>A received answer&#x27;s names lowercased, repeats joined with &quot;, &quot;.</td></tr>
-<tr><td><code>spider::Response.status</code></td><td>int</td><td>read/write / stdlib</td><td>The status code.</td></tr>
-<tr><td><code>spider::Response.url</code></td><td>string</td><td>read/write / stdlib</td><td>The URL that answered, after redirects.</td></tr>
+<tr><td><code>spider::response.body</code></td><td>string</td><td>read/write / stdlib</td><td></td></tr>
+<tr><td><code>spider::response.cookies</code></td><td>array&lt;string&gt;</td><td>read/write / stdlib</td><td>The Set-Cookie lines, one per cookie.</td></tr>
+<tr><td><code>spider::response.headers</code></td><td>map&lt;string, string&gt;</td><td>read/write / stdlib</td><td>A received answer&#x27;s names lowercased, repeats joined with &quot;, &quot;.</td></tr>
+<tr><td><code>spider::response.status</code></td><td>int</td><td>read/write / stdlib</td><td>The status code.</td></tr>
+<tr><td><code>spider::response.url</code></td><td>string</td><td>read/write / stdlib</td><td>The URL that answered, after redirects.</td></tr>
 <tr><td><code>string::whitespace</code></td><td>string</td><td>constant / stdlib</td><td>Space, tab, LF, VT, FF, CR; split() whitespace sentinel.</td></tr>
 <tr><td><code>time::date.day</code></td><td>int</td><td>read/write / stdlib</td><td>Validated calendar field.</td></tr>
 <tr><td><code>time::date.hour</code></td><td>int</td><td>read/write / stdlib</td><td>Validated calendar field.</td></tr>
@@ -2202,7 +2278,7 @@ print(u.to_string());</code></pre></div>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">Source-audited API reference</p>
 </footer>
 <script src="../assets/search-index.js"></script>

@@ -2,10 +2,12 @@
 #include <jaiscript/jaiscript.hpp>
 #include <jaiscript/core/execution_backend.hpp>
 #include <jaiscript/detail/class_runtime.hpp>
+#include <jaiscript/detail/uniquely_held.hpp>
 #include <jaiscript/detail/ast.hpp>
 #include <jaiscript/detail/lexer.hpp>
 #include <jaiscript/detail/parser.hpp>
 #include <jaiscript/detail/execution_limits.hpp>
+#include <jaiscript/detail/work_budget.hpp>
 #include <jaiscript/detail/member_scope.hpp>
 #include <jaiscript/detail/string_element.hpp>
 #include <jaiscript/detail/math_values.hpp>
@@ -13,6 +15,7 @@
 #include <jaiscript/detail/value_text.hpp>
 #include <jaiscript/detail/object_borrow.hpp>
 #include <jaiscript/detail/container_enforce.hpp>
+#include <jaiscript/detail/copy_rebind.hpp>
 #include <jaiscript/detail/arity_diagnostic.hpp>
 #include <array>
 #include <atomic>
@@ -254,11 +257,156 @@ script_value::script_value(const ivec3& v, engine* eng) : script_value(vec_from(
 script_value::script_value(const color& v, engine* eng) : script_value(vec_from(v, script_value_type::jai_color_type, eng)) {}
 
 
+// Every element reference into node: its scratch lets go of the element's handle, and the change names the state it takes.
+// The released handles die after the walk: a destructor they run may make or drop references.
+void script_value::change_element_views(script_array& node, const element_view_change& change) noexcept {
+    using kind = element_view_change::kind;
+    std::vector<script_value> released;
+    for (auto* view = static_cast<reference_holder*>(node.view_head); view; view = view->view_next) {
+        if (view->has_elem_scratch) {
+            released.push_back(std::move(*view->cell()));
+            view->cell()->~script_value();
+            view->has_elem_scratch = false;
+        }
+        if (view->view_state != reference_holder::view_live) { continue; }
+        const size_t index = view->view_index();
+        uint8_t state = reference_holder::view_live;
+        switch (change.what) {
+            case kind::scratch_only: break;
+            case kind::removed_from:
+                if (index >= change.first) { state = reference_holder::view_removed; }
+                break;
+            case kind::erased_at:
+                state = index == change.first ? reference_holder::view_removed : index > change.first ? reference_holder::view_moved : state;
+                break;
+            case kind::inserted_at:
+                if (index >= change.first) { state = reference_holder::view_moved; }
+                break;
+            case kind::kept:
+                if (index < change.kept->size()) {
+                    state = !(*change.kept)[index] ? reference_holder::view_removed : index > change.first ? reference_holder::view_moved : state;
+                }
+                break;
+            case kind::kept_range:
+                state = index < change.first || index >= change.end ? reference_holder::view_removed
+                      : change.first > 0 ? reference_holder::view_moved : state;
+                break;
+            case kind::permuted:
+                if (view->elem_parent && view->owner_instance && index < node.size()) {
+                    script_value element = node.is_typed() ? node.get(index, node.owner) : node.values()[index];
+                    script_value& object = const_cast<script_value&>(element.deref());
+                    strong_ptr<class_instance> inst = object.is_object() && !object.is_null() ? object.get_class_instance() : nullptr;
+                    if (!inst) {
+                        state = reference_holder::view_moved;
+                    } else if (inst.get() != view->owner_instance) {
+                        if (!view->owner_gone()) { view->owner_instance->note_field_ref_released(); }
+                        inst->note_field_ref_minted();
+                        view->owner_instance = inst.get();
+                        view->owner_weak = jai::detail::weak_from_object(static_cast<object_holder*>(static_cast<void*>(inst.get())));
+                        view->field_class = nullptr;
+                    }
+                }
+                break;
+        }
+        if (state != reference_holder::view_live) { view->mark_view_gone(state); }
+    }
+}
+
+void script_value::remove_map_views(script_map& map, const script_value* key) noexcept {
+    for (auto* view = static_cast<reference_holder*>(map.view_head); view; view = view->view_next) {
+        if (!key || script_value_key_eq{}(*view->cell(), *key)) { view->mark_view_gone(reference_holder::view_removed); }
+    }
+}
+
+void script_value::reference_holder::link_view(void*& head) noexcept {
+    view_prev = nullptr;
+    view_next = static_cast<reference_holder*>(head);
+    if (view_next) { view_next->view_prev = this; }
+    head = this;
+}
+
+void script_value::reference_holder::unlink_view() noexcept {
+    if (view_prev) {
+        view_prev->view_next = view_next;
+    } else if (container) {
+        container->view_head = view_next;
+    } else if (container_map) {
+        container_map->view_head = view_next;
+    } else if (elem_parent) {
+        elem_parent->view_head = view_next;
+    }
+    if (view_next) { view_next->view_prev = view_prev; }
+    view_prev = nullptr;
+    view_next = nullptr;
+}
+
+void script_value::reference_holder::mark_view_gone(uint8_t state) noexcept {
+    view_state = state;
+    if (container) { container_index = SIZE_MAX; }
+}
+
+void script_array::release_element_views() noexcept {
+    script_value::change_element_views(*this, {});
+}
+
+void script_array::views_removed_from(size_t a_first) noexcept {
+    script_value::change_element_views(*this, {script_value::element_view_change::kind::removed_from, a_first});
+}
+
+void script_array::views_erased_at(size_t a_index) noexcept {
+    script_value::change_element_views(*this, {script_value::element_view_change::kind::erased_at, a_index});
+}
+
+void script_array::views_inserted_at(size_t a_index) noexcept {
+    script_value::change_element_views(*this, {script_value::element_view_change::kind::inserted_at, a_index});
+}
+
+void script_array::views_kept(const std::vector<uint8_t>& a_kept) noexcept {
+    size_t first_dropped = 0;
+    while (first_dropped < a_kept.size() && a_kept[first_dropped]) { ++first_dropped; }
+    script_value::change_element_views(*this, {script_value::element_view_change::kind::kept, first_dropped, 0, &a_kept});
+}
+
+void script_array::views_permuted() noexcept {
+    script_value::change_element_views(*this, {script_value::element_view_change::kind::permuted});
+}
+
+void script_array::views_kept_range(size_t a_start, size_t a_end) noexcept {
+    script_value::change_element_views(*this, {script_value::element_view_change::kind::kept_range, a_start, a_end});
+}
+
+void script_map::views_remain(script_map* a_map) noexcept {
+    if (a_map->views_only) { return; }
+    engine* eng = a_map->owner;
+    if (!eng || detail::engine_access::parallel_region_active(*eng)) { return; }
+    a_map->views_only = true;
+    script_value::remove_map_views(*a_map);
+    a_map->clear();
+}
+
+void script_array::views_remain(script_array* a_node) noexcept {
+    if (a_node->views_only) { return; }
+    engine* eng = a_node->owner;
+    if (!eng || detail::engine_access::parallel_region_active(*eng)) { return; }
+    a_node->views_only = true;
+    a_node->views_removed_from(0);
+    a_node->clear();
+}
+
 script_value::reference_holder::~reference_holder() {
-    if (container && container->live_elem_refs) { --container->live_elem_refs; }
-    if (elem_root && elem_root->live_elem_refs) { --elem_root->live_elem_refs; }
-    if (owner_instance) { owner_instance->note_field_ref_released(); }
-    if (has_cell || has_map_key || has_elem_scratch ||
+    if (view_linked) {
+        if (container || container_map || elem_parent) { unlink_view(); }
+        if (container && container->live_elem_refs) { --container->live_elem_refs; }
+        if (elem_parent && elem_parent != elem_root && elem_parent->live_elem_refs) { --elem_parent->live_elem_refs; }
+        if (container_map && container_map->live_entry_refs) { --container_map->live_entry_refs; }
+        if (elem_root && elem_root->live_elem_refs) { --elem_root->live_elem_refs; }
+    }
+    if (owner_instance && !owner_gone()) { owner_instance->note_field_ref_released(); }
+    if (object_borrowed) {   // the inline value's handle holds no count: let go of it without one
+        (void)cell()->storage_.get<strong_ptr<object_holder>>().release();
+        object_borrowed = false;
+    }
+    if (has_cell || has_map_key || has_elem_scratch || object_view ||
         (property && (property->live_member || property->has_scratch))) {
         cell()->~script_value();
         has_cell = false;
@@ -425,6 +573,7 @@ void script_value::reference_holder::commit_scratch() {
 }
 
 script_value* script_value::reference_holder::map_entry_value() const {
+    if (view_state != view_live) [[unlikely]] { return nullptr; }
     script_map::entry_memo memo{container_map.get(), map_memo_gen, map_memo_entry};
     auto* kv = container_map->recall(memo, *cell());
     map_memo_gen = memo.gen;
@@ -451,10 +600,14 @@ script_value* script_value::reference_holder::resolve_target() {
     if (owner_instance) {
         return field_cell();
     }
+    if (object_view) {
+        return owner_gone() ? nullptr : cell();   // the object itself: stores copy-assign into it (element_copy_assign over its class)
+    }
     return nullptr;   // CPP-MEMBER / PROPERTY (no addressable cell); else unreachable: every factory sets a mode
 }
 
 script_value* script_value::reference_holder::field_cell() const {
+    if (field_gone()) [[unlikely]] { return nullptr; }
     class_instance* inst = owner_instance;
     const class_definition* cd = inst->get_class_definition();
     if (cd && cd == field_class && cd->field_shape_epoch() == field_class_epoch) {
@@ -591,6 +744,49 @@ engine* owner_of(const Handle& a_handle) noexcept {
 void charge_deferred(engine* a_engine, size_t a_bytes) {
     if (a_engine) { detail::engine_access::execution_limits(*a_engine).memory_charge_deferred(a_bytes); }
 }
+JAI_NOINLINE void copy_budget_check(engine* a_engine, size_t a_units) {
+    if (detail::charge_work(*a_engine, a_units)) { detail::throw_work_budget(*a_engine); }
+}
+// A copied container: its storage counts toward the memory allowance, its elements toward the budget's work count
+// (detail/work_budget.hpp). A copy that finds the budget spent leaves as the terminal budget error.
+void charge_copy(engine* a_engine, size_t a_bytes, size_t a_units) {
+    if (!a_engine) { return; }
+    detail::execution_limits& limits = detail::engine_access::execution_limits(*a_engine);
+    limits.memory_charge_deferred(a_bytes);
+    if (a_units >= detail::k_work_chunk - limits.work_units) [[unlikely]] { copy_budget_check(a_engine, a_units); return; }
+    limits.work_units += static_cast<uint32_t>(a_units);
+}
+// A container of a chunk's elements or more counts them as its loop copies them, a chunk at a time
+constexpr size_t k_copy_chunk = static_cast<size_t>(detail::k_work_chunk);
+constexpr size_t copy_units_ahead(size_t a_count) noexcept { return a_count < k_copy_chunk ? a_count + 1 : 0; }
+JAI_FORCEINLINE void copy_step(engine* a_engine, size_t a_count, size_t a_index) {
+    if (a_count >= k_copy_chunk && (a_index & (k_copy_chunk - 1)) == k_copy_chunk - 1) [[unlikely]] { charge_copy(a_engine, 0, k_copy_chunk); }
+}
+// A typed buffer's copy: one assignment below a chunk of bytes, else run by run with the count between them
+template <typename Buffer>
+void copy_buffer(Buffer& a_to, const Buffer& a_from, engine* a_engine, size_t a_unit_bytes) {
+    const size_t count = a_from.size();
+    if (count * a_unit_bytes < k_copy_chunk * detail::k_work_unit_bytes) {
+        a_to = a_from;
+        return;
+    }
+    a_to.reserve(count);
+    for (size_t at = 0; at < count;) {
+        const size_t run = detail::work_meter::run_of(count - at, a_unit_bytes);
+        a_to.insert(a_to.end(), a_from.begin() + static_cast<std::ptrdiff_t>(at), a_from.begin() + static_cast<std::ptrdiff_t>(at + run));
+        at += run;
+        charge_copy(a_engine, 0, run * a_unit_bytes / detail::k_work_unit_bytes);
+    }
+}
+// script_array::assign_buffer with the budget's count
+void copy_typed_buffer(script_array& a_to, const script_array& a_from) {
+    switch (a_from.kind()) {
+        case script_array::kind_t::i64: copy_buffer(a_to.ints(), a_from.ints(), a_from.owner, sizeof(script_int)); break;
+        case script_array::kind_t::f64: copy_buffer(a_to.floats(), a_from.floats(), a_from.owner, sizeof(script_float)); break;
+        case script_array::kind_t::str: copy_buffer(a_to.strs(), a_from.strs(), a_from.owner, detail::k_work_unit_bytes); break;
+        default: copy_buffer(a_to.bytes(), a_from.bytes(), a_from.owner, 1); break;
+    }
+}
 }
 
 script_value script_value::tagged_null() const noexcept {
@@ -694,6 +890,12 @@ bool script_value::is_shared_cell(const script_value& v) noexcept {
     if (v.raw_storage_index() != TYPEID_REFERENCE) return false;
     const auto& holder = *v.storage_.get_if<TYPEID_REFERENCE>();
     return holder && holder->plain_cell() && holder.use_count() > 1;
+}
+
+size_t script_value::reference_holders(const script_value& v) noexcept {
+    if (v.raw_storage_index() != TYPEID_REFERENCE) return 0;
+    const auto& holder = *v.storage_.get_if<TYPEID_REFERENCE>();
+    return holder ? holder.use_count() : 0;
 }
 
 void script_value::gather_shared_cells(const script_value* values, size_t count, std::vector<script_value>& out) {
@@ -1082,7 +1284,7 @@ script_value script_value::make_class_object(const class_definition& cd, strong_
 script_value script_value::make_coroutine_handle(uint64_t type_id, std::shared_ptr<void> handle, engine* eng) {
     script_value v(std::monostate{}, eng);
     auto obj = acquire_object_holder(eng);
-    obj->set_type(interned_type_text(eng, "coroutine_handle", type_id), type_id);
+    obj->set_type(interned_type_text(eng, "coroutine", type_id), type_id);
     obj->hold(std::move(handle));
     obj->mark_coroutine_handle();
     v.storage_ = obj;
@@ -1225,9 +1427,8 @@ script_value script_value::make_element_reference(const strong_ptr<script_array>
     v.set_stamp(detail::engine_access::get_type_info_reference(*eng, referent_tag));
     auto ref = acquire_reference_holder(eng);
     ref->container_element_type = element_type;
-    ref->container = container;          // owns the node (keeps it alive) + enables re-resolve
+    ref->container = container;          // the node outlives the reference; its owners decide when the elements die
     ref->container_index = index;
-    ++container->live_elem_refs;
     v.storage_ = ref;
     return v;
 }
@@ -1243,7 +1444,7 @@ script_value script_value::make_removed_element_reference(const strong_ptr<scrip
     ref->container_element_type = element_type;
     ref->container = container;
     ref->container_index = index;
-    ++container->live_elem_refs;
+    ref->mark_view_gone(reference_holder::view_removed);
     v.storage_ = ref;
     return v;
 }
@@ -1285,13 +1486,78 @@ script_value script_value::make_field_reference(strong_ptr<class_instance> owner
     return v;
 }
 
-void script_value::pin_element_root(script_value& reference, const strong_ptr<script_array>& root) {
+void script_value::pin_root_cell(script_value& reference, const script_value& base_slot) {
+    if (base_slot.raw_storage_index() != TYPEID_REFERENCE || reference.raw_storage_index() != TYPEID_REFERENCE) { return; }
+    reference_holder* base = base_slot.storage_.get<strong_ptr<reference_holder>>().get();
+    reference_holder* holder = reference.storage_.get<strong_ptr<reference_holder>>().get();
+    if (base && holder && base != holder && base->plain_cell() && !holder->root_cell) {
+        holder->root_cell = detail::strong_from_object(base);
+    }
+}
+
+void script_value::pin_element_root(script_value& reference, const strong_ptr<script_array>& root, const strong_ptr<script_array>& parent,
+                                    size_t parent_index) {
     auto holder = reference.get_reference_holder();
     if (!holder || !root || holder->elem_root || holder->container == root) {
         return;   // a direct element reference on root already counts
     }
     holder->elem_root = root;
-    ++root->live_elem_refs;
+    if (parent && holder->owner_instance && !holder->container && !holder->elem_parent) {
+        holder->elem_parent = parent;
+        holder->elem_parent_index = parent_index;
+    }
+}
+
+script_value script_value::make_object_view(const script_value& handle, engine* eng) {
+    const type_info_ptr handle_tag = handle.get_type_info();
+    const type_info_ptr object_tag = handle_tag && handle_tag->base_type == script_value_type::jai_shared_ptr_type ? handle_tag->element_type() : handle_tag;
+    script_value v(std::monostate{}, eng);
+    v.set_stamp(detail::engine_access::get_type_info_reference(*eng, object_tag));
+    auto ref = acquire_reference_holder(eng);
+    new (ref->cell_storage) script_value(handle);
+    if (object_tag) { ref->cell()->set_type_info(object_tag); }
+    ref->object_view = true;
+    ref->container_element_type = object_tag;
+    v.storage_ = std::move(ref);
+    return v;
+}
+
+// A reference made while an expression runs lives no longer than its full-expression and holds what it reaches like the
+// temporary it reads; a binding (a reference variable, parameter or loop variable) makes it a view: it counts in its
+// containers and its container's list from now on, and holds nothing those containers let go of
+void script_value::bind_view(const script_value& reference) noexcept {
+    if (reference.raw_storage_index() != TYPEID_REFERENCE) { return; }
+    reference_holder* holder = reference.storage_.get<strong_ptr<reference_holder>>().get();
+    if (!holder) { return; }
+    if (holder->owner && detail::engine_access::parallel_region_active(*holder->owner)) { return; }
+    if (holder->owner_shared) {   // a field reference names its instance from now on, never owns it
+        holder->owner_weak = jai::detail::weak_from_object(static_cast<object_holder*>(static_cast<void*>(holder->owner_shared.get())));
+        holder->owner_shared.reset();
+    }
+    if (holder->object_view && !holder->object_borrowed) {
+        script_value& object = *holder->cell();
+        if (object.raw_storage_index() == TYPEID_OBJECT && object.unchecked_object_handle()) {
+            strong_ptr<object_holder>& handle = object.storage_.get<strong_ptr<object_holder>>();
+            holder->owner_weak = handle;
+            if (handle.use_count() > 1) {   // its owner keeps it: the inline value gives its own count back
+                (void)jai::detail::cb_from_object(handle.get())->drop_strong();
+                holder->object_borrowed = true;
+            }
+        }
+    }
+    if (holder->view_linked || (!holder->container && !holder->container_map && !holder->elem_root)) { return; }
+    holder->view_linked = true;
+    if (holder->container) {
+        ++holder->container->live_elem_refs;
+        holder->link_view(holder->container->view_head);
+    } else if (holder->container_map) {
+        ++holder->container_map->live_entry_refs;
+        holder->link_view(holder->container_map->view_head);
+    } else if (holder->elem_parent) {
+        if (holder->elem_parent != holder->elem_root) { ++holder->elem_parent->live_elem_refs; }
+        holder->link_view(holder->elem_parent->view_head);
+    }
+    if (holder->elem_root) { ++holder->elem_root->live_elem_refs; }
 }
 
 type_info_ptr script_value::cpp_bound_type_info(engine* eng, uint8_t semantic_index) {
@@ -1526,27 +1792,37 @@ script_value script_value::clone() const {
     return clone_level(work, 0);
 }
 
+JAI_NOINLINE void script_value::end_watched_copy(script_value& copy, detail::deep_copy_work& work) const {
+    work.met_bound_callable = 0;
+    detail::rebind_copied_callables(*this, copy);
+}
+
 void script_value::clone_element_into(script_value& dest, detail::deep_copy_work& work, unsigned depth) const {
     if (element_copies_shallow()) {
         dest = *this;
     } else if (depth < detail::k_inline_copy_depth) {
         dest = clone_level(work, depth + 1);
     } else if (depth == detail::k_inline_copy_depth) {
-        clone_subtree_into(dest);
+        clone_subtree_into(dest, work);
     } else {
         work.push_back({detail::deep_copy_item::step::value, this, &dest});
     }
 }
 
 // Each level pushes its steps reversed, so the back of the list is always the next step the native walk would take
-void script_value::clone_subtree_into(script_value& dest) const {
+void script_value::clone_subtree_into(script_value& dest, detail::deep_copy_work& outer) const {
     using step = detail::deep_copy_item::step;
     constexpr unsigned stepped = detail::k_inline_copy_depth + 1;
     detail::deep_copy_work work;
+    work.watched = outer.watched;
+    work.met_bound_callable = outer.met_bound_callable;
     dest = clone_level(work, stepped);
+    engine* const eng = payload_engine();
+    size_t steps = 0;
     while (!work.empty()) {
         const detail::deep_copy_item item = work.back();
         work.pop_back();
+        if ((++steps & (detail::k_work_grain - 1)) == 0) { charge_copy(eng, 0, detail::k_work_grain); }
         switch (item.what) {
             case step::value:
                 *static_cast<script_value*>(item.dest) = static_cast<const script_value*>(item.source)->clone_level(work, stepped);
@@ -1572,8 +1848,14 @@ void script_value::clone_subtree_into(script_value& dest) const {
             case step::finish_overflow:
                 static_cast<const class_instance*>(item.source)->finish_deep_copy_level(*static_cast<class_instance*>(item.dest), item.what == step::finish_overflow);
                 break;
+            case step::watched_end:
+                if (--work.watched == 0 && work.met_bound_callable != 0) {
+                    static_cast<const class_instance*>(item.source)->end_watched_copy(*static_cast<class_instance*>(item.dest), work);
+                }
+                break;
         }
     }
+    outer.met_bound_callable = work.met_bound_callable;
 }
 
 script_value script_value::clone_level(detail::deep_copy_work& work, unsigned depth) const {
@@ -1630,7 +1912,7 @@ script_value script_value::clone_level(detail::deep_copy_work& work, unsigned de
                 // object slots keep value semantics: every element deep-clones (shared_ptr
                 // elements share, as clone_element already decides), the tag rides along
                 const size_t n = other_node.size();
-                charge_deferred(other_node.owner, sizeof(obj_slot) * (n + 1));
+                charge_copy(other_node.owner, sizeof(obj_slot) * (n + 1), copy_units_ahead(n));
                 auto new_node = make_strong<script_array>(script_array::kind_t::obj);
                 new_node->owner = other_node.owner;
                 new_node->reserve(n);
@@ -1638,6 +1920,7 @@ script_value script_value::clone_level(detail::deep_copy_work& work, unsigned de
                     // a slot holds the object itself, never a placeholder: each one is a step that copies and pushes it
                     for (size_t i = n; i-- > 0;) { work.push_back({detail::deep_copy_item::step::slot, &other_node, new_node.get(), i}); }
                 } else {
+                    ++work.watched;   // one element's closure may be bound to another element
                     for (size_t i = 0; i < n; ++i) {
                         script_value element = other_node.get(i, other_node.owner);
                         if (element.element_copies_shallow()) {
@@ -1646,47 +1929,58 @@ script_value script_value::clone_level(detail::deep_copy_work& work, unsigned de
                             new_node->push(element.clone_level(work, depth + 1));
                         } else {
                             script_value copied(std::monostate{}, other_node.owner);
-                            element.clone_subtree_into(copied);
+                            element.clone_subtree_into(copied, work);
                             new_node->push(std::move(copied));
                         }
+                        copy_step(other_node.owner, n, i);
                     }
+                    result.storage_ = new_node;
+                    if (--work.watched == 0 && work.met_bound_callable != 0) [[unlikely]] { end_watched_copy(result, work); }
+                    break;
                 }
                 result.storage_ = new_node;
                 break;
             }
             if (other_node.is_typed()) {
                 // kind-preserving deep copy = one buffer copy (8B/element)
-                charge_deferred(other_node.owner, sizeof(script_int) * (other_node.size() + 1));
+                const size_t bytes = sizeof(script_int) * (other_node.size() + 1);
+                charge_copy(other_node.owner, bytes, copy_units_ahead(bytes / detail::k_work_unit_bytes));
                 auto new_node = make_strong<script_array>(other_node.kind());
                 new_node->owner = other_node.owner;
-                new_node->assign_buffer(other_node);
+                copy_typed_buffer(*new_node, other_node);
                 result.storage_ = new_node;
                 break;
             }
             const auto& other_array = other_node.values();
             // element clones charge themselves recursively
-            charge_deferred(other_node.owner, sizeof(script_value) * (other_array.size() + 1));
+            const size_t n = other_array.size();
+            charge_copy(other_node.owner, sizeof(script_value) * (n + 1), copy_units_ahead(n));
             auto new_node = make_strong<script_array>();
             new_node->owner = other_node.owner;
             auto& copied = new_node->values();
-            copied.reserve(other_array.size());   // no reallocation: a deferred element's placeholder stays where it is
+            copied.reserve(n);   // no reallocation: a deferred element's placeholder stays where it is
             const size_t first_step = work.size();
-            for (const auto& elem : other_array) {
+            if (depth <= detail::k_inline_copy_depth) { ++work.watched; }   // past it the elements are steps under a watch a level above holds
+            for (size_t i = 0; i < n; ++i) {
+                const script_value& elem = other_array[i];
                 if (elem.element_copies_shallow()) {
                     copied.push_back(elem);
                 } else {
                     copied.push_back(script_value(std::monostate{}, other_node.owner));
                     elem.clone_element_into(copied.back(), work, depth);
                 }
+                copy_step(other_node.owner, n, i);
             }
             std::reverse(work.begin() + static_cast<ptrdiff_t>(first_step), work.end());
             result.storage_ = new_node;
+            if (depth <= detail::k_inline_copy_depth && --work.watched == 0 && work.met_bound_callable != 0) [[unlikely]] { end_watched_copy(result, work); }
             break;
         }
         case script_value_type::jai_map_type: {
             auto& other_map = *storage_.get<strong_ptr<script_map>>();
             // key/value clones charge themselves recursively
-            charge_deferred(other_map.owner, 2 * sizeof(script_value) * (other_map.size() + 1));
+            const size_t n = other_map.size();
+            charge_copy(other_map.owner, 2 * sizeof(script_value) * (n + 1), copy_units_ahead(n));
             auto new_map = make_strong<script_map>(other_map.owner);
             if (depth > detail::k_inline_copy_depth) {
                 // an entry is one step (its key, then its value's whole copy) so keys and values interleave as below
@@ -1696,6 +1990,8 @@ script_value script_value::clone_level(detail::deep_copy_work& work, unsigned de
                 result.storage_ = new_map;
                 break;
             }
+            size_t i = 0;
+            ++work.watched;
             for (const auto& [key, value] : other_map) {
                 if (value.element_copies_shallow()) {
                     new_map->emplace(key.clone_element(), value);
@@ -1703,8 +1999,10 @@ script_value script_value::clone_level(detail::deep_copy_work& work, unsigned de
                     auto placed = new_map->emplace(key.clone_element(), script_value(std::monostate{}, other_map.owner));
                     value.clone_element_into(placed.first->second, work, depth);   // map entries never move
                 }
+                copy_step(other_map.owner, n, i++);
             }
             result.storage_ = new_map;
+            if (--work.watched == 0 && work.met_bound_callable != 0) [[unlikely]] { end_watched_copy(result, work); }
             break;
         }
         case script_value_type::jai_object_type: {
@@ -1717,6 +2015,7 @@ script_value script_value::clone_level(detail::deep_copy_work& work, unsigned de
             // the same resume/done state). Deep-copying a suspended coroutine is
             // meaningless - this is the ruled reference-semantics-on-copy design.
             if (obj_holder->is_coroutine_handle()) {
+                if (work.watched != 0 && work.met_bound_callable == 0) { work.met_bound_callable = detail::binds_class_instance(*this); }
                 return *this;
             }
 
@@ -1788,6 +2087,9 @@ script_value script_value::clone_level(detail::deep_copy_work& work, unsigned de
                 }
             } else {
                 // For primitive types and functions, shallow copy is fine
+                if (work.watched != 0 && work.met_bound_callable == 0 && raw_storage_index() == TYPEID_FUNCTION && unchecked_function_node().binds_instance != 1) {
+                    work.met_bound_callable = detail::binds_class_instance(*this);
+                }
                 result.storage_ = storage_;
             }
             break;
@@ -2195,7 +2497,61 @@ std::string script_value::to_string() const {
     }
 }
 
+std::string detail::value_for_handle_slot(const script_value& value_in) {
+    const script_value& value = value_in.deref();
+    if (value.raw_storage_index() != script_value::TYPEID_OBJECT || value.is_null() || value.is_shared_ptr_type()) { return {}; }
+    auto instance = const_cast<script_value&>(value).get_class_instance();
+    if (!instance || !instance->get_class_definition()) { return {}; }
+    return instance->get_class_definition()->get_name();
+}
+
+namespace {
+    // A reference declared narrower than its storage (Dog& over a var, an Animal slot or a dynamic_cast<Dog&>) names the slot,
+    // and its type holds only while the slot holds one: a value of another type raises at the touch
+    bool declared_referent_holds(const type_info& declared, const script_value& target) {
+        const script_value_type want = declared.base_type;
+        if (want == script_value_type::jai_object_type) {
+            if (target.raw_storage_index() != script_value::TYPEID_OBJECT || target.is_null()) { return false; }
+            if (declared.type_name.empty() || target.is_shared_ptr_type()) { return true; }
+            auto instance = const_cast<script_value&>(target).get_class_instance();
+            const class_definition* cls = instance ? instance->get_class_definition() : nullptr;
+            return !cls || cls->is_subtype_of(declared.type_name);
+        }
+        if (want == script_value_type::jai_int_type) { return target.is_int(); }
+        if (want == script_value_type::jai_float_type) { return target.is_float(); }
+        return target.type() == want;
+    }
+
+    std::string referent_type_name(const script_value& target, engine* eng) {
+        if (target.is_null()) { return "null"; }
+        if (target.raw_storage_index() == script_value::TYPEID_OBJECT && !target.is_shared_ptr_type()) {
+            auto instance = const_cast<script_value&>(target).get_class_instance();
+            if (instance && instance->get_class_definition()) { return instance->get_class_definition()->get_name(); }
+        }
+        return detail::slot_source_type_name(target, eng);
+    }
+
+    std::string with_article(const std::string& name) {
+        const char c = name.empty() ? 'x' : static_cast<char>(std::tolower(static_cast<unsigned char>(name[0])));
+        return (c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u' ? "an '" : "a '") + name + "'";
+    }
+
+    [[noreturn]] JAI_NOINLINE void raise_declared_referent(const type_info& declared, const script_value& target, engine* eng) {
+        throw runtime_error("Reference to " + with_article(declared.canonical_name()) + " now names " + with_article(referent_type_name(target, eng)));
+    }
+}
+
 const script_value& script_value::deref_slow() const {
+    const script_value& target = deref_target();
+    if (const type_info* stamped = type_info_raw(); stamped && stamped->declared_referent) [[unlikely]] {
+        if (!declared_referent_holds(*stamped->declared_referent, target)) {
+            raise_declared_referent(*stamped->declared_referent, target, storage_.get<strong_ptr<reference_holder>>()->owner);
+        }
+    }
+    return target;
+}
+
+const script_value& script_value::deref_target() const {
     // Bind a reference to the held strong_ptr (do NOT copy it): copying bumps and
     // then drops the (non-atomic) refcount on every deref, which is pure overhead
     // on this hot path.
@@ -2217,7 +2573,7 @@ const script_value& script_value::deref_slow() const {
         // each time so it survives reallocation (push), and bounds-check so a shrink
         // (pop/erase/clear) throws instead of reading freed memory (#41).
         if (refHolder->container_index >= refHolder->container->size()) {
-            throw runtime_error("Reference to a removed array element");
+            throw runtime_error(refHolder->element_gone_text());
         }
         if (refHolder->container->is_typed()) {
             return refHolder->materialize_typed_element(refHolder->owner);
@@ -2229,7 +2585,7 @@ const script_value& script_value::deref_slow() const {
         // instance IS the lifetime)
         const script_value* field_value = refHolder->field_cell();
         if (!field_value) {
-            throw runtime_error("Reference to a removed field");
+            throw runtime_error(refHolder->field_gone_text());
         }
         return field_value->deref();
     }
@@ -2243,6 +2599,10 @@ const script_value& script_value::deref_slow() const {
     }
     if (refHolder->component_base) {
         return refHolder->materialize_component(refHolder->owner);
+    }
+    if (refHolder->object_view) {
+        if (refHolder->owner_gone()) { throw runtime_error("Reference to a destroyed object"); }
+        return *refHolder->cell();
     }
     throw runtime_error("Null reference");   // unreachable: every factory sets a mode
 }
@@ -2274,7 +2634,7 @@ void script_value::assign_through_reference(V&& value) {
         // Vector-element reference: resolve fresh + bounds-check before writing,
         // so a write-through after a reallocation/shrink can't corrupt the heap (#41).
         if (refHolder->container_index >= refHolder->container->size()) {
-            throw runtime_error("Assignment to a removed array element");
+            throw runtime_error(refHolder->view_state == reference_holder::view_moved ? refHolder->element_gone_text() : "Assignment to a removed array element");
         }
         if (refHolder->container->is_typed()) {
             // a host's store converts as a script element store does (a script store arrives converted)
@@ -2288,9 +2648,10 @@ void script_value::assign_through_reference(V&& value) {
         return;
     }
     if (refHolder->owner_instance) {
+        const strong_ptr<object_holder> held = refHolder->owner_shared ? strong_ptr<object_holder>() : refHolder->owner_weak.lock();   // the store's old value may run code that lets the object go
         script_value* field_value = refHolder->field_cell();
         if (!field_value) {
-            throw runtime_error("Reference to a removed field");
+            throw runtime_error(refHolder->field_gone_text());
         }
         *field_value = std::forward<V>(value);
         return;
@@ -2316,6 +2677,15 @@ void script_value::assign_through_reference(V&& value) {
     }
     if (refHolder->component_base) {
         refHolder->store_component(value, refHolder->owner);
+        return;
+    }
+    if (refHolder->object_view) {
+        if (refHolder->owner_gone()) { throw runtime_error("Reference to a destroyed object"); }
+        const strong_ptr<object_holder> held = refHolder->owner_weak.lock();
+        // the object's own assignment, as C++ assigns through a reference: never a rebind of the reference
+        auto assigned = detail::class_copy_assign(*refHolder->cell(), value, refHolder->owner);
+        if (!assigned) { throw runtime_error("Cannot assign to a reference to an object of another class"); }
+        if (!*assigned) { throw runtime_error(format_error(*assigned, *detail::engine_access::get_symbolizer(*refHolder->owner))); }
         return;
     }
     throw runtime_error("Null reference in assign_through");   // unreachable: every factory sets a mode

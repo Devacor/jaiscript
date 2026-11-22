@@ -102,14 +102,14 @@ double wav_seconds(const std::string& a_bytes) {
 	return 0.0;
 }
 
-// The page plays one voice a sound; the device goes when the last Sound naming it does (a copy names the same one)
+// The page plays one voice a sound; the device goes when the last sound naming it does (a copy names the same one)
 struct page_sound_device {
 	int id = 0;
 	jai_runner::sound_format format = jai_runner::sound_format::none;
 	double seconds = 0.0;          // 0: unknown (MIDI, MP3), so a one-shot counts as playing until stopped
 	bool looping = false;
 	bool stopped = true;
-	bool finish_when_dropped = false;   // play_sound's: its last voice plays out after the Sound is gone
+	bool finish_when_dropped = false;   // play_sound's: its last voice plays out after the sound is gone
 	std::chrono::steady_clock::time_point started;
 	~page_sound_device() { send_sound(sound_op::release, id, finish_when_dropped ? 1.0 : 0.0); }
 };
@@ -160,7 +160,7 @@ std::shared_ptr<page_sound> load_page_sound(const std::string& a_path) {
 
 // The runner's sound builtins by the same names and shapes, played by the page
 void register_page_sound(jai::engine& eng) {
-	jai::dynamic_binder<page_sound>(eng, "Sound")
+	jai::dynamic_binder<page_sound>(eng, "sound")
 		.method("play", &page_sound::play)
 		.method("play", &page_sound::play_looped)
 		.method("stop", &page_sound::stop)
@@ -319,12 +319,15 @@ web_session& new_session(const char* a_args, double a_budget, bool a_blocking_sl
 	}
 	jai::stdlib::register_all(eng);
 	jai::stdlib::register_web(eng);
+#ifdef JAISCRIPT_ENABLE_IMAGE
+	jai::stdlib::register_image(*eng);
+#endif
 	jai_runner::register_file_io(*eng);
 	register_page_sound(*eng);
 	register_page_console(*eng);
 	jai::script_value args = jai::script_value::make_array(nullptr, eng.get());
 	for (const auto& arg : split_lines(a_args)) { args.as_array().emplace_back(arg, eng.get()); }
-	eng->add_global("ARGS", std::move(args));
+	eng->add_global("args", std::move(args));
 	session.eng = std::move(eng);
 	return session;
 }
@@ -376,7 +379,7 @@ void begin_run(const char* a_args, double a_budget, const std::function<jai::scr
 extern "C" {
 
 // Worker build: runs a script file to its end under an execution budget (seconds; 0 is unlimited); args holds the script's
-// ARGS, one per line. With warnings set, a clean load first lists the checker's warnings, as the runner's --warnings does.
+// args, one per line. With warnings set, a clean load first lists the checker's warnings, as the runner's --warnings does.
 // Returns the exit code.
 EMSCRIPTEN_KEEPALIVE int jaiweb_run_file(const char* a_path, const char* a_args, double a_budget, int a_warnings) {
 	return run_to_end(a_args, a_budget, [a_path, a_warnings](jai::engine& eng) {

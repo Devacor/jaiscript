@@ -164,6 +164,26 @@ endif()
 # END differential fuzzer (fuzz/) block
 # ============================================
 
+# jaiscript_image_fuzz: the image:: decoders against mutated fixtures. It compiles the codecs itself and links nothing else
+# (no engine, no Foundry), so a sanitizer build is this one target.
+if(JAISCRIPT_ENABLE_IMAGE)
+    add_executable(jaiscript_image_fuzz
+        fuzz/image_fuzz_main.cpp
+        ${PROJECT_SOURCE_DIR}/source/implementation/stdlib/image_gif.cpp
+        ${PROJECT_SOURCE_DIR}/source/implementation/stdlib/image_jpeg.cpp
+        ${PROJECT_SOURCE_DIR}/source/implementation/stdlib/image_pixels.cpp
+        ${PROJECT_SOURCE_DIR}/source/implementation/stdlib/image_png.cpp
+    )
+    target_compile_definitions(jaiscript_image_fuzz PRIVATE JAISCRIPT_ENABLE_IMAGE)
+    target_compile_features(jaiscript_image_fuzz PRIVATE cxx_std_20)
+    target_include_directories(jaiscript_image_fuzz PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/include)
+    if(MSVC)
+        target_compile_options(jaiscript_image_fuzz PRIVATE /W4)
+    else()
+        target_compile_options(jaiscript_image_fuzz PRIVATE -Wall -Wextra)
+    endif()
+endif()
+
 # The landing page's two binding tabs (docs/site/index.html#one-declaration) each bind a class named Spawner, which one binary
 # cannot hold twice: each is a program of its own, which the Doc Samples suite checks against the page and runs
 foreach(home_tab intrusive external)

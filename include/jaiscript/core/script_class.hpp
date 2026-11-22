@@ -25,8 +25,11 @@ namespace detail {
     }
     // A constructor's initializer list against the class's bases (C++ [class.base.init]); both backends and the strict checker
     inline constexpr std::string_view k_base_needs_naming = "Class '{0}' must construct base '{1}': it has no default constructor";
-    inline constexpr std::string_view k_not_a_base = "Class '{0}' has no base '{1}' to construct";
+    inline constexpr std::string_view k_not_a_base = "Class '{0}' has no base or field '{1}' to initialize";
     inline constexpr std::string_view k_base_named_twice = "Class '{0}' constructs base '{1}' twice";
+    inline constexpr std::string_view k_field_named_twice = "Class '{0}' initializes field '{1}' twice";
+    inline constexpr std::string_view k_static_in_initializer_list = "Class '{0}' cannot initialize static member '{1}' in a constructor's initializer list";
+    inline constexpr std::string_view k_delegation_alone = "A constructor of '{0}' that delegates names nothing else in its initializer list: remove '{1}'";
     // An initializer naming a base: its class name, or the name after the namespace a base declared in one carries
     inline bool initializer_names(std::string_view target, std::string_view base_name) {
         if (target == base_name) { return true; }
@@ -37,8 +40,16 @@ namespace detail {
         return "Class '" + std::string(cls) + "' inherits '" + std::string(shared) + "' through both '" + std::string(first) + "' and '" +
                std::string(second) + "' (diamond inheritance is not supported)";
     }
+    // A class the host binds keeps its name: the redefinition path is a script class's alone (the declaration and the strict checker)
+    inline constexpr std::string_view k_host_class_name_taken =
+        "cannot declare class '{0}': the host binds a C++ class of that name; give the script class another name, or derive from it (class Other : {1})";
     inline std::string override_without_base_text(std::string_view name) {
         return "Method '" + std::string(name) + "' marked as override but no base class method found";
+    }
+    // A class bound final (dynamic_binder::final) has no derived class: the class declaration's text and the checker's
+    inline std::string final_base_text(std::string_view cls, std::string_view base) {
+        return "Class '" + std::string(cls) + "' cannot derive from '" + std::string(base) + "': '" + std::string(base) + "' is final; give '" +
+               std::string(cls) + "' a field of type '" + std::string(base) + "' instead";
     }
 }
 
@@ -205,7 +216,15 @@ public:
         ctor->unit = unit();
         ctor->shared_params_cache = std::make_shared<const std::vector<parameter>>();
         implicit_default_ctor_ = std::move(ctor);
+        auto copy = std::make_shared<function_decl>(source_location{}, name_view, name_id);
+        copy->parameters.emplace_back(get_type_info(), "other", true, true);
+        copy->unit = unit();
+        implicit_copy_ctor_ = std::move(copy);
     }
+
+    // The implicitly-declared copy constructor's signature, T(const T&): the candidate a one-argument construction from an object
+    // of the class scores against the declared constructors (detail::implicit_copy_construction); it has no body, the copy is the value's
+    const std::shared_ptr<function_decl>& implicit_copy_constructor() const { return implicit_copy_ctor_; }
     
     // A field initializer, run at construction in source declaration order: an initializer may read a sibling field
     void add_field_initializer_ast(uint64_t field_id, expression_ptr initializer) {
@@ -297,6 +316,7 @@ private:
     std::vector<const function_decl*> private_ctors_;
     std::shared_ptr<function_decl> destructor_ast_;
     std::shared_ptr<function_decl> implicit_default_ctor_;
+    std::shared_ptr<function_decl> implicit_copy_ctor_;
     std::shared_ptr<environment> namespace_scope_;
     // Vector (not map) to preserve source declaration order for field initializers.
     std::vector<std::pair<uint64_t, expression_ptr>> field_initializer_asts_;
@@ -362,6 +382,7 @@ inline checked_result<script_value> script_method_dispatch::invoke(const script_
 inline void class_definition::add_script_method(std::string_view name, std::shared_ptr<function_decl> ast, std::shared_ptr<environment> definition_env) {
     engine* eng = get_engine();
     if (!eng) return;
+    if (ast && ast->is_coroutine) { coroutine_methods_ = true; }
 
     // Track if this is a property getter for fast-path optimization
     if (name.size() > 5 && name.substr(0, 5) == "_get_") {

@@ -65,6 +65,25 @@ namespace jai::detail {
 		~construction_host() = default;
 	};
 
+	// One field a constructor's prologue initializes: `listed` is its member initializer, which reads the constructor's parameters;
+	// otherwise the value is the field's own initializer, which never sees them
+	struct field_initialization {
+		uint64_t field_id = 0;
+		expression_ptr value;
+		bool listed = false;
+	};
+
+	inline bool initializes_fields(const function_decl& ctor) {
+		return std::any_of(ctor.initializers.begin(), ctor.initializers.end(),
+		                   [](const constructor_initializer& init) { return init.kind == constructor_initializer::kind_t::field; });
+	}
+
+	// C++ [class.base.init]: what the prologue of a constructor that names fields initializes, in the fields' declaration order
+	// whatever the list's order: a field the list names takes that initializer and skips its own. own_initializers false leaves the
+	// fields the list does not name to the literal stamp (a literal-only chain)
+	std::vector<field_initialization> constructor_field_plan(const script_class_definition& level, const function_decl& ctor,
+	                                                         const string_symbolizer& symbols, bool own_initializers);
+
 	inline bool constructor_takes_references(const function_decl& ctor) {
 		return std::any_of(ctor.parameters.begin(), ctor.parameters.end(), [](const parameter& param) { return param.is_reference; });
 	}
@@ -81,7 +100,7 @@ namespace jai::detail {
 	inline bool prologue_evaluates(const script_class_definition& level, const function_decl& ctor) {
 		bool delegates = false;
 		for (const auto& init : ctor.initializers) {
-			if (!init.arguments.empty()) { return true; }
+			if (!init.arguments.empty() || init.kind == constructor_initializer::kind_t::field) { return true; }
 			delegates = delegates || init.target == "this";
 		}
 		if (delegates || level.chain_initializers_all_literal()) { return false; }
@@ -89,17 +108,48 @@ namespace jai::detail {
 		return std::any_of(fields.begin(), fields.end(), [](const auto& field) { return field.second != nullptr; });
 	}
 
+	// A one-argument construction from an object of the class, ahead of the declared constructors: a prvalue of exactly the class is
+	// the object (C++17 [dcl.init]); else, C++ [class.copy.ctor], a class that declares constructors, none of them from an object of
+	// itself, still has the implicit copy constructor T(const T&), a candidate when the argument is an object of the class (or of a
+	// class derived from it) held by value or through a shared_ptr: the answer is the copy when the scorer ranks it ahead of every
+	// declared constructor (a declared T(shared_ptr<T>) takes a handle as it is), nullopt when a declared one takes the call
+	std::optional<checked_result<script_value>> implicit_copy_construction(const script_class_definition& cls, const std::vector<script_value>& args, engine* eng);
+
 	// A T& argument that names no place: a reference or a host object a T& result named binds as it is, a temporary the parameter
 	// takes (a string&, a const T&, one the body never writes through) binds as one, anything else raises
 	checked_result<void> bind_placeless_reference_argument(engine* eng, const function_decl& ctor, size_t i, script_value& arg, bool may_prove);
 
+	// A construction whose result is a handle (new T(...), make_shared<T>(...)): its constructor's `this` is that handle's object, so
+	// a handle made from `this` there shares it. The next construction to start takes the stamp; one nested in its arguments runs first
+	struct handle_construction_scope {
+		engine* eng;
+		handle_construction_scope(engine* a_engine, type_info* a_handle) : eng(a_engine) {
+			if (eng && !engine_access::parallel_region_active(*eng)) { engine_access::handle_construction(*eng) = a_handle; } else { eng = nullptr; }
+		}
+		~handle_construction_scope() { if (eng) { engine_access::handle_construction(*eng) = nullptr; } }
+	};
+	inline type_info* take_handle_construction(engine* a_engine) noexcept {
+		if (!a_engine) { return nullptr; }
+		type_info*& slot = engine_access::handle_construction(*a_engine);
+		type_info* result = slot;
+		slot = nullptr;
+		return result;
+	}
+	inline script_value constructed_this(const script_class_definition& a_cls, strong_ptr<class_instance> a_instance, type_info* a_handle, engine* a_engine) {
+		script_value result = script_value::make_class_object(a_cls, std::move(a_instance), a_engine);
+		if (a_handle) { result.set_type_info(type_info_ptr{a_handle}); }
+		return result;
+	}
+
 	// A construction ahead of any of its code: the overload, its T& parameters bound to the call's places (captured_out then holds
-	// the arguments) and the instance. Success yields the instance and the picked constructor rides ctor_out. Inline, so the hot pick
-	// and allocation compile in each backend's own translation unit.
+	// the arguments) and the instance. Success yields the instance and the picked constructor rides ctor_out; a null ctor_out is the
+	// implicit copy constructor's pick, whose value is the finished copy. Inline, so the hot pick and allocation compile in each
+	// backend's own translation unit.
 	template <class Host>
 	inline checked_result<script_value> prepare_construction(Host& host, const std::shared_ptr<script_class_definition>& cls, const std::vector<script_value>& args,
 	                                                         std::optional<call_depth_guard>& initializer_depth, std::shared_ptr<function_decl>& ctor_out,
 	                                                         std::vector<script_value>& captured_out, bool check_access) {
+		type_info* const handle = take_handle_construction(host.eng);
 		if (host.call_depth >= host.depth_gate) {
 			if (auto blocked = host.pass_depth_gate()) { return *blocked; }
 		}
@@ -107,6 +157,12 @@ namespace jai::detail {
 			return raise_native_stack();
 		}
 		initializer_depth.emplace(host.call_depth);
+		if (args.size() == 1 && args[0].deref().raw_storage_index() == script_value::TYPEID_OBJECT) {
+			if (auto copied = implicit_copy_construction(*cls, args, host.eng)) {
+				ctor_out = nullptr;
+				return std::move(*copied);
+			}
+		}
 		// the constructor overloads through the one script-overload scorer (typed exact > conversion > var); with several and none
 		// viable the sole arity match binds (its parameter raises its own text), else the overload miss; a tie raises
 		const auto& ctors = cls->get_constructor_asts();
@@ -139,7 +195,7 @@ namespace jai::detail {
 		auto instance = cls->create_instance();
 		instance->construction_pending(true);
 		ctor_out = std::move(ctor);
-		return script_value::make_class_object(*cls, instance, host.eng);
+		return constructed_this(*cls, std::move(instance), handle, host.eng);
 	}
 
 	// A construction prepare_construction began, under its constructor's activation: its prologue, then its body (the interpreter's;

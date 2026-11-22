@@ -38,6 +38,7 @@ namespace jai {
     class class_definition;
     class class_instance;
     class class_registry;
+    class coroutine_handle;
     class execution_backend;
     class engine_time;
     class http_transport;
@@ -46,7 +47,8 @@ namespace jai {
     struct import_site;
     namespace vm { class vm_backend; struct coverage_tables; }
     namespace debug { class controller; class transport; }
-    namespace detail { struct release_machine; struct run_record; struct run_entry_state; struct run_registry; struct engine_access; class pending_binder; }
+    namespace detail { struct release_machine; struct run_record; struct run_entry_state; struct run_registry; struct engine_access; class pending_binder; class load_collector; }
+    struct load_report_summary;
     struct script_namespace_data;
 
     // engine::vm_coverage_summary: the report's class totals as numbers, for a harness that aggregates many runs
@@ -60,6 +62,10 @@ namespace jai {
         struct execution_limits;
         struct parallel_engine_state;
         enum class parallel_capture_kind : int;
+        struct loaded_source;
+        struct text_stamp;
+        struct source_stamp;
+        enum class source_mode : uint8_t;
     }
 
     namespace serialization {
@@ -75,18 +81,30 @@ namespace jai {
         auto_select     // The engine's default: set_backend stores vm
     };
 
+    struct host_signature;
+
     // Extended type info for overload resolution - stores base type + optional C++ type for objects
     struct param_type_info {
         script_value_type base_type;
         std::type_index cpp_type{typeid(void)};  // For object types, used to lookup class def
+        // a std::function<R(A...)> parameter's R and A..., which the checker reads as function<R(A...)>
+        const host_signature* signature = nullptr;
 
         param_type_info() : base_type(script_value_type::jai_null_type) {}
         param_type_info(script_value_type t) : base_type(t), cpp_type(typeid(void)) {}
         param_type_info(script_value_type t, std::type_index idx) : base_type(t), cpp_type(idx) {}
+        param_type_info(script_value_type t, const host_signature* s) : base_type(t), cpp_type(typeid(void)), signature(s) {}
 
         bool operator==(const param_type_info& other) const {
-            return base_type == other.base_type && cpp_type == other.cpp_type;
+            return base_type == other.base_type && cpp_type == other.cpp_type && signature == other.signature;
         }
+    };
+
+    // The parts of a C++ std::function<R(A...)> a script callable stands behind; references marks each A that is a non-const T&
+    struct host_signature {
+        param_type_info result;
+        std::vector<param_type_info> parameters;
+        std::vector<uint8_t> references;
     };
 
     // Compile-time-tagged script source for engine::execute's literal fast lane.
@@ -125,14 +143,17 @@ namespace jai {
     public:
         ~engine();
 
-        // Every permission is an int32_t id (core/permission.hpp): filesystem and scoped_template are enabled by default, every
-        // other one starts disabled. Changes affect the next protected operation, including after a reentrant C++ callback;
+        // Every permission is an int32_t id (core/permission.hpp): filesystem, untrusted_template and source_receivers are enabled
+        // by default, every other one starts disabled. Changes affect the next protected operation, including after a reentrant C++ callback;
         // started work is not cancelled. Grants are per-engine, not shared through script variables. Configure on the engine
         // thread (or while idle), outside parallel regions. Concurrent cross-thread grant changes are not supported.
         template<detail::permission_enum... Permissions>
         void enable(Permissions... permissions) { set_permissions(detail::permission_set_of(permissions...), true); }
         template<detail::permission_enum... Permissions>
         void disable(Permissions... permissions) { set_permissions(detail::permission_set_of(permissions...), false); }
+        // Withdraws every permission the engine holds, the default ones and the host's own: from here a script reaches only
+        // what a later enable grants
+        void set_strict();
         // True when every one is enabled
         template<detail::permission_enum... Permissions>
         bool is_enabled(Permissions... permissions) const noexcept { return permissions_enabled(detail::permission_set_of(permissions...)); }
@@ -213,6 +234,14 @@ namespace jai {
         // The cache file the engine writes for source_path (empty for a .jaibite source, which keeps none, and for a source
         // outside confine_paths when no cache directory is set)
         std::string jaibite_cache_path(const std::string& source_path) const;
+
+        // Where loading spends its time, per file and per phase (core/load_report.hpp has the rows; `jaiscript --load-report`
+        // prints them). Off by default: each phase boundary then tests one pointer. Turning it on starts an empty report,
+        // turning it off drops it; a snapshot may be taken at any time. No program behaves differently with it on.
+        void load_report(bool enabled);
+        bool load_report() const;
+        void load_report_setup_time(double seconds);   // what the host spent making and registering this engine, shown beside the load
+        load_report_summary load_report_snapshot() const;
 
         // Execute already-read script file contents with jaibite disk-cache maintenance
         // keyed beside resolved_path — for hosts that read files through their own VFS but
@@ -356,6 +385,9 @@ namespace jai {
         bool constant_argument_admits(const std::string& callable, size_t index, std::string_view text) const;
         // Whether a host function ("name") or a bound method ("Class.method") was registered with jai::nodiscard.
         bool is_nodiscard_function(const std::string& callable) const;
+        // The typed result a host function ("name") or a bound method ("Class.method") declared for a call with type arguments
+        // (jai::returns<jai::type_arg> 1, jai::returns<jai::array_of<jai::type_arg>> 2, jai::returns<jai::shared_ptr_of<jai::type_arg>> 3); 0 for none.
+        uint8_t type_argument_result(const std::string& callable) const;
 
         // Global registration
         void add_global(const std::string& name, script_value value, bool is_serializable = true);
@@ -448,24 +480,30 @@ namespace jai {
         void binary_scan_limit(size_t bytes);
         size_t binary_scan_limit() const;
 
-        // The most bytes one template() render writes (default 10 MiB, 10485760) and one scoped_template or scoped_template_text
+        // A load meeting a saved signal receiver it cannot connect (a name the program does not define, an object the archive
+        // does not hold, source while jai::permissions::source_receivers is off) throws a serialization_error naming it; with
+        // skipping on (default off) it leaves that receiver out and loads the rest.
+        void skip_unknown_receivers(bool skip) { skip_unknown_receivers_ = skip; }
+        bool skip_unknown_receivers() const { return skip_unknown_receivers_; }
+
+        // The most bytes one template() render writes (default 10 MiB, 10485760) and one untrusted_template or untrusted_template_text
         // render writes (default 1 MiB, 1048576); a render that would write past its limit raises a catchable error naming the
         // limit. Zero is no limit. Scripts read them (reflect::template_output_limit()) and cannot change them; a change follows
         // the permission rules: idle or on the execution thread, never inside a parallel region, and a render already started
         // keeps the limit it started with.
         void template_output_limit(size_t bytes);
         size_t template_output_limit() const;
-        void scoped_template_output_limit(size_t bytes);
-        size_t scoped_template_output_limit() const;
-        // The folders a scoped_template(path, map) file is read from, under the scoped_template permission alone. The path is
+        void untrusted_template_output_limit(size_t bytes);
+        size_t untrusted_template_output_limit() const;
+        // The folders a untrusted_template(path, map) file is read from, under the untrusted_template permission alone. The path is
         // relative with no .. segment; it is tried in each folder in list order, and the first file that exists and canonically lies
         // inside its folder (links resolved) is the template. A relative folder is relative to the directory of the script that
         // calls; the default is {"template"}, and a folder that does not exist holds nothing. Scripts read the list with
-        // reflect::scoped_template_dirs() and cannot change it; a change follows the permission rules.
-        void add_scoped_template_dir(const std::string& dir);
-        void remove_scoped_template_dir(const std::string& dir);
-        void set_scoped_template_dirs(std::vector<std::string> dirs);
-        const std::vector<std::string>& scoped_template_dirs() const;
+        // reflect::untrusted_template_dirs() and cannot change it; a change follows the permission rules.
+        void add_untrusted_template_dir(const std::string& dir);
+        void remove_untrusted_template_dir(const std::string& dir);
+        void set_untrusted_template_dirs(std::vector<std::string> dirs);
+        const std::vector<std::string>& untrusted_template_dirs() const;
 
         // === PARALLEL EXECUTION (parallel_transform v0) ===
         // Worker count the next parallel_transform uses (also the thread_count() builtin).
@@ -506,15 +544,26 @@ namespace jai {
         // The running executable, generic (forward-slash) spelling; empty when the platform cannot say
         static std::string executable_path();
 
-        // The (modification time, size) stamp that execute_file, include, import and their caches compare to see a file
-        // change, and that a read is checked under (a stamp that moves during the read marks the text torn). An empty
-        // source selects the file system's; a source answers nullopt for a file it cannot stamp.
+        // The (modification time, size) stamp that execute_file, include, import, a template and their caches compare to see
+        // a file change, and that every load is taken under: the engine queries a file's stamp, reads its bytes and queries
+        // the stamp again, and keeps the bytes only when the two agree, so a stamp it remembers is the stamp of the bytes it
+        // parsed. A stamp that moves during the read reads the file again, four times at most; a file that never settles is
+        // not loaded (a first load raises "Failed to read source file: <path> (it kept changing while it was read)", a reload
+        // keeps the code it had and tries again on its next pass). An empty source selects the file system's; a source
+        // answers nullopt for a file it cannot stamp, which loads but is never remembered.
         struct file_stamp {
             uint64_t mtime = 0;
             uint64_t size = 0;
         };
         using file_stamp_reading = std::function<std::optional<file_stamp>(const std::string& a_path)>;
         void file_stamp_source(file_stamp_reading a_source);
+        // Called with every source file the engine loads, each time it reads one whole: the path it opened, the stamp of
+        // exactly those bytes (nullopt for a file the stamp source cannot stamp) and the file's bytes as they were read. What
+        // the engine parses is those bytes (a script's with the platform's text-mode line endings), so a host that keeps
+        // them holds the program the engine runs without reading a file again. It runs on the engine's thread, inside the
+        // load, and must not call back into the engine. An empty observer removes it.
+        using source_file_observing = std::function<void(const std::string& a_path, const std::optional<file_stamp>& a_stamp, std::string_view a_bytes)>;
+        void source_file_observer(source_file_observing a_observer);
 
         // The HTTP stack spider::catch / sling / get / post send through (<jaiscript/core/http_transport.hpp>); none is
         // installed by default, and a call without one raises a catchable error naming this function. Install it on the
@@ -629,7 +678,7 @@ namespace jai {
         void add_variadic_function(const std::string& name, Func&& func, const Options&... options) {
             using call_t = detail::engine_variadic_call<std::decay_t<Func>>;
             const function_options folded = detail::fold_function_options(options...);
-            add_engine_variadic_function(name, guard_function(call_t{std::forward<Func>(func), this}, folded.required), {&call_t::invoke, &call_t::locate},
+            add_engine_variadic_function(name, bound_function<detail::excludes_execution_time<Options...>>(call_t{std::forward<Func>(func), this}, folded.required), {&call_t::invoke, &call_t::locate},
                                          host_result_kind<typename call_t::result_type>());
             apply_function_options(name, folded);
         }
@@ -637,7 +686,7 @@ namespace jai {
         template<detail::function_option... Options>
         void add_variadic_function(const std::string& name, script_function func, const Options&... options) {
             const function_options folded = detail::fold_function_options(options...);
-            add_variadic_function(name, guard_function(std::move(func), folded.required));
+            add_variadic_function(name, bound_function<detail::excludes_execution_time<Options...>>(std::move(func), folded.required));
             apply_function_options(name, folded);
         }
         void add_function_with_arity(const std::string& name, script_function func, size_t arity);
@@ -656,14 +705,14 @@ namespace jai {
             auto binder = make_function_binder(std::forward<Func>(func), this);
             script_function bound_func = binder.bind();
             stage_host_result(host_result_kind<return_type>());
-            if constexpr (detail::host_lane_params<typename traits::argument_types>()) {
+            if constexpr (!detail::excludes_execution_time<Options...> && detail::host_lane_params<typename traits::argument_types>()) {
                 if (folded.required.empty()) {
                     using call_t = typename decltype(binder)::by_value_call;
                     stage_host_direct({&call_t::invoke, &call_t::locate});
                 }
             }
             
-            script_function wrapped_func = guard_function(std::move(bound_func), folded.required);
+            script_function wrapped_func = bound_function<detail::excludes_execution_time<Options...>>(std::move(bound_func), folded.required);
             if constexpr (constexpr uint64_t writeback = detail::tuple_writeback_mask<typename traits::argument_types>::value; writeback != 0) {
                 wrapped_func = host_writeback_function{ std::move(wrapped_func), writeback };
             }
@@ -836,7 +885,7 @@ namespace jai {
         void set_output_stream(std::shared_ptr<std::ostream> stream);
         void add_include_path(const std::string& path);
         // Confinement (opt-in; empty, the default, lets the ladder open any path the process can read): include, import,
-        // resolve_path and file_data open only files whose canonical path lies under one of these folders. A file the ladder
+        // resolve_path and file::data open only files whose canonical path lies under one of these folders. A file the ladder
         // finds outside them is skipped, and when no rung finds one inside, the reach fails with "Path outside the confined
         // roots: <path as written>". No .cache folder is written beside a source outside them.
         void confine_paths(const std::vector<std::string>& roots);
@@ -872,25 +921,67 @@ namespace jai {
         friend class caught_error_scope;
         // [[nodiscard]] for a host function ("name") or a bound method ("Class.method"): what jai::nodiscard records.
         void nodiscard_function(const std::string& callable);
+        // What jai::returns<jai::type_arg> and its siblings record
+        void type_result_function(const std::string& callable, uint8_t shape);
+        // Generics (detail/generics.hpp): the definitions the program declares under a qualified name ("Stack", "wire::decode",
+        // "Request::json"), null when none; what an instance was made from; and a unit's check with the instances it needs
+        // declared into `declarations` (ahead of the declaration that first uses each), repeated until the check asks for no more
+        const std::vector<std::shared_ptr<const detail::generic_definition>>* find_generics(const std::string& qualified) const;
+        bool generic_instance(const std::string& name, std::string& generic, std::vector<type_info_ptr>& arguments) const;
+        // a unit's declarations as a saved bite carries them: without the instances it only made again (engine.cpp carried_declarations)
+        std::vector<declaration_ptr> carried_declarations(const std::vector<declaration_ptr>& declarations) const;
+        bool declares_generics() const;
+        bool names_generic_method(const std::string& name) const;   // some class declares a generic method of that bare name
+        // '<' after a name (detail/less_than.hpp): what each query's head names, over a unit's declarations, the pooled program
+        // and the engine; and whether the host binds a method of that bare name that takes a type argument (a jai::script_type
+        // parameter, or a result declared from one)
+        std::string less_than_answers(const std::vector<declaration_ptr>& declarations, const std::vector<std::string>& queries);
+        bool type_argument_method(const std::string& name) const;
+        check_report check_expanding(std::vector<declaration_ptr>& declarations, detail::check_options options, const std::vector<std::string>* extra_globals = nullptr);
+        // a unit's generics, for the units checked after it (a run and a pooled closure unit declare theirs themselves)
+        void register_generics(const std::vector<declaration_ptr>& declarations, const std::string& file);
+        // every generic definition and instance record goes: a host that checks unrelated programs on one engine (the language
+        // server) pools only the next program's, which its units then register
+        void forget_generics();
         // A host function a parallel body may not call: what jai::serial records. Every other registered host function, the
         // library's own included, is taken to be safe on any thread. A namespace entry is marked by its qualified name.
         void serial_function(const std::string& name);
         void apply_function_options(const std::string& name, function_options options) {
             if (options.nodiscard) { nodiscard_function(name); }
             if (options.serial) { serial_function(name); }
+            if (options.type_result) { type_result_function(name, options.type_result); }
         }
 
         // Attach a requirement to the actual callable, so aliases, overload dispatch
         // and worker-local copies all recheck this engine's current grants. An empty
         // requirement returns the original callable with no invocation overhead.
         script_function guard_function(script_function function, const permission_set& required);
+        // The callable a binding marked jai::exclude_execution_time stores: its call's time moves the running entry's deadline
+        // later (detail/host_time.hpp)
+        script_function time_excluded_function(script_function function);
+        // guard_function, inside time_excluded_function for a marked binding; the choice is the binding's, made as it compiles
+        template<bool ExcludeTime, typename Callable>
+        JAI_FORCEINLINE script_function bound_function(Callable&& callable, const permission_set& required) {
+            if constexpr (ExcludeTime) {
+                return time_excluded_function(guard_function(std::forward<Callable>(callable), required));
+            } else {
+                return guard_function(std::forward<Callable>(callable), required);
+            }
+        }
         // include: the file runs at the include site, in the current scope and under the running unit, so
         // its declarations are the includer's. scope names the function or block the
         // include runs in (empty at program scope): an enum the file declares there stays local to it.
-        script_value execute_include_source(const std::string& resolved_path, const std::string& content, std::string_view scope = {});
-        // An include's file read for the backends: false = it cannot be opened. Inside a running import the file joins the
-        // module's closure under the stamp it was read at, so a later change to it re-runs the module.
-        bool read_include_file(const std::string& resolved_path, std::string& content);
+        script_value execute_include_source(const std::string& resolved_path, const detail::loaded_source& content, std::string_view scope = {});
+        // An include's file loaded for the backends (missing = it cannot be opened, unsettled = it never read whole). Inside a
+        // running import the file joins the module's closure under the stamp its text was loaded with, so a later change to
+        // it re-runs the module.
+        detail::loaded_source read_include_file(const std::string& resolved_path);
+        // The one source loader (detail/source_loading.hpp), and the stamp seam on its own for a cache that asks whether the
+        // files it remembers moved (stamp_source: false = the file cannot be stamped)
+        detail::loaded_source load_source(const std::string& path, detail::source_mode mode);
+        bool stamp_source(const std::string& path, uint64_t& mtime, uint64_t& size) const;
+        bool stamps_stand(const std::vector<detail::source_stamp>& stamps) const;
+        detail::load_collector* load_report_collector() const noexcept;   // null while the report is off, and inside a parallel region
 
         // The sleep builtin (detail: script_run.cpp): seconds on the time source; suspends the innermost run when nothing pins it,
         // else blocks. sleep_callee: `function` is the core sleep function (a call of it runs the builtin)
@@ -952,7 +1043,7 @@ namespace jai {
         // The running parallel region's number (0 outside one): what a chunk makes carries it (class_instance::region_tag)
         uint32_t parallel_region_serial() const;
         // The scalar result every registration of `name` declares by its C++ return type (int, float, bool, char,
-        // string); false when a registration returns anything else or registrations disagree
+        // string; jai_invalid_type for void); false when a registration returns anything else or registrations disagree
         bool host_function_result(const std::string& name, script_value_type& out) const;
         // the indexes and refusals registered for a callable (empty for most): what the checker asks at a call
         std::vector<std::pair<size_t, const std::string*>> constant_argument_indexes(const std::string& callable) const;
@@ -1093,6 +1184,7 @@ namespace jai {
         
         // Get all registered template types for parser
         std::unordered_set<std::string> get_registered_template_types() const;
+        bool is_template_type(const std::string& baseTemplateName) const;   // a host bound an instance of this template
         
         // Get class definition by name
         std::shared_ptr<class_definition> get_class_definition(const std::string& name) const;
@@ -1154,6 +1246,12 @@ namespace jai {
 
         // Engine-owned script namespace registry (namespace_id -> data); survives across backends
         std::unordered_map<uint64_t, std::shared_ptr<script_namespace_data>>& script_namespaces();
+        // Whether "ns::Name" is a class of that namespace, or a bare "Name" a class of any namespace: one an earlier run defined or
+        // a unit of the program declares
+        bool namespace_class_known(std::string_view query) const;
+        // A tool that keeps its own program tables (tools/lsp) hands a program's classes over before it parses one of its units
+        void pool_program_classes(const detail::program_class_map& classes, const detail::program_enum_map& enums, const std::unordered_set<std::string>& names,
+                                  const detail::program_function_map& functions = {}, const detail::program_global_map& globals = {});
         // Names an enum declaration defined (both backends note them): `E::v` reads the value through the enum's variable
         // marks the enum's types (type_info::is_enum) and returns the int type its values are stamped with
         type_info* note_enum(uint64_t name_id, std::string_view name, const std::vector<int64_t>& numbers);
@@ -1169,8 +1267,9 @@ namespace jai {
         uint64_t park_error_text(std::string_view text) const;
         // template(path, ...) with a path known at run time (detail/template_library.hpp): the unit `source` (a lambda over the
         // template) run under `unit`, its parse or check failure as the error; and whether that unit's parse still stands for
-        // every file it read
-        checked_result<script_value> run_template_unit(const std::string& unit, const std::string& source);
+        // every file it read. A failure leaves in `read` the files the failing load read, each under the stamp its text was
+        // loaded with; `unsettled` = one of them never read whole, so the failure is no verdict on the template
+        checked_result<script_value> run_template_unit(const std::string& unit, const std::string& source, std::vector<detail::source_stamp>& read, bool& unsettled);
         bool template_unit_current(const std::string& unit, const std::string& source);
 
         // Get class definition by type index
@@ -1187,6 +1286,9 @@ namespace jai {
         
         // Get the class registry for this engine
         class_registry& get_class_registry();
+        // The node of a running unit that holds an instance's declaration (the declaration itself, or the namespace around it):
+        // what keeps it alive while the instance waits to be defined
+        std::shared_ptr<void> instance_owner(const class_decl* a_declaration) const;
 
         // Map path for types without the slot, keyed by the native object's pointer.
         // note_script_layer is called from class_instance::set_native.
@@ -1296,6 +1398,8 @@ namespace jai {
         type_info* get_type_info_function(type_info* return_type, const std::vector<type_info*>& arg_types);
         // the type every function value carries (void(), interned once per engine)
         type_info* get_type_info_untyped_function();
+        // coroutine<Y>: the type of a handle whose yields and return convert to Y (null: var)
+        type_info* get_type_info_coroutine(type_info* yield_type);
 
         // Get or create type_info for object types (uses class_definition's type_info)
         type_info* get_type_info_object(const std::string& class_name);
@@ -1309,6 +1413,9 @@ namespace jai {
 
         // Lookup by canonical name (interns the name first, then does ID lookup)
         type_info* get_type_info_by_name(const std::string& canonical_name);
+        // The type a canonical name spells (type_info::canonical_name's inverse: "int", "array<Item>", "map<string,int>",
+        // "shared_ptr<Item>", a class or an instance by its name); null for a name that spells no type an argument can be
+        type_info* type_named(std::string_view canonical_name);
 
         // Template method to get type_info for any C++ type
         template<typename T>
@@ -1338,6 +1445,10 @@ namespace jai {
         bool parallel_region_active() const noexcept { return parallel_region_active_; }
         // the region guard's record of its region (on while workers run, back to the enclosing region's state after)
         void note_parallel_region(bool active) noexcept { parallel_region_active_ = active; }
+        // A destructor class's instance takes its place among the engine's when it is made; one a region makes takes it at the join
+        uint64_t next_destructor_instance_birth() noexcept { return parallel_region_active_ ? 0 : ++destructor_instance_births_; }
+        uint64_t next_destructor_instance_birth_after_region() noexcept { return ++destructor_instance_births_; }
+        bool callbacks_released() const noexcept { return callbacks_released_; }
         // Workers copy and construct class instances (by-value bindings, whole reads): the
         // class-definition instance registry they register into is engine-shared, so its
         // mutations serialize on this lock while a region runs (unlocked otherwise).
@@ -1422,7 +1533,7 @@ namespace jai {
         uint64_t clock_sample_count() const noexcept;
 
         // The catch variable's value, both backends at the catch. A throw binds the thrown value itself; a run-time error
-        // binds an error: its message as a string (every string operation reads it unchanged) whose type_of is "error" and
+        // binds an error: its message as a string (every string operation reads it unchanged) whose reflect::type_of is "error" and
         // that answers e.kind. A string, an instance, an array or a map (a value with a node to key on) also answers
         // e.message, e.file, e.line, e.column, e.stack (file:line per frame, innermost first) and e.value while its handler
         // runs; a string keeps answering afterwards. The place is the throw's, else the innermost frame's statement.
@@ -1438,7 +1549,7 @@ namespace jai {
         // A member read the receiver's own members did not answer, on a caught value (nullopt: not one, or not an error member)
         // catch_variable: the receiver is read through a handler's variable, where any thrown value answers .value and .message
         std::optional<script_value> caught_error_member(const script_value& receiver, uint64_t member_id, bool catch_variable = false);
-        // Whether a run-time error's catch variable (type_of's "error", `catch (error e)`)
+        // Whether a run-time error's catch variable (reflect::type_of's "error", `catch (error e)`)
         bool is_caught_runtime_error(const script_value& value) const noexcept;
         int caught_error_tag(const script_value& value) const noexcept;
         // Whether a typed catch clause takes the value: the clause's type by name, a class through its bases
@@ -1450,6 +1561,8 @@ namespace jai {
         // The handler that bound `caught` is done and its variable let go: the thrown value dies, as C++ destroys the exception
         // object when its handler exits, unless a copy of the error (a capture, a stored e) still holds it
         void end_caught_error(const script_value& caught) noexcept;
+        // The stack a caught value's handler bound (a bare rethrow raises it again with its place); empty for one with none
+        std::vector<stack_frame> caught_error_trace(const script_value& caught) const;
         // A suspended coroutine's frame dropped whole: its values die last slot first, and a handler it was suspended in lets go
         // of its thrown value as the slot of its catch variable dies
         void release_suspended_values(script_value* values, size_t count) noexcept;
@@ -1513,6 +1626,27 @@ namespace jai {
             engine* eng;
             bool completed = false;
         };
+        // The rule a load stores a saved member by, stated by each load entry for as long as it runs. An archive load
+        // (from_json(text), from_binary, a C++ archive read) converts a value that no longer fits its field as hot reload's
+        // retype does, or keeps the constructed value; a typed load (from_json<T>, jai::make_record) refuses it in the
+        // name of its caller, who. An empty who is the archive's rule.
+        class load_rule {
+        public:
+            load_rule(engine* a_engine, std::string_view a_typed_who) : eng(a_engine), outer(std::exchange(a_engine->typed_load_who_, a_typed_who)) {}
+            ~load_rule() { eng->typed_load_who_ = outer; }
+            load_rule(const load_rule&) = delete;
+            load_rule& operator=(const load_rule&) = delete;
+        private:
+            engine* eng;
+            std::string_view outer;
+        };
+        // Code a load runs (a constructor, a post_load hook, a host's accessor) is not the load's data: what that code loads in
+        // turn starts from the archive's rule, and the load's own rule holds again when the code returns
+        class load_callout : public load_rule {
+        public:
+            explicit load_callout(engine* a_engine) : load_rule(a_engine, {}) {}
+        };
+        std::string_view typed_load_who() const noexcept { return typed_load_who_; }
         // A class's properties in the order a load restores them (its declaration order, base first), kept for the
         // load in progress
         struct load_field {
@@ -1543,7 +1677,7 @@ namespace jai {
                           std::is_same_v<decay_t, script_int> || std::is_enum_v<decay_t>) {
                 return param_type_info(script_value_type::jai_int_type);
             } else if constexpr (is_specialization_v<decay_t, std::function>) {
-                return param_type_info(script_value_type::jai_function_type);
+                return param_type_info(script_value_type::jai_function_type, &host_signature_of(static_cast<decay_t*>(nullptr)));
             } else if constexpr (std::is_same_v<decay_t, float> || std::is_same_v<decay_t, double> ||
                                  std::is_same_v<decay_t, script_float>) {
                 return param_type_info(script_value_type::jai_float_type);
@@ -1573,10 +1707,20 @@ namespace jai {
                 return param_type_info(script_value_type::jai_object_type, std::type_index(typeid(decay_t)));
             }
         }
+        // One descriptor per C++ signature, made on first use: engine-independent and never written again (a void R is jai_invalid_type)
+        template <typename R, typename... A>
+        static const host_signature& host_signature_of(std::function<R(A...)>*) {
+            static const host_signature result{
+                std::is_void_v<R> ? param_type_info(script_value_type::jai_invalid_type) : map_cpp_type_to_param_info<R>(),
+                {map_cpp_type_to_param_info<A>()...},
+                {uint8_t(std::is_lvalue_reference_v<A> && !std::is_const_v<std::remove_reference_t<A>>)...}};
+            return result;
+        }
         template <typename R>
         static constexpr script_value_type host_result_kind() {
             using D = std::decay_t<R>;
-            if constexpr (std::is_same_v<D, int> || std::is_same_v<D, int64_t> || std::is_same_v<D, script_int>) { return script_value_type::jai_int_type; }
+            if constexpr (std::is_void_v<D>) { return script_value_type::jai_invalid_type; }
+            else if constexpr (std::is_same_v<D, int> || std::is_same_v<D, int64_t> || std::is_same_v<D, script_int>) { return script_value_type::jai_int_type; }
             else if constexpr (std::is_same_v<D, float> || std::is_same_v<D, double>) { return script_value_type::jai_float_type; }
             else if constexpr (std::is_same_v<D, bool>) { return script_value_type::jai_bool_type; }
             else if constexpr (std::is_same_v<D, char> || std::is_same_v<D, script_char>) { return script_value_type::jai_char_type; }
@@ -1603,7 +1747,20 @@ namespace jai {
         friend class held_value;
         void register_held(held_value* held);
         void unregister_held(held_value* held) noexcept;
-        void release_held_values() noexcept;
+        void move_held(held_value* from, held_value* to) noexcept;   // `to` takes `from`'s place in the registry
+        // The plain holds give up their payloads, or the callbacks' holds (after which the engine's script receivers stay quiet)
+        void release_held_values(bool callbacks = false) noexcept;
+        // The hold of a script function a host callback calls, or of what a signal receiver saved: released with the coroutines
+        held_value hold_callback(script_value value) const;
+        // Engine teardown: every instance still alive runs its destructors while script runs (the survivors stay pinned until
+        // release_surviving_instances lets their members go, once no script can run)
+        void destroy_surviving_instances() noexcept;
+        void release_surviving_instances() noexcept;
+        std::vector<std::shared_ptr<class_definition>> definitions_for_teardown() const;
+        // Every live coroutine, the last made first: teardown retires the ones still alive while the engine runs their destructors
+        void register_coroutine(coroutine_handle* a_coroutine) noexcept;
+        void unregister_coroutine(coroutine_handle* a_coroutine) noexcept;
+        void retire_coroutines() noexcept;
         void release_program_scope_in_reverse() noexcept;
         // declared ahead of impl: alive through the whole teardown, expired once the engine is gone
         std::shared_ptr<const void> lifetime_ = std::make_shared<char>('\0');
@@ -1613,8 +1770,12 @@ namespace jai {
         size_t hot_reload_field_migrations_ = 0;
         uint64_t trace_graft_frame_reads_ = 0;
         bool hot_reload_reporting_ = false;
+        bool skip_unknown_receivers_ = false;
         bool parallel_region_active_ = false;
+        bool callbacks_released_ = false;   // the teardown released the callbacks' holds: no script receiver of this engine fires
         bool construction_access_waived_ = false;
+        uint64_t destructor_instance_births_ = 0;   // the last stamp a destructor class's instance took (next_destructor_instance_birth)
+        type_info* handle_construction_ = nullptr;   // the handle type a new / make_shared construction about to start yields
         int* active_run_pins_ = nullptr;
         std::vector<field_migration_report> hot_reload_reports_;
         void register_location_builtins();   // engine-core script builtins: root/current_script_dir, resolve_path, app dirs
@@ -1628,6 +1789,7 @@ namespace jai {
         void name_permission(std::int32_t id, std::string_view name);
         std::unique_ptr<std::mutex> parallel_compile_mutex_ = std::make_unique<std::mutex>();
         int load_depth_ = 0;
+        std::string_view typed_load_who_;
         std::vector<std::pair<script_value, script_int>> deferred_post_loads_;
         std::unordered_map<const class_definition*, std::vector<load_field>> load_field_orders_;
 
@@ -1642,11 +1804,17 @@ namespace jai {
         // the parse cache on (source_path, content). Not public — attributing raw content
         // to a path is debugger plumbing, a sharp edge for callers. Reached via execute()
         // ("<script>"), execute_file() (the file path), and include/import (resolved path).
+        // The debugger's evaluation (debug::controller::evaluate): `text` runs as its own unit labeled debug::evaluation_source with
+        // `scope` as instance variables, and each one's value after the run comes back in `scope`
+        script_value debug_evaluate(const std::string& text, instance_variables& scope);
+        // the names a debug_evaluate in flight runs with (null outside one): the checker reads the class of a receiver among them
+        const instance_variables* debug_evaluation_scope() const noexcept;
         script_value execute_source(const std::string& script_content,
                                     const instance_variables& instanceVars,
                                     const std::string& source_path,
                                     bool textual = false,   // textual: an include, run where it is written
-                                    std::string_view include_scope = {});
+                                    std::string_view include_scope = {},
+                                    const detail::text_stamp* loaded_under = nullptr);   // the stamp the loader gave the text; null = the host's own text
 
         // Lazily constructs + wires the selected backend on first use, so creating an
         // engine (or switching backend type) costs nothing until a script actually runs.
@@ -1659,6 +1827,7 @@ namespace jai {
         void initialize_engine_reference();
         void wire_backend();
         void add_class_impl(const std::string& name, std::shared_ptr<class_definition> classDef);
+        void refuse_script_class_name(const std::string& name) const;
         void register_class_by_type(std::type_index type, std::shared_ptr<class_definition> classDef);
 
         // Records a base link whose base class has not registered yet (registrar order is
@@ -1708,8 +1877,8 @@ namespace jai {
                                                      bool for_import = false);
     checked_result<std::string> resolve_include_path(const std::string& path, engine* engine_ptr);   // from the executing file
     namespace detail {
-        // The same ladder without the filesystem permission's gate: a scoped template folder resolves as an import's file does,
-        // under the scoped_template permission (detail/template_library.hpp)
+        // The same ladder without the filesystem permission's gate: an untrusted template folder resolves as an import's file does,
+        // under the untrusted_template permission (detail/template_library.hpp)
         checked_result<std::string> resolve_on_import_ladder(const std::string& path, engine* engine_ptr, const std::string& from_file);
     }
 
@@ -1737,6 +1906,7 @@ namespace jai {
             }
         }
         void dismiss() noexcept { engine_ = nullptr; caught_.reset(); }
+        const script_value* caught() const noexcept { return engine_ && caught_ ? &*caught_ : nullptr; }
     private:
         engine* engine_ = nullptr;
         std::optional<script_value> caught_;

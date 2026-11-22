@@ -63,7 +63,7 @@ namespace {
 		switch (o) {
 		case opcode::op_t_decl_mov: case opcode::op_t_decl_const: case opcode::op_t_store_mov: case opcode::op_t_store_const: return fam::typed_move;
 		case opcode::op_t_push: case opcode::op_t_load: return fam::typed_elem;
-		case opcode::op_call: case opcode::op_probe_callee: case opcode::op_regex_constant: case opcode::op_call_from_scratch: case opcode::op_sleep: case opcode::op_format_call: case opcode::op_call_typed: case opcode::op_call_temp:
+		case opcode::op_call: case opcode::op_probe_callee: case opcode::op_regex_constant: case opcode::op_instance_test: case opcode::op_call_from_scratch: case opcode::op_sleep: case opcode::op_format_call: case opcode::op_call_typed: case opcode::op_call_temp:
 		case opcode::op_capture_arg: case opcode::op_take_temp: case opcode::op_inline_guard: case opcode::op_math_guard:
 			return fam::call;
 		case opcode::op_call_method: case opcode::op_probe_member: return fam::method;
@@ -71,7 +71,7 @@ namespace {
 		case opcode::op_return: case opcode::op_return_ident: case opcode::op_return_binary: case opcode::op_return_convert: case opcode::op_implicit_return:
 		case opcode::op_halt: case opcode::op_ref_return_bind: case opcode::op_ref_return_lvalue:
 			return fam::ret;
-		case opcode::op_get_member: case opcode::op_get_member_path: case opcode::op_get_member_this: case opcode::op_place_arg: case opcode::op_get_static: case opcode::op_set_member: case opcode::op_set_static: case opcode::op_member_compound:
+		case opcode::op_get_member: case opcode::op_get_member_path: case opcode::op_get_member_this: case opcode::op_place_arg: case opcode::op_get_static: case opcode::op_namespace_entry: case opcode::op_set_member: case opcode::op_set_static: case opcode::op_member_compound:
 		case opcode::op_member_temp: case opcode::op_member_temp_this: case opcode::op_mfold: case opcode::op_set_member_fused: case opcode::op_set_member_value: case opcode::op_this: case opcode::op_super:
 		case opcode::op_from_this: case opcode::op_null_guard: case opcode::op_velem_load: case opcode::op_velem_store:
 			return fam::member;
@@ -162,7 +162,7 @@ namespace {
 
 	uint32_t call_site_of(const vm_instruction& ins) {
 		switch (ins.op) {
-		case opcode::op_probe_callee: case opcode::op_regex_constant: return ins.a;
+		case opcode::op_probe_callee: case opcode::op_regex_constant: case opcode::op_instance_test: return ins.a;
 		case opcode::op_call_from_scratch: case opcode::op_sleep: case opcode::op_format_call: case opcode::op_call_typed: case opcode::op_call_method: case opcode::op_call_builtin: case opcode::op_call: return ins.b;
 		case opcode::op_size_temp: return ins.b;
 		case opcode::op_probe_member: return ins.a;
@@ -183,7 +183,7 @@ namespace {
 			else if (cs.callee.symbol != k_invalid_u32) name = sym_name(c, sym, cs.callee.symbol);
 		} else {
 			switch (ins.op) {
-			case opcode::op_get_member: case opcode::op_get_member_path: case opcode::op_get_member_this: case opcode::op_get_static: case opcode::op_set_member: case opcode::op_set_static: case opcode::op_member_compound:
+			case opcode::op_get_member: case opcode::op_get_member_path: case opcode::op_get_member_this: case opcode::op_get_static: case opcode::op_namespace_entry: case opcode::op_set_member: case opcode::op_set_static: case opcode::op_member_compound:
 			case opcode::op_member_temp: case opcode::op_member_temp_this: case opcode::op_set_member_fused: case opcode::op_decl_var: case opcode::op_decl_ref_ident: case opcode::op_decl_ref_value:
 			case opcode::op_new: case opcode::op_cast:
 				name = node_name(c, ins.a); break;

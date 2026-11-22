@@ -11,6 +11,7 @@
 #include "random.hpp"
 #include "crypto.hpp"
 #include "atomic.hpp"
+#include "image.hpp"
 // Native math:: vectors and colors are core language values; host adapters are opt-in.
 
 namespace jai {

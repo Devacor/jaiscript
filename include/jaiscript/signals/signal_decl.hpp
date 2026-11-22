@@ -8,6 +8,7 @@
 #include <vector>
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <algorithm>
 #include <type_traits>
 #include <utility>
@@ -41,12 +42,16 @@ template<typename T, typename Sync = signal_unsynchronized> class signal_propert
 namespace detail {
 template<typename T, typename Sync> class signal_state;
 struct signal_state_access;
+// How a receiver saves and what a load connects (signals/receiver_save.hpp)
+struct receiver_save;
+struct loaded_receiver;
 }
 
 // The engine's lifetime token: expired once the engine is destroyed (defined in engine.cpp)
 std::weak_ptr<const void> engine_lifetime_token(engine* a_engine);
-// A load in progress on the engine: its script receivers stay quiet (defined in engine.cpp)
-bool engine_loading(const engine* a_engine);
+// The engine's script receivers stay quiet: a load is in progress on it, or its teardown has released what they hold (defined
+// in engine.cpp)
+bool engine_quiet(const engine* a_engine);
 
 template<typename T>
 class receiver {
@@ -170,8 +175,8 @@ public:
 		if (eng) { script_engine_ = eng; }
 	}
 	bool engine_gone() const noexcept { return engine_bound_ && engine_alive_.expired(); }
-	// a script receiver skips while its engine is gone or loading (a load does not notify)
-	bool engine_quiet() const { return engine_bound_ && (engine_alive_.expired() || engine_loading(script_engine_)); }
+	// a script receiver skips while its engine is gone, loading (a load does not notify) or past releasing its receivers
+	bool engine_quiet() const { return engine_bound_ && (engine_alive_.expired() || jai::engine_quiet(script_engine_)); }
 	engine* script_engine() const { return script_engine_; }
 
 	const std::shared_ptr<std::vector<std::string>>& parameter_names() const {
@@ -200,6 +205,7 @@ private:
 
 	void call_script();
 	bool call_script_predicate();
+	void add_saved_captures(std::unordered_map<std::string, script_value>& a_locals) const;
 
 	std::atomic<int> block_count_ {0};
 	bool oneshot_ = false;
@@ -209,6 +215,8 @@ private:
 	std::function<T> callback_;
 	std::string script_callback_;
 	std::shared_ptr<std::vector<std::string>> ordered_parameter_names_;
+	// what a save writes when the receiver is named; null for a text receiver (its text saves) and a runtime-only one
+	std::shared_ptr<const detail::receiver_save> save_form_;
 	engine* script_engine_ = nullptr;
 	// The state of the emitter this receiver is connected to; null when it is connected to none.
 	std::atomic<const void*> owner_ {nullptr};
@@ -241,10 +249,8 @@ public:
 	static void retire(std::shared_ptr<signal_state>& a_state) noexcept {
 		signal_state& state = *a_state;
 		auto released_owned = std::move(state.owned_connections_);
-		auto released_loaded = std::move(state.loaded_observers_);
 		auto released_blocked_callback = std::move(state.blocked_callback_);
 		state.owned_connections_.clear();
-		state.loaded_observers_.clear();
 		state.retired_ = true;
 		for (const auto& entry : state.observers_) {
 			if (auto target = live_target(entry)) {
@@ -305,6 +311,7 @@ public:
 
 	// Defined in signal_impl.hpp (needs the full engine).
 	shared_receiver_type connect(const std::string& a_id, const script_value& a_function, bool a_joinsRunningEmits);
+	shared_receiver_type connect_source(const std::string& a_id, const script_value& a_lambda, bool a_joinsRunningEmits);
 
 	shared_receiver_type connection(const std::string& a_id) {
 		auto lock = lock_state();
@@ -341,9 +348,7 @@ public:
 	void clear() {
 		auto lock = lock_state();
 		auto released_owned = std::move(owned_connections_);
-		auto released_loaded = std::move(loaded_observers_);
 		owned_connections_.clear();
-		loaded_observers_.clear();
 		for (const auto& entry : observers_) {
 			if (auto target = live_target(entry)) {
 				release(*target);
@@ -458,11 +463,12 @@ public:
 		return result;
 	}
 
-	// Serialization (signal_serialization.hpp).
+	// Serialization (signal_serialization.hpp): the named receivers that save; a load replaces them with the saved ones
 	template<typename Archive>
 	void save_receivers(Archive& a_archive) const;
 	template<typename Archive>
-	void load_receivers(Archive& a_archive);
+	static void load_receivers(Archive& a_archive, const std::shared_ptr<signal_state>& a_self);
+	static void arm_loaded(void* a_state, const std::string& a_id, const detail::loaded_receiver& a_loaded);
 
 private:
 	std::lock_guard<mutex_type> lock_state() const {
@@ -471,6 +477,10 @@ private:
 
 	bool owns(const receiver<T>& a_receiver) const {
 		return a_receiver.owner_.load() == this;
+	}
+
+	static bool saves(const receiver<T>& a_receiver) {
+		return a_receiver.save_form_ || a_receiver.has_script();
 	}
 
 	static shared_receiver_type live_target(const observer_entry& a_entry) {
@@ -519,7 +529,6 @@ private:
 			return;
 		}
 		release(*a_receiver);
-		std::erase_if(loaded_observers_, [&a_receiver](const shared_receiver_type& a_held) { return a_held == a_receiver; });
 		std::erase_if(owned_connections_, [&a_receiver](const auto& a_named) { return a_named.second == a_receiver; });
 		discard_stale_entries();
 	}
@@ -531,7 +540,6 @@ private:
 			return;
 		}
 		std::erase_if(observers_, [](const observer_entry& a_entry) { return live_target(a_entry) == nullptr; });
-		std::erase_if(loaded_observers_, [this](const shared_receiver_type& a_held) { return !owns(*a_held); });
 		has_dead_observers_ = false;
 	}
 
@@ -602,8 +610,6 @@ private:
 	// Vector, not set: receivers fire in insertion order.
 	std::vector<observer_entry> observers_;
 	std::map<std::string, shared_receiver_type> owned_connections_;
-	// unnamed script receivers a load rebuilt: nothing outside holds them, so the state does (signal_serialization.hpp)
-	std::vector<shared_receiver_type> loaded_observers_;
 
 	bool has_oneshots_pending_ = false;
 	// Set when an entry stops being live (an expired or disconnected receiver) or a pass skipped one: gates the
@@ -681,6 +687,10 @@ public:
 	// Connect a script FUNCTION value as an owned, named connection. The function value carries its engine; arguments
 	// convert through the same machinery as source-string receivers.
 	shared_receiver_type connect(const std::string& id, const script_value& fn_callback) { return state_->connect(id, fn_callback, false); }
+
+	// A script lambda written [value captures](parameters) { body }: it runs as connected, and a save writes its body, its
+	// parameter names and its captures as source (signal_impl.hpp)
+	shared_receiver_type connect_source(const std::string& id, const script_value& lambda) { return state_->connect_source(id, lambda, false); }
 
 	// A connect joins from the next emit on; connect_immediate also joins every emit already running.
 	[[nodiscard]]
@@ -825,6 +835,8 @@ public:
 	shared_receiver_type connect(const std::string& id, const script_value& fn_callback) { return state_->connect(id, fn_callback, false); }
 
 	shared_receiver_type connect(const std::string& id, const std::string& script_callback) { return state_->connect(id, script_callback, false); }
+
+	shared_receiver_type connect_source(const std::string& id, const script_value& lambda) { return state_->connect_source(id, lambda, false); }
 
 	[[nodiscard]]
 	shared_receiver_type connect_immediate(std::function<T> callback) { return state_->connect(std::move(callback), true); }

@@ -305,8 +305,13 @@ public:
 
         // Derive from the local: ~T() never changes the address, and the memory is
         // still allocated because this handle held live strong+weak counts.
-        if (local_ptr && detail::cb_from_object(local_ptr)->drop_strong() == 0) {
-            destroy_last(local_ptr);
+        if (local_ptr) {
+            const uint32_t left = detail::cb_from_object(local_ptr)->drop_strong();
+            if (left == 0) {
+                destroy_last(local_ptr);
+            } else if constexpr (requires { T::partial_release(local_ptr, left); }) {
+                T::partial_release(local_ptr, left);
+            }
         }
     }
 

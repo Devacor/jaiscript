@@ -2,7 +2,7 @@
 // admission walk (docs/site/guide/16-parallel.html): each function touches ONLY
 // its one element parameter (its fields included) and locals: no globals, no
 // host calls beyond the math whitelist. The same functions run serially when
-// HOST_WORKERS <= 0 (the default: at GLOOM's grain the region barrier costs
+// host_workers <= 0 (the default: at GLOOM's grain the region barrier costs
 // more than it distributes), which keeps the 1-vs-N determinism check: explicit
 // --workers N runs the identical bodies through the parallel machinery.
 

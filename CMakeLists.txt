@@ -9,7 +9,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND NOT CMAKE_BUILD_TYPE A
 endif()
 
 project(JaiScript
-    VERSION 0.5.4
+    VERSION 0.6.0
     DESCRIPTION "High-performance scripting language with C++ syntax for game engines"
     LANGUAGES CXX
 )
@@ -111,6 +111,12 @@ else()
     # Clang (and GCC outside ISO modes) fuse a*b+c into FMA by default, which changes float results per target;
     # MSVC's /fp:precise never contracts, so every build computes the same bits
     add_compile_options(-ffp-contract=off)
+
+    if(APPLE)
+        # Apple's linker folds functions of identical code even when their catch clauses differ, and one function's
+        # handlers then serve both: an exception the other would catch passes through it
+        add_link_options(LINKER:-no_deduplicate)
+    endif()
 
     if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         # COFF's /bigobj twin: Debug template-heavy TUs overflow the 2^16 section limit

@@ -4,14 +4,14 @@
 
 string when(int unix_seconds) { return time::date_from_unix(unix_seconds).format("${year}-${month:02}-${day:02} ${military_hours:02}:${minutes:02}"); }
 
-web::html home_page(array<map<string, var>> entries, string name, string flash, int views) {
+web::html home_page(array<Entry> entries, string name, string flash, int views) {
 	string title = "Guestbook";
 	web::html body = template("views/home.spider", entries, name, flash, views);
 	return template("views/layout.spider", title, body);
 }
 
-web::html entry_page(map<string, var> entry) {
-	string title = entry["name"] + " signed the guestbook";
+web::html entry_page(Entry entry) {
+	string title = entry.name + " signed the guestbook";
 	web::html body = template("views/entry.spider", entry);
 	return template("views/layout.spider", title, body);
 }

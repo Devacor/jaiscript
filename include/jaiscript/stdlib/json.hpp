@@ -19,16 +19,29 @@ namespace stdlib {
 		bool indexed = false;
 	};
 
+	// A typed load (engine::load_rule) refusing a saved value: the whole text, led by the load's caller
+	class typed_load_refusal : public runtime_error {
+	public:
+		using runtime_error::runtime_error;
+	};
+
+	// The class name an instance record gives ({"$type": name, "$val": {...}}, "$version" beside them or not), null for any
+	// other map: what a load rebuilds as an object when the program has the class, and leaves a map when it has not
+	const std::string* unread_instance_record(const script_map& map);
+
 	// handle_id: the archive id a handle's object is loading under, registered as soon as it is constructed so a cycle back to it resolves
 	script_value reconstruct_archive_value(engine* eng, const script_value& value, bool json_string_keys, archive_handles& handles,
 	                                       script_int handle_id = 0);
 
 	// One archive's script value back to live values: classes by name, handles by id
 	script_value load_archive_value(engine* eng, const script_value& value, bool json_string_keys);
+	// What from_json(text) answers: the parse, its archive records rebuilt
+	script_value parse_json_text(engine* eng, const std::string& json);
 
 	// A constructed object's saved values, in the class's property order (base first; unknown keys ignored, a missing
 	// key keeps the constructed value): a script field writes its storage, a C++ property its binding, and a value that
-	// does not fit converts as hot reload's retype does or keeps the constructed value (record_field_migration)
+	// does not fit converts as hot reload's retype does or keeps the constructed value (record_field_migration); under a typed
+	// load (engine::load_rule) it is stored by the record's rule or refused (typed_load_refusal)
 	void load_saved_fields(engine* eng, const script_value& instance, const script_map& saved,
 	                       const std::function<script_value(const script_value&)>& transform);
 

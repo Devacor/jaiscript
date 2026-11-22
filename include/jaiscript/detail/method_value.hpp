@@ -39,6 +39,20 @@ namespace jai::detail {
 		return text + " or bind it with reflect::bind(" + receiver + ", \"" + std::string(member) + "\")";
 	}
 
+	// A generic function or method, or one of its instances, named where a value stands (largest, largest<int>, Cfg::make<int>):
+	// none is a value. `generic` is the generic's own name when `spelled` names an instance of it; `call` is what a lambda calls.
+	inline std::string generic_value_text(std::string_view spelled, std::string_view generic, bool method, std::string_view call) {
+		std::string text = "'" + std::string(spelled) + "' is " + (generic.empty() ? std::string("a generic ") : std::string("an instance of the generic "));
+		text += method ? "method" : "function";
+		if (!generic.empty()) { text += " '" + std::string(generic) + "'"; }
+		return text + ", which is not a value: call it, or pass a lambda that does ((x) => " + std::string(call) + "(x))";
+	}
+	// The same through a receiver (p.conv, p.conv<int>): `bound` is the name reflect::bind takes
+	inline std::string generic_method_value_text(std::string_view spelled, std::string_view generic, const std::string& receiver, std::string_view bound) {
+		std::string text = "'" + std::string(spelled) + "' is " + (generic.empty() ? std::string("a generic method") : "an instance of the generic method '" + std::string(generic) + "'");
+		return text + ", which is not a value: call it, or bind " + (generic.empty() ? "an instance" : "it") + " with reflect::bind(" + receiver + ", \"" + std::string(bound) + "\")";
+	}
+
 	// The same violation spelled bare inside a method (implicit this)
 	inline std::string bare_method_value_text(std::string_view member, std::string_view owner) {
 		return "'" + std::string(member) + "' is a method of " + std::string(owner) + "; call it with " + std::string(member) +

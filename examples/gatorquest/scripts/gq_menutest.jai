@@ -30,7 +30,7 @@ void mt_clear_field(int n) {
 string mt_connect(int proto_sent) {
 	string choice = "";
 	for (int i = 0; i < 1500 && TM_PAGE == "connecting" && choice == ""; ++i) {
-		NOW_MS = cast<int>(time::now() * 1000);
+		NOW_MS = cast<int>(time::engine_elapsed() * 1000);
 		int proto = NET_PROTO;
 		NET_PROTO = proto_sent;
 		choice = title_update();
@@ -59,7 +59,7 @@ void mt_join_page(string addr, string port, string name) {
 	title_key("down");
 	TM_NAME = "";
 	mt_type(name);
-	NOW_MS = cast<int>(time::now() * 1000);
+	NOW_MS = cast<int>(time::engine_elapsed() * 1000);
 }
 
 int mt_menu_index(int arg) {
@@ -79,17 +79,17 @@ int active_chars() {
 
 int run_menutest(string base_dir, int port) {
 	SAVE_DIR = base_dir + "/menutest";
-	make_dirs(SAVE_DIR + "/chars");
-	array<string> old = list_dir(SAVE_DIR + "/chars");
-	for (int i = 0; i < old.size(); ++i) { delete_file(SAVE_DIR + "/chars/" + old[i]); }
-	if (file_exists(SAVE_DIR + "/servers.txt")) { delete_file(SAVE_DIR + "/servers.txt"); }
-	if (file_exists(SAVE_DIR + "/world.gqw")) { delete_file(SAVE_DIR + "/world.gqw"); }
+	file::make_directories(SAVE_DIR + "/chars");
+	array<string> old = file::list_directory(SAVE_DIR + "/chars");
+	for (int i = 0; i < old.size(); ++i) { file::remove(SAVE_DIR + "/chars/" + old[i]); }
+	if (file::exists(SAVE_DIR + "/servers.txt")) { file::remove(SAVE_DIR + "/servers.txt"); }
+	if (file::exists(SAVE_DIR + "/world.gqw")) { file::remove(SAVE_DIR + "/world.gqw"); }
 	SAVES_ON = true;
 	TITLE_LAST = "";
 	print("menus:");
 	sim_init(5);
 	BOTS = [];
-	NOW_MS = cast<int>(time::now() * 1000);
+	NOW_MS = cast<int>(time::engine_elapsed() * 1000);
 	string ps = to_string(port);
 
 	// ---- hosting from the title: a busy port is reported on the page, then the real one opens
@@ -100,7 +100,7 @@ int run_menutest(string base_dir, int port) {
 	check(TM_HUE == 2, "left/right pick the color");
 	mt_keys("down enter");
 	check(TM_PAGE == "host" && TM_SEL == 1, "Host a game opens the host page on Start hosting");
-	shared_ptr<NetServer> blocker = new NetServer();
+	shared_ptr<net_server> blocker = new net_server();
 	bool blocked = blocker.listen(port + 1);
 	title_key("up");
 	mt_clear_field(6);
@@ -178,7 +178,7 @@ int run_menutest(string base_dir, int port) {
 	net_session_bye(TM_SESSION);
 	mt_host_rounds(10);
 	recent_load();
-	check(RECENT_ADDR.size() == 1 && RECENT_NAME[0] == "Visitor" && read_file(SAVE_DIR + "/servers.txt").starts_with("GATORQUEST-SERVERS 1"), "the recent servers live in saves/servers.txt");
+	check(RECENT_ADDR.size() == 1 && RECENT_NAME[0] == "Visitor" && file::read(SAVE_DIR + "/servers.txt").starts_with("GATORQUEST-SERVERS 1"), "the recent servers live in saves/servers.txt");
 
 	mt_join_page("127.0.0.1:" + ps, "", "Colon");
 	title_key("enter");
@@ -201,7 +201,7 @@ int run_menutest(string base_dir, int port) {
 	check(QUIT && PLAY_EXIT == "title", "Leave to title ends the session toward the title");
 	QUIT = false;
 	session_end();
-	check(!net_hosting() && TM_PAGE == "main" && file_exists(SAVE_DIR + "/world.gqw") && file_exists(char_path("Hostess")), "leaving stops hosting and saves the world and the gator");
+	check(!net_hosting() && TM_PAGE == "main" && file::exists(SAVE_DIR + "/world.gqw") && file::exists(char_path("Hostess")), "leaving stops hosting and saves the world and the gator");
 
 	// ---- back at the title: the world reloads without players, the gator comes back
 	bool resumed = load_world_for_session();
@@ -238,7 +238,7 @@ int run_menutest(string base_dir, int port) {
 	net_host_stop("the host has left the swamp");
 	QUIT = false;
 	for (int i = 0; i < 400 && !QUIT; ++i) {
-		NOW_MS = cast<int>(time::now() * 1000);
+		NOW_MS = cast<int>(time::engine_elapsed() * 1000);
 		net_client_pump();
 		sleep(0.001);
 	}

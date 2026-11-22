@@ -30,11 +30,11 @@ bool FORCE_PILOT = false;
 function gloom_force_autopilot() -> void { FORCE_PILOT = true; }
 
 function gloom_boot(int w, int h) -> void {
-	RNG = Rng(HOST_SEED);
-	SHOWCASE = HOST_LOOK == "showcase";
-	if (HOST_ASCII) { PIXW = 1; PIXH = 1; }
-	else if (HOST_PIX == 0) { PIXW = 1; PIXH = 2; }
-	else if (HOST_PIX == 2) { PIXW = 2; PIXH = 3; }
+	RNG = seeded_rng(host_seed);
+	SHOWCASE = host_look == "showcase";
+	if (host_ascii) { PIXW = 1; PIXH = 1; }
+	else if (host_pix == 0) { PIXW = 1; PIXH = 2; }
+	else if (host_pix == 2) { PIXW = 2; PIXH = 3; }
 	else { PIXW = 2; PIXH = 2; }
 	parse_arts();
 	parse_viewmodels();
@@ -42,15 +42,15 @@ function gloom_boot(int w, int h) -> void {
 	G = new Game(w, h);
 	G.renderer.init();
 	G.hud.init();
-	G.autopilot = HOST_SMOKE || FORCE_PILOT;
+	G.autopilot = host_smoke || FORCE_PILOT;
 	sound_boot();
-	if (HOST_DEV && SHOWCASE) { dev_start(); }
+	if (host_dev && SHOWCASE) { dev_start(); }
 }
 
 // dt accumulates into fixed TICKs (smoke feeds exactly TICK: one tick/frame).
 // The edge key is consumed by the first tick of the frame.
 function gloom_frame(float dt, string key, float fps, float ms_sim, float ms_draw) -> string {
-	if (HOST_DEV && SHOWCASE) { dev_frame(); }
+	if (host_dev && SHOWCASE) { dev_frame(); }
 	G.frame_key = key;
 	G.accum += dt;
 	int steps = 0;
@@ -99,12 +99,12 @@ function gloom_wants_quit() -> bool { return G.quit; }
 function gloom_summary() -> void {
 	host_log("");
 	host_log("=== GLOOM RESULT ===");
-	host_log(`backend: ${HOST_BACKEND}  seed: ${HOST_SEED}  workers: ${HOST_WORKERS}  ticks: ${G.tick}`);
+	host_log(`backend: ${host_backend}  seed: ${host_seed}  workers: ${host_workers}  ticks: ${G.tick}`);
 	host_log(`mode: ${G.mode}  map: ${G.world.map_name}  deaths: ${G.deaths}`);
 	host_log(`hp: ${G.player.hp}  armor: ${G.player.armor}  ammo: ${G.player.ammo[0]}/${G.player.ammo[1]}/${G.player.ammo[2]}`);
 	host_log(`map kills: ${G.kills}/${G.kill_total}  secrets: ${G.secrets}/${G.secret_total}`);
 	host_log(`episode kills: ${G.ep_kills}/${G.ep_kill_total}  secrets: ${G.ep_secrets}/${G.ep_secret_total}`);
 	host_log(`warden down: ${G.warden_down}`);
 	host_log(`STATE_HASH: ${G.hash}`);
-	if (SHOWCASE && HOST_SMOKE) { host_log(`sound: ${SFX_NAMES.size()} effects, ${SFX_BANK_BYTES} bytes, bank ${SFX_BANK_HASH}, ${CUE_COUNT} cues ${CUE_HASH}`); }
+	if (SHOWCASE && host_smoke) { host_log(`sound: ${SFX_NAMES.size()} effects, ${SFX_BANK_BYTES} bytes, bank ${SFX_BANK_HASH}, ${CUE_COUNT} cues ${CUE_HASH}`); }
 }

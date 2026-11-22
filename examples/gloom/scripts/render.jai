@@ -175,7 +175,7 @@ public:
 
 	// glyph tables and fixed colors; palette index 0 is black, the grid's clear value
 	void init() {
-		RESET = `${ESC}[0m`;
+		RESET = `${esc}[0m`;
 		rgb_idx(0, 0, 0);
 		HALFG = utf8(0x2580);
 		QUADG = [" "];
@@ -289,7 +289,7 @@ public:
 		if (!SHOWCASE && G.player.hurt_flash > 0) { draw_hurt_border(); }
 
 		// --- 5. pixel grid -> glyph rows
-		if (HOST_ASCII) { return rows_ascii(); }
+		if (host_ascii) { return rows_ascii(); }
 		if (PIXH == 3) { return rows_sext(); }
 		if (PIXW == 2) { return rows_quad(); }
 		return rows_half();
@@ -314,7 +314,7 @@ public:
 			t.planex = planex;
 			t.planey = planey;
 		}
-		if (HOST_WORKERS <= 0) {
+		if (host_workers <= 0) {
 			for (auto& t : wall_ws) { gloom_ray_chunk_step(t); }
 		} else {
 			parallel_for (auto& t : wall_ws) { gloom_ray_chunk_step(t); }
@@ -522,7 +522,7 @@ public:
 		}
 		// serial unless workers are requested: at this grain the region barrier
 		// costs more than the ray work it distributes
-		if (HOST_WORKERS <= 0) {
+		if (host_workers <= 0) {
 			for (auto& t : wall_ws) { gloom_ray_chunk_step(t); }
 		} else {
 			parallel_for (auto& t : wall_ws) { gloom_ray_chunk_step(t); }
@@ -985,7 +985,7 @@ private:
 
 	// quad mode: gloom_row_quad per row, through parallel_transform when the host grants workers
 	array<string> rows_quad() {
-		if (HOST_WORKERS <= 0) {
+		if (host_workers <= 0) {
 			array<string> rows = [];
 			for (int ry = 0; ry < VH / 2; ++ry) { rows.push(gloom_row_quad(ry)); }
 			return rows;

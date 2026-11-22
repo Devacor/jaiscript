@@ -1,11 +1,30 @@
 #include <jaiscript/serialization/archive_impl.hpp>
 #include <jaiscript/detail/class_runtime.hpp>
 #include <jaiscript/detail/engine_access.hpp>
+#include <jaiscript/detail/coroutine_snapshot.hpp>
+#include <jaiscript/detail/type_name_key.hpp>
+#include <jaiscript/core/coroutine.hpp>
 #include <jaiscript/properties/property_manager.hpp>
+#include <jaiscript/signals/receiver_save.hpp>
 
 #include <charconv>
 #include <cmath>
 #include <string>
+
+namespace jai::detail {
+
+std::string registered_type_spelling(const engine* a_engine, std::string_view a_text) {
+    if (a_engine && a_engine->is_type_registered(std::string(a_text))) { return std::string(a_text); }
+    const std::string key = type_name_key(a_text);
+    if (a_engine) {
+        for (std::string& name : a_engine->registered_class_names()) {
+            if (type_name_key(name) == key) { return std::move(name); }
+        }
+    }
+    return serialization::polymorphic_registry::instance().name_of_key(key);
+}
+
+}
 
 namespace jai::serialization {
 
@@ -155,6 +174,38 @@ const polymorphic_registry::type_entry* binding_entry_named(engine* eng, const s
     return entry && entry->named_by_binding ? entry : nullptr;
 }
 
+namespace {
+
+    const polymorphic_registry::type_entry* load_entry_spelled(engine* eng, const std::string& name, std::string& hybrid_class, std::string& hybrid_base) {
+        const polymorphic_registry::type_entry* entry = polymorphic_registry::instance().find(name);
+        if (!entry) {
+            entry = binding_entry_named(eng, name);
+        }
+        if (!entry && eng) {
+            // a script class deriving a bound C++ base loads through the base's entry; the caller re-attaches the script layer
+            std::string base_name = detail::engine_access::script_layer_base_name(*eng, name);
+            if (!base_name.empty()) {
+                entry = polymorphic_registry::instance().find(base_name);
+                if (!entry) {
+                    entry = binding_entry_named(eng, base_name);
+                }
+                if (entry) {
+                    hybrid_class = name;
+                    hybrid_base = std::move(base_name);
+                }
+            }
+        }
+        return entry;
+    }
+
+}
+
+const polymorphic_registry::type_entry* polymorphic_load_entry(engine* eng, const std::string& name, std::string& hybrid_class, std::string& hybrid_base) {
+    if (const auto* entry = load_entry_spelled(eng, name, hybrid_class, hybrid_base)) { return entry; }
+    const std::string spelled = detail::registered_type_spelling(eng, name);
+    return spelled.empty() || spelled == name ? nullptr : load_entry_spelled(eng, spelled, hybrid_class, hybrid_base);
+}
+
 void throw_archive_value_range(std::string_view value_text, const char* field) {
     throw serialization_error("Archive value " + std::string(value_text) + " does not fit " + field);
 }
@@ -212,21 +263,99 @@ std::pair<uint32_t, bool> archive_writer_core::track_shared_ptr(const void* raw_
     auto [it, inserted] = shared_ptr_ids_->try_emplace(raw_ptr, next_shared_id_);
     if (inserted) {
         ++next_shared_id_;
+    } else if (referenced_ahead_ && referenced_ahead_->erase(raw_ptr) != 0) {
+        return {it->second, true};
     }
     return {it->second, inserted};
 }
 
-std::pair<uint32_t, bool> archive_writer_core::track_handle(const script_value::object_holder* holder) {
-    const void* identity = holder;
-    if (const class_instance* instance = holder ? holder->instance() : nullptr) {
-        const class_definition* class_def = instance->get_class_definition();
-        if (class_def && !class_def->is_script_class() && instance->cpp_object_pointer()) {
-            identity = instance->cpp_object_pointer();
+namespace {
+    // The object a script handle names, as the archive keys it: a C++ object's every handle shares its object's id
+    const void* handle_identity(const script_value::object_holder* holder, bool a_native_layer) {
+        const void* identity = holder;
+        if (const class_instance* instance = holder ? holder->instance() : nullptr) {
+            const class_definition* class_def = instance->get_class_definition();
+            if (class_def && (a_native_layer || !class_def->is_script_class()) && instance->cpp_object_pointer()) {
+                identity = instance->cpp_object_pointer();
+            }
+        } else if (holder) {
+            identity = holder->object() ? holder->object() : holder->bound_object() ? holder->bound_object() : identity;
         }
-    } else if (holder) {
-        identity = holder->object() ? holder->object() : holder->bound_object() ? holder->bound_object() : identity;
+        return identity;
     }
-    return track_shared_ptr(identity);
+}
+
+std::pair<uint32_t, bool> archive_writer_core::track_handle(const script_value::object_holder* holder) {
+    return track_shared_ptr(handle_identity(holder, false));
+}
+
+// A script class over a C++ object is that object in the archive: its C++ shared_ptr carries the payload
+uint32_t archive_writer_core::reference_object(const script_value& a_object) {
+    const script_value& value = a_object.deref();
+    const auto holder = value.is_object() || value.type() == script_value_type::jai_shared_ptr_type ? value.get_object_holder() : nullptr;
+    if (!holder) {
+        return 0;
+    }
+    const void* identity = handle_identity(holder.get(), true);
+    auto [id, is_new] = track_shared_ptr(identity);
+    if (is_new) {
+        if (!referenced_ahead_) { referenced_ahead_ = std::make_unique<std::unordered_set<const void*>>(); }
+        referenced_ahead_->insert(identity);
+    }
+    return id;
+}
+
+std::vector<std::pair<std::string, script_value>> archive_writer_core::coroutine_fields(coroutine_handle& a_coroutine) {
+    if (!engine_ref_) { detail::throw_coroutine_not_saved(a_coroutine, "the archive has no engine"); }
+    std::vector<std::pair<std::string, script_value>> record = detail::coroutine_record_of(*engine_ref_, a_coroutine);
+    const script_value& receiver = a_coroutine.receiver();
+    const class_instance* instance = receiver.peek_class_instance();
+    if (!instance) { return record; }
+    const auto holder = receiver.get_object_holder();
+    const bool shared = shared_ptr_ids_ && shared_ptr_ids_->find(handle_identity(holder.get(), false)) != shared_ptr_ids_->end();
+    for (size_t i = open_instances_.size(); !shared && i-- > 0;) {
+        if (open_instances_[i] == instance) {
+            record.emplace_back("owner", script_value(static_cast<script_int>(open_instances_.size() - i), engine_ref_));
+            return record;
+        }
+    }
+    if (!shared) {
+        if (written_instances_ && written_instances_->find(instance) != written_instances_->end()) {
+            detail::throw_coroutine_not_saved(a_coroutine, "its receiver is saved by value elsewhere in the same save; hold the receiver in a shared_ptr, or keep the coroutine inside the receiver");
+        }
+        if (!lone_receivers_) { lone_receivers_ = std::make_unique<std::unordered_map<const void*, const coroutine_handle*>>(); }
+        lone_receivers_->try_emplace(instance, &a_coroutine);
+    }
+    script_value handle = receiver.is_reference() ? receiver.deref() : receiver;
+    if (const auto type = handle.get_type_info(); handle.is_object() && type && type->base_type == script_value_type::jai_object_type) {
+        handle.set_type_info(detail::engine_access::get_type_info_shared_ptr(*engine_ref_, type.get()));
+    }
+    record.emplace_back("this", std::move(handle));
+    return record;
+}
+
+void archive_writer_core::open_written_instance(const class_instance* a_instance) {
+    if (lone_receivers_) {
+        if (auto taken = lone_receivers_->find(a_instance); taken != lone_receivers_->end()) {
+            detail::throw_coroutine_not_saved(*taken->second, "its receiver is saved by value elsewhere in the same save; hold the receiver in a shared_ptr, or keep the coroutine inside the receiver");
+        }
+    }
+    const class_definition* held = a_instance ? a_instance->get_class_definition() : nullptr;
+    if (held && held->declares_coroutine_method()) {
+        if (!written_instances_) { written_instances_ = std::make_unique<std::unordered_set<const void*>>(); }
+        written_instances_->insert(a_instance);
+    }
+    open_instances_.push_back(a_instance);
+}
+
+void archive_writer_core::open_coroutine_record(const coroutine_handle& a_coroutine) {
+    open_coroutines_.push_back(&a_coroutine);
+}
+
+void archive_writer_core::refuse_function_in_coroutine(const script_value& a_value) const {
+    if (!open_coroutines_.empty() && a_value.is_function()) {
+        detail::throw_coroutine_not_saved(*open_coroutines_.back(), "it holds a function value");
+    }
 }
 
 std::shared_ptr<class_definition> archive_writer_core::bound_class_of(const script_value& value) const {

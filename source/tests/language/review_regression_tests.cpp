@@ -162,8 +162,8 @@ public:
                     )";
                     try { return e->execute("[[warn_mode]]; " + src).as_string(); } catch (const std::exception& ex) { return std::string("throw:") + ex.what(); }
                 };
-                check_eq(std::string("22|1|"), run("function probe() -> int { var data = [3]; var& value = data[0]; data.pop(); value += restore_array(data); return value; } got = probe();"), label + " a removed array element restored by the right side");
-                check_eq(std::string("22|1|"), run("function probe() -> int { var data = {\"key\": 3}; var& value = data[\"key\"]; data.erase(\"key\"); value += restore_map(data); return value; } got = probe();"), label + " a removed map entry restored by the right side");
+                check_eq(std::string("0|1|Reference to a removed array element"), run("function probe() -> int { var data = [3]; var& value = data[0]; data.pop(); value += restore_array(data); return value; } got = probe();"), label + " a removed array element stays removed when the right side pushes again");
+                check_eq(std::string("0|1|Reference to a removed map entry"), run("function probe() -> int { var data = {\"key\": 3}; var& value = data[\"key\"]; data.erase(\"key\"); value += restore_map(data); return value; } got = probe();"), label + " an erased map entry stays erased when the right side stores its key again");
                 check_eq(std::string("0|1|boom"), run("function probe() -> int { var data = [3]; var& value = data[0]; data.pop(); value += boom(); return value; } got = probe();"), label + " the right side's own error comes first");
                 check_eq(std::string("0|0|Reference to a removed array element"), run("function probe() -> int { var data = [3]; var& value = data[0]; data.pop(); value += 2; return value; } got = probe();"), label + " a literal right side: the target's error stands");
                 check_eq(std::string("5|0|"), run("function probe() -> int { var data = [3]; var& value = data[0]; value += 2; return value; } got = probe();"), label + " control: a live element");
@@ -188,9 +188,9 @@ public:
                 check_eq(std::string("Reference to a removed map entry|finished"),
                          run(R"(string msg = ""; try { var data = {"key": 3}; var& value = data["key"]; data.erase("key"); value -= 2; } catch (err) { msg = err; } return msg + "|finished";)"),
                          label + " a removed map entry at program scope");
-                check_eq(std::string("22|finished"),
+                check_eq(std::string("0Reference to a removed array element|finished"),
                          run(R"(string msg = ""; var got = 0; try { var data = [3]; var& value = data[0]; data.pop(); data.push(20); value += 2; got = value; } catch (err) { msg = err; } return to_string(got) + msg + "|finished";)"),
-                         label + " control: a restored element at program scope");
+                         label + " an element pushed at a removed reference's index is another element");
             }
         });
         test("a_raising_left_operand_stops_the_expression_on_both_backends", [this]() {
@@ -1266,11 +1266,11 @@ public:
                 check_eq(expected, i_out, std::string("interp: ") + what);
                 check_eq(expected, v_out, std::string("vm: ") + what);
             };
-            expect_both("function f() {} string r = \"\"; try { f.x = 1; } catch (e) { r = type_of(e) + \":\" + to_string(e); } r",
+            expect_both("function f() {} string r = \"\"; try { f.x = 1; } catch (e) { r = reflect::type_of(e) + \":\" + to_string(e); } r",
                 "error:Cannot assign to member of non-object type", "store on a function");
-            expect_both("var n = 5; string r = \"\"; try { n.x = 1; } catch (e) { r = type_of(e) + \":\" + to_string(e); } r",
+            expect_both("var n = 5; string r = \"\"; try { n.x = 1; } catch (e) { r = reflect::type_of(e) + \":\" + to_string(e); } r",
                 "error:Cannot assign to member of non-object type", "store on an int");
-            expect_both("class C { static int s = 0; } string r = \"\"; try { C.s = 8; } catch (e) { r = type_of(e) + \":\" + to_string(e); } r",
+            expect_both("class C { static int s = 0; } string r = \"\"; try { C.s = 8; } catch (e) { r = reflect::type_of(e) + \":\" + to_string(e); } r",
                 "error:'C' is a class; use C::s", "dot store on a class name");
         });
         // ---- returnattr: a failed typed-return conversion raises at the `return` with the
@@ -1567,7 +1567,7 @@ public:
                 {"decl_fast_shared_weak_decls_unaffected", R"(
                 class P { int v = 1; }
                 auto f() {
-                    shared_ptr<P> a = P();
+                    shared_ptr<P> a = make_shared<P>();
                     var b = a;
                     b.v = 7;
                     weak_ptr<P> w = a;
@@ -1710,7 +1710,7 @@ public:
             )").c_str(), "|map has no member 'nosuch'; read the key as [\"nosuch\"]", "map receiver", false);
             expect_order((std::string(side_prelude) + R"(
                 class W { int x = 0; }
-                shared_ptr<W> o = W(); weak_ptr<W> w = o; var caught = "";
+                shared_ptr<W> o = make_shared<W>(); weak_ptr<W> w = o; var caught = "";
                 try { w.nosuch(side()); } catch (e) { caught = e; }
                 log + "|" + caught;
             )").c_str(), "|weak_ptr has no member 'nosuch'", "weak_ptr receiver", true);
@@ -4393,8 +4393,8 @@ public:
             auto e = make_engine();
             jai::stdlib::register_all(e);
             // The promoted result is an int; it does not sneak back into the char domain.
-            check_eq(std::string("int"), e->execute("type_of('a' + 1)").as_string());
-            check_eq(std::string("char"), e->execute("type_of('a')").as_string());
+            check_eq(std::string("int"), e->execute("reflect::type_of('a' + 1)").as_string());
+            check_eq(std::string("char"), e->execute("reflect::type_of('a')").as_string());
         });
         // a char compared with a string compares as its one-character text, in either order and under every comparison; a string of
         // another length compares as text too (the empty string first)
@@ -4420,17 +4420,17 @@ public:
             jai::stdlib::register_all(e);
             check_eq(std::string("q char m string r char s string t char p char q string w char ['a', 'b', 'c'] char [\"a\", \"b\"] string"), e->execute(R"(
                 char k = "q"; string m = 'm';
-                string got = `${k} ${type_of(k)} ${m} ${type_of(m)}`;
-                string f(char x) { return `${x} ${type_of(x)}`; }
-                string g(string x) { return `${x} ${type_of(x)}`; }
+                string got = `${k} ${reflect::type_of(k)} ${m} ${reflect::type_of(m)}`;
+                string f(char x) { return `${x} ${reflect::type_of(x)}`; }
+                string g(string x) { return `${x} ${reflect::type_of(x)}`; }
                 char ret() { return "t"; }
                 class P { char ch = "p"; string st = 'q'; }
                 P p;
-                got += ` ${f("r")} ${g('s')} ${ret()} ${type_of(ret())} ${p.ch} ${type_of(p.ch)} ${p.st} ${type_of(p.st)}`;
+                got += ` ${f("r")} ${g('s')} ${ret()} ${reflect::type_of(ret())} ${p.ch} ${reflect::type_of(p.ch)} ${p.st} ${reflect::type_of(p.st)}`;
                 p.ch = "w";
                 array<char> ac = ["a", "b"]; ac.push("c");
                 array<string> as = ['a']; as.push('b');
-                got += ` ${p.ch} ${type_of(p.ch)} ${ac} ${type_of(ac[0])} ${as} ${type_of(as[0])}`;
+                got += ` ${p.ch} ${reflect::type_of(p.ch)} ${ac} ${reflect::type_of(ac[0])} ${as} ${reflect::type_of(as[0])}`;
                 got
             )").as_string());
             // among overloads a char reaches text as a conversion ahead of a bool's truthiness and a var parameter
@@ -4478,7 +4478,7 @@ public:
                 CharTaker taker;
                 taker.take("a");
                 string mark_of(string m) { CharTaker t; t.mark = m; return `${t.mark}`; }
-                `${host_char("r")} ${host_char(v)} ${host_char('t')} ${host_pick("u")} ${taker.take(v == "s" ? "b" : "c")} ${CharTaker::echo("b")} ${type_of(CharTaker::echo("b"))} ${host_char_ref("q")} ${CharTaker::echo_ref('q')} ${CharTaker("z").take("y")} ${mark_of("m")}`
+                `${host_char("r")} ${host_char(v)} ${host_char('t')} ${host_pick("u")} ${taker.take(v == "s" ? "b" : "c")} ${CharTaker::echo("b")} ${reflect::type_of(CharTaker::echo("b"))} ${host_char_ref("q")} ${CharTaker::echo_ref('q')} ${CharTaker("z").take("y")} ${mark_of("m")}`
             )").as_string());
             for (const std::string call : {"host_char(v)", "host_char(\"\")", "host_pick(v)", "CharTaker().take(v)", "CharTaker::echo(v)", "host_char_ref(v)", "CharTaker::echo_ref(v)", "CharTaker(v)", "CharTaker t; t.mark = v"}) {
                 check_eq(refused, e->execute("string got = \"\"; var v = \"zz\"; try { " + call + "; } catch (err) { got = err.message; } got").as_string(), call);
@@ -4507,16 +4507,16 @@ public:
                 var u = {};
                 u['a'] = 1; u["a"] = 2; u["b"] = 3; u['c'] = 4;
                 string out = `${u.size()} ${u['a']} ${u["c"]}`;
-                for (auto& [k, v] : u) { out += ` ${k}:${type_of(k)}:${v}`; }
+                for (auto& [k, v] : u) { out += ` ${k}:${reflect::type_of(k)}:${v}`; }
                 map<string, int> ms; ms['x'] = 1; ms["x"] += 1;
-                for (auto& [k, v] : ms) { out += ` | ${ms.size()} ${ms['x']} ${type_of(k)}`; }
+                for (auto& [k, v] : ms) { out += ` | ${ms.size()} ${ms['x']} ${reflect::type_of(k)}`; }
                 map<char, int> mc; mc["y"] = 1; mc['y'] += 1;
-                for (auto& [k, v] : mc) { out += ` | ${mc.size()} ${mc["y"]} ${type_of(k)}`; }
+                for (auto& [k, v] : mc) { out += ` | ${mc.size()} ${mc["y"]} ${reflect::type_of(k)}`; }
                 var lit = {'z': 1, "z": 2};
                 out += ` | ${lit.size()} ${lit["z"]}`;
                 var back = from_json(to_json(u));
                 out += ` | ${back.size()} ${back["a"]} ${back['c']}`;
-                for (auto& [k, v] : back) { out += ` ${type_of(k)}`; }
+                for (auto& [k, v] : back) { out += ` ${reflect::type_of(k)}`; }
                 map<char, int> mc2 = from_json(to_json(mc));
                 out += ` | ${mc2['y']} ${mc2["y"]}`;
                 out
@@ -4547,7 +4547,7 @@ public:
             auto e = make_engine();
             jai::stdlib::register_all(e);
             check(e->execute("to_char(65) == 'A'").as_bool());
-            check_eq(std::string("char"), e->execute("type_of(to_char(200))").as_string());
+            check_eq(std::string("char"), e->execute("reflect::type_of(to_char(200))").as_string());
             check_eq((int64_t)200, e->execute("to_char(200) + 0").as_int());
             // The BMP-writer shape: computed bytes append onto a binary string.
             check_eq(std::string("BC"), e->execute("var out = \"\"; out += to_char(66); out += to_char(67); out").as_string());
@@ -4644,7 +4644,7 @@ public:
             auto e = make_engine();
             jai::stdlib::register_all(e);
             check_eq(std::string("A"), e->execute(
-                "class A { int x = 1; A() { return; } } type_of(A())").as_string());
+                "class A { int x = 1; A() { return; } } reflect::type_of(A())").as_string());
             check_eq((int64_t)4, e->execute(
                 "class G { int x = 1; G(int v) { x = 4; if (v > 0) { return; } x = 9; } } G(1).x").as_int());
             check_eq((int64_t)9, e->execute("G(0).x").as_int());
@@ -4658,7 +4658,7 @@ public:
                 function run() -> string {
                     int i; float f; bool b; string s; array<int> xs; map<string, int> m; var v; Vec2 p;
                     H h = H();
-                    return `${i}|${f}|${b}|${s}|${xs.size()}|${m.size()}|${type_of(v)}|${p.x}|${(h.xs.size() + 2)}|${(h.p.y + 1.0)}|${gi}|${gv.x}`;
+                    return `${i}|${f}|${b}|${s}|${xs.size()}|${m.size()}|${reflect::type_of(v)}|${p.x}|${(h.xs.size() + 2)}|${(h.p.y + 1.0)}|${gi}|${gv.x}`;
                 }
                 run();
             )", std::string("0|0.0|false||0|0|null|1.5|2|3.5|0|1.5")},
@@ -4681,7 +4681,7 @@ public:
             std::string err;
             try { e->execute("class Node { int v = 0; Node next; }"); } catch (const std::exception& ex) { err = ex.what(); }
             check_true(err.find("class 'Node' holds itself by value (Node.next): a class value is never null; make one link a 'shared_ptr<Node>' (an array or a map of them starts empty)") != std::string::npos, err);
-            check_eq((int64_t)2, e->execute("class Link { int v = 0; shared_ptr<Link> next = null; Link(int x) { v = x; } } Link a = Link(1); a.next = Link(2); a.next.v").as_int());
+            check_eq((int64_t)2, e->execute("class Link { int v = 0; shared_ptr<Link> next = null; Link(int x) { v = x; } } Link a = Link(1); a.next = make_shared<Link>(2); a.next.v").as_int());
         });
         test("ctor_throw_leaks_no_instance", [this]() {
             // A throw propagates, the target keeps its value, and the half-built instance runs no destructor
@@ -4694,7 +4694,7 @@ public:
                     Bad keep = Bad(3); string err = ""; var fresh = null;
                     try { keep = Bad(0); } catch (ex) { err = ex; }
                     try { fresh = Bad(0); } catch (ex) { err = err + "|" + ex; }
-                    return `${keep.x}|${type_of(fresh)}|${err}|${to_json(LOG)}`;
+                    return `${keep.x}|${reflect::type_of(fresh)}|${err}|${to_json(LOG)}`;
                 }
                 run();
             )").as_string());
@@ -4702,10 +4702,10 @@ public:
         test("shared_ptr_mint_stamps_type", [this]() {
             auto e = make_engine();
             jai::stdlib::register_all(e);
-            // type_of names the held class on both backends; the shared_ptr stamp's
+            // reflect::type_of names the held class on both backends; the shared_ptr stamp's
             // observable is weak_ptr minting from the result
             check_eq(std::string("C"), e->execute(
-                "class C { int x = 3; C(int v) { x = v; } } var c = new shared_ptr<C>(9); type_of(c)").as_string());
+                "class C { int x = 3; C(int v) { x = v; } } var c = new shared_ptr<C>(9); reflect::type_of(c)").as_string());
             check_eq((int64_t)9, e->execute(
                 "class C { int x = 3; C(int v) { x = v; } } var c = new shared_ptr<C>(9); c.x").as_int());
         });
@@ -5152,6 +5152,40 @@ public:
                 to_json(m) + " " + to_json(rows) + " " + to_string(units["u"].hp) + " " + to_string(hs[1].hp) + " " +
                     to_string(hs[1].child.hp) + " " + to_json(g.cells)
             )", R"({"a":12} {"q":[0,12]} 1321 5 10 [0,0,7])"},
+                {"reference_parameters_bind_a_member_of_a_computed_element", R"(
+                class Leaf { float z = 0.0; }
+                class Pt { math::vec2 p = math::vec2(1.0, 2.0); float w = 1.0; Leaf inner; }
+                void bumpf(float& f) { f += 10.0; }
+                var gobjs = [Pt(), Pt(), Pt()];
+                array<Pt> tobjs = [Pt(), Pt(), Pt()];
+                map<string, Pt> mobjs = {"a": Pt(), "b": Pt()};
+                array<array<Pt>> nested = [[Pt(), Pt()], [Pt(), Pt()]];
+                array<shared_ptr<Pt>> hobjs = [make_shared<Pt>(), make_shared<Pt>()];
+                class Holder { void bump(float& f) { f += 100.0; } }
+                Holder hd;
+                int one() { return 1; }
+                int i = 0;
+                string k = "b";
+                bumpf(gobjs[i + 1].w);
+                bumpf(gobjs[one()].w);
+                bumpf(tobjs[i + 1].w);
+                bumpf(mobjs[k + ""].w);
+                bumpf(mobjs["a"].w);
+                bumpf(nested[i + 1][i].w);
+                bumpf(tobjs[i + 2].inner.z);
+                bumpf(tobjs[i + 2].p.x);
+                bumpf(hobjs[i + 1].w);
+                hd.bump(tobjs[i].w);
+                bumpf(cast<float&>(tobjs[i].w));
+                string r = "";
+                void drop(float& f, array<Pt>& a) { a.clear(); f += 1.0; }
+                array<Pt> gone = [Pt(), Pt()];
+                try { drop(gone[i + 1].w, gone); } catch (e) { r = e; }
+                void byval(float f, float g) { r += " " + to_string(f) + "/" + to_string(g); }
+                float setw(array<Pt>& a, int n) { a[n].w = 5.0; return 0.0; }
+                byval(tobjs[i + 1].w, setw(tobjs, 1));
+                to_string(gobjs[1].w) + " " + to_string(tobjs[1].w) + " " + to_string(mobjs["b"].w) + " " + to_string(mobjs["a"].w) + " " + to_string(nested[1][0].w) + " " + to_string(tobjs[2].inner.z) + " " + to_string(tobjs[2].p.x) + " " + to_string(hobjs[1].w) + " " + to_string(tobjs[0].w) + " " + r
+            )", "21.0 5.0 11.0 11.0 11.0 10.0 11.0 11.0 111.0 Reference to a removed array element 11.0/0.0"},
             };
             check_each(cases, [&](const auto& c) { expect(std::get<1>(c), std::get<2>(c), std::get<0>(c)); });
         });
@@ -5611,14 +5645,14 @@ public:
                 {"var a = [{\"x\": [1]}]; to_json(a[0][\"x\"]);", "[1]"},
                 {"var a = [1, 2]; to_json(a[1]);", "2"},
                 {"class P { array<int> v = [1, 2]; } var ps = [P()]; to_json(ps[0].v);", "[1,2]"},
-                {"var a = [[1, 2], [3]]; type_of(a[0]);", "array"},
-                {"var m = {\"k\": {\"x\": 1}}; type_of(m[\"k\"]);", "map"},
+                {"var a = [[1, 2], [3]]; reflect::type_of(a[0]);", "array"},
+                {"var m = {\"k\": {\"x\": 1}}; reflect::type_of(m[\"k\"]);", "map"},
                 {"var a = [[1, 2], [3]]; var b = a[0]; to_string(a[0]) == to_string(b);", "true"},
                 {"var m = {\"k\": [1]}; var b = m[\"k\"]; to_string(m[\"k\"]) == to_string(b);", "true"},
                 {"var a = [1, 2]; to_string(a[1]) + format(\"{}\", a[0]);", "21"},
                 {"var a = [[1, 2], [3]]; var s = to_json(a[1], 2); s;", "[\n  3\n]"},
                 {"var a = [[1, 2], [3]]; to_binary(a[0]) == to_binary([1, 2]);", "true"},
-                {"var a = [[1, 2], [3]]; to_base64(a[0]) == to_base64([1, 2]);", "true"},
+                {"var a = [[1, 2], [3]]; base64_encode(to_binary(a[0])) == base64_encode(to_binary([1, 2]));", "true"},
             };
             std::string misses;
             for (const auto& [src, want] : rows) {

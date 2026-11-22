@@ -37,6 +37,13 @@ namespace writeback_hosts {
         int64_t operator()(gate&) const { return ++n; }
     };
     inline int64_t halved(int64_t x) { return x / 2; }
+    // a host class with a reference member: C++ cannot point at a reference member, so script reaches it through an accessor
+    struct gate_ref {
+        gate& g;
+        explicit gate_ref(gate& a_gate) : g(a_gate) {}
+        gate& target() { return g; }
+        void bump() { g.count += 1; }
+    };
 }
 JAI_BIND_VEC2((writeback_hosts::flat2), x, y)
 
@@ -92,6 +99,11 @@ public:
 			.constructor<int64_t&>()
 			.property("n", &made::n)
 			.build();
+		dynamic_binder<gate_ref>(*e, "GateRef")
+			.constructor<gate&>()
+			.method("target", &gate_ref::target)
+			.method("bump", &gate_ref::bump)
+			.build();
 		return e;
 	}
 
@@ -107,6 +119,15 @@ public:
 			}
 		};
 
+		// A bound constructor taking T& binds the script's object, never a copy, and an accessor returning T& for a host reference
+		// member reads and writes the object it names
+		test("a_host_reference_member_binds_the_script_object", [expect]() {
+			expect("var g = Gate(); var h = GateRef(g); h.bump(); h.bump(); to_string(g.count)", "2", "a bound T& constructor");
+			expect("var g = Gate(); var h = new GateRef(g); h.target().count = 5; to_string(g.count) + to_string(h.target().count)", "55",
+			       "an accessor returning T&");
+			expect("var g = Gate(); var h = GateRef(g); auto& t = h.target(); t.count = 7; to_string(g.count)", "7", "a reference bound to the accessor");
+		});
+
 		test("every_value_kind_writes_back", [expect]() {
 			expect("int a = 2; add_i64(a, 40); to_string(a)", "42", "int64_t&");
 			expect("int b = 5; triple_int(b); to_string(b)", "15", "int& (a private copy converted both ways)");
@@ -119,7 +140,7 @@ public:
 			expect("map<string, int> m = {\"a\": 1}; put_z(m); to_string(m[\"z\"]) + to_string(m.size())", "262", "std::map&");
 			expect("var r = 1; replace(r); r", "replaced", "script_value&");
 			expect("var gt = Gate(); int md = 0; gt.cycle(md); to_string(md)", "1", "an enum& (a method: a free function's overload set takes no enum)");
-			expect("math::vec2 p = math::vec2(1, 2); nudge(p); to_string(p) + type_of(p)", "(11.0, -1.0)math::vec2", "a math adapter's host type");
+			expect("math::vec2 p = math::vec2(1, 2); nudge(p); to_string(p) + reflect::type_of(p)", "(11.0, -1.0)math::vec2", "a math adapter's host type");
 		});
 
 		test("every_lvalue_kind_writes_back", [expect]() {
@@ -221,10 +242,10 @@ public:
 		});
 
 		test("builtin_callbacks_take_the_elements_as_lvalues", [expect]() {
-			expect("var arr = [3, 1, 2]; var cmp = mut_less; arr.sort(cmp); arr.join(\",\") + type_of(cmp)", "-1,-1,-1function", "a host T& comparator writes the elements it compares, never the sort's own argument");
-			expect("bool cmp(var& a, var& b) { return a < b; } var arr = [3, 1, 2]; arr.sort(cmp); arr.join(\",\") + type_of(cmp)", "1,2,3function", "a script T& comparator binds the elements");
+			expect("var arr = [3, 1, 2]; var cmp = mut_less; arr.sort(cmp); arr.join(\",\") + reflect::type_of(cmp)", "-1,-1,-1function", "a host T& comparator writes the elements it compares, never the sort's own argument");
+			expect("bool cmp(var& a, var& b) { return a < b; } var arr = [3, 1, 2]; arr.sort(cmp); arr.join(\",\") + reflect::type_of(cmp)", "1,2,3function", "a script T& comparator binds the elements");
 			expect("var arr = [3, 1, 2]; arr.sort([](int& p, int& q) { p = p * 1; return p < q; }); arr.join(\",\")", "1,2,3", "a lambda comparator that writes through its parameters");
-			expect("var cmpf = [](var& p, var& q) { p = 0; return false; }; var arr = [3, 1, 2]; arr.sort(cmpf); type_of(cmpf)", "function", "the comparator's writes never reach the variable passed to sort");
+			expect("var cmpf = [](var& p, var& q) { p = 0; return false; }; var arr = [3, 1, 2]; arr.sort(cmpf); reflect::type_of(cmpf)", "function", "the comparator's writes never reach the variable passed to sort");
 			expect("var a = [1, 2, 3]; var r = array::filter(a, [](int& x) { x = x * 10; return x > 10; }); r.join(\",\") + \"|\" + a.join(\",\")", "20,30|10,20,30", "filter reference parameters target the live source");
 			expect("var a = [1, 2, 3, 4]; a.remove_if([](int& x) { x = x + 1; return x > 3; }); a.join(\",\")", "2,3", "remove_if keeps the written survivors");
 			expect("var m = {\"a\": 1, \"b\": 2}; var f = map::filter(m, [](var& k, var& v) { v = v * 10; return v > 10; }); to_string(m[\"a\"]) + to_string(m[\"b\"]) + to_string(f.size())", "10201", "a map callback's value aliases the entry");

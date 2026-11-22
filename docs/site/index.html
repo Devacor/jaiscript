@@ -101,40 +101,45 @@ public:
     JAI_PROPERTY((std::string), id, "north-gate");   // scripted and saved
     JAI_PROPERTY((int64_t), level, 1);
     JAI_SIGNAL(void(int64_t), onWave);               // script-connectable, saved too
-    JAI_METHOD(void, spawn_wave, ()) { spawn_wave(level, false); }
-    JAI_METHOD(void, spawn_wave, (int64_t size, bool elite)) { level = size; onWaveSignal(elite ? size * 2 : size); }
+    JAI_METHOD(void, spawn_wave, ()) { onWaveSignal(level); }
+    JAI_METHOD(void, spawn_wave, (int64_t new_level)) { level = new_level; spawn_wave(); }
 };</code></pre></div>
 <div class="codeblock cb-cpp" data-sample="home-bind-run-intrusive"><span class="cb-label">C++ &middot; the host, the same in both tabs</span><pre><code class="lang-cpp">int main() {
     auto engine = jai::engine::make();
     jai::bind_registrar(engine);   // every property_owner and registrar in the program
     auto gate = engine-&gt;execute&lt;std::shared_ptr&lt;Spawner&gt;&gt;(R"(
+        void on_wave(int level) { print("wave ", level); }
         Spawner gate;
-        gate.onWave.connect("hud", [](int size) { print("wave of ", size); });
-        gate.level = 3;
+        gate.onWave.connect("hud", on_wave);
         gate.spawn_wave();
-        gate.spawn_wave(4, true);
+        gate.level = 2;
+        gate.spawn_wave();
         gate
     )");
-    gate-&gt;spawn_wave(5, false);     // Emits and is caught by the script-bound lambda
+    gate-&gt;spawn_wave(3);     // Emits and is caught by the script function
 
     //Serialization Example:
     std::string spawnerJson = jai::to_json(engine, *gate);
     Spawner roundTrip = jai::from_json&lt;Spawner&gt;(engine, spawnerJson);
+    roundTrip.spawn_wave(4);  // the loaded copy&#x27;s receiver calls on_wave too
     std::cout &lt;&lt; "Wave Level: " &lt;&lt; roundTrip.level &lt;&lt; "\nContents:\n" &lt;&lt; spawnerJson &lt;&lt; "\n";
     return 0;
 }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">wave of 3
-wave of 8
-wave of 5
-Wave Level: 5
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">wave 1
+wave 2
+wave 3
+wave 4
+Wave Level: 4
 Contents:
 {
   "id": "north-gate",
-  "level": 5,
+  "level": 3,
   "onWave": {
-    "parameter_names": [],
-    "observers": [],
-    "owned_observers": {}
+    "receivers": {
+      "hud": {
+        "function": "on_wave"
+      }
+    }
   }
 }</code></pre></div>
 <p>Each <code>JAI_PROPERTY</code> is the field, its script binding, its save key and its reflection; each <code>JAI_METHOD</code> is the member function and its script binding. No registrar, no glue, nothing to drift.</p>
@@ -146,8 +151,8 @@ public:
     std::string id = "north-gate";
     int64_t level = 1;
     jai::signal_emitter&lt;void(int64_t)&gt; onWave;
-    void spawn_wave() { spawn_wave(level, false); }
-    void spawn_wave(int64_t size, bool elite) { level = size; onWave(elite ? size * 2 : size); }
+    void spawn_wave() { onWave(level); }
+    void spawn_wave(int64_t new_level) { level = new_level; spawn_wave(); }
 };
 
 // your binding file
@@ -156,39 +161,44 @@ static jai::registrar&lt;Spawner, void&gt; spawnerBinding("Spawner", [](jai::dyn
      .property("level", &amp;Spawner::level)
      .property("onWave", &amp;Spawner::onWave)  // script-connectable, saved too
      .method("spawn_wave", jai::overload&lt;&gt;(&amp;Spawner::spawn_wave))
-     .method("spawn_wave", jai::overload&lt;int64_t, bool&gt;(&amp;Spawner::spawn_wave));
+     .method("spawn_wave", jai::overload&lt;int64_t&gt;(&amp;Spawner::spawn_wave));
 });</code></pre></div>
 <div class="codeblock cb-cpp" data-sample="home-bind-run-external"><span class="cb-label">C++ &middot; the host, the same in both tabs</span><pre><code class="lang-cpp">int main() {
     auto engine = jai::engine::make();
     jai::bind_registrar(engine);   // every property_owner and registrar in the program
     auto gate = engine-&gt;execute&lt;std::shared_ptr&lt;Spawner&gt;&gt;(R"(
+        void on_wave(int level) { print("wave ", level); }
         Spawner gate;
-        gate.onWave.connect("hud", [](int size) { print("wave of ", size); });
-        gate.level = 3;
+        gate.onWave.connect("hud", on_wave);
         gate.spawn_wave();
-        gate.spawn_wave(4, true);
+        gate.level = 2;
+        gate.spawn_wave();
         gate
     )");
-    gate-&gt;spawn_wave(5, false);     // Emits and is caught by the script-bound lambda
+    gate-&gt;spawn_wave(3);     // Emits and is caught by the script function
 
     //Serialization Example:
     std::string spawnerJson = jai::to_json(engine, *gate);
     Spawner roundTrip = jai::from_json&lt;Spawner&gt;(engine, spawnerJson);
+    roundTrip.spawn_wave(4);  // the loaded copy&#x27;s receiver calls on_wave too
     std::cout &lt;&lt; "Wave Level: " &lt;&lt; roundTrip.level &lt;&lt; "\nContents:\n" &lt;&lt; spawnerJson &lt;&lt; "\n";
     return 0;
 }</code></pre></div>
-<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">wave of 3
-wave of 8
-wave of 5
-Wave Level: 5
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">wave 1
+wave 2
+wave 3
+wave 4
+Wave Level: 4
 Contents:
 {
   "id": "north-gate",
-  "level": 5,
+  "level": 3,
   "onWave": {
-    "parameter_names": [],
-    "observers": [],
-    "owned_observers": {}
+    "receivers": {
+      "hud": {
+        "function": "on_wave"
+      }
+    }
   }
 }</code></pre></div>
 <p>Third-party and engine types bind from the outside: the same names reach script, and saves are keyed by the property names.</p>
@@ -410,7 +420,7 @@ inside? &ldquo;Scripted with JaiScript&rdquo; in your credits would be lovely to
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="assets/search-index.js"></script>

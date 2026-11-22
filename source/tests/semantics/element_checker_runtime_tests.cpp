@@ -116,9 +116,9 @@ print("RAN");)element"},
 print("RAN");)element"},
 			{"E51_push_int_into_class", R"element(class Foo { int n = 0; } array<Foo> a = []; a.push(5);
 print("RAN");)element"},
-			{"E52_store_var_held_instance", R"element(class Foo { int n = 0; } array<Foo> a = [Foo()]; var v = Foo(); a[0] = v; print(type_of(a[0]) + ":" + to_string(a[0].n));
+			{"E52_store_var_held_instance", R"element(class Foo { int n = 0; } array<Foo> a = [Foo()]; var v = Foo(); a[0] = v; print(reflect::type_of(a[0]) + ":" + to_string(a[0].n));
 print("RAN");)element"},
-			{"E53_push_var_held_instance", R"element(class Foo { int n = 0; } array<Foo> a = []; var v = Foo(); a.push(v); print(type_of(a[0]) + ":" + to_string(a[0].n));
+			{"E53_push_var_held_instance", R"element(class Foo { int n = 0; } array<Foo> a = []; var v = Foo(); a.push(v); print(reflect::type_of(a[0]) + ":" + to_string(a[0].n));
 print("RAN");)element"},
 			{"E54_var_held_int_store_and_push", R"element(array<int> a = [1]; var v = 5; a[0] = v; a.push(v);
 print("RAN");)element"},
@@ -212,7 +212,7 @@ print("RAN");)element"},
 print("RAN");)element"},
 			{"F00_push_and_store_typed_derived", R"element(class Foo { int n = 0; } class Bar : Foo { int m = 0; } array<Foo> a = []; Bar b = Bar(); a.push(b); a[0] = b;
 print("RAN");)element"},
-			{"F01_push_shared_handle_into_class", R"element(class Foo { int n = 0; } array<Foo> a = []; shared_ptr<Foo> h = Foo(); a.push(h);
+			{"F01_push_shared_handle_into_class", R"element(class Foo { int n = 0; } array<Foo> a = []; shared_ptr<Foo> h = make_shared<Foo>(); a.push(h);
 print("RAN");)element"},
 			{"F02_push_instance_into_shared_array", R"element(class Foo { int n = 0; } array<shared_ptr<Foo>> a = []; a.push(Foo());
 print("RAN");)element"},
@@ -242,7 +242,7 @@ print("RAN");)element"},
 print("RAN");)element"},
 			{"F15_scalar_string_takes_int", R"element(string s = 1;
 print("RAN");)element"},
-			{"F16_scalar_class_takes_var_held", R"element(class Foo { int n = 0; } var v = Foo(); Foo f = v; print(type_of(f));
+			{"F16_scalar_class_takes_var_held", R"element(class Foo { int n = 0; } var v = Foo(); Foo f = v; print(reflect::type_of(f));
 print("RAN");)element"},
 			{"F17_scalar_int_takes_bool", R"element(int x = true;
 print("RAN");)element"},

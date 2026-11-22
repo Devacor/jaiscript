@@ -225,8 +225,8 @@ public:
             expect("utf8_string u = \"\xC3\xA9x\"; regex(\"[^x]\").search(u).text()", "\xC3\xA9", "a negated class takes a whole character");
             expect("utf8_string u = \"\xC3\xA9\"; regex(\"x*\").find_all(u).size()", "2", "an empty match advances a whole character");
             expect("utf8_string u = \"a\xC3\xA9" "b\"; to_json(regex(\"\").split(u))", "[\"a\",\"\xC3\xA9\",\"b\"]", "splitting into characters");
-            expect("utf8_string u = \"\xC3\xA9\xC3\xA9\"; type_of(regex(\"\xC3\xA9\").replace(u, \"e\"))", "utf8_string", "a utf8_string's result is a utf8_string");
-            expect("utf8_string u = \"\xC3\xA9-\"; var m = regex(\"(.)-\").search(u); type_of(m[1]) + \" \" + type_of(m.text())", "utf8_string utf8_string", "a utf8_string's group texts");
+            expect("utf8_string u = \"\xC3\xA9\xC3\xA9\"; reflect::type_of(regex(\"\xC3\xA9\").replace(u, \"e\"))", "utf8_string", "a utf8_string's result is a utf8_string");
+            expect("utf8_string u = \"\xC3\xA9-\"; var m = regex(\"(.)-\").search(u); reflect::type_of(m[1]) + \" \" + reflect::type_of(m.text())", "utf8_string utf8_string", "a utf8_string's group texts");
             expect("utf8_string u = \"\xC3\xA9\"; regex(R\"(\\xE9)\").search(u).start()", "0", "\\xNN is U+00NN on a utf8_string");
             expect("string s = \"\xE9\"; regex(R\"(\\xE9)\").search(s).start()", "0", "\\xNN is the byte on a string");
             expect("utf8_string u = \"\xC3\xA9\"; string out = \"\"; for (var m : regex(R\"(\\B)\").find_all(u)) { out += to_string(m.start()); } out", "01", "\\B is never inside a character");
@@ -333,9 +333,9 @@ public:
             expect("regex::escape(\"1+1=2? (yes) [a-z] {x} | ^$ \\\\ . * # -\")", R"(1\+1=2\?\ \(yes\)\ \[a\-z\]\ \{x\}\ \|\ \^\$\ \\\ \.\ \*\ \#\ \-)", "every metacharacter");
             expect("string t = \"a.b*(c)[d]{e}|f^g$h\\\\i?j+k#l m-n\"; to_string(regex(\"^\" + regex::escape(t) + \"$\").matches(t))", "true", "an escaped text matches itself");
             expect("string t = \"a.b\"; to_string(regex(regex::escape(t), \"x\").matches(\"a.b\"))", "true", "escape survives x");
-            expect("utf8_string u = \"\xC3\xA9.\"; type_of(regex::escape(u))", "utf8_string", "escape keeps the kind");
+            expect("utf8_string u = \"\xC3\xA9.\"; reflect::type_of(regex::escape(u))", "utf8_string", "escape keeps the kind");
             expect("to_json(regex(R\"(\\d+)\", \"i\"))", "{\"$type\":\"regex\",\"$val\":{\"pattern\":\"\\\\d+\",\"flags\":\"i\"}}", "to_json writes the pattern and flags");
-            expect("var r = from_json(to_json(regex(\"(\\\\w)x\", \"i\"))); type_of(r) + \" \" + r.pattern + \" \" + r.flags + \" \" + r.search(\"aX\")[1]", "regex (\\w)x i a", "from_json rebuilds it");
+            expect("var r = from_json(to_json(regex(\"(\\\\w)x\", \"i\"))); reflect::type_of(r) + \" \" + r.pattern + \" \" + r.flags + \" \" + r.search(\"aX\")[1]", "regex (\\w)x i a", "from_json rebuilds it");
             expect("regex r = from_binary(to_binary(regex(\"b+\"))); r.search(\"abb\").text()", "bb", "the binary archive too");
             expect(caught("var r = from_json(\"{\\\"$type\\\":\\\"regex\\\",\\\"$val\\\":{\\\"pattern\\\":\\\"(\\\",\\\"flags\\\":\\\"\\\"}}\")"), "regex: missing ')' to close the group at position 0", "a saved pattern that does not compile");
             expect(caught("regex r = regex(\"a\"); r.pattern = \"b\""), "Cannot assign to 'pattern': it is read-only", "the pattern is read-only");

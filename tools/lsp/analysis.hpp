@@ -24,7 +24,7 @@ namespace jai_lsp {
 
 enum class symbol_kind : uint8_t {
 	local, parameter, global, function, class_type, field, method, constructor, enum_type, enum_value,
-	namespace_name, host_function, host_global, host_class, host_member, host_namespace
+	namespace_name, host_function, host_global, host_class, host_member, host_namespace, type_parameter
 };
 
 struct symbol {
@@ -38,12 +38,14 @@ struct symbol {
 	text_span span;           // the declaring name
 	bool is_static = false;
 	std::vector<std::string> signatures;   // functions, methods, constructors: one per overload
+	std::string instance;     // a generic class's instance this name spells (Stack<int>): the class a hover shows
 };
 
 struct occurrence {
 	text_span span;
 	uint32_t symbol = 0;
 	bool declaration = false;
+	std::string narrowed;   // the type a flow test gave the name here
 };
 
 struct scope_local {
@@ -95,6 +97,16 @@ struct unit_model {
 	const jai::type_info* capture_member_ti = nullptr;
 };
 
+// A generic as its text reads with the type parameters left as names, parsed on its own: the class or function its author
+// wrote, which the walks and lookups read as they read a declaration with no parameters
+struct generic_view {
+	std::shared_ptr<const jai::detail::generic_definition> definition;
+	jai::declaration_ptr holder;                  // the parse (a method's sits in its class, a namespace's in its namespace)
+	jai::declaration_ptr node;                    // the class_decl or function_decl inside it; null when the text did not parse
+	const jai::declaration* decl = nullptr;       // node.get()
+};
+using generic_view_map = std::unordered_map<const jai::detail::generic_definition*, generic_view>;
+
 struct unit {
 	std::string path;
 	std::string text;
@@ -105,10 +117,19 @@ struct unit {
 	std::vector<lex_token> tokens;
 	std::vector<jai::declaration_ptr> decls;      // the parse, or what parsed around its errors
 	std::vector<jai::declaration_ptr> good_decls; // the last clean parse
+	std::vector<jai::declaration_ptr> checked_decls; // decls with the generic instances its check declared: what the checker walks
+	generic_view_map generic_views;               // the generics its parses declare, those in their text included
+	generic_view_map instance_views;              // the generic methods its check's instances declare, made as a lookup reaches them
 	bool parse_ok = false;
 	std::vector<std::string> salvaged;            // failing parse: top-level names read off the tokens (no cascade of undeclared names)
 	std::vector<file_diagnostic> parse_errors;
 	std::vector<std::string> imports;             // resolved literal top-level import/include targets
+	std::vector<std::string> namespace_queries;   // the namespace classes the parse asked about (parser::namespace_queries)
+	std::string namespace_answers;                // and how the program pooled then answered each
+	std::vector<std::string> less_queries;        // what the parse's '<' sites asked (parser::less_queries), how each was answered,
+	std::string less_answers;                     // and whether the parse was made with its program pooled
+	bool less_settled = true;
+	bool settling = false;                        // the parse under way is made with the unit's program pooled
 	uint64_t surface = 0;                         // hash of what other units' checks read from this one
 	uint64_t disk_stamp = 0;
 	double disk_checked_at = -1.0e9;              // seconds (steady clock) of the last stat
@@ -132,6 +153,9 @@ struct program {
 	uint64_t signature = 0;
 	std::unordered_set<std::string> names;
 	jai::detail::program_class_map classes;
+	jai::detail::program_enum_map enums;
+	jai::detail::program_function_map functions;   // by kind: '<' after a name asks whether another unit's name is a variable
+	jai::detail::program_global_map globals;
 };
 
 struct location {
@@ -226,6 +250,10 @@ private:
 	uint64_t epoch_clock_ = 0;
 
 	void parse(unit& u, bool publish = true);
+	uint64_t pooled_program_ = 0;                 // the signature of the program whose classes the engine's parser reads
+	void pool_classes(const program& prog);
+	std::string namespace_answers(const unit& u) const;
+	bool less_moved(unit& u);
 	void set_imports(const std::string& path, const std::vector<std::string>& imports);
 	std::vector<std::string> roots_of(const std::string& path);
 	void analyze(unit& u, bool want_model);

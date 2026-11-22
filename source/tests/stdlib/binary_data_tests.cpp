@@ -252,7 +252,7 @@ public:
             expect(layout + "class Entry { string name; int pos; int size; } binary::writer w; w.pack(L, {\"name\": \"PLAYPAL\", \"pos\": 12, \"size\": 99}); "
                    "var e = w.to_string().reader().read(Entry, L); e.name + \" \" + to_string(e.pos) + \" \" + to_string(e.size)", "PLAYPAL 12 99", "read fills a class in field order");
             expect("class Base { int a; } class Derived : Base { var b; } var d = \"\\x01\\x02\".reader().read(Derived, binary::layout(\"x\", binary::uint8, \"y\", binary::uint8)); to_string(d.a) + \" \" + to_string(d.b)", "1 2", "read fills base fields first");
-            expect("class T { utf8_string n; } var t = \"ab\".reader().read(T, binary::layout(\"n\", binary::text(2))); type_of(t.n)", "utf8_string", "a utf8_string field takes text");
+            expect("class T { utf8_string n; } var t = \"ab\".reader().read(T, binary::layout(\"n\", binary::text(2))); reflect::type_of(t.n)", "utf8_string", "a utf8_string field takes text");
         });
 
         test("layout_text_and_bytes_match_the_reader_and_writer", [expect, caught]() {

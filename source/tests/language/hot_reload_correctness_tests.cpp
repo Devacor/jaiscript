@@ -514,7 +514,7 @@ public:
                 step(t, use, "arming use pass " + std::to_string(pass));
             }
         };
-        const std::string show_int = "  string show() { return to_string(f) + \":\" + to_string(this.f) + \":\" + type_of(f); } }";
+        const std::string show_int = "  string show() { return to_string(f) + \":\" + to_string(this.f) + \":\" + reflect::type_of(f); } }";
         const std::string v1_int =
             "class R { int f = 1;\n"
             "  int set(int v) { f = v; this.f = v; return f; }\n" + show_int + "\n"
@@ -523,7 +523,7 @@ public:
         const std::string v2_string =
             "class R { string f = \"z\";\n"
             "  int set(int v) { f = to_string(v); this.f = to_string(v); return v; }\n"
-            "  string show() { return f + \":\" + this.f + \":\" + type_of(f); } }";
+            "  string show() { return f + \":\" + this.f + \":\" + reflect::type_of(f); } }";
         const std::string v2_var =
             "class R { var f = 0;\n"
             "  var set(var v) { f = v; this.f = v; return f; }\n" + show_int;
@@ -544,18 +544,41 @@ public:
             check_eq(std::string("VALUE 9:9:int"), step(t, use_int, "use after reloading back"));
         });
 
+        test("proof_field_compound_follows_a_retyped_field", [this, step, arm, make_twins]() {
+            // a compound on a field, in a function of another unit than the class (its chunk outlives the reload), in a loop and
+            // outside one, direct and through a reference: the lane's guards miss when the field's type, accessor or class moves
+            auto t = make_twins();
+            const std::string v1 =
+                "class R { int f = 1; float g = 0.5; }\n"
+                "R r = R();";
+            const std::string unit =
+                "string spin(R& o, int n) { var& rf = o.f; for (int i = 0; i < n; ++i) { o.f += 2; o.g *= 2.0; rf += 1; } o.f -= 1; ++o.f; rf = rf + 1; return to_string(o.f) + \":\" + to_string(o.g) + \":\" + reflect::type_of(o.f); }\n"
+                "string plain(R& o, int n) { for (int i = 0; i < n; ++i) { o.f += 2; } o.f -= 1; ++o.f; return to_string(o.f) + \":\" + to_string(o.g); }\n"
+                "spin(r, 3) + \"/\" + plain(r, 2)";
+            const std::string use = "spin(r, 2) + \"/\" + plain(r, 1)";
+            step(t, v1, "the class");
+            arm(t, unit, use);
+            check_eq(std::string("VALUE 77:65536.0:int/79:65536.0"), step(t, use, "armed"));
+            step(t, "class R { float f = 0.0; float g = 0.5; }", "reload int -> float");
+            check_eq(std::string("VALUE 86.0:262144.0:float/88.0:262144.0"), step(t, use, "the compound follows the float field"));
+            step(t, "class R { string f = \"\"; float g = 0.5; }", "reload float -> string");
+            check_eq(std::string("ERROR Cannot apply '+=' to string and int"), step(t, use, "a string field takes no number"));
+            step(t, "class R { int f = 0; float g = 0.5; int _set_f(int v) { g = 0.25; return v; } }", "reload string -> int behind a setter");
+            check_eq(std::string("VALUE 0:0.25"), step(t, "r.f = 5; r.g = 1.0; plain(r, 2)", "every store of the compound runs the setter"));
+        });
+
         test("proof_field_retype_float_to_int_truncates", [this, step, arm, make_twins]() {
             auto t = make_twins();
             const std::string v1 =
                 "class R { float f = 1.5;\n"
                 "  float set(float v) { f = v; this.f = v; return f; }\n"
-                "  string show() { return to_string(f) + \":\" + to_string(this.f) + \":\" + type_of(f); } }\n"
+                "  string show() { return to_string(f) + \":\" + to_string(this.f) + \":\" + reflect::type_of(f); } }\n"
                 "R r = R(); r.set(4.5); r.f = 6.75; r.show()";
             const std::string use = "r.set(7.5); r.f = 9.25; r.show()";
             arm(t, v1, use);
             step(t, "class R { int f = 0;\n"
                     "  int set(float v) { f = cast<int>(v); this.f = cast<int>(v); return f; }\n"
-                    "  string show() { return to_string(f) + \":\" + to_string(this.f) + \":\" + type_of(f); } }", "reload float -> int");
+                    "  string show() { return to_string(f) + \":\" + to_string(this.f) + \":\" + reflect::type_of(f); } }", "reload float -> int");
             check_eq(std::string("VALUE 9:9:int"), step(t, "r.show()", "live value truncated"));
             check_eq(std::string("VALUE 7:7:int"), step(t, "r.set(7.5); r.show()", "cast stores land through the ladder"));
             const std::string armed = step(t, use, "the armed use pushes a float into the int field");
@@ -568,13 +591,13 @@ public:
             const std::string v1 =
                 "class R { string f = \"a\";\n"
                 "  string set(string v) { f = v; this.f = v; return f; }\n"
-                "  string show() { return f + \":\" + this.f + \":\" + type_of(f); } }\n"
+                "  string show() { return f + \":\" + this.f + \":\" + reflect::type_of(f); } }\n"
                 "R r = R(); r.set(\"x\"); r.f = \"hello\"; r.show()";
             const std::string use = "r.set(\"k\"); r.f = \"hello\"; r.show()";
             arm(t, v1, use);
             step(t, "class R { int f = 5;\n"
                     "  int set(int v) { f = v; this.f = v; return f; }\n"
-                    "  string show() { return to_string(f) + \":\" + to_string(this.f) + \":\" + type_of(f); } }", "reload string -> int");
+                    "  string show() { return to_string(f) + \":\" + to_string(this.f) + \":\" + reflect::type_of(f); } }", "reload string -> int");
             check_eq(std::string("VALUE 5:5:int"), step(t, "r.show()", "unconvertible value adopts the new default"));
             const std::string armed = step(t, use, "the armed use pushes strings into the int field");
             check(armed.rfind("ERROR", 0) == 0, "raises identically on both twins: " + armed);
@@ -646,7 +669,7 @@ public:
                 "class B { int bv = 1; }\n"
                 "class D : B { int dv = 2;\n"
                 "  int set(int v) { bv = v; this.bv = v; dv = v; return dv; }\n"
-                "  string show() { return to_string(bv) + \":\" + to_string(this.bv) + \":\" + to_string(dv) + \":\" + type_of(bv); } }\n"
+                "  string show() { return to_string(bv) + \":\" + to_string(this.bv) + \":\" + to_string(dv) + \":\" + reflect::type_of(bv); } }\n"
                 "D d = D(); d.set(5); d.show()";
             const std::string use = "d.set(7); d.bv = 8; d.show()";
             arm(t, v1, use);
@@ -741,19 +764,19 @@ public:
             };
             run("function L(var x) { return x; } class R { static int s = 0; } R::s = 7;");
             run("class R { static string s = \"init\"; }");
-            check_eq(std::string("7:int"), run("to_string(R::s) + \":\" + type_of(R::s)"), "value preserved verbatim, old type");
+            check_eq(std::string("7:int"), run("to_string(R::s) + \":\" + reflect::type_of(R::s)"), "value preserved verbatim, old type");
             check_true(run("R::s = 9;").find("ERROR") == 0, "the new declared type governs stores: a string takes no int");
-            check_eq(std::string("9:string"), run("R::s = \"9\"; R::s + \":\" + type_of(R::s)"), "the new declared type governs stores");
+            check_eq(std::string("9:string"), run("R::s = \"9\"; R::s + \":\" + reflect::type_of(R::s)"), "the new declared type governs stores");
             run("class R { static int s = 0; }");
-            check_eq(std::string("9:string"), run("to_string(R::s) + \":\" + type_of(R::s)"), "reload back preserves the string verbatim");
+            check_eq(std::string("9:string"), run("to_string(R::s) + \":\" + reflect::type_of(R::s)"), "reload back preserves the string verbatim");
             const std::string err = run("R::s = L(\"zz\");");
             check_true(err.find("Cannot assign string to static 's' of R (declared int)") != std::string::npos, "unconvertible store raises under the new type (got: " + err + ")");
-            check_eq(std::string("9:string"), run("to_string(R::s) + \":\" + type_of(R::s)"), "static untouched by the failed store");
-            check_eq(std::string("4:int"), run("R::s = 4; to_string(R::s) + \":\" + type_of(R::s)"), "int governs again");
+            check_eq(std::string("9:string"), run("to_string(R::s) + \":\" + reflect::type_of(R::s)"), "static untouched by the failed store");
+            check_eq(std::string("4:int"), run("R::s = 4; to_string(R::s) + \":\" + reflect::type_of(R::s)"), "int governs again");
             run("class R { static int s = 0; }");
             check_eq(std::string("4"), run("to_string(R::s)"), "identical redefinition keeps the value");
             run("class R { static int s = 0; static float g = 3; }");
-            check_eq(std::string("float:3.0"), run("type_of(R::g) + \":\" + to_string(R::g)"), "a static new in the reload converts its initializer");
+            check_eq(std::string("float:3.0"), run("reflect::type_of(R::g) + \":\" + to_string(R::g)"), "a static new in the reload converts its initializer");
             check_eq(std::string("4"), run("to_string(R::s)"), "the existing static kept its value");
             run("class R { static float g = 3; }");
             check_true(run("R::s").find("ERROR") == 0, "a dropped static is gone");

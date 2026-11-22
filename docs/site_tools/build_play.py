@@ -17,7 +17,7 @@ import sys
 
 PACKAGE = pathlib.Path(__file__).resolve().parent.parent.parent
 
-# id: (folder under examples/, entry script relative to it, globs of the files it loads, its ARGS)
+# id: (folder under examples/, entry script relative to it, globs of the files it loads, its args)
 GAMES = {
     "gloom": ("gloom", "gloom.jai", ["gloom.jai", "scripts/*.jai"], []),
     "grubwell": ("crawler", "scripts/crawler.jai", ["scripts/*.jai"], []),

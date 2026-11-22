@@ -60,7 +60,7 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 <tr><td><code>Q_PROPERTY(... CONSTANT)</code>, RTTR <code>registration::property_readonly</code></td><td>script-side, a binder <code>.property(name, getter, nullptr)</code>; a <code>JAI_PROPERTY</code> is writable</td></tr>
 <tr><td><code>Q_PROPERTY(... STORED false)</code></td><td><code>JAI_TRANSIENT_PROPERTY</code>: reflected and scripted, never saved</td></tr>
 <tr><td>a different public name for a member</td><td><code>JAI_NAMED_PROPERTY((int64_t), "ammo_count", ammo, 10);</code></td></tr>
-<tr><td>a <code>signals:</code> member; RTTR has none</td><td><code>JAI_SIGNAL(void(int64_t), onFire);</code>: a signal scripts connect to, whose script-text receivers save with the object</td></tr>
+<tr><td>a <code>signals:</code> member; RTTR has none</td><td><code>JAI_SIGNAL(void(int64_t), onFire);</code>: a signal scripts connect to, whose named script receivers save with the object</td></tr>
 <tr><td>the class name from <code>Q_OBJECT</code>; <code>registration::class_&lt;T&gt;("Turret")</code>; <code>type(Turret)</code></td><td>the bare C++ class name, or <code>JAI_PROPERTY_OWNER_AS(Turret, "Turret")</code> to pin one</td></tr>
 <tr><td>moc, a registration block, <code>REFL_AUTO</code></td><td>nothing else: the macros are the declaration</td></tr>
 </tbody></table></div>
@@ -205,7 +205,7 @@ script sees heat 8 -&gt; 9</code></pre></div>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

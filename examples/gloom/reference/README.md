@@ -259,7 +259,7 @@ the checkpoint hashes above are the contract.
 
 ### 1.13 RNG — the determinism contract
 
-The host `Rng` (§2.3) is the ONLY randomness. **Ports must consume it in
+The host generator (§2.3) is the ONLY randomness. **Ports must consume it in
 identical order** — the order is defined by the reference code paths (§1.3
 order + the call sites in combat/enemies/particles). No RNG is consumed at
 boot, during map load, or in non-play modes. Practical conformance: compare
@@ -294,18 +294,20 @@ Bindings the script consumes:
   (Windows: `GetAsyncKeyState`, only while the console window is foreground.)
 - `itrunc(float) -> int` — C cast truncation. `ifloor(float) -> int` — floor.
 - `utf8(int) -> string` — UTF-8 encoding of a codepoint (glyph tables).
-- `ESC` — the escape char as a 1-char string (lexers without `\x1b`).
-- Globals: `HOST_SEED HOST_SMOKE HOST_TICKS HOST_WORKERS HOST_GOD
-  HOST_BACKEND HOST_PIX` (`--pix`: 0 half, 1 quad, 2 sext).
+- `esc` — the escape char as a 1-char string (lexers without `\x1b`).
+- Globals: `host_seed host_smoke host_ticks host_workers host_god
+  host_backend host_pix` (`--pix`: 0 half, 1 quad, 2 sext).
 - Presentation globals the JaiScript adapter also binds, which a port may
-  leave out: `HOST_LOOK` (`"reference"` under `--smoke`, else `"showcase"`;
-  `--look` chooses), `HOST_TRUECOLOR` (24-bit escapes, else xterm-256) and
-  `HOST_ASCII` (`--ascii`). The reference look is the one this document
+  leave out: `host_look` (`"reference"` under `--smoke`, else `"showcase"`;
+  `--look` chooses), `host_truecolor` (24-bit escapes, else xterm-256) and
+  `host_ascii` (`--ascii`). The reference look is the one this document
   specifies; every hash in it is the reference look's.
 - Frame keys (edge events, one per frame): lowercased chars, `esc tab enter
   up down left right`; consumed by the FIRST tick of the frame.
 
 ### 2.3 Rng (bind identically in every port)
+
+The class is `seeded_rng` in the JaiScript adapter and `Rng` in the ports.
 
 xorshift64\*: state `s` = seed (0 → 0x9E3779B97F4A7C15), warmed by 4 discarded
 steps at construction. Step: `s ^= s>>12; s ^= s<<25; s ^= s>>27;

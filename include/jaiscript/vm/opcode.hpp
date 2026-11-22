@@ -238,8 +238,9 @@ namespace jai::vm {
         op_c_mload,         // a = dst cell, b = member_expr node, c = the base slot: a member read site, the field's value pointer resolved
                             // at entry (cell_state::site_member), its kind and payload landed in the cell
         op_c_mstore,        // a = value (a cell, or k_typed_const_bit | constant), b = member_expr node, c = the base slot: a member store site,
-                            // the field's payload written in place when the kinds agree, the general store otherwise
-        op_set_member_value,   // a = member_store_protos index: `base.member = operand;` in statement position, the value an operand (no push, no result)
+                            // the field's payload written in place when the kinds agree, the general store otherwise; a compound site
+                            // (a | k_cell_member_compound_bit | kind << k_cell_member_kind_shift) reads the field, runs the operation and stores
+        op_set_member_value,   // a = member_store_protos index: `base.member = operand;` or `base.member op= operand;` in statement position, the value an operand (no push, no result)
         // fused cell pairs: the opcode of the first instruction of an adjacent pair, its own word; the second instruction keeps its own
         // word and opcode and runs from the fused executor when the first fell through to it (a jump into it dispatches it alone)
         op_c_arith2,        // C_ARITH_P then C_ARITH_P
@@ -345,9 +346,12 @@ namespace jai::vm {
         op_c_text_append,   // a = the loop's text_appends index: the pieces' string cells appended to the target slot's own node, else a miss
         op_fresh_cell,      // a=nodes index (a for loop's variable_decl a lambda captures by reference): a cell the iteration shared is replaced by one holding a copy, ahead of the update
         op_try_types,       // a=nodes index (a try_stmt with clause_types), after its op_try_push: the record takes only what those clauses take
+        op_instance_test,   // a = call site, b = chunk::instance_tests index, c = the class name's constant: reflect::is_instance_of(x, "T") over x on top; while reflect:: holds
+                            // the library's function and a class is registered under T the instance test in place, else the call
+        op_namespace_entry, // a=node index (member_expr), b=chunk::namespace_cells index: op_get_static of a member of a namespace only the host fills, pushed from its cell
     };
     inline constexpr size_t k_opcode_space = 512;   // tables indexed by opcode (the coverage report's) are this long
-    static_assert(static_cast<size_t>(opcode::op_try_types) < k_opcode_space, "the opcode space is full: widen k_opcode_space");
+    static_assert(static_cast<size_t>(opcode::op_namespace_entry) < k_opcode_space, "the opcode space is full: widen k_opcode_space");
     static_assert(static_cast<uint32_t>(opcode::op_d_jne) < 256 && static_cast<uint32_t>(opcode::op_t_load) < 256, "a cell instruction packs a typed opcode above k_cell_op_shift in 8 bits");
     // op_capture_arg forms: where the callee stands while its arguments evaluate
     inline constexpr uint32_t capture_form_probe = 0;    // the pending callee register (op_probe_callee)
@@ -369,6 +373,9 @@ namespace jai::vm {
     inline constexpr uint32_t k_typed_dst_store = 2;
     inline constexpr uint32_t k_typed_dst_compound = 3;   // `x op= y` on an int-holding slot: in place, int rows only
     inline constexpr uint32_t k_typed_env_bit = 0x40000000u;   // an operand that is an environment value: the bit | its chunk::typed_env_operands index
+    inline constexpr uint32_t k_cell_member_compound_bit = 0x40000000u;   // op_c_mstore's a: a compound site, its kind above the value
+    inline constexpr uint32_t k_cell_member_kind_shift = 26;
+    inline constexpr uint32_t k_cell_member_value_mask = (1u << k_cell_member_kind_shift) - 1;
     inline constexpr uint32_t k_dyn_dst_push = 3;   // an op_d_* arithmetic result pushed onto the operand stack (op_binary_fused's landing)
 
     inline constexpr uint32_t k_member_base_release = 0x80000000u;   // op_member_temp c: the base is an element's alias temp the read is the last to read
@@ -379,6 +386,8 @@ namespace jai::vm {
     inline constexpr uint32_t load_flag_global_only = 2; // ::name - resolve in the GLOBAL env only
                                                          // (locals/captures/member scope all skipped)
     inline constexpr uint32_t load_flag_take = 4;        // a compiler temp's last read: its value leaves the slot
+    inline constexpr uint32_t load_flag_namespace_cell = 8;   // a callee operand that is chunk::namespace_cells[namespace_cell]: no scope is searched
+    inline constexpr uint32_t load_flags_unscoped = load_flag_type_ctor | load_flag_global_only | load_flag_namespace_cell;   // no lookup cache serves these
     // op_return b: 0 plain, return_mode_converted = the value
     // was already converted at its in-region return site (op_return_convert)
     inline constexpr uint32_t return_mode_converted = 2;
@@ -418,6 +427,7 @@ namespace jai::vm {
     inline constexpr uint32_t compound_flag_old_result = 0x80;  // postfix x++ on an element/member target: push the OLD value
     inline constexpr uint32_t compound_flag_incdec = 0x100;     // ++/-- desugar: the target must be numeric (identifier-path gate)
     inline constexpr uint32_t compound_flag_value_first = 0x200; // C++17 order: the right-hand side was evaluated before the target (it sits under the target's operands)
+    inline constexpr uint32_t compound_flag_ref_alias = 0x400;   // the target names a reference declaration: its slot holds the reference, never a cell's value
 
     // a compound kind's binary operator, and back
     inline token_type compound_kind_token(uint32_t kind) noexcept {
@@ -697,6 +707,8 @@ namespace jai::vm {
             case opcode::op_c_text_append: return "C_TEXT_APPEND";
             case opcode::op_fresh_cell: return "FRESH_CELL";
             case opcode::op_try_types: return "TRY_TYPES";
+            case opcode::op_instance_test: return "INSTANCE_TEST";
+            case opcode::op_namespace_entry: return "NAMESPACE_ENTRY";
             case opcode::op_sleep: return "SLEEP";
             case opcode::op_format_call: return "FORMAT_CALL";
             case opcode::op_c_load_f: return "C_LOAD_F";

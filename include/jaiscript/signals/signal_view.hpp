@@ -7,13 +7,14 @@
 #include <string>
 #include <jaiscript/core/value.hpp>
 #include <jaiscript/signals/signal_decl.hpp>
+#include <jaiscript/signals/receiver_save.hpp>
 
 namespace jai {
 
 	class engine;
 
 	// Type-erased script surface over any signal<Sig> / signal_emitter<Sig>.
-	// The engine binds ONE generic "Signal" view class over this table, so
+	// The engine binds ONE generic "signal" view class over this table, so
 	// signal members reach script with no per-signature bind_signal_type
 	// ceremony (that path still works and takes precedence when registered).
 	// The thunks instantiate wherever make_signal_script_ops is called —
@@ -28,9 +29,11 @@ namespace jai {
 	// into the emitter first, so C++ emits can fire them. Named parameters
 	// are not settable through the erased view — text receivers see the
 	// emitter's existing parameter_names (function receivers are preferred).
+	// A text connect and connect_source need jai::permissions::source_receivers.
 	struct signal_script_ops {
 		std::shared_ptr<void> source;
 		bool (*connect_fn)(void*, const std::string&, const script_value&, engine*) = nullptr;
+		bool (*connect_source_fn)(void*, const std::string&, const script_value&) = nullptr;
 		void (*disconnect_fn)(void*, const std::string&) = nullptr;
 		bool (*connected_fn)(void*, const std::string&) = nullptr;
 
@@ -50,11 +53,20 @@ namespace jai {
 				return false;
 			}
 			if (cb.is_string()) {
+				detail::require_source_receivers(eng);
 				if (eng) { s.script_engine(eng); }
 				s.connect(id, cb.as_string(), false);
 			} else {
 				s.connect(id, cb, false);
 			}
+			return true;
+		};
+		ops.connect_source_fn = +[](void* src, const std::string& id, const script_value& lambda) {
+			state_type& s = *static_cast<state_type*>(src);
+			if (s.retired()) {
+				return false;
+			}
+			s.connect_source(id, lambda, false);
 			return true;
 		};
 		ops.disconnect_fn = +[](void* src, const std::string& id) {

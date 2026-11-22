@@ -276,6 +276,32 @@ namespace value_text_walk {
 			return {};
 		}
 
+	public:
+		// enter_object's parts without its text: the instance's fields in the order the text shows them
+		std::vector<std::pair<std::string, script_value>> fields_of(const script_value& v) {
+			std::vector<std::pair<std::string, script_value>> out;
+			const script_value::object_holder* holder = v.peek_object_holder();
+			if (!holder || holder->is_coroutine_handle() || !holder->is_instance()) { return out; }
+			const auto* instance = holder->unchecked_instance();
+			const class_definition* def = instance->get_class_definition();
+			if (def && def->is_transparent_wrapper()) {
+				script_value wrapper = v;
+				script_value inner = def->unwrap(wrapper);
+				if (!inner.is_null() && inner.peek_object_holder() != holder) { return fields_of(inner); }
+			}
+			if (def && def->is_cpp_class()) { return out; }
+			std::vector<uint64_t> ids = def ? declared_fields(def) : std::vector<uint64_t>{};
+			if (!def || instance->has_user_overflow_fields()) { append_runtime_fields(*instance, ids); }
+			string_symbolizer* names = symbolizer_of(*instance);
+			for (const uint64_t id : ids) {
+				if (const script_value* field = instance->find_script_field_value(id); field && names) {
+					out.emplace_back(std::string(names->get_string(id)), *field);
+				}
+			}
+			return out;
+		}
+
+	private:
 		void append_opaque_name(std::string_view name) {
 			out_ += '<';
 			out_ += name;
@@ -407,6 +433,20 @@ namespace value_text_walk {
 checked_result<std::string> value_text(const script_value& v, const own_text_hook& hook, size_t limit) {
 	value_text_walk::walker walk(hook, limit, v.payload_engine());
 	return walk.run(v);
+}
+
+script_value shown_object(const script_value& v) {
+	const script_value& held = v.deref();
+	if (held.raw_storage_index() != script_value::TYPEID_WEAK_PTR) { return held; }
+	const auto shared = held.get_weak_ptr().lock();
+	if (!shared) { return script_value(std::monostate{}, held.payload_engine()); }
+	return script_value::make_object(shared->type_name(), shared->type_id(), shared->held(), shared->owner());
+}
+
+std::vector<std::pair<std::string, script_value>> shown_fields(const script_value& v, engine* eng) {
+	const own_text_hook hook{};
+	value_text_walk::walker walk(hook, SIZE_MAX, eng);
+	return walk.fields_of(shown_object(v));
 }
 
 JAI_NOINLINE error_propagator map_key_missing_error(string_symbolizer* sym, const type_info* map_tag, const script_value& key) {

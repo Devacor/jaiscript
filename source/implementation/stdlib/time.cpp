@@ -215,10 +215,6 @@ namespace stdlib {
             return make_date(e, d);
         };
 
-        def("now", sig(0, 0, {}, svt::jai_float_type), [=](engine* e, const args_t& a) -> R {
-            if (!a.empty()) return count_error("time::now expects no arguments");
-            return script_value(e->engine_elapsed(), e);
-        });
         def("engine_elapsed", sig(0, 0, {}, svt::jai_float_type), [=](engine* e, const args_t& a) -> R {
             if (!a.empty()) return count_error("time::engine_elapsed expects no arguments");
             return script_value(e->engine_elapsed(), e);

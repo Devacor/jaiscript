@@ -695,6 +695,18 @@
       "display": "map::filter(values: map<K,V>, predicate: function(K, V) -> bool) -> map<K,V>"
     },
     {
+      "owner": "map",
+      "name": "merge",
+      "signature": "merge(values: map<K,V>, other: map) -> map<K,V>",
+      "provider": "core",
+      "effect": "copy",
+      "notes": "Returns a new map of values' entries and other's, other's values replacing colliding keys, held to values' key/value constraints; neither input mutates. Only values retained in the result copy; explicit handles retain identity.",
+      "source": "include/jaiscript/detail/array_namespace.hpp",
+      "form": "namespace",
+      "availability": "Every engine",
+      "display": "map::merge(values: map<K,V>, other: map) -> map<K,V>"
+    },
+    {
       "owner": "map<K,V>",
       "name": "remove_if",
       "signature": "remove_if(predicate: function(K, V) -> bool) -> int",
@@ -758,7 +770,7 @@
       "availability": "Every engine",
       "display": "string.at(index: int) -> char",
       "example": {
-        "code": "string s = \"abc\";\nprint(s.at(1), \" \", s[2], \" \", type_of(s.at(0)));",
+        "code": "string s = \"abc\";\nprint(s.at(1), \" \", s[2], \" \", reflect::type_of(s.at(0)));",
         "output": "b c char"
       }
     },
@@ -2139,18 +2151,6 @@
       "display": "shared_ptr<T>.unique() -> bool"
     },
     {
-      "owner": "shared_ptr<T>",
-      "name": "same_as",
-      "signature": "same_as(other: var) -> bool",
-      "provider": "core",
-      "effect": "observe",
-      "notes": "True when both handles share one object. same_object(x, y) asks the same question of any two values.",
-      "source": "source/implementation/builtin_methods.cpp",
-      "form": "method",
-      "availability": "Every engine",
-      "display": "shared_ptr<T>.same_as(other: var) -> bool"
-    },
-    {
       "owner": "weak_ptr<T>",
       "name": "lock",
       "signature": "lock() -> shared_ptr<T> or null",
@@ -2185,18 +2185,6 @@
       "form": "method",
       "availability": "Every engine",
       "display": "weak_ptr<T>.reset() -> void"
-    },
-    {
-      "owner": "weak_ptr<T>",
-      "name": "same_as",
-      "signature": "same_as(other: var) -> bool",
-      "provider": "core",
-      "effect": "observe",
-      "notes": "",
-      "source": "source/implementation/builtin_methods.cpp",
-      "form": "method",
-      "availability": "Every engine",
-      "display": "weak_ptr<T>.same_as(other: var) -> bool"
     },
     {
       "owner": "coroutine",
@@ -2287,6 +2275,38 @@
       }
     },
     {
+      "owner": "debug",
+      "name": "stack",
+      "signature": "debug::stack() -> array<string>",
+      "provider": "core",
+      "effect": "observe",
+      "notes": "The running code's call stack, innermost first; each frame as an uncaught error's trace names it, \"function (file:line)\".",
+      "source": "source/implementation/engine.cpp",
+      "form": "function",
+      "availability": "Every engine",
+      "display": "debug::stack() -> array<string>",
+      "example": {
+        "code": "function where() -> int { return debug::stack().size(); }\nprint(where(), \" \", debug::stack().size());",
+        "output": "2 1"
+      }
+    },
+    {
+      "owner": "debug",
+      "name": "locals",
+      "signature": "debug::locals(frame: int = 0) -> map<string, var>",
+      "provider": "core",
+      "effect": "observe",
+      "notes": "A frame's locals as name -> a copy of the value: 0 is the caller's, 1 its caller's, as debug::stack() lists them.",
+      "source": "source/implementation/engine.cpp",
+      "form": "function",
+      "availability": "Every engine",
+      "display": "debug::locals(frame: int = 0) -> map<string, var>",
+      "example": {
+        "code": "function f(int n) -> int {\n    array<int> xs = [n, n * 2];\n    print(debug::locals());\n    return 0;\n}\nf(3);",
+        "output": "{\"n\": 3, \"xs\": [3, 6]}"
+      }
+    },
+    {
       "owner": "global",
       "name": "extend",
       "signature": "extend(object: var, class: class) -> var",
@@ -2352,7 +2372,7 @@
       "signature": "shared_from_this() -> shared_ptr<T>",
       "provider": "core",
       "effect": "observe",
-      "notes": "Method context only.",
+      "notes": "Method context only, on an object reached through a shared_ptr; on a class value it raises.",
       "source": "source/implementation/engine.cpp",
       "form": "function",
       "availability": "Every engine",
@@ -2364,7 +2384,7 @@
       "signature": "weak_from_this() -> weak_ptr<T>",
       "provider": "core",
       "effect": "observe",
-      "notes": "Method context only.",
+      "notes": "Method context only, on an object reached through a shared_ptr; on a class value it raises.",
       "source": "source/implementation/engine.cpp",
       "form": "function",
       "availability": "Every engine",
@@ -2640,34 +2660,6 @@
     },
     {
       "owner": "global",
-      "name": "type_of",
-      "signature": "type_of(value: var) -> string",
-      "provider": "stdlib",
-      "effect": "observe",
-      "notes": "",
-      "source": "include/jaiscript/stdlib/io.hpp",
-      "form": "function",
-      "availability": "register_all() or area registration",
-      "display": "type_of(value: var) -> string",
-      "example": {
-        "code": "print(type_of(1), \" \", type_of(1.5), \" \", type_of(\"s\"), \" \", type_of([1]));",
-        "output": "int float string array"
-      }
-    },
-    {
-      "owner": "global",
-      "name": "is_registered_type",
-      "signature": "is_registered_type(value: var) -> bool",
-      "provider": "stdlib",
-      "effect": "observe",
-      "notes": "",
-      "source": "include/jaiscript/stdlib/io.hpp",
-      "form": "function",
-      "availability": "register_all() or area registration",
-      "display": "is_registered_type(value: var) -> bool"
-    },
-    {
-      "owner": "global",
       "name": "to_char",
       "signature": "to_char(code: int) -> char",
       "provider": "stdlib",
@@ -2678,7 +2670,7 @@
       "availability": "register_all() or area registration",
       "display": "to_char(code: int) -> char",
       "example": {
-        "code": "print(to_char(65), \" \", type_of(to_char(65)));",
+        "code": "print(to_char(65), \" \", reflect::type_of(to_char(65)));",
         "output": "A char"
       }
     },
@@ -2728,6 +2720,22 @@
     },
     {
       "owner": "global",
+      "name": "from_json",
+      "signature": "from_json<T>(text: string) -> T",
+      "provider": "stdlib",
+      "effect": "deserialize",
+      "notes": "The document as a T: a class is built with T() and its fields stored by name (from_json<array<T>>, shared_ptr<T> and maps alike); a key the class has no field for is skipped.",
+      "source": "include/jaiscript/stdlib/json.hpp",
+      "form": "function",
+      "availability": "register_all() or area registration",
+      "display": "from_json<T>(text: string) -> T",
+      "example": {
+        "code": "class Pet { string name; int age = 1; }\nPet p = from_json<Pet>(\"{\\\"name\\\": \\\"rex\\\"}\");\nprint(p.name, \" \", p.age);",
+        "output": "rex 1"
+      }
+    },
+    {
+      "owner": "global",
       "name": "to_binary",
       "signature": "to_binary(value: var) -> string",
       "provider": "stdlib",
@@ -2752,27 +2760,19 @@
     },
     {
       "owner": "global",
-      "name": "to_base64",
-      "signature": "to_base64(value: var) -> string",
-      "provider": "stdlib",
-      "effect": "serialize",
-      "notes": "Binary archive encoded as Base64.",
-      "source": "include/jaiscript/stdlib/json.hpp",
-      "form": "function",
-      "availability": "register_all() or area registration",
-      "display": "to_base64(value: var) -> string"
-    },
-    {
-      "owner": "global",
-      "name": "from_base64",
-      "signature": "from_base64(text: string) -> var",
+      "name": "from_binary",
+      "signature": "from_binary<T>(bytes: string) -> T",
       "provider": "stdlib",
       "effect": "deserialize",
-      "notes": "",
+      "notes": "The archive's value as a T, by from_json<T>'s rules: a class is built with T() and its fields stored by name (from_binary<array<T>>, shared_ptr<T> and maps alike); a key the class has no field for is skipped.",
       "source": "include/jaiscript/stdlib/json.hpp",
       "form": "function",
       "availability": "register_all() or area registration",
-      "display": "from_base64(text: string) -> var"
+      "display": "from_binary<T>(bytes: string) -> T",
+      "example": {
+        "code": "class Pet { string name; int age = 1; }\nPet rex;\nrex.name = \"rex\";\nPet back = from_binary<Pet>(to_binary(rex));\nprint(back.name, \" \", back.age);",
+        "output": "rex 1"
+      }
     },
     {
       "owner": "global",
@@ -2799,19 +2799,19 @@
       "display": "base64_decode(text: string) -> string"
     },
     {
-      "owner": "global",
+      "owner": "map<K,V>",
       "name": "merge",
-      "signature": "merge(first: map<K,V>, second: map) -> map<K,V>",
-      "provider": "stdlib",
-      "effect": "copy",
-      "notes": "Preserves the first input key/value constraints and converts selected second values through normal map-store rules. Second entries replace colliding keys. Only values retained in the result copy; explicit handles retain identity. Inputs do not mutate.",
-      "source": "include/jaiscript/stdlib/containers.hpp",
-      "form": "function",
-      "availability": "register_all() or area registration",
-      "display": "merge(first: map<K,V>, second: map) -> map<K,V>",
+      "signature": "merge(other: map) -> void",
+      "provider": "core",
+      "effect": "mutate",
+      "notes": "Puts other's entries into the map in place, other's values replacing colliding keys, held to the map's key/value constraints through normal map-store rules, and returns nothing; map::merge returns a copy. Every entry is converted before any is stored, so a refused entry raises with the map unchanged. other does not mutate.",
+      "source": "source/implementation/builtin_methods.cpp",
+      "form": "method",
+      "availability": "Every engine",
+      "display": "map<K,V>.merge(other: map) -> void",
       "example": {
-        "code": "print(to_json(merge({\"a\": 1, \"b\": 2}, {\"b\": 3})));",
-        "output": "{\"a\":1,\"b\":3}"
+        "code": "map<string, int> base = {\"a\": 1, \"b\": 2};\nmap<string, int> both = map::merge(base, {\"b\": 3, \"c\": 4});   // a copy\nbase.merge({\"b\": 3});                                         // in place\nprint(to_json(both), \" \", to_json(base));",
+        "output": "{\"a\":1,\"b\":3,\"c\":4} {\"a\":1,\"b\":3}"
       }
     },
     {
@@ -2939,16 +2939,16 @@
       "display": "string::pad_right(value: text, width: int, fill: char or text = ' ') -> same_text_kind"
     },
     {
-      "owner": "global",
-      "name": "file_data",
-      "signature": "file_data(path: string) -> map<string,var> or null",
+      "owner": "file",
+      "name": "data",
+      "signature": "data(path: string) -> map<string,var> or null",
       "provider": "core",
       "effect": "filesystem",
       "notes": "Resolved path metadata: path, filename, extension, created, modified and entry flags.",
       "source": "source/implementation/engine.cpp",
-      "form": "function",
+      "form": "namespace",
       "availability": "Every engine",
-      "display": "file_data(path: string) -> map<string,var> or null"
+      "display": "file::data(path: string) -> map<string,var> or null"
     },
     {
       "owner": "math",
@@ -4488,18 +4488,6 @@
     },
     {
       "owner": "time",
-      "name": "now",
-      "signature": "now() -> float",
-      "provider": "stdlib",
-      "effect": "observe",
-      "notes": "Engine elapsed seconds, monotonic.",
-      "source": "include/jaiscript/stdlib/time.hpp",
-      "form": "function",
-      "availability": "register_all() or area registration",
-      "display": "time::now() -> float"
-    },
-    {
-      "owner": "time",
       "name": "engine_elapsed",
       "signature": "engine_elapsed() -> float",
       "provider": "stdlib",
@@ -4860,6 +4848,34 @@
     },
     {
       "owner": "reflect",
+      "name": "type_of",
+      "signature": "reflect::type_of(value: var) -> string",
+      "provider": "stdlib",
+      "effect": "observe",
+      "notes": "",
+      "source": "include/jaiscript/stdlib/reflection.hpp",
+      "form": "function",
+      "availability": "register_all() or area registration",
+      "display": "reflect::type_of(value: var) -> string",
+      "example": {
+        "code": "print(reflect::type_of(1), \" \", reflect::type_of(1.5), \" \", reflect::type_of(\"s\"), \" \", reflect::type_of([1]));",
+        "output": "int float string array"
+      }
+    },
+    {
+      "owner": "reflect",
+      "name": "is_registered_type",
+      "signature": "reflect::is_registered_type(value: var) -> bool",
+      "provider": "stdlib",
+      "effect": "observe",
+      "notes": "",
+      "source": "include/jaiscript/stdlib/reflection.hpp",
+      "form": "function",
+      "availability": "register_all() or area registration",
+      "display": "reflect::is_registered_type(value: var) -> bool"
+    },
+    {
+      "owner": "reflect",
       "name": "type_name",
       "signature": "type_name(value: var) -> string",
       "provider": "stdlib",
@@ -4936,15 +4952,15 @@
     },
     {
       "owner": "reflect",
-      "name": "is_a",
-      "signature": "is_a(value: var, class_name: string) -> bool",
+      "name": "is_instance_of",
+      "signature": "is_instance_of(value: var, class_name: string) -> bool",
       "provider": "stdlib",
       "effect": "observe",
-      "notes": "instanceof for a class named at run time: true for an object of the class or of one derived from it, false for any other value. An unknown class name raises.",
+      "notes": "True for an object of the class or of one derived from it, false for any other value. An unknown class name raises.",
       "source": "include/jaiscript/stdlib/reflection.hpp",
       "form": "function",
       "availability": "register_all() or area registration",
-      "display": "reflect::is_a(value: var, class_name: string) -> bool"
+      "display": "reflect::is_instance_of(value: var, class_name: string) -> bool"
     },
     {
       "owner": "reflect",
@@ -5797,26 +5813,26 @@
     {
       "owner": "global",
       "name": "load_sound",
-      "signature": "load_sound(path: string) -> Sound",
+      "signature": "load_sound(path: string) -> sound",
       "provider": "runner",
       "effect": "audio",
       "notes": "Opens a WAV, MIDI or MP3 file (the header decides, else the extension) and preloads it in the background; null for a missing file, an unknown format, or off Windows.",
       "source": "tools/jaiscript/sound.hpp",
       "form": "function",
       "availability": "Standalone jaiscript.exe",
-      "display": "load_sound(path: string) -> Sound"
+      "display": "load_sound(path: string) -> sound"
     },
     {
       "owner": "global",
       "name": "play_sound",
-      "signature": "play_sound(path: string, loop: bool = false) -> Sound",
+      "signature": "play_sound(path: string, loop: bool = false) -> sound",
       "provider": "runner",
       "effect": "audio",
-      "notes": "load_sound then play: the Sound keeps playing when the result is dropped, and stops with stop() or stop_sounds(); null as load_sound.",
+      "notes": "load_sound then play: the sound keeps playing when the result is dropped, and stops with stop() or stop_sounds(); null as load_sound.",
       "source": "tools/jaiscript/sound.hpp",
       "form": "function",
       "availability": "Standalone jaiscript.exe",
-      "display": "play_sound(path: string, loop: bool = false) -> Sound"
+      "display": "play_sound(path: string, loop: bool = false) -> sound"
     },
     {
       "owner": "global",
@@ -5824,26 +5840,26 @@
       "signature": "stop_sounds() -> void",
       "provider": "runner",
       "effect": "audio",
-      "notes": "Stops every Sound.",
+      "notes": "Stops every sound.",
       "source": "tools/jaiscript/sound.hpp",
       "form": "function",
       "availability": "Standalone jaiscript.exe",
       "display": "stop_sounds() -> void"
     },
     {
-      "owner": "Sound",
+      "owner": "sound",
       "name": "play",
       "signature": "play(loop: bool = false) -> bool",
       "provider": "runner",
       "effect": "audio",
-      "notes": "Starts from the beginning (a playing Sound restarts), looping when loop is true, and returns at once; false once the file proved unplayable.",
+      "notes": "Starts from the beginning (a playing sound restarts), looping when loop is true, and returns at once; false once the file proved unplayable.",
       "source": "tools/jaiscript/sound.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Sound.play(loop: bool = false) -> bool"
+      "display": "sound.play(loop: bool = false) -> bool"
     },
     {
-      "owner": "Sound",
+      "owner": "sound",
       "name": "stop",
       "signature": "stop() -> void",
       "provider": "runner",
@@ -5852,10 +5868,10 @@
       "source": "tools/jaiscript/sound.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Sound.stop() -> void"
+      "display": "sound.stop() -> void"
     },
     {
-      "owner": "Sound",
+      "owner": "sound",
       "name": "playing",
       "signature": "playing() -> bool",
       "provider": "runner",
@@ -5864,10 +5880,10 @@
       "source": "tools/jaiscript/sound.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Sound.playing() -> bool"
+      "display": "sound.playing() -> bool"
     },
     {
-      "owner": "Sound",
+      "owner": "sound",
       "name": "volume",
       "signature": "volume(level: float) -> void",
       "provider": "runner",
@@ -5876,10 +5892,10 @@
       "source": "tools/jaiscript/sound.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Sound.volume(level: float) -> void"
+      "display": "sound.volume(level: float) -> void"
     },
     {
-      "owner": "Sound",
+      "owner": "sound",
       "name": "format",
       "signature": "format() -> string",
       "provider": "runner",
@@ -5888,7 +5904,7 @@
       "source": "tools/jaiscript/sound.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Sound.format() -> string"
+      "display": "sound.format() -> string"
     },
     {
       "owner": "global",
@@ -5915,112 +5931,112 @@
       "display": "net_local_addresses() -> array<string>"
     },
     {
-      "owner": "global",
-      "name": "read_file",
-      "signature": "read_file(path: string) -> string",
+      "owner": "file",
+      "name": "read",
+      "signature": "read(path: string) -> string",
       "provider": "runner",
       "effect": "filesystem",
       "notes": "Missing/unreadable file raises; empty file returns empty string.",
       "source": "tools/jaiscript/file_io.hpp",
-      "form": "function",
+      "form": "namespace",
       "availability": "Standalone jaiscript.exe",
-      "display": "read_file(path: string) -> string"
+      "display": "file::read(path: string) -> string"
     },
     {
-      "owner": "global",
-      "name": "write_file",
-      "signature": "write_file(path: string, content: string) -> bool",
+      "owner": "file",
+      "name": "write",
+      "signature": "write(path: string, content: string) -> bool",
       "provider": "runner",
       "effect": "filesystem",
       "notes": "Creates missing parent folders.",
       "source": "tools/jaiscript/file_io.hpp",
-      "form": "function",
+      "form": "namespace",
       "availability": "Standalone jaiscript.exe",
-      "display": "write_file(path: string, content: string) -> bool"
+      "display": "file::write(path: string, content: string) -> bool"
     },
     {
-      "owner": "global",
-      "name": "file_exists",
-      "signature": "file_exists(path: string) -> bool",
+      "owner": "file",
+      "name": "exists",
+      "signature": "exists(path: string) -> bool",
       "provider": "runner",
       "effect": "filesystem",
       "notes": "",
       "source": "tools/jaiscript/file_io.hpp",
-      "form": "function",
+      "form": "namespace",
       "availability": "Standalone jaiscript.exe",
-      "display": "file_exists(path: string) -> bool"
+      "display": "file::exists(path: string) -> bool"
     },
     {
-      "owner": "global",
-      "name": "delete_file",
-      "signature": "delete_file(path: string) -> bool",
+      "owner": "file",
+      "name": "remove",
+      "signature": "remove(path: string) -> bool",
       "provider": "runner",
       "effect": "filesystem",
       "notes": "",
       "source": "tools/jaiscript/file_io.hpp",
-      "form": "function",
+      "form": "namespace",
       "availability": "Standalone jaiscript.exe",
-      "display": "delete_file(path: string) -> bool"
+      "display": "file::remove(path: string) -> bool"
     },
     {
-      "owner": "global",
-      "name": "move_file",
-      "signature": "move_file(from: string, to: string) -> bool",
+      "owner": "file",
+      "name": "move",
+      "signature": "move(from: string, to: string) -> bool",
       "provider": "runner",
       "effect": "filesystem",
       "notes": "Replaces destination; may copy across volumes.",
       "source": "tools/jaiscript/file_io.hpp",
-      "form": "function",
+      "form": "namespace",
       "availability": "Standalone jaiscript.exe",
-      "display": "move_file(from: string, to: string) -> bool"
+      "display": "file::move(from: string, to: string) -> bool"
     },
     {
-      "owner": "global",
-      "name": "dir_exists",
-      "signature": "dir_exists(path: string) -> bool",
+      "owner": "file",
+      "name": "directory_exists",
+      "signature": "directory_exists(path: string) -> bool",
       "provider": "runner",
       "effect": "filesystem",
       "notes": "",
       "source": "tools/jaiscript/file_io.hpp",
-      "form": "function",
+      "form": "namespace",
       "availability": "Standalone jaiscript.exe",
-      "display": "dir_exists(path: string) -> bool"
+      "display": "file::directory_exists(path: string) -> bool"
     },
     {
-      "owner": "global",
-      "name": "make_dirs",
-      "signature": "make_dirs(path: string) -> bool",
+      "owner": "file",
+      "name": "make_directories",
+      "signature": "make_directories(path: string) -> bool",
       "provider": "runner",
       "effect": "filesystem",
       "notes": "",
       "source": "tools/jaiscript/file_io.hpp",
-      "form": "function",
+      "form": "namespace",
       "availability": "Standalone jaiscript.exe",
-      "display": "make_dirs(path: string) -> bool"
+      "display": "file::make_directories(path: string) -> bool"
     },
     {
-      "owner": "global",
-      "name": "writable_dir",
-      "signature": "writable_dir(path: string) -> bool",
+      "owner": "file",
+      "name": "ensure_writable_directory",
+      "signature": "ensure_writable_directory(path: string) -> bool",
       "provider": "runner",
       "effect": "filesystem",
       "notes": "Creates folder and performs a write/remove probe.",
       "source": "tools/jaiscript/file_io.hpp",
-      "form": "function",
+      "form": "namespace",
       "availability": "Standalone jaiscript.exe",
-      "display": "writable_dir(path: string) -> bool"
+      "display": "file::ensure_writable_directory(path: string) -> bool"
     },
     {
-      "owner": "global",
-      "name": "list_dir",
-      "signature": "list_dir(path: string) -> array<string>",
+      "owner": "file",
+      "name": "list_directory",
+      "signature": "list_directory(path: string) -> array<string>",
       "provider": "runner",
       "effect": "filesystem",
       "notes": "",
       "source": "tools/jaiscript/file_io.hpp",
-      "form": "function",
+      "form": "namespace",
       "availability": "Standalone jaiscript.exe",
-      "display": "list_dir(path: string) -> array<string>"
+      "display": "file::list_directory(path: string) -> array<string>"
     },
     {
       "owner": "global",
@@ -6048,42 +6064,42 @@
     },
     {
       "owner": "global",
-      "name": "Download",
-      "signature": "Download() -> Download",
+      "name": "download",
+      "signature": "download() -> download",
       "provider": "runner",
       "effect": "construct",
       "notes": "",
       "source": "tools/jaiscript/fetch.hpp",
       "form": "function",
       "availability": "Standalone jaiscript.exe",
-      "display": "Download() -> Download"
+      "display": "download() -> download"
     },
     {
       "owner": "global",
-      "name": "NetChannel",
-      "signature": "NetChannel() -> NetChannel",
+      "name": "net_channel",
+      "signature": "net_channel() -> net_channel",
       "provider": "runner",
       "effect": "construct",
       "notes": "",
       "source": "tools/jaiscript/fetch.hpp",
       "form": "function",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetChannel() -> NetChannel"
+      "display": "net_channel() -> net_channel"
     },
     {
       "owner": "global",
-      "name": "NetServer",
-      "signature": "NetServer() -> NetServer",
+      "name": "net_server",
+      "signature": "net_server() -> net_server",
       "provider": "runner",
       "effect": "construct",
       "notes": "",
       "source": "tools/jaiscript/fetch.hpp",
       "form": "function",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetServer() -> NetServer"
+      "display": "net_server() -> net_server"
     },
     {
-      "owner": "Download",
+      "owner": "download",
       "name": "start",
       "signature": "start(url: string, destination: string) -> bool",
       "provider": "runner",
@@ -6092,10 +6108,10 @@
       "source": "tools/jaiscript/fetch.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Download.start(url: string, destination: string) -> bool"
+      "display": "download.start(url: string, destination: string) -> bool"
     },
     {
-      "owner": "Download",
+      "owner": "download",
       "name": "pump",
       "signature": "pump() -> bool",
       "provider": "runner",
@@ -6104,10 +6120,10 @@
       "source": "tools/jaiscript/fetch.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Download.pump() -> bool"
+      "display": "download.pump() -> bool"
     },
     {
-      "owner": "Download",
+      "owner": "download",
       "name": "cancel",
       "signature": "cancel() -> void",
       "provider": "runner",
@@ -6116,10 +6132,10 @@
       "source": "tools/jaiscript/fetch.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Download.cancel() -> void"
+      "display": "download.cancel() -> void"
     },
     {
-      "owner": "Download",
+      "owner": "download",
       "name": "done",
       "signature": "done() -> bool",
       "provider": "runner",
@@ -6128,10 +6144,10 @@
       "source": "tools/jaiscript/fetch.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Download.done() -> bool"
+      "display": "download.done() -> bool"
     },
     {
-      "owner": "NetChannel",
+      "owner": "net_channel",
       "name": "listen",
       "signature": "listen(port: int) -> bool",
       "provider": "runner",
@@ -6140,10 +6156,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetChannel.listen(port: int) -> bool"
+      "display": "net_channel.listen(port: int) -> bool"
     },
     {
-      "owner": "NetChannel",
+      "owner": "net_channel",
       "name": "connect",
       "signature": "connect(host: string, port: int) -> bool",
       "provider": "runner",
@@ -6152,10 +6168,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetChannel.connect(host: string, port: int) -> bool"
+      "display": "net_channel.connect(host: string, port: int) -> bool"
     },
     {
-      "owner": "NetChannel",
+      "owner": "net_channel",
       "name": "send",
       "signature": "send(bytes: string) -> bool",
       "provider": "runner",
@@ -6164,10 +6180,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetChannel.send(bytes: string) -> bool"
+      "display": "net_channel.send(bytes: string) -> bool"
     },
     {
-      "owner": "NetChannel",
+      "owner": "net_channel",
       "name": "pump",
       "signature": "pump() -> int",
       "provider": "runner",
@@ -6176,10 +6192,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetChannel.pump() -> int"
+      "display": "net_channel.pump() -> int"
     },
     {
-      "owner": "NetChannel",
+      "owner": "net_channel",
       "name": "close",
       "signature": "close() -> void",
       "provider": "runner",
@@ -6188,10 +6204,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetChannel.close() -> void"
+      "display": "net_channel.close() -> void"
     },
     {
-      "owner": "NetChannel",
+      "owner": "net_channel",
       "name": "connected",
       "signature": "connected() -> bool",
       "provider": "runner",
@@ -6200,10 +6216,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetChannel.connected() -> bool"
+      "display": "net_channel.connected() -> bool"
     },
     {
-      "owner": "NetChannel",
+      "owner": "net_channel",
       "name": "status",
       "signature": "status() -> string",
       "provider": "runner",
@@ -6212,10 +6228,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetChannel.status() -> string"
+      "display": "net_channel.status() -> string"
     },
     {
-      "owner": "NetServer",
+      "owner": "net_server",
       "name": "listen",
       "signature": "listen(port: int) -> bool",
       "provider": "runner",
@@ -6224,10 +6240,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetServer.listen(port: int) -> bool"
+      "display": "net_server.listen(port: int) -> bool"
     },
     {
-      "owner": "NetServer",
+      "owner": "net_server",
       "name": "send",
       "signature": "send(client: int, bytes: string) -> bool",
       "provider": "runner",
@@ -6236,10 +6252,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetServer.send(client: int, bytes: string) -> bool"
+      "display": "net_server.send(client: int, bytes: string) -> bool"
     },
     {
-      "owner": "NetServer",
+      "owner": "net_server",
       "name": "broadcast",
       "signature": "broadcast(bytes: string) -> int",
       "provider": "runner",
@@ -6248,10 +6264,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetServer.broadcast(bytes: string) -> int"
+      "display": "net_server.broadcast(bytes: string) -> int"
     },
     {
-      "owner": "NetServer",
+      "owner": "net_server",
       "name": "pump",
       "signature": "pump() -> int",
       "provider": "runner",
@@ -6260,10 +6276,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetServer.pump() -> int"
+      "display": "net_server.pump() -> int"
     },
     {
-      "owner": "NetServer",
+      "owner": "net_server",
       "name": "kick",
       "signature": "kick(client: int) -> void",
       "provider": "runner",
@@ -6272,10 +6288,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetServer.kick(client: int) -> void"
+      "display": "net_server.kick(client: int) -> void"
     },
     {
-      "owner": "NetServer",
+      "owner": "net_server",
       "name": "client_count",
       "signature": "client_count() -> int",
       "provider": "runner",
@@ -6284,10 +6300,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetServer.client_count() -> int"
+      "display": "net_server.client_count() -> int"
     },
     {
-      "owner": "NetServer",
+      "owner": "net_server",
       "name": "listening",
       "signature": "listening() -> bool",
       "provider": "runner",
@@ -6296,10 +6312,10 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetServer.listening() -> bool"
+      "display": "net_server.listening() -> bool"
     },
     {
-      "owner": "NetServer",
+      "owner": "net_server",
       "name": "close",
       "signature": "close() -> void",
       "provider": "runner",
@@ -6308,22 +6324,34 @@
       "source": "tools/jaiscript/main.cpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "NetServer.close() -> void"
+      "display": "net_server.close() -> void"
     },
     {
-      "owner": "Signal",
+      "owner": "signal",
       "name": "connect",
       "signature": "connect(id: string, callback: function or string) -> void",
       "provider": "host-bound",
       "effect": "mutate",
-      "notes": "Callback or script text; named connection remains owned by the signal.",
+      "notes": "Callback or script text; named connection remains owned by the signal. A named function saves by name; text requires jai::permissions::source_receivers.",
       "source": "include/jaiscript/signals/signal_binding.hpp",
       "form": "method",
       "availability": "When the host binds this signal type",
-      "display": "Signal.connect(id: string, callback: function or string) -> void"
+      "display": "signal.connect(id: string, callback: function or string) -> void"
     },
     {
-      "owner": "Signal",
+      "owner": "signal",
+      "name": "connect_source",
+      "signature": "connect_source(id: string, lambda: function) -> void",
+      "provider": "host-bound",
+      "effect": "mutate",
+      "notes": "A [value captures](parameters) { body } lambda; a save writes its body, parameter names and captures as source. Requires jai::permissions::source_receivers.",
+      "source": "include/jaiscript/signals/signal_binding.hpp",
+      "form": "method",
+      "availability": "When the host binds this signal type",
+      "display": "signal.connect_source(id: string, lambda: function) -> void"
+    },
+    {
+      "owner": "signal",
       "name": "disconnect",
       "signature": "disconnect(id: string) -> void",
       "provider": "host-bound",
@@ -6332,10 +6360,10 @@
       "source": "include/jaiscript/signals/signal_binding.hpp",
       "form": "method",
       "availability": "When the host binds this signal type",
-      "display": "Signal.disconnect(id: string) -> void"
+      "display": "signal.disconnect(id: string) -> void"
     },
     {
-      "owner": "Signal",
+      "owner": "signal",
       "name": "connected",
       "signature": "connected(id: string) -> bool",
       "provider": "host-bound",
@@ -6344,22 +6372,34 @@
       "source": "include/jaiscript/signals/signal_binding.hpp",
       "form": "method",
       "availability": "When the host binds this signal type",
-      "display": "Signal.connected(id: string) -> bool"
+      "display": "signal.connected(id: string) -> bool"
     },
     {
-      "owner": "SignalEmitter",
+      "owner": "signal_emitter",
       "name": "connect",
       "signature": "connect(id: string, callback: function or string) -> void",
       "provider": "host-bound",
       "effect": "mutate",
-      "notes": "Callback or script text; named connection remains owned by the signal.",
+      "notes": "Callback or script text; named connection remains owned by the signal. A named function saves by name; text requires jai::permissions::source_receivers.",
       "source": "include/jaiscript/signals/signal_binding.hpp",
       "form": "method",
       "availability": "When the host binds this signal type",
-      "display": "SignalEmitter.connect(id: string, callback: function or string) -> void"
+      "display": "signal_emitter.connect(id: string, callback: function or string) -> void"
     },
     {
-      "owner": "SignalEmitter",
+      "owner": "signal_emitter",
+      "name": "connect_source",
+      "signature": "connect_source(id: string, lambda: function) -> void",
+      "provider": "host-bound",
+      "effect": "mutate",
+      "notes": "A [value captures](parameters) { body } lambda; a save writes its body, parameter names and captures as source. Requires jai::permissions::source_receivers.",
+      "source": "include/jaiscript/signals/signal_binding.hpp",
+      "form": "method",
+      "availability": "When the host binds this signal type",
+      "display": "signal_emitter.connect_source(id: string, lambda: function) -> void"
+    },
+    {
+      "owner": "signal_emitter",
       "name": "disconnect",
       "signature": "disconnect(id: string) -> void",
       "provider": "host-bound",
@@ -6368,10 +6408,10 @@
       "source": "include/jaiscript/signals/signal_binding.hpp",
       "form": "method",
       "availability": "When the host binds this signal type",
-      "display": "SignalEmitter.disconnect(id: string) -> void"
+      "display": "signal_emitter.disconnect(id: string) -> void"
     },
     {
-      "owner": "SignalEmitter",
+      "owner": "signal_emitter",
       "name": "connected",
       "signature": "connected(id: string) -> bool",
       "provider": "host-bound",
@@ -6380,10 +6420,10 @@
       "source": "include/jaiscript/signals/signal_binding.hpp",
       "form": "method",
       "availability": "When the host binds this signal type",
-      "display": "SignalEmitter.connected(id: string) -> bool"
+      "display": "signal_emitter.connected(id: string) -> bool"
     },
     {
-      "owner": "SignalEmitter",
+      "owner": "signal_emitter",
       "name": "emit",
       "signature": "emit(payload: bound_signal_arguments...) -> void",
       "provider": "host-bound",
@@ -6392,7 +6432,7 @@
       "source": "include/jaiscript/signals/signal_binding.hpp",
       "form": "method",
       "availability": "When the host binds this signal type",
-      "display": "SignalEmitter.emit(payload: bound_signal_arguments...) -> void"
+      "display": "signal_emitter.emit(payload: bound_signal_arguments...) -> void"
     },
     {
       "owner": "global",
@@ -6455,7 +6495,7 @@
       "display": "binary::reader.text() -> string"
     },
     {
-      "owner": "Download",
+      "owner": "download",
       "name": "success",
       "signature": "success() -> bool",
       "provider": "runner",
@@ -6464,10 +6504,10 @@
       "source": "tools/jaiscript/fetch.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Download.success() -> bool"
+      "display": "download.success() -> bool"
     },
     {
-      "owner": "Download",
+      "owner": "download",
       "name": "error",
       "signature": "error() -> string",
       "provider": "runner",
@@ -6476,10 +6516,10 @@
       "source": "tools/jaiscript/fetch.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Download.error() -> string"
+      "display": "download.error() -> string"
     },
     {
-      "owner": "Download",
+      "owner": "download",
       "name": "received",
       "signature": "received() -> int",
       "provider": "runner",
@@ -6488,10 +6528,10 @@
       "source": "tools/jaiscript/fetch.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Download.received() -> int"
+      "display": "download.received() -> int"
     },
     {
-      "owner": "Download",
+      "owner": "download",
       "name": "total",
       "signature": "total() -> int",
       "provider": "runner",
@@ -6500,10 +6540,10 @@
       "source": "tools/jaiscript/fetch.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Download.total() -> int"
+      "display": "download.total() -> int"
     },
     {
-      "owner": "Download",
+      "owner": "download",
       "name": "fraction",
       "signature": "fraction() -> float",
       "provider": "runner",
@@ -6512,7 +6552,7 @@
       "source": "tools/jaiscript/fetch.hpp",
       "form": "method",
       "availability": "Standalone jaiscript.exe",
-      "display": "Download.fraction() -> float"
+      "display": "download.fraction() -> float"
     },
     {
       "owner": "jai::permissions",
@@ -6969,65 +7009,65 @@
     {
       "owner": "spider",
       "name": "catch",
-      "signature": "catch(url: string, options: map = {}) -> spider::Response",
+      "signature": "catch(url: string, options: map = {}) -> spider::response",
       "provider": "stdlib",
       "effect": "network",
       "notes": "A GET (options.method overrides) through the host's transport; options method, headers, timeout (30 s), type, redirects (5). Errors name the call, the URL and the reason.",
       "source": "include/jaiscript/stdlib/spider.hpp",
       "form": "function",
       "availability": "register_spider() + a host transport + the network permission",
-      "display": "spider::catch(url: string, options: map = {}) -> spider::Response"
+      "display": "spider::catch(url: string, options: map = {}) -> spider::response"
     },
     {
       "owner": "spider",
       "name": "get",
-      "signature": "get(url: string, options: map = {}) -> spider::Response",
+      "signature": "get(url: string, options: map = {}) -> spider::response",
       "provider": "stdlib",
       "effect": "network",
       "notes": "The plain name of spider::catch.",
       "source": "include/jaiscript/stdlib/spider.hpp",
       "form": "function",
       "availability": "register_spider() + a host transport + the network permission",
-      "display": "spider::get(url: string, options: map = {}) -> spider::Response"
+      "display": "spider::get(url: string, options: map = {}) -> spider::response"
     },
     {
       "owner": "spider",
       "name": "sling",
-      "signature": "sling(content: var, url: string, options: map = {}) -> spider::Response",
+      "signature": "sling(content: var, url: string, options: map = {}) -> spider::response",
       "provider": "stdlib",
       "effect": "network",
       "notes": "A POST carrying content: text as text/plain, anything else as JSON, a map as a form with type \"form\".",
       "source": "include/jaiscript/stdlib/spider.hpp",
       "form": "function",
       "availability": "register_spider() + a host transport + the network permission",
-      "display": "spider::sling(content: var, url: string, options: map = {}) -> spider::Response"
+      "display": "spider::sling(content: var, url: string, options: map = {}) -> spider::response"
     },
     {
       "owner": "spider",
       "name": "post",
-      "signature": "post(url: string, content: var, options: map = {}) -> spider::Response",
+      "signature": "post(url: string, content: var, options: map = {}) -> spider::response",
       "provider": "stdlib",
       "effect": "network",
       "notes": "The plain name of spider::sling, URL first.",
       "source": "include/jaiscript/stdlib/spider.hpp",
       "form": "function",
       "availability": "register_spider() + a host transport + the network permission",
-      "display": "spider::post(url: string, content: var, options: map = {}) -> spider::Response"
+      "display": "spider::post(url: string, content: var, options: map = {}) -> spider::response"
     },
     {
       "owner": "spider",
-      "name": "Response",
-      "signature": "Response(status: int = 200, body: string = \"\") -> spider::Response",
+      "name": "response",
+      "signature": "response(status: int = 200, body: string = \"\") -> spider::response",
       "provider": "stdlib",
       "effect": "construct",
       "notes": "A new response, as a server handler builds one.",
       "source": "include/jaiscript/stdlib/spider.hpp",
       "form": "function",
       "availability": "register_spider() + a host transport + the network permission",
-      "display": "spider::Response(status: int = 200, body: string = \"\") -> spider::Response"
+      "display": "spider::response(status: int = 200, body: string = \"\") -> spider::response"
     },
     {
-      "owner": "spider::Response",
+      "owner": "spider::response",
       "name": "ok",
       "signature": "ok() -> bool",
       "provider": "stdlib",
@@ -7036,10 +7076,10 @@
       "source": "include/jaiscript/stdlib/spider.hpp",
       "form": "method",
       "availability": "register_spider()",
-      "display": "spider::Response.ok() -> bool"
+      "display": "spider::response.ok() -> bool"
     },
     {
-      "owner": "spider::Response",
+      "owner": "spider::response",
       "name": "json",
       "signature": "json() -> var",
       "provider": "stdlib",
@@ -7048,10 +7088,10 @@
       "source": "include/jaiscript/stdlib/spider.hpp",
       "form": "method",
       "availability": "register_spider()",
-      "display": "spider::Response.json() -> var"
+      "display": "spider::response.json() -> var"
     },
     {
-      "owner": "spider::Response",
+      "owner": "spider::response",
       "name": "header",
       "signature": "header(name: string) -> string",
       "provider": "stdlib",
@@ -7060,22 +7100,22 @@
       "source": "include/jaiscript/stdlib/spider.hpp",
       "form": "method",
       "availability": "register_spider()",
-      "display": "spider::Response.header(name: string) -> string"
+      "display": "spider::response.header(name: string) -> string"
     },
     {
-      "owner": "spider::Response",
+      "owner": "spider::response",
       "name": "header",
-      "signature": "header(name: string, value: string) -> spider::Response&",
+      "signature": "header(name: string, value: string) -> spider::response&",
       "provider": "stdlib",
       "effect": "mutate",
       "notes": "Sets a header, replacing one of the same name in any spelling; chains.",
       "source": "include/jaiscript/stdlib/spider.hpp",
       "form": "method",
       "availability": "register_spider()",
-      "display": "spider::Response.header(name: string, value: string) -> spider::Response&"
+      "display": "spider::response.header(name: string, value: string) -> spider::response&"
     },
     {
-      "owner": "spider::Response",
+      "owner": "spider::response",
       "name": "set_cookie",
       "signature": "set_cookie(name: string, value: string, options: map = {}) -> void",
       "provider": "stdlib",
@@ -7084,10 +7124,10 @@
       "source": "include/jaiscript/stdlib/spider.hpp",
       "form": "method",
       "availability": "register_spider()",
-      "display": "spider::Response.set_cookie(name: string, value: string, options: map = {}) -> void"
+      "display": "spider::response.set_cookie(name: string, value: string, options: map = {}) -> void"
     },
     {
-      "owner": "spider::Response",
+      "owner": "spider::response",
       "name": "clear_cookie",
       "signature": "clear_cookie(name: string, options: map = {}) -> void",
       "provider": "stdlib",
@@ -7096,7 +7136,7 @@
       "source": "include/jaiscript/stdlib/spider.hpp",
       "form": "method",
       "availability": "register_spider()",
-      "display": "spider::Response.clear_cookie(name: string, options: map = {}) -> void"
+      "display": "spider::response.clear_cookie(name: string, options: map = {}) -> void"
     },
     {
       "owner": "atomic<int>",
@@ -7844,15 +7884,15 @@
     },
     {
       "owner": "crypto",
-      "name": "equals",
-      "signature": "equals(a: text, b: text) -> bool",
+      "name": "constant_time_equals",
+      "signature": "constant_time_equals(a: text, b: text) -> bool",
       "provider": "stdlib",
       "effect": "observe",
       "notes": "Equal bytes, compared in time that depends only on the length.",
       "source": "include/jaiscript/stdlib/crypto.hpp",
       "form": "namespace",
       "availability": "register_all() or area registration",
-      "display": "crypto::equals(a: text, b: text) -> bool"
+      "display": "crypto::constant_time_equals(a: text, b: text) -> bool"
     },
     {
       "owner": "crypto",
@@ -7928,29 +7968,29 @@
     },
     {
       "owner": "language",
-      "name": "scoped_template",
-      "signature": "scoped_template(path: string, args: map) -> web::html",
+      "name": "untrusted_template",
+      "signature": "untrusted_template(path: string, args: map) -> web::html",
       "provider": "core",
       "effect": "execute",
-      "notes": "Renders an untrusted template file over a copy of args, which is the only name it sees; it calls only built-in methods of built-in values and the string::, array:: and map:: functions, always escapes, and writes at most engine::scoped_template_output_limit bytes. The file is read only from engine::scoped_template_dirs(): a relative path with no .., the first folder in order that holds it, never through a link out.",
+      "notes": "Renders an untrusted template file over a copy of args, which is the only name it sees; it calls only built-in methods of built-in values and the string::, array:: and map:: functions, always escapes, and writes at most engine::untrusted_template_output_limit bytes. The file is read only from engine::untrusted_template_dirs(): a relative path with no .., the first folder in order that holds it, never through a link out.",
       "source": "source/implementation/parser.cpp",
       "form": "function",
-      "availability": "The scoped_template permission (on by default)",
-      "display": "scoped_template(path: string, args: map) -> web::html"
+      "availability": "The untrusted_template permission (on by default)",
+      "display": "untrusted_template(path: string, args: map) -> web::html"
     },
     {
       "owner": "language",
-      "name": "scoped_template_text",
-      "signature": "scoped_template_text(text: string, args: map) -> web::html",
+      "name": "untrusted_template_text",
+      "signature": "untrusted_template_text(text: string, args: map) -> web::html",
       "provider": "core",
       "effect": "execute",
-      "notes": "scoped_template over template text instead of a file.",
+      "notes": "untrusted_template over template text instead of a file.",
       "source": "source/implementation/parser.cpp",
       "form": "function",
-      "availability": "The scoped_template permission (on by default)",
-      "display": "scoped_template_text(text: string, args: map) -> web::html",
+      "availability": "The untrusted_template permission (on by default)",
+      "display": "untrusted_template_text(text: string, args: map) -> web::html",
       "example": {
-        "code": "print(scoped_template_text(\"<b>${args[\\\"name\\\"]}</b>\", {\"name\": \"<i>\"}));",
+        "code": "print(untrusted_template_text(\"<b>${args[\\\"name\\\"]}</b>\", {\"name\": \"<i>\"}));",
         "output": "<b>&lt;i&gt;</b>"
       }
     },
@@ -7960,7 +8000,7 @@
       "signature": "raw(text: var) -> web::html",
       "provider": "core",
       "effect": "copy",
-      "notes": "Inside a template(...) only: the text spliced unescaped. A scoped template refuses it.",
+      "notes": "Inside a template(...) only: the text spliced unescaped. An untrusted template refuses it.",
       "source": "source/implementation/templates.cpp",
       "form": "function",
       "availability": "Inside a template",
@@ -7979,6 +8019,30 @@
       "display": "web::html.to_string() -> string"
     },
     {
+      "owner": "reflect::type",
+      "name": "name",
+      "signature": "name() -> string",
+      "provider": "core",
+      "effect": "observe",
+      "notes": "The type's canonical spelling: User, array<User>, shared_ptr<shop::Product>.",
+      "source": "source/implementation/records.cpp",
+      "form": "method",
+      "availability": "Every engine",
+      "display": "reflect::type.name() -> string"
+    },
+    {
+      "owner": "reflect::type",
+      "name": "to_string",
+      "signature": "to_string() -> string",
+      "provider": "core",
+      "effect": "observe",
+      "notes": "The same spelling.",
+      "source": "source/implementation/records.cpp",
+      "form": "method",
+      "availability": "Every engine",
+      "display": "reflect::type.to_string() -> string"
+    },
+    {
       "owner": "reflect",
       "name": "template_output_limit",
       "signature": "template_output_limit() -> int",
@@ -7992,46 +8056,154 @@
     },
     {
       "owner": "reflect",
-      "name": "scoped_template_output_limit",
-      "signature": "scoped_template_output_limit() -> int",
+      "name": "untrusted_template_output_limit",
+      "signature": "untrusted_template_output_limit() -> int",
       "provider": "core",
       "effect": "observe",
       "source": "source/implementation/engine.cpp",
-      "notes": "The bytes one scoped_template / scoped_template_text render may write, as the host set it (default 1048576; 0 = no limit); scripts read it, hosts change it.",
+      "notes": "The bytes one untrusted_template / untrusted_template_text render may write, as the host set it (default 1048576; 0 = no limit); scripts read it, hosts change it.",
       "form": "function",
       "availability": "Every engine",
-      "display": "reflect::scoped_template_output_limit() -> int"
+      "display": "reflect::untrusted_template_output_limit() -> int"
     },
     {
       "owner": "reflect",
-      "name": "scoped_template_dirs",
-      "signature": "scoped_template_dirs() -> array<string>",
+      "name": "untrusted_template_dirs",
+      "signature": "untrusted_template_dirs() -> array<string>",
       "provider": "core",
       "effect": "observe",
       "source": "source/implementation/templates.cpp",
-      "notes": "The folders a scoped_template file is read from, in the order they are tried, as the host set them (default [\"template\"]); scripts read the list, hosts change it.",
+      "notes": "The folders a untrusted_template file is read from, in the order they are tried, as the host set them (default [\"template\"]); scripts read the list, hosts change it.",
       "form": "function",
       "availability": "Every engine",
-      "display": "reflect::scoped_template_dirs() -> array<string>"
+      "display": "reflect::untrusted_template_dirs() -> array<string>"
+    },
+    {
+      "owner": "image",
+      "name": "load",
+      "signature": "load(bytes: string or array<uint8>) -> image",
+      "provider": "stdlib",
+      "effect": "construct",
+      "notes": "The whole image as 8-bit RGBA, turned upright by its EXIF orientation. The argument is the file's bytes, never a path: a file is image::load(file::read(path)).",
+      "source": "include/jaiscript/stdlib/image.hpp",
+      "form": "function",
+      "availability": "register_image()",
+      "display": "image::load(bytes: string or array<uint8>) -> image"
+    },
+    {
+      "owner": "image",
+      "name": "data",
+      "signature": "data(bytes: string or array<uint8>) -> map<string, var>",
+      "provider": "stdlib",
+      "effect": "observe",
+      "notes": "format, width and height from the header alone, no pixel decoded; the size is the upright one image::load gives.",
+      "source": "include/jaiscript/stdlib/image.hpp",
+      "form": "function",
+      "availability": "register_image()",
+      "display": "image::data(bytes: string or array<uint8>) -> map<string, var>"
+    },
+    {
+      "owner": "image",
+      "name": "fit",
+      "signature": "fit(width: int, height: int) -> void",
+      "provider": "stdlib",
+      "effect": "mutate",
+      "notes": "Scales to fit inside the box with the shape kept; never enlarges. Returns nothing; image::fit returns a copy.",
+      "source": "include/jaiscript/stdlib/image.hpp",
+      "form": "method",
+      "availability": "register_image()",
+      "display": "image.fit(width: int, height: int) -> void"
+    },
+    {
+      "owner": "image",
+      "name": "crop_fill",
+      "signature": "crop_fill(width: int, height: int) -> void",
+      "provider": "stdlib",
+      "effect": "mutate",
+      "notes": "Exactly width x height: the centred part with that shape, scaled (enlarged when smaller). Returns nothing; image::crop_fill returns a copy.",
+      "source": "include/jaiscript/stdlib/image.hpp",
+      "form": "method",
+      "availability": "register_image()",
+      "display": "image.crop_fill(width: int, height: int) -> void"
+    },
+    {
+      "owner": "image",
+      "name": "crop",
+      "signature": "crop(x: int, y: int, width: int, height: int) -> void",
+      "provider": "stdlib",
+      "effect": "mutate",
+      "notes": "The rectangle, which must lie inside the image. Returns nothing; image::crop returns a copy.",
+      "source": "include/jaiscript/stdlib/image.hpp",
+      "form": "method",
+      "availability": "register_image()",
+      "display": "image.crop(x: int, y: int, width: int, height: int) -> void"
+    },
+    {
+      "owner": "image",
+      "name": "fit",
+      "signature": "fit(img: image, width: int, height: int) -> image",
+      "provider": "stdlib",
+      "effect": "copy",
+      "notes": "img.fit as a new image; img is unchanged.",
+      "source": "include/jaiscript/stdlib/image.hpp",
+      "form": "namespace",
+      "availability": "register_image()",
+      "display": "image::fit(img: image, width: int, height: int) -> image"
+    },
+    {
+      "owner": "image",
+      "name": "crop_fill",
+      "signature": "crop_fill(img: image, width: int, height: int) -> image",
+      "provider": "stdlib",
+      "effect": "copy",
+      "notes": "img.crop_fill as a new image; img is unchanged.",
+      "source": "include/jaiscript/stdlib/image.hpp",
+      "form": "namespace",
+      "availability": "register_image()",
+      "display": "image::crop_fill(img: image, width: int, height: int) -> image"
+    },
+    {
+      "owner": "image",
+      "name": "crop",
+      "signature": "crop(img: image, x: int, y: int, width: int, height: int) -> image",
+      "provider": "stdlib",
+      "effect": "copy",
+      "notes": "img.crop as a new image; img is unchanged.",
+      "source": "include/jaiscript/stdlib/image.hpp",
+      "form": "namespace",
+      "availability": "register_image()",
+      "display": "image::crop(img: image, x: int, y: int, width: int, height: int) -> image"
+    },
+    {
+      "owner": "image",
+      "name": "encode",
+      "signature": "encode(format: string[, quality: int]) -> string",
+      "provider": "stdlib",
+      "effect": "observe",
+      "notes": "The image as a file's bytes: \"jpeg\" is baseline at quality 1 to 100 (90 by default), 4:2:0 below 90 and 4:4:4 from it; \"png\" is lossless 8-bit, grey, RGB or RGBA as the pixels need. No metadata is written.",
+      "source": "include/jaiscript/stdlib/image.hpp",
+      "form": "method",
+      "availability": "register_image()",
+      "display": "image.encode(format: string[, quality: int]) -> string"
     }
   ],
   "fields": [
     {
       "owner": "math",
-      "name": "PI",
+      "name": "pi",
       "type": "float",
       "provider": "core",
       "access": "constant",
-      "notes": "Engine-core math constant; use math::PI.",
+      "notes": "Engine-core math constant; use math::pi.",
       "source": "include/jaiscript/detail/math_namespace.hpp"
     },
     {
       "owner": "math",
-      "name": "E",
+      "name": "e",
       "type": "float",
       "provider": "core",
       "access": "constant",
-      "notes": "Engine-core math constant; use math::E.",
+      "notes": "Engine-core math constant; use math::e.",
       "source": "include/jaiscript/detail/math_namespace.hpp"
     },
     {
@@ -8052,7 +8224,7 @@
     },
     {
       "owner": "global",
-      "name": "ARGS",
+      "name": "args",
       "type": "array<string>",
       "provider": "runner",
       "access": "read/write",
@@ -8076,7 +8248,7 @@
     },
     {
       "owner": "jai::permissions",
-      "name": "scoped_template",
+      "name": "untrusted_template",
       "type": "int permission id",
       "provider": "core",
       "access": "constant",
@@ -8113,6 +8285,14 @@
       "provider": "core",
       "access": "constant",
       "notes": "A convention the engine enforces nothing with."
+    },
+    {
+      "owner": "jai::permissions",
+      "name": "source_receivers",
+      "type": "int permission id",
+      "provider": "core",
+      "access": "constant",
+      "notes": "Signal receivers made of source: connect_source, a text connect, and a load that arms one (on by default)."
     },
     {
       "owner": "jai::permissions",
@@ -8595,49 +8775,49 @@
       "notes": "Available on the caught error value, not ordinary text."
     },
     {
-      "owner": "NetChannel",
+      "owner": "net_channel",
       "name": "on_packet",
-      "type": "Signal",
+      "type": "signal",
       "provider": "runner",
       "access": "receiver view",
       "notes": "Packets carry bytes; disconnect carries reason; connect has no payload."
     },
     {
-      "owner": "NetChannel",
+      "owner": "net_channel",
       "name": "on_connect",
-      "type": "Signal",
+      "type": "signal",
       "provider": "runner",
       "access": "receiver view",
       "notes": "Packets carry bytes; disconnect carries reason; connect has no payload."
     },
     {
-      "owner": "NetChannel",
+      "owner": "net_channel",
       "name": "on_disconnect",
-      "type": "Signal",
+      "type": "signal",
       "provider": "runner",
       "access": "receiver view",
       "notes": "Packets carry bytes; disconnect carries reason; connect has no payload."
     },
     {
-      "owner": "NetServer",
+      "owner": "net_server",
       "name": "on_client_connect",
-      "type": "Signal",
+      "type": "signal",
       "provider": "runner",
       "access": "receiver view",
       "notes": "Payload starts with client id, then bytes or reason where applicable."
     },
     {
-      "owner": "NetServer",
+      "owner": "net_server",
       "name": "on_client_packet",
-      "type": "Signal",
+      "type": "signal",
       "provider": "runner",
       "access": "receiver view",
       "notes": "Payload starts with client id, then bytes or reason where applicable."
     },
     {
-      "owner": "NetServer",
+      "owner": "net_server",
       "name": "on_client_disconnect",
-      "type": "Signal",
+      "type": "signal",
       "provider": "runner",
       "access": "receiver view",
       "notes": "Payload starts with client id, then bytes or reason where applicable."
@@ -8715,7 +8895,7 @@
       "source": "include/jaiscript/stdlib/web_text.hpp"
     },
     {
-      "owner": "spider::Response",
+      "owner": "spider::response",
       "name": "status",
       "type": "int",
       "provider": "stdlib",
@@ -8724,7 +8904,7 @@
       "source": "include/jaiscript/stdlib/spider.hpp"
     },
     {
-      "owner": "spider::Response",
+      "owner": "spider::response",
       "name": "headers",
       "type": "map<string, string>",
       "provider": "stdlib",
@@ -8733,7 +8913,7 @@
       "source": "include/jaiscript/stdlib/spider.hpp"
     },
     {
-      "owner": "spider::Response",
+      "owner": "spider::response",
       "name": "cookies",
       "type": "array<string>",
       "provider": "stdlib",
@@ -8742,7 +8922,7 @@
       "source": "include/jaiscript/stdlib/spider.hpp"
     },
     {
-      "owner": "spider::Response",
+      "owner": "spider::response",
       "name": "body",
       "type": "string",
       "provider": "stdlib",
@@ -8751,7 +8931,7 @@
       "source": "include/jaiscript/stdlib/spider.hpp"
     },
     {
-      "owner": "spider::Response",
+      "owner": "spider::response",
       "name": "url",
       "type": "string",
       "provider": "stdlib",
@@ -8785,6 +8965,30 @@
       "access": "read/write",
       "notes": "The generator's state as 64 hex digits; storing it resumes the stream exactly.",
       "source": "include/jaiscript/stdlib/random.hpp"
+    },
+    {
+      "owner": "image",
+      "name": "width",
+      "type": "int",
+      "provider": "stdlib",
+      "access": "read-only",
+      "notes": "Pixels across, after the EXIF orientation."
+    },
+    {
+      "owner": "image",
+      "name": "height",
+      "type": "int",
+      "provider": "stdlib",
+      "access": "read-only",
+      "notes": "Pixels down, after the EXIF orientation."
+    },
+    {
+      "owner": "image",
+      "name": "format",
+      "type": "string",
+      "provider": "stdlib",
+      "access": "read-only",
+      "notes": "The source file's format: \"jpeg\", \"png\" or \"gif\"; \"\" for an empty image."
     }
   ]
 }

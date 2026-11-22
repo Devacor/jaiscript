@@ -70,10 +70,12 @@ namespace jai::detail {
 
 	// The core builtins that take their arguments as copies (printing, conversion, identity)
 	inline bool ref_write_copying_builtin(std::string_view name) {
-		return name == "print" || name == "println" || name == "to_string" || name == "type_of" || name == "to_json" ||
+		return name == "print" || name == "println" || name == "to_string" || name == "to_json" ||
 		       name == "same_object" || name == "format" || name == "vformat" || name == "to_char" || name == "int" || name == "float" ||
 		       name == "string" || name == "bool" || name == "char" || name == "double" || name == "int64";
 	}
+
+	inline bool ref_write_copying_entry(std::string_view space, std::string_view member) { return space == "reflect" && member == "type_of"; }
 
 	enum class callback_write : uint8_t { reads, writes, unseen };
 	inline callback_write element_callback_writes(const call_expr* c, std::string_view name, const ref_write_resolver& resolver);
@@ -213,7 +215,7 @@ namespace jai::detail {
 					auto* m = static_cast<const member_expr*>(callee);
 					if (m->is_static && m->object && m->object->get_type() == node_type::identifier_expr) {
 						const std::string_view ns = static_cast<const identifier_expr*>(m->object.get())->name;
-						if (ns == "math" || ns == "string") { return; }   // the pure namespaces take copies
+						if (ns == "math" || ns == "string" || ref_write_copying_entry(ns, m->member)) { return; }   // the pure namespaces take copies
 					}
 					// a container builtin stores a copy of its argument (a user method of the same name on a class receiver is
 					// the one shape this cannot tell apart)

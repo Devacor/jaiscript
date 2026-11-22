@@ -64,7 +64,7 @@ function mix32(int h, int v) -> int {
 	return ((x & 0xFFFFFFFF) * 16777619) & 0xFFFFFFFF;
 }
 
-// a presentation-only hash (texture variants, flavour picks): never the game's Rng
+// a presentation-only hash (texture variants, flavour picks): never the game's RNG
 function lat(int x, int y, int s) -> int {
 	int h = (x * 374761393 + y * 668265263 + s * 1442695041) & 0xFFFFFF;
 	h = (h ^ (h >> 7)) * 1274126177;

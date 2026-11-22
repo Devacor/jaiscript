@@ -10,9 +10,9 @@ function main() -> int {
 	var path = wad_path("doom1");
 	var mapname = "E1M1";
 	var show = false;
-	if (ARGS.size() > 0) { path = ARGS[0]; }
-	if (ARGS.size() > 1) { mapname = ARGS[1]; }
-	if (ARGS.size() > 2 && ARGS[2] == "show") { show = true; }
+	if (args.size() > 0) { path = args[0]; }
+	if (args.size() > 1) { mapname = args[1]; }
+	if (args.size() > 2 && args[2] == "show") { show = true; }
 
 	if (!wad_load(path)) { print("wad_load failed"); return 1; }
 	if (!map_load(mapname)) { print(`no map ${mapname}`); return 1; }
@@ -27,7 +27,7 @@ function main() -> int {
 		if (TH_TYPE[t] == 1) {
 			px = TH_X[t];
 			py = TH_Y[t];
-			ang = TH_ANG[t] * math::PI / 180.0;
+			ang = TH_ANG[t] * math::pi / 180.0;
 			break;
 		}
 	}

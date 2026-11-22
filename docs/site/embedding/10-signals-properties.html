@@ -50,7 +50,7 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 <ul>
 <li><strong>Private emitter, public view.</strong> A class owns a <code>jai::signal_emitter&lt;Sig&gt;</code> it fires and exposes a <code>jai::signal&lt;Sig&gt;</code> others connect to. The view shares the emitter&#x27;s state, so the class moves with its defaulted moves.</li>
 <li><strong>A connection lives as long as its receiver.</strong> <code>connect(...)</code> returns a handle: hold it, and drop it to disconnect. A named connection (<code>connect("id", ...)</code>) is owned by the emitter until <code>disconnect("id")</code>.</li>
-<li><strong>Three receiver kinds:</strong> a C++ callable, a script function, or script text. Only script text is saved with the object.</li>
+<li><strong>Three receiver kinds:</strong> a C++ callable, a script function, or script text. A named script function saves with the object by its name, and a lambda saves only through <code>connect_source</code>.</li>
 <li><strong>An emit runs, on the emitting thread, the receivers connected when it started.</strong> A receiver that fails throws out of the emit.</li>
 <li><strong>Script sees every signal the same way:</strong> <code>connect(name, handler)</code>, <code>disconnect(name)</code>, <code>connected(name)</code>.</li>
 </ul>
@@ -85,6 +85,7 @@ C++ receiver: opened to 7</code></pre></div>
 <div class="tablewrap" id="api-essentials-signals-signal-decl-hpp"><table><thead><tr><th>Call</th><th>What it does</th></tr></thead><tbody>
 <tr><td><code>connect(callable)</code>, <code>connect("text")</code></td><td><code>[[nodiscard]]</code>; returns <code>signal&lt;T&gt;::shared_receiver_type</code> (alias <code>jai::receiver&lt;T&gt;::shared_type</code>). Dropping the last handle disconnects.</td></tr>
 <tr><td><code>connect("id", callable)</code>, <code>connect("id", "text")</code>, <code>connect("id", fn)</code> with a function <code>script_value</code></td><td>A named connection the emitter owns. Connecting under a name again replaces that receiver; <code>disconnect("id")</code> removes it.</td></tr>
+<tr><td><code>connect_source("id", lambda)</code></td><td>A named connection of a script lambda that a save writes as source (<a href="#connections-that-save">Connections that save</a>).</td></tr>
 <tr><td><code>connect_oneshot(...)</code></td><td>Fires once, even when it re-emits its own signal. One that an <code>emit_while</code> stopped short of has not fired and waits for a later emit.</td></tr>
 <tr><td><code>connect_immediate(...)</code></td><td>Takes every form <code>connect</code> takes; the receiver also joins every emit already running. C++ only.</td></tr>
 <tr><td><code>emit_while(...)</code></td><td>Treats receivers as predicates and stops at the first false.</td></tr>
@@ -139,9 +140,9 @@ d.open(7);
 print("silent after disconnect: {}", !d.onOpen.connected("watch"));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">opened to 42
 silent after disconnect: true</code></pre></div>
-<p>Routes 1 and 2 hand script one generic <code>Signal</code> view that serves every signature (<a href="02-dynamic-binder.html#signals-one-view-every-signature">how the view works</a>). A view shares the signal&#x27;s state, so it follows its owner through moves. Once the owner is gone the view reports nothing connected, and its <code>connect</code> fails with <code>Signal view is not backed by a live signal</code>.</p>
-<p id="bind-signal-type"><strong>3. <code>bind_signal_type</code>, a named type.</strong> <code>jai::bind_signal_type&lt;Sig&gt;(engine, "Name")</code> (<code>signals/signal_binding.hpp</code>) registers <code>signal&lt;Sig&gt;</code> as <code>"Name"</code> and <code>signal_emitter&lt;Sig&gt;</code> as <code>"NameEmitter"</code>, with the same three verbs:</p>
-<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::bind_signal_type&lt;void(int)&gt;(*eng, "IntSignal");   // "IntSignal" + "IntSignalEmitter"</code></pre></div>
+<p>Routes 1 and 2 hand script one generic <code>signal</code> view that serves every signature (<a href="02-dynamic-binder.html#signals-one-view-every-signature">how the view works</a>). A view shares the signal&#x27;s state, so it follows its owner through moves. Once the owner is gone the view reports nothing connected, and its <code>connect</code> fails with <code>Signal view is not backed by a live signal</code>.</p>
+<p id="bind-signal-type"><strong>3. <code>bind_signal_type</code>, a named type.</strong> <code>jai::bind_signal_type&lt;Sig&gt;(engine, "Name")</code> (<code>signals/signal_binding.hpp</code>) registers <code>signal&lt;Sig&gt;</code> as <code>"Name"</code> and <code>signal_emitter&lt;Sig&gt;</code> as <code>"Name_emitter"</code>, with the same three verbs:</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::bind_signal_type&lt;void(int)&gt;(*eng, "int_signal");   // "int_signal" + "int_signal_emitter"</code></pre></div>
 <p>Connecting never requires it. Use it to give a signature a name that registration-time type checks can see, or to register a shared signature once at engine setup, independent of any owning class; the call is idempotent, and a registrar&#x27;s configure function reaches the engine through <code>binder.bound_engine()</code>. A typed registration takes precedence: a <code>.property</code> read of that signature hands out the typed object instead of the generic view, with identical behavior.</p>
 <ul id="script-facing-notes">
 <li><strong>The checker</strong> leaves a signal member untyped: <code>connect</code>, <code>disconnect</code>, <code>connected</code> and their arguments are checked at run time. A handler lambda&#x27;s body is checked like any lambda (<a href="06-static-checking.html">Static Checking</a>).</li>
@@ -161,12 +162,12 @@ silent after disconnect: true</code></pre></div>
 <li><strong>There is no queued delivery.</strong> Receivers run on the emitting thread, so a signal with script receivers is emitted on the thread using that engine (<a href="02-dynamic-binder.html#live-objects-both-directions">one engine serves one thread at a time</a>). A host that emits from a worker and wants receivers on its main thread hands the emit over itself.</li>
 </ul>
 <h3 id="destroy-order">Destroy order<a class="hlink" href="#destroy-order" aria-label="link">&#8203;</a></h3>
-<p>An engine and the emitters its script connected to may be destroyed in either order. Once the engine is gone:</p>
+<p>An engine and the emitters its script connected to may be destroyed in either order. An emitter the program owns dies in its turn with the program's variables, and its receivers with it. For an emitter that is still alive after them (the host owns it, or its own receiver keeps it), the engine's destruction releases what each script receiver binds or captures, the last connected first, while script still runs: an object only a receiver kept runs its destructor then. The receivers stay connected. From that moment, and once the engine is gone:</p>
 <ul>
-<li>Its script receivers are skipped as if blocked (text, function values, and script <code>on_change</code> callbacks), so <code>emit_while</code> continues past them and C++ receivers keep firing. A text receiver connected afterwards is skipped too.</li>
-<li>Dropping a receiver, an emitter or its owner releases what script receivers captured without running any script: no receiver body, no script destructor.</li>
-<li>A <code>std::function</code> made by <code>convert_script_function</code> throws <code>Cannot call a script function after its engine was destroyed</code> when called.</li>
-<li>Script values the host holds directly should still be dropped before the engine. Releasing one afterwards runs no script, and nothing else may be done with it.</li>
+<li>Its script receivers are skipped as if blocked (text, function values, and script <code>on_change</code> callbacks), so <code>emit_while</code> continues past them and C++ receivers keep firing: a destructor the engine's destruction runs may emit, and no script receiver hears it. A text receiver connected afterwards is skipped too.</li>
+<li>Dropping a receiver, an emitter or its owner runs no script: no receiver body, and no script destructor, since the engine already ran them.</li>
+<li>A <code>std::function</code> made by <code>convert_script_function</code> throws <code>Cannot call a script function after its engine was destroyed</code> when called. What its script function captured was released with the receivers'.</li>
+<li>Script values the host holds directly should still be dropped before the engine. The engine destroys the object such a value names as it is destroyed itself; releasing the value afterwards runs no script, and nothing else may be done with it.</li>
 </ul>
 <h3 id="script-receivers-and-hot-reload">Script receivers and hot reload<a class="hlink" href="#script-receivers-and-hot-reload" aria-label="link">&#8203;</a></h3>
 <p>Connections are C++ state on the emitter, so a reload neither drops nor duplicates them, and re-running code that connects under a name replaces that name&#x27;s receiver. What runs after the reload depends on the receiver:</p>
@@ -191,18 +192,31 @@ silent after disconnect: true</code></pre></div>
 </ul>
 <h3 id="connections-that-save">Connections that save<a class="hlink" href="#connections-that-save" aria-label="link">&#8203;</a></h3>
 <p><code>JAI_SIGNAL</code> gives the signal a hidden property that serializes with the owner&#x27;s other properties, in JSON or binary. A <code>signal_emitter</code> member bound with <code>.property</code> saves the same way with its class&#x27;s archive record, a binding record&#x27;s or a <code>property_owner</code>&#x27;s; a bound <code>jai::signal</code> view holds nothing to save.</p>
+<p>A save writes each named receiver a load can find again, under its id in one <code>receivers</code> field. A signal with none writes <code>{}</code>, and the signal&#x27;s own <code>parameter_names</code> are the host&#x27;s configuration, never saved. The three kinds:</p>
+<div class="codeblock cb-plain"><span class="cb-label">text</span><pre><code class="lang-plain">"onWave": {
+  "receivers": {
+    "hud": { "function": "on_wave" },
+    "panel": { "object": { "$ref": 2 }, "method": "on_wave" },
+    "log": { "source": "{ print(prefix, size); }", "parameter_names": ["size"], "captures": "{\"prefix\":\"wave \"}" }
+  }
+}</code></pre></div>
+<div class="tablewrap"><table><thead><tr><th>Connected as</th><th>Saves</th></tr></thead><tbody>
+<tr><td><code>connect("hud", on_wave)</code>: a function the program declares, a namespace&#x27;s (<code>hud::tally</code>) or a script class&#x27;s static method (<code>Panel::tally</code>)</td><td><code>{"function": "name"}</code>, qualified as the program spells it. A load connects whatever function the loading program declares under that name.</td></tr>
+<tr><td><code>connect("panel", reflect::bind(panel, "on_wave"))</code>: a method bound to its object</td><td><code>{"object": {"$ref": N}, "method": "name"}</code>: the object as the archive&#x27;s other references name it. A load connects that method of the object the same archive holds under <code>N</code>, before or after the signal; an object outside the payload cannot be found.</td></tr>
+<tr><td><code>connect_source("log", [prefix](int size) { ... })</code>, and text: <code>connect("log", "print(arg_0);")</code></td><td><code>{"source": ...}</code>: the text an emit runs, the names it sees the emit arguments under (<code>arg_0</code>, <code>arg_1</code>, ... without them) and the lambda&#x27;s value captures as JSON.</td></tr>
+<tr><td>A plain lambda, a C++ callable, an unnamed receiver</td><td>Nothing. They are runtime-only: the host reconnects them after a load, and an unnamed receiver could never be disconnected once loaded.</td></tr>
+</tbody></table></div>
 <ul>
-<li><strong>Saved:</strong> the signal&#x27;s <code>parameter_names</code> and each script-text receiver with its source, a named one under its id.</li>
-<li><strong>Not saved:</strong> C++ callbacks and script function receivers. The host reconnects them after a load.</li>
-<li><strong>Loading</strong> rebuilds the text receivers on the archive&#x27;s engine, ready to fire, and replaces any text receivers the signal held; C++ and function receivers already connected stay. Loading into a live object therefore never doubles a receiver.</li>
-<li>An unnamed text receiver that C++ held by its handle comes back owned by the emitter and runs until <code>disconnect</code>, <code>clear()</code> or the emitter&#x27;s death.</li>
-<li><strong>A saved text receiver is code</strong> that runs on the next emit after the load. Load objects with signal properties only from a trusted source, or on an engine set up for <a href="05-safety-rails.html">untrusted script</a>.</li>
+<li><strong>Loading</strong> replaces the named receivers a save writes with the saved ones, so loading into a live object never doubles a receiver; C++ callbacks, lambdas and unnamed receivers already connected stay. The saved receivers connect once the whole archive has loaded, in id order, on the archive&#x27;s engine.</li>
+<li><strong>A receiver the load cannot connect fails it</strong>, naming the receiver: <code>Signal receiver 'hud' names no function 'on_wave' in the program</code>, <code>... names an object the archive does not hold ({"$ref": 2})</code>, <code>... names no method 'mute' on 'Beacon'</code>, or a source receiver on an engine whose source receivers are off (<a href="../reference/errors.html#host-errors-archives">the texts</a>). <code>eng-&gt;skip_unknown_receivers(true)</code> loads the rest without them.</li>
+<li><strong><code>connect_source(id, lambda)</code></strong> takes a lambda written <code>[captures](parameters) { body }</code> whose captures are values (<code>[n]</code>, <code>[n = 2]</code>); a reference capture, <code>[=]</code>, <code>[&amp;]</code>, an arrow function or a named function raises <code>connect_source takes a lambda written [captures](parameters) { body } that captures values</code>, and a capture the archive cannot write raises <code>connect_source cannot save the capture 'f': a function</code>. Until a load the lambda itself runs. A loaded source receiver runs its body as source: each emit starts its captures from the saved values, and the arguments arrive as the emitter passes them.</li>
+<li><strong>A source receiver is code in a save file</strong>: it runs on the next emit after the load, with every API the host registered. Load objects whose signals hold one only from a trusted source. <code>eng-&gt;disable(jai::permissions::source_receivers)</code> turns them off: a script&#x27;s <code>connect_source</code> and text <code>connect</code> raise <code>Insufficient permission: source_receivers.</code>, and a load meeting one fails or, skipping, leaves it out. The host&#x27;s own C++ text connects stay its choice.</li>
 </ul>
 <nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/09-coroutine-hosting.html"><span>&larr; previous</span>Coroutine Hosting</a><a class="next" rel="next" href="../embedding/11-performance.html"><span>next &rarr;</span>Performance Notes</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

@@ -1,5 +1,6 @@
 #include "../../include/jaiscript/detail/lexer.hpp"
 #include "../../include/jaiscript/detail/string_symbolizer.hpp"
+#include "../../include/jaiscript/detail/foreign_keyword.hpp"
 #include "../../include/jaiscript/detail/format_spec.hpp"
 #include "../../include/jaiscript/detail/float_text.hpp"
 #include <cctype>
@@ -131,6 +132,7 @@ token lexer::next_token() {
     skip_whitespace();
     token_line_ = line_;
     token_column_ = column_;
+    token_offset_ = current_;
 
     if (is_at_end()) {
         return make_token(token_type::eof);
@@ -213,6 +215,10 @@ token lexer::next_token() {
             token_column_ = hash_column;
             if (next.type == token_type::identifier) {
                 const std::string name(next.lexeme);
+                if (name == "define") {
+                    for (char last = 0; !is_at_end() && (peek() != '\n' || last == '\\'); ) { const char c = advance(); if (c != '\r') { last = c; } }
+                    return error_token(std::string(detail::foreign_define_text));
+                }
                 return error_token("unexpected '#' before '" + name + "': JaiScript has no length operator; write " + name + ".size()");
             }
             return error_token("unexpected '#': it begins only #include, #import and a first-line #! shebang");
@@ -432,11 +438,15 @@ token lexer::make_token(token_type type) {
             break;
     }
 
-    return token(type, lexeme, token_start());
+    token result(type, lexeme, token_start());
+    result.offset = static_cast<uint32_t>(token_offset_);
+    return result;
 }
 
 token lexer::make_token(token_type type, std::string_view lexeme) {
-    return token(type, lexeme, token_start());
+    token result(type, lexeme, token_start());
+    result.offset = static_cast<uint32_t>(token_offset_);
+    return result;
 }
 
 source_location lexer::token_start() const {
@@ -512,7 +522,7 @@ token lexer::scan_number() {
         }
     }
 
-    // Use string_view into source_ (permanent storage)
+    // A view into source_, the lexer's copy, which dies with the lexer: a token kept longer owns its text (own_token_text)
     std::string_view lexeme_view(source_.data() + start, current_ - start);
     source_location loc = current_location();
     loc.column = startColumn;

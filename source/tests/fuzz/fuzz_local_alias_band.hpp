@@ -27,8 +27,8 @@ namespace jai::fuzz {
 				"class zlH { zlC c = zlC(5, 6); zlH() {} }",
 				"array<zlC> zlA = [zlC(" + lit() + ", " + lit() + "), zlC(" + lit() + ", " + lit() + "), zlC(" + lit() + ", " + lit() + ")];",
 				"zlC zlG = zlC(" + lit() + ", " + lit() + ");",
-				"shared_ptr<zlH> zlP = zlH();",
-				"shared_ptr<zlC> zlQ = zlG;",
+				"shared_ptr<zlH> zlP = make_shared<zlH>();",
+				"shared_ptr<zlC> zlQ = make_shared<zlC>(zlG);",
 				"int zlpure(int v) { return v * 3 + 1; }",
 				"int zlpeek(zlC c) { return c.a + c.xs.size(); }",
 				"void zlbump() { zlG.a = zlG.a + 1; zlA[0].b = zlA[0].b + 2; }",
@@ -66,7 +66,7 @@ namespace jai::fuzz {
 			const bool handle = rng_.chance(25);
 			const bool out_array = rng_.chance(30);
 			if (own) body.push_back("\tzlC own = zlC(" + lit() + ", " + lit() + ");");
-			if (handle) body.push_back(std::string("\tshared_ptr<zlC> hh = ") + (rng_.chance(50) ? "zlA[i]" : "zlG") + ";");
+			if (handle) body.push_back(std::string("\tshared_ptr<zlC> hh = ") + "make_shared<zlC>(" + (rng_.chance(50) ? std::string("zlA[i]") : std::string("zlG")) + ");");
 			if (out_array) body.push_back("\tarray<int> out;");
 			std::string source;
 			bool array_local = false;

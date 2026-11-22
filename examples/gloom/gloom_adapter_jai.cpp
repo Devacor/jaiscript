@@ -44,7 +44,7 @@ public:
 		jai_runner::register_file_io(*eng_);
 		jai_runner::register_sound(*eng_);
 
-		jai::dynamic_binder<gloom::gloom_rng>(*eng_, "Rng")
+		jai::dynamic_binder<gloom::gloom_rng>(*eng_, "seeded_rng")
 			.constructor<jai::script_int>()
 			.method("next", &gloom::gloom_rng::next)
 			.method("roll", &gloom::gloom_rng::roll)
@@ -67,18 +67,18 @@ public:
 		eng_->add_function("utf8", [](jai::script_int cp) -> std::string {
 			return gloom::utf8_encode(cp);
 		});
-		eng_->add_global("ESC", eng_->make_value(std::string("\x1b")));
-		eng_->add_global("HOST_SEED", eng_->make_value(opt.seed));
-		eng_->add_global("HOST_SMOKE", eng_->make_value(opt.smoke));
-		eng_->add_global("HOST_TICKS", eng_->make_value(opt.ticks));
-		eng_->add_global("HOST_WORKERS", eng_->make_value(opt.workers));
-		eng_->add_global("HOST_GOD", eng_->make_value(opt.god));
-		eng_->add_global("HOST_BACKEND", eng_->make_value(backend));
-		eng_->add_global("HOST_PIX", eng_->make_value(gloom::pix_mode_index(opt.pix)));
-		eng_->add_global("HOST_LOOK", eng_->make_value(opt.look));
-		eng_->add_global("HOST_TRUECOLOR", eng_->make_value(opt.truecolor != 0));
-		eng_->add_global("HOST_ASCII", eng_->make_value(opt.ascii));
-		eng_->add_global("HOST_DEV", eng_->make_value(opt.dev));
+		eng_->add_global("esc", eng_->make_value(std::string("\x1b")));
+		eng_->add_global("host_seed", eng_->make_value(opt.seed));
+		eng_->add_global("host_smoke", eng_->make_value(opt.smoke));
+		eng_->add_global("host_ticks", eng_->make_value(opt.ticks));
+		eng_->add_global("host_workers", eng_->make_value(opt.workers));
+		eng_->add_global("host_god", eng_->make_value(opt.god));
+		eng_->add_global("host_backend", eng_->make_value(backend));
+		eng_->add_global("host_pix", eng_->make_value(gloom::pix_mode_index(opt.pix)));
+		eng_->add_global("host_look", eng_->make_value(opt.look));
+		eng_->add_global("host_truecolor", eng_->make_value(opt.truecolor != 0));
+		eng_->add_global("host_ascii", eng_->make_value(opt.ascii));
+		eng_->add_global("host_dev", eng_->make_value(opt.dev));
 		// the showcase look writes its synthesized effects here and plays them; "" is silence
 		std::string sound_dir;
 		if (!opt.smoke && opt.bench == 0 && !opt.mute) {
@@ -86,7 +86,7 @@ public:
 			sound_dir = (std::filesystem::temp_directory_path(ec) / "jai_gloom_sfx").generic_string();
 			if (ec) { sound_dir.clear(); }
 		}
-		eng_->add_global("HOST_SOUND_DIR", eng_->make_value(sound_dir));
+		eng_->add_global("host_sound_dir", eng_->make_value(sound_dir));
 	}
 
 	void load_scripts() override {

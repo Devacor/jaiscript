@@ -52,7 +52,7 @@ public:
 	// one pure in-place function steps the whole pool: parallel_for owns each
 	// element exclusively when the host grants workers
 	void update() {
-		if (HOST_WORKERS <= 0) {
+		if (host_workers <= 0) {
 			for (auto& p : pool) { gloom_particle_step(p); }
 		} else {
 			parallel_for (auto& p : pool) { gloom_particle_step(p); }

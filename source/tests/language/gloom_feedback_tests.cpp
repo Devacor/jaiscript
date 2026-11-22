@@ -247,9 +247,9 @@ public:
 					var s = "hello";
 					char c = s[1];
 					var parts = [];
-					parts.push(type_of(c));
+					parts.push(reflect::type_of(c));
 					parts.push(to_string(c == 'e'));
-					parts.push(type_of(s.at(1)));       // at() keeps returning a 1-char string
+					parts.push(reflect::type_of(s.at(1)));       // at() keeps returning a 1-char string
 					parts.push(to_string(s[s.size() - 1] == 'o'));
 					int count = 0;
 					for (int i = 0; i < s.size(); ++i) { if (s[i] == 'l') { count = count + 1; } }

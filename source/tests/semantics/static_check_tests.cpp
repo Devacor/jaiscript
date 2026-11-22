@@ -20,6 +20,7 @@
 #include "../case_table.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 
@@ -33,6 +34,11 @@ namespace {
 struct probe_object {
     int64_t value = 0;
     int64_t doubled() const { return value * 2; }
+};
+
+// Bound methods whose C++ result is void, one beside a copying static of its name (image's fit and image::fit)
+struct void_probe {
+    int64_t value = 1;
 };
 
 // A getter-only property beside writable ones (member pointer, lambda pair)
@@ -49,6 +55,14 @@ void bind_read_only_probe(jai::engine& e) {
                   [](read_only_probe& s, int64_t v) { s.lam_backing = v; })
         .property("ro", [](const read_only_probe& s) -> int64_t { return s.value + 100; }, nullptr)
         .build();
+}
+
+// A host class a script calls: its operator() binds as the method "()"
+struct call_probe {
+    int64_t operator()(int64_t a_value) const { return a_value + 1; }
+};
+void bind_call_probe(jai::engine& e) {
+    dynamic_binder<call_probe>(e, "CallProbe").constructor<>().method("()", &call_probe::operator()).build();
 }
 
 size_t error_count(const check_report& r) { return r.error_count(); }
@@ -165,12 +179,12 @@ public:
             check_eq((size_t)0, quiet.diagnostics.size());
         });
 
-        test("an_assignment_as_a_condition_warns_unless_it_has_its_own_parentheses", [this]() {
+        test("an_assignment_as_a_condition_is_an_error_unless_it_has_its_own_parentheses", [this]() {
             auto e = make_engine();
             const std::string text = "assignment used as a condition: write '==' to compare, or '((a = b))' with parentheses of its own to assign";
             auto warned = e->check("int a = 0; int b = 3;\nif (a = b) { }\nwhile (a = 0) { }\ndo { } while (a = 0);\nfor (; a = 0; ) { }\nif ((a) = b) { }");
-            check_eq((size_t)0, error_count(warned));
-            check_eq((size_t)5, warning_count(warned));
+            check_eq((size_t)5, error_count(warned));
+            check_eq((size_t)0, warning_count(warned));
             for (size_t i = 0; i < warned.diagnostics.size(); ++i) {
                 check_eq(text, warned.diagnostics[i].message);
                 check_eq(i + 2, warned.diagnostics[i].line);
@@ -874,19 +888,60 @@ public:
         });
 
         test("jaibite_stamp_from_another_checker_revision_rechecks", [this]() {
-            // a checked-clean stamp vouches for the checker that gave it: one from an older revision (rules that have since
-            // grown) is checked again on load, one from this revision is trusted
+            // a checked-clean stamp vouches for the checker that gave it: one from another revision (rules that have since
+            // grown) is checked again on load, one from this revision is trusted. The revision is a hash of the checker's
+            // sources in all 24 of its bits, so any other value there is another checker, the hand-numbered ones included
             auto e = make_engine();
             auto bytes = unstamped_bite_bytes(*e, "int bad = \"s\";");
             auto stamp = [&bytes](uint32_t flags) {
                 std::vector<uint8_t> stamped = bytes;
-                for (int i = 0; i < 4; ++i) { stamped[8 + i] = static_cast<uint8_t>(flags >> (8 * i)); }
+                for (int i = 0; i < 4; ++i) { stamped[jai::detail::k_jaibite_flags_at + i] = static_cast<uint8_t>(flags >> (8 * i)); }
+                jai::detail::jaibite_seal(stamped.data(), stamped.size());
                 return stamped;
             };
-            const auto older = stamp(jai::detail::k_jaibite_flag_checked_clean | ((jai::detail::k_jaibite_checker_revision - 1) << 8));
-            check_throws<static_check_error>([&]() { e->jaibite_load_bytes(older); }, "an older revision's stamp re-checks and finds the error");
+            const uint32_t revision = jai::detail::jaibite_checker_revision();
+            const auto stamped_by = [](uint32_t a_revision) { return jai::detail::k_jaibite_flag_checked_clean | (a_revision << 8); };
+            check_eq(revision, jai::detail::jaibite_checked_clean_flags() >> 8, "the stamp holds the whole revision");
+            for (const uint32_t other : {revision ^ 1u, revision ^ 0x800000u, revision ^ 0xFFFFFFu, revision == 12u ? 11u : 12u}) {
+                check_false(jai::detail::jaibite_stamped_clean(stamped_by(other)), std::to_string(other));
+                check_throws<static_check_error>([&]() { e->jaibite_load_bytes(stamp(stamped_by(other))); },
+                    "another revision's stamp re-checks and finds the error: " + std::to_string(other));
+            }
             auto current = e->jaibite_load_bytes(stamp(jai::detail::jaibite_checked_clean_flags()));
             check_true(current.checked_clean(), "this revision's stamp is trusted");
+
+            // the disk cache holds its stamp the same way, and a clean check of a cache another revision stamped writes
+            // it again under this one: the next load trusts it
+            const auto dir = closure_dir("revision_stamp");
+            std::filesystem::remove_all(dir / ".cache");
+            write_unit(dir, "revision_stamp.jai", "int revision_stamp_value = 4; revision_stamp_value + 1;");
+            const auto walks_of_a_load = [&dir]() {
+                auto eng = make_engine();
+                check_eq((int64_t)5, eng->execute_file((dir / "revision_stamp.jai").string()).as_int());
+                return detail::engine_access::check_walk_count(*eng);
+            };
+            check_eq((uint64_t)1, walks_of_a_load(), "the first load checks the file and caches it");
+            check_eq((uint64_t)0, walks_of_a_load(), "a cache this revision stamped is trusted");
+            {
+                const auto path = dir / ".cache" / "revision_stamp.jai.jaibite";
+                std::vector<uint8_t> cache;
+                {
+                    std::ifstream in(path, std::ios::binary);
+                    check_true(in.is_open(), "the cache sits beside the file");
+                    cache.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+                }
+                check_true(cache.size() >= jai::detail::k_jaibite_header_size, "the cache holds a header");
+                const uint32_t written = cache[jai::detail::k_jaibite_flags_at];   // the low byte: the stamp bit beside the bite's other flags
+                check_true((written & jai::detail::k_jaibite_flag_checked_clean) != 0, "the cache was stamped");
+                const uint32_t flags = written | ((revision ^ 1u) << 8);
+                for (int i = 0; i < 4; ++i) { cache[jai::detail::k_jaibite_flags_at + i] = static_cast<uint8_t>(flags >> (8 * i)); }
+                jai::detail::jaibite_seal(cache.data(), cache.size());
+                std::ofstream out(path, std::ios::binary | std::ios::trunc);
+                out.write(reinterpret_cast<const char*>(cache.data()), static_cast<std::streamsize>(cache.size()));
+            }
+            check_eq((uint64_t)1, walks_of_a_load(), "a cache another revision stamped is checked again");
+            check_eq((uint64_t)0, walks_of_a_load(), "and that clean check stamped it under this revision");
+            std::filesystem::remove_all(dir);
         });
 
         test("jaibite_checks_at_creation_and_at_load", [this]() {
@@ -1229,7 +1284,7 @@ public:
             check_eq((size_t)1, error_count(e->check(
                 "class Foo { int x = 1; } class Bar { int y = 2; } shared_ptr<Bar> wrong = Foo();")));
             check_eq((size_t)0, error_count(e->check(
-                "class Base { int b = 1; } class D : Base { int d = 2; } shared_ptr<Base> ok = D();")));
+                "class Base { int b = 1; } class D : Base { int d = 2; } shared_ptr<Base> ok = make_shared<D>();")));
             check_eq((size_t)0, error_count(e->check(
                 "class Foo2 { int x = 1; } shared_ptr<Foo2> n = null;")));
         });
@@ -1248,11 +1303,11 @@ public:
                 "class Foo { int x = 1; } shared_ptr<auto> p = 5;")), "int init");
             // infer-then-enforce: wrong-class reassign errors, upcast + null stay clean
             check_eq((size_t)1, error_count(e->check(
-                "class Foo { int x = 1; } class Bar { int y = 2; } shared_ptr<auto> p = Foo(); p = Bar();")), "wrong-class reassign");
+                "class Foo { int x = 1; } class Bar { int y = 2; } shared_ptr<auto> p = make_shared<Foo>(); p = Bar();")), "wrong-class reassign");
             check_eq((size_t)0, error_count(e->check(
-                "class Base { int b = 1; } class D : Base { int d = 2; } shared_ptr<auto> p = Base(); p = new D();")), "upcast reassign");
+                "class Base { int b = 1; } class D : Base { int d = 2; } shared_ptr<auto> p = make_shared<Base>(); p = new D();")), "upcast reassign");
             check_eq((size_t)0, error_count(e->check(
-                "class Foo { int x = 1; } shared_ptr<auto> p = Foo(); p = null; int x = p.x;")), "null reassign + member");
+                "class Foo { int x = 1; } shared_ptr<auto> p = make_shared<Foo>(); p = null; int x = p.x;")), "null reassign + member");
             // inferred tag models member usage exactly like the explicit spelling
             // (parity-equality: whatever the explicit twin reports, inferred matches)
             for (const char* tail : { "shared_ptr<%s> p = new Foo(); string s = p.x;",
@@ -1465,7 +1520,7 @@ public:
             auto off = make_engine();
             off->type_proofs(false);
             const char* snippets[] = {
-                "int x = 1; x = 2; x = 2.5; type_of(x) + \":\" + to_string(x)",
+                "int x = 1; x = 2; x = 2.5; reflect::type_of(x) + \":\" + to_string(x)",
                 "string s = \"a\"; s = \"b\"; s = 3; s",
                 "float f = 1.0; f = 2.0; f = 3; f",
                 "bool b = true; b = false; b = 1; b",
@@ -1742,7 +1797,7 @@ public:
             check_true(threw, "subtype member on a certain base receiver is a strict error");
             check_eq((int64_t)2, e->execute(prelude + "cast<T&>(h.p).t").as_int());
             check_eq((int64_t)2, e->execute(prelude + "T tv = cast<T>(h.p); tv.t").as_int());
-            check_eq((int64_t)2, e->execute(prelude + "shared_ptr<T> th = cast<shared_ptr<T>>(h.p); th.t").as_int());
+            check_eq((int64_t)2, e->execute(prelude + "shared_ptr<S> sp = new T(); shared_ptr<T> th = cast<shared_ptr<T>>(sp); th.t").as_int());
             // the cast's class is certain: a missing member on it is still an error
             threw = false;
             std::string message;
@@ -1804,7 +1859,7 @@ public:
                 check_true(message(source).find("error: " + text) != std::string::npos, source + " -> " + message(source));
             };
             rejects("float x = 4.0; print(math::sqroot(x));", "no member 'sqroot' in namespace 'math'");
-            rejects("print(math::pi);", "no member 'pi' in namespace 'math'");
+            rejects("print(math::PI);", "no member 'PI' in namespace 'math'");
             rejects("print(string::to_uper(\"a\"));", "no member 'to_uper' in namespace 'string'");
             rejects("print(reflect::clases());", "no member 'clases' in namespace 'reflect'");
             rejects("namespace a::b { int x = 1; } print(a::b::y);", "no member 'y' in namespace 'a::b'");
@@ -1814,7 +1869,7 @@ public:
                 "float twice(float v) { return math::double_it(v); }\n"
                 "namespace math { float double_it(float v) { return v * 2.0; } }\n"
                 "namespace geo { namespace inner { int k = 3; } class Box { static int n = 1; } }\n"
-                "print(math::sqrt(4.0), math::PI, string::to_lower(\"A\"), geo::inner::k, geo::Box::n, twice(1.0));"));
+                "print(math::sqrt(4.0), math::pi, string::to_lower(\"A\"), geo::inner::k, geo::Box::n, twice(1.0));"));
             auto earlier = make_engine();
             earlier->execute("namespace tools { int k = 7; }");
             check_eq((int64_t)7, earlier->execute("tools::k;").as_int(), "a member an earlier run declared");
@@ -1844,7 +1899,7 @@ public:
             // a class's name is its constructor, a value an int slot refuses; a namespace's members and an enum's value table stay values
             check_true(message("int spd = random;").find("error: cannot initialize 'spd' declared 'int' with 'class random'") != std::string::npos, message("int spd = random;"));
             check_true(message("class C {} int c = C;").find("error: cannot initialize 'c' declared 'int' with 'class C'") != std::string::npos, message("class C {} int c = C;"));
-            check_eq(std::string("loaded"), message("var r = random; var c = r(3); enum E { A } var e = E; namespace math { int twice(int x) { return 2 * x; } } math::twice(math::PI > 3.0 ? 1 : 0);"));
+            check_eq(std::string("loaded"), message("var r = random; var c = r(3); enum E { A } var e = E; namespace math { int twice(int x) { return 2 * x; } } math::twice(math::pi > 3.0 ? 1 : 0);"));
             // an enum's name is its value table, a map<string,int>: a slot that takes that map takes it, any other refuses it at load
             const std::pair<const char*, const char*> tables[] = {
                 {"enum E { A, B } int x = E;", "cannot initialize 'x' declared 'int' with 'enum E': an enum's name is its value table, a map<string,int>; name one of its values (E::A)"},
@@ -1902,6 +1957,40 @@ public:
         // cast<C>(h) on a handle or reference operand deep-copies (C++ value semantics - the
         // runtime is right); the checker names the aliasing spellings at warning severity.
 
+        // A class held by value copies out of a dynamic_cast's handle, which may be null: a warning, and the load proceeds
+        test("dynamic_cast_copied_into_a_value_warns", [this]() {
+            const std::string P = "class A { int v = 1; } class C : A { } class K { C kept; K(shared_ptr<C> c) { } void hold(C c) { } }\nshared_ptr<A> h = new C();\n";
+            const auto text = [](const std::string& operand) {
+                return "dynamic_cast<C>(" + operand + ") is copied into a value here and is null when the object is no C - test it first with if (auto x = dynamic_cast<C>(" + operand +
+                       ")), or use dynamic_cast<C&>(" + operand + ") when it must be one";
+            };
+            auto e = make_engine();
+            const std::vector<std::string> copies {
+                "C c = dynamic_cast<C>(h);", "A a = dynamic_cast<shared_ptr<C>>(h);", "C c; c = dynamic_cast<C>(h);", "K k = K(null); k.kept = dynamic_cast<C>(h);",
+                "void take(C c) { } take(dynamic_cast<C>(h));", "K k = K(null); k.hold(dynamic_cast<C>(h));", "C pick() { return dynamic_cast<C>(h); }",
+                "class F { C held = dynamic_cast<C>(h); }",
+            };
+            for (const auto& code : copies) {
+                auto r = e->check(P + code);
+                check_eq((size_t)0, error_count(r), r.format(code));
+                check_eq((size_t)1, warning_count(r), r.format(code));
+                check_true(has_diag(r, dlevel::warning, text("h")), r.format(code));
+                check_eq((size_t)3, r.diagnostics[0].line, "anchored at the cast");
+            }
+            check_true(has_diag(e->check(P + "shared_ptr<A> make() { return h; }\nC c = dynamic_cast<C>(make());"), dlevel::warning, text("...")));
+            // in a generic's instance the cast's class is the argument
+            check_true(has_diag(e->check(P + "class G<T> { T copy(shared_ptr<A> s) { T made = dynamic_cast<T>(s); return made; } } G<C> g;"), dlevel::warning, text("s")));
+            const std::vector<std::string> silent {
+                "auto c = dynamic_cast<C>(h);", "shared_ptr<C> c = dynamic_cast<C>(h);", "var c = dynamic_cast<C>(h);", "weak_ptr<C> c = dynamic_cast<C>(h);",
+                "C c = dynamic_cast<C&>(h);", "K k = dynamic_cast<C>(h);", "if (auto c = dynamic_cast<C>(h)) { C copy = c; }", "void share(shared_ptr<C> c) { } share(dynamic_cast<C>(h));",
+            };
+            for (const auto& code : silent) {
+                auto r = e->check(P + code);
+                check_eq((size_t)0, error_count(r), r.format(code));
+                check_eq((size_t)0, warning_count(r), r.format(code));
+            }
+        });
+
         test("cast_value_form_on_handle_warns", [this]() {
             const std::string P = "class C { int v = 1; } class H { shared_ptr<C> p = null; }\n";
             const std::string text = "cast<C>(h) copies the instance - use cast<C&>(h) to alias it or cast<shared_ptr<C>>(h) to share it";
@@ -1919,7 +2008,7 @@ public:
             r = e->check(P + "function mk() -> shared_ptr<C> { return shared_ptr<C>(); } auto c = cast<C>(mk());");
             check_eq((size_t)1, warning_count(r));
             check_true(has_diag(r, dlevel::warning, "cast<C>(...) copies the instance - use cast<C&>(...) to alias it or cast<shared_ptr<C>>(...) to share it"));
-            r = e->check(P + "shared_ptr<auto> h = C(); auto c = cast<C>(h);");
+            r = e->check(P + "shared_ptr<auto> h = make_shared<C>(); auto c = cast<C>(h);");
             check_eq((size_t)1, warning_count(r));
             check_true(has_diag(r, dlevel::warning, text));
             r = e->check(P + "function f(shared_ptr<C> p) -> int { auto q = cast<C>(p); return q.v; }");
@@ -1938,7 +2027,7 @@ public:
             auto r = e->check(P + "C c0 = C(); auto& r = c0; auto c = cast<C>(r);");
             check_eq((size_t)0, error_count(r));
             check_eq((size_t)1, warning_count(r));
-            check_true(has_diag(r, dlevel::warning, "cast<C>(r) copies the instance - use cast<C&>(r) to alias it or cast<shared_ptr<C>>(r) to share it"));
+            check_true(has_diag(r, dlevel::warning, "cast<C>(r) copies the instance - use cast<C&>(r) to alias it"));
             r = e->check(P + "C c0 = C(); var& vr = c0; auto c = cast<C>(vr);");
             check_eq((size_t)1, warning_count(r));
             check_true(has_diag(r, dlevel::warning, "cast<C>(vr) copies the instance"));
@@ -2114,8 +2203,7 @@ public:
 
         test("an_unknown_method_on_a_typed_container_string_or_scalar_is_a_load_error", [this]() {
             // the builtin registry both backends dispatch through is the member list of a declared array, string, utf8_string or
-            // map (a map's keys are read with [], a stored callable called as m["f"](x)); it gives an int, float, bool or char none,
-            // and same_as answers every value
+            // map (a map's keys are read with [], a stored callable called as m["f"](x)); it gives an int, float, bool or char none
             for (bool proofs : {true, false}) {
                 auto e = make_engine();
                 jai::stdlib::register_all(*e);
@@ -2138,7 +2226,7 @@ public:
                     {"bool b = true;\nvar v = b.size;", "bool has no member 'size'"},
                     {"char c = 'a';\nc.to_upper();", "char has no member 'to_upper'"},
                     {"int twice(int a) { return a * 2; }\ntwice(2).abs();", "int has no member 'abs'"},
-                    {"var f = 5.same_as;", "'same_as' is a method of int; call it with obj.same_as() or wrap the call in a lambda"},
+                    {"var f = 5.same_as;", "int has no member 'same_as'"},
                 };
                 for (const auto& [source, text] : scalars) {
                     check_true(has_diag(e->check(source), dlevel::error, text), source);
@@ -2148,7 +2236,7 @@ public:
                     try { run->execute(std::string("[[warn_mode]];\n") + source); } catch (const std::exception& error) { raised = error.what(); }
                     check_eq(std::string(text), raised, source);
                 }
-                check_eq((size_t)0, error_count(e->check("bool same = 5.same_as(5);\nchar c = 'a';\nbool also = c.same_as('a');\nvar v = 5;\nv.anything();\narray<int> xs = [1];\nxs[0].whatever();")));
+                check_eq((size_t)0, error_count(e->check("var v = 5;\nv.anything();\narray<int> xs = [1];\nxs[0].whatever();")));
                 // the registry's names, maps that may hold callables, dynamic and element receivers stay clean
                 check_eq((size_t)0, error_count(e->check("array<string> a = [\"x\"];\na.push(\"y\");\nint n = a.size();\nstring s = \"ab\";\ns.to_upper();\nvar k = s.find(\"b\");\nmap<string, int> m = {\"k\": 1};\nvar ks = m.keys();\nbool has = m.contains(\"k\");")));
                 check_eq((size_t)0, error_count(e->check("map<string, function> fm = {\"f\": [](int x) { return x; }};\nfm[\"f\"](1);\nenum Dir { n, s }\nint d = Dir.s;\nvar vm = {\"g\": 1};\nvm.anything();\nvar dv = [1];\ndv.whatever();\narray<string> rows = [\"a\"];\nrows[0].whatever();")));
@@ -2189,6 +2277,63 @@ public:
             }
         });
 
+        test("signature_slots_check_stores_and_calls_at_load", [this]() {
+            const std::pair<const char*, const char*> cases[] = {
+                {"function<int(int)> f = x => x;\nstring s = f(1);", "cannot initialize 's' declared 'string' with 'int'"},
+                {"function<int(int)> f = x => x;\nint n = f(\"a\");", "argument 1 of 'f': cannot pass 'string' where the signature takes 'int'"},
+                {"function<int(int)> f = x => x;\nint n = f(1, 2);", "'f' expects 1 argument(s), got 2 (it is a 'function<int(int)>')"},
+                {"function<int(int)> g = (a, b) => a + b;", "the lambda takes 2 arguments, the signature passes 1"},
+                {"function<int(int)> h = (string t) => 1;", "the lambda declares parameter 't' as 'string', which does not take the signature's 'int'"},
+                {"float half(int x) { return x / 2.0; }\nfunction<int(int)> k = half;", "'half' returns 'float', the signature returns 'int': a result is not converted on the way out"},
+                {"int add(int a, int b) { return a + b; }\nfunction<int(int)> one = add;", "'add' takes 2 arguments, the signature passes 1"},
+                {"function<int(int)> w = x => \"text\";", "cannot return 'string' from 'lambda' declared to return 'int'"},
+                {"class Hero { int hp; }\nfunction<int(Hero)> key = e => e.hpp;", "no member 'hpp' in class 'Hero'"},
+                {"function<int(int&)> byref = (int& r) => r;\nbyref(5);", "argument 1 of 'byref': the signature takes 'int&'; pass a variable"},
+                {"function<void(int)> writes = (int& r) => { r = 1; };", "the lambda takes parameter 'r' by reference ('int&'), the signature passes 'int' by value"},
+                {"function<int(int)> f = x => x;\nfunction<string(int)> cross = f;", "a 'function<int(int)>' returns 'int', the signature returns 'string'"},
+                {"array<function<int(int)>> fs = [x => x, (string z) => 1];", "array element 1: expected 'function<int(int)>', got 'function'"},
+                {"int apply(function<int(int)> g) { return g(1); }\napply(s => { string t = s; return 1; });", "cannot initialize 't' declared 'string' with 'int'"},
+                {"coroutine int count() { yield 1; }\ncoroutine<string> cs = count();", "cannot initialize 'cs' declared 'coroutine<string>' with 'coroutine<int>'"},
+                {"coroutine int count() { yield 1; }\nfunction<int()> notco = count;", "'count' returns 'coroutine<int>', the signature returns 'int'"},
+                {"coroutine int count() { yield 1; }\ncoroutine<int> c = count();\nstring st = c.next();", "cannot initialize 'st' declared 'string' with 'int'"},
+                {"coroutine int count() { yield 1; }\nfor (string each : count()) { }", "cannot initialize 'each' declared 'string' with 'int'"},
+                {"coroutine int bad() { yield \"x\"; }", "cannot yield 'string' from 'bad' declared to return 'int'"},
+                // member initializer lists: the lambda is typed by the field and stored as into it
+                {"class Button { function<void(string)> on_click; Button() : on_click(s => s.nope()) {} }", "no member 'nope' on 'string'"},
+                {"class Pad { function<void(string)> on_click; Pad() : on_click((int n) => n) {} }",
+                 "cannot assign 'function' to field 'on_click' declared 'function<void(string)>': the lambda declares parameter 'n' as 'int'"},
+                // flow narrowing: an argument is judged by its narrowed type; a lambda that reaches the name by reference reads it as
+                // declared, and one that stores to it ends the narrowing where it is made
+                {"class Unit { } class Hero : Unit { int hp; }\nfunction<int(Hero)> slot = h => h.hp;\nint run(Unit u) { return slot(u); }",
+                 "argument 1 of 'slot': cannot pass 'Unit' where the signature takes 'Hero'"},
+                {"class Unit { } class Hero : Unit { int hp; }\nint run(Unit u) { if (dynamic_cast<Hero>(u)) { function<int(int)> by_ref = x => u.hp + x; } return 0; }",
+                 "no member 'hp' in class 'Unit'"},
+                {"class Unit { } class Hero : Unit { int hp; }\nint run(Unit u) { if (dynamic_cast<Hero>(u)) { function<int(int)> writer = x => { u = Unit(); return x; };\nreturn u.hp; } return 0; }",
+                 "no member 'hp' in class 'Unit'"},
+            };
+            for (bool proofs : {true, false}) {
+                for (const auto& [source, text] : cases) {
+                    auto e = make_engine();
+                    e->type_proofs(proofs);
+                    auto r = e->check(source);
+                    check_true(has_diag(r, dlevel::error, text), std::string(source) + "\n" + r.format());
+                }
+                auto e = make_engine();
+                e->type_proofs(proofs);
+                auto clean = e->check("function<int(int)> f = x => x * 2;\nint a = f(3);\nint twice(function<int(int)> g, int v) { return g(g(v)); }\nint b = twice(x => x + 1, 1);\n"
+                                      "function<float(int)> h = x => x / 2.0;\nfloat c = h(1);\nfunction<var(var)> any = x => x;\nstring d = any(1);\n"
+                                      "class Base { } class Derived : Base { }\nDerived make() { return Derived(); }\nfunction<Base()> maker = make;\n"
+                                      "coroutine int g() { yield 1; }\ncoroutine<int> k = g();\nauto j = g();\nk = j;\nint n = k.next();\nvar v = k.next();");
+                check_eq((size_t)0, error_count(clean), clean.format());
+                auto composed = e->check("class Unit { string name; } class Hero : Unit { int hp; }\nint measure(function<int(Hero)> key, Hero h) { return key(h); }\n"
+                                         "function<int(Hero)> slot = h => h.hp;\nfunction<int(Unit)> probe = u => { if (dynamic_cast<Hero>(u)) { return u.hp; } return 0; };\n"
+                                         "int run(Unit u) { int total = 0; if (dynamic_cast<Hero>(u)) { total += measure(h => h.hp, u);\n"
+                                         "function<int(int)> add = [u](x) { return u.hp + x; }; total += add(1); total += slot(u); } return total; }\n"
+                                         "class Button { function<int(string)> on_click; Button() : on_click(s => s.size()) {} }");
+                check_eq((size_t)0, error_count(composed), composed.format());
+            }
+        });
+
         test("a_coroutine_handle_answers_next_and_done_only", [this]() {
             for (bool proofs : {true, false}) {
                 auto e = make_engine();
@@ -2196,12 +2341,12 @@ public:
                 const std::string gen = "coroutine int g() { yield 1; yield 2; }\n";
                 auto r = e->check(gen + "auto h = g();\nh.resume();");
                 check_eq((size_t)1, error_count(r), r.format());
-                check_true(has_diag(r, dlevel::error, "no member 'resume' on 'coroutine_handle' (did you mean 'next'?)"), r.format());
-                check_true(has_diag(e->check(gen + "g().resume();"), dlevel::error, "no member 'resume' on 'coroutine_handle' (did you mean 'next'?)"));
+                check_true(has_diag(r, dlevel::error, "no member 'resume' on 'coroutine<int>' (did you mean 'next'?)"), r.format());
+                check_true(has_diag(e->check(gen + "g().resume();"), dlevel::error, "no member 'resume' on 'coroutine<int>' (did you mean 'next'?)"));
                 check_true(has_diag(e->check(gen + "class C { coroutine int m() { yield 1; } }\nauto c = C();\nauto h = c.m();\nh.resume();"), dlevel::error,
-                                    "no member 'resume' on 'coroutine_handle' (did you mean 'next'?)"));
-                check_true(has_diag(e->check(gen + "auto h = g();\nh.nxt();"), dlevel::error, "no member 'nxt' on 'coroutine_handle' (did you mean 'next'?)"));
-                check_true(has_diag(e->check(gen + "auto h = g();\nvar f = h.resume;"), dlevel::error, "no member 'resume' on 'coroutine_handle'"));
+                                    "no member 'resume' on 'coroutine<int>' (did you mean 'next'?)"));
+                check_true(has_diag(e->check(gen + "auto h = g();\nh.nxt();"), dlevel::error, "no member 'nxt' on 'coroutine<int>' (did you mean 'next'?)"));
+                check_true(has_diag(e->check(gen + "auto h = g();\nvar f = h.resume;"), dlevel::error, "no member 'resume' on 'coroutine<int>'"));
                 check_true(has_diag(e->check(gen + "auto h = g();\nh.next(1, 2);"), dlevel::error, "next() takes 0 or 1 arguments ([count])"));
                 check_true(has_diag(e->check(gen + "auto h = g();\nh.next(\"2\");"), dlevel::error, "next() count must be an integer"));
                 check_true(has_diag(e->check(gen + "auto h = g();\nh.done(1);"), dlevel::error, "done() takes no arguments"));
@@ -2254,6 +2399,34 @@ public:
                 check_eq(std::string("Cannot pass non-lvalue to reference parameter"),
                     w->execute("[[warn_mode]]; void inc(int& x) { x = x + 1; }\nvar m = \"\";\ntry { inc(5); } catch (err) { m = err; }\nm;").to_string());
                 check_true(has_diag(w->last_check_diagnostics(), dlevel::warning, "'inc' writes through parameter 'x' (line 1); pass a variable"));
+            }
+        });
+
+        // Any temporary the checker sees, not only a literal: a construction, a call returning a value, an operator's result. Passed to a
+        // T& the callee writes (returning it by reference is a write) it fails at load; bound by a non-const reference declaration,
+        // directly or as the element or field it reads, it fails at load too. A handle result names its object
+        test("a_temporary_bound_to_a_non_const_reference_fails_at_load", [this]() {
+            const std::string h = "class H { int hp = 10; }\nH make() { return H(); }\nauto bag() { array<H> a; a.push(H()); return a; }\n";
+            const std::string non_lvalue = "cannot take reference of non-lvalue expression (var&/auto& declarations bind locals, subscript chains like arr[i] or grid[y][x], map entries, object fields like obj.field and C++ properties; computed script properties are not ref-bindable)";
+            for (bool proofs : {true, false}) {
+                auto e = make_engine();
+                e->type_proofs(proofs);
+                auto r = e->check(h + "H& pick(H& a) { return a; }\nH& t = pick(H());");
+                check_true(has_diag(r, dlevel::error, "'pick' writes through parameter 'a' (line 4); pass a variable"), r.format());
+                r = e->check(h + "void hit(H& a) { a.hp = 3; }\nhit(make());");
+                check_true(has_diag(r, dlevel::error, "'hit' writes through parameter 'a' (line 4); pass a variable"), r.format());
+                r = e->check("void inc(int& a) { a += 1; }\nint x = 1;\ninc(x + 1);");
+                check_true(has_diag(r, dlevel::error, "'inc' writes through parameter 'a' (line 1); pass a variable"), r.format());
+                check_eq((size_t)0, error_count(e->check(h + "int peek(H& a) { return a.hp; }\npeek(H());")), "a parameter the body only reads takes a temporary");
+                r = e->check(h + "H& e = make();");
+                check_true(has_diag(r, dlevel::error, non_lvalue), r.format());
+                r = e->check(h + "H& e = bag()[0];");
+                check_true(has_diag(r, dlevel::error, non_lvalue), r.format());
+                r = e->check(h + "int& v = make().hp;");
+                check_true(has_diag(r, dlevel::error, non_lvalue), r.format());
+                check_eq((size_t)0, error_count(e->check(h + "const H& c = make();\nconst H& d = bag()[0];")), "a const reference binds a temporary");
+                check_eq((size_t)0, error_count(e->check("class H { int hp = 10; }\nshared_ptr<H> mk() { return new H(); }\nint& v = mk().hp;")),
+                         "a handle result names its object");
             }
         });
 
@@ -2777,20 +2950,20 @@ public:
                 try { e->execute(source); } catch (const static_check_error& err) { return std::string(err.what()); }
                 return std::string("loaded");
             };
-            check_true(message("bool t() { return time::now() >= 0.0; }").find("error: use of undeclared identifier 'time'") != std::string::npos,
-                       message("bool t() { return time::now() >= 0.0; }"));
+            check_true(message("bool t() { return time::engine_elapsed() >= 0.0; }").find("error: use of undeclared identifier 'time'") != std::string::npos,
+                       message("bool t() { return time::engine_elapsed() >= 0.0; }"));
             check_true(message("namespace game { int k = 1; } int t() { return game::tick; }").find("error: no member 'tick' in namespace 'game'") != std::string::npos);
             auto e = make_engine();
-            e->execute("extern function time::now;\nextern int game::tick;\nextern a::b::c;\n"
+            e->execute("extern function time::engine_elapsed;\nextern int game::tick;\nextern a::b::c;\n"
                        "namespace zone { extern function spawn; extern int depth; extern inner::depth; int level() { return depth + 1; } }\n"
-                       "bool t() { return time::now() >= 0.0; }\nint tick() { return game::tick + 1; }\nvoid set_tick() { game::tick = 2; }\n"
+                       "bool t() { return time::engine_elapsed() >= 0.0; }\nint tick() { return game::tick + 1; }\nvoid set_tick() { game::tick = 2; }\n"
                        "void bump_tick() { game::tick += 2; }\nvar read_c() { return a::b::c; }\nvoid set_c() { a::b::c = 1; }\n"
                        "int spawn_one() { return zone::spawn(1); }\nvar inner_depth() { return zone::inner::depth; }\n");
             const auto raises = [&](const std::string& source, const std::string& text) {
                 const std::string got = outcome(*e, source);
                 check_true(got.rfind("ERROR " + text, 0) == 0, source + " -> " + got);
             };
-            raises("t();", "'time::now' is declared extern but never defined");
+            raises("t();", "'time::engine_elapsed' is declared extern but never defined");
             raises("tick();", "'game::tick' is declared extern but never defined (an 'inline' declaration creates it)");
             raises("set_tick();", "'game::tick' is declared extern but never defined (an 'inline' declaration creates it)");
             raises("bump_tick();", "'game::tick' is declared extern but never defined (an 'inline' declaration creates it)");
@@ -2800,7 +2973,7 @@ public:
             raises("zone::level();", "'depth' is declared extern but never defined (an 'inline' declaration creates it)");
             raises("inner_depth();", "'zone::inner::depth' is declared extern but never defined (an 'inline' declaration creates it)");
             jai::stdlib::register_time_functions(*e);
-            check_true(e->execute("t();").as_bool(), "the host registered time::now after the script loaded");
+            check_true(e->execute("t();").as_bool(), "the host registered time::engine_elapsed after the script loaded");
             e->execute("namespace game { int tick = 41; }\nnamespace a::b { var c = \"c\"; }\nnamespace zone { int spawn(int n) { return n + 6; } int depth = 6; }");
             check_eq((int64_t)42, e->execute("tick();").as_int(), "a later unit defines game::tick");
             check_eq(std::string("c"), e->execute("read_c();").as_string());
@@ -3630,6 +3803,170 @@ public:
             }
         });
 
+        // Nothing to use (guide/06-functions.html#returning-nothing): a call the load resolves to a callee declared to return nothing
+        // (a script function, method or namespace function declared void, a signature returning void, a host function or bound
+        // method whose C++ result is void) fails the load wherever its result is used; a statement, a for's update and a
+        // conditional's arms discard it, and a callee the load cannot resolve keeps the run time's null
+        test("a_used_result_of_a_callee_that_returns_nothing_fails_the_load", [this]() {
+            auto e = make_engine();
+            const std::string decls = "void f() { }\n"
+                                      "class C { int n = 1; void bump() { n++; } static void reset_all() { } void scale(int by) { n *= by; } "
+                                      "static C scale(C c, int by) { C d = c; d.scale(by); return d; } void note(int by) { } static void note(C c, int by) { } "
+                                      "void tally(int by) { } static int tally(C c, int by) { return by; } }\n"
+                                      "namespace ns { void v() { } }\n"
+                                      "void over(int a) { }\nint over(int a, int b) { return a + b; }\n"
+                                      "void gen<T>(T a) { }\n"
+                                      "class G { void g<T>(T a) { } }\nclass B<T> { void m() { } }\nG gm = G();\nB<int> bi;\n"
+                                      "function<void()> sig = f;\n"
+                                      "C c = C();\nbool flag = true;\n";
+            const std::string f_used = "the result of 'f' is used, but 'f' returns nothing: call it as a statement";
+            const std::pair<const char*, std::string> used[] = {
+                {"var x = f();", f_used},
+                {"auto x = f();", f_used},
+                {"int x = f();", f_used},
+                {"print(f());", f_used},
+                {"var y = 1;\ny = f();", f_used},
+                {"int g() { return f(); }", f_used},
+                {"int k(bool ok) { if (ok) { return f(); } return 1; }", f_used},
+                {"C g() { return f(); }", f_used},
+                // var declares a value; a deduced body (auto, or a lambda with no result type) whose returns all return nothing is a
+                // callee that returns nothing, which names a builtin's copying twin when the nothing came from one
+                {"var g() { return f(); }", f_used},
+                {"array<int> xs = [2, 1];\nvar sorted(array<int> a) { return a.sort(); }\nprint(sorted(xs));", "sort changes a in place and returns nothing; array::sort(a) returns a sorted copy"},
+                {"auto k() { return f(); }\nprint(k());", "the result of 'k' is used, but 'k' returns nothing: call it as a statement"},
+                {"auto k() { print(1); }\nvar x = k();", "the result of 'k' is used, but 'k' returns nothing: call it as a statement"},
+                {"auto k = () => f();\nvar x = k();", "the result of 'k' is used, but 'k' returns nothing: call it as a statement"},
+                {"array<int> xs = [1, 2];\nauto dbl = () => xs.map(x => x * 2);\nprint(dbl());", "the result of 'dbl' is used, but 'dbl' returns nothing: map changes xs in place and returns nothing; array::map(xs, f) returns a mapped copy"},
+                {"array<int> xs = [1, 2];\nauto dbl(array<int> a) { return a.map(x => x * 2); }\nprint(dbl(xs));", "the result of 'dbl' is used, but 'dbl' returns nothing: map changes a in place and returns nothing; array::map(a, f) returns a mapped copy"},
+                {"array<int> xs = [2, 1];\nauto sorted = (array<int> a) => a.sort();\nvar r = sorted(xs);", "the result of 'sorted' is used, but 'sorted' returns nothing: sort changes a in place and returns nothing; array::sort(a) returns a sorted copy"},
+                {"array<int> xs = [2, 1];\nauto s2 = () => { return xs.sort(); };\nprint(s2());", "the result of 's2' is used, but 's2' returns nothing: sort changes xs in place and returns nothing; array::sort(xs) returns a sorted copy"},
+                {"array<int> xs = [2, 1];\nauto s3 = [&]() { return xs.sort(); };\nvar r = s3();", "the result of 's3' is used, but 's3' returns nothing: sort changes xs in place and returns nothing; array::sort(xs) returns a sorted copy"},
+                {"class S { array<int> xs = [2, 1]; auto sorted() { return xs.sort(); } }\nS s;\nprint(s.sorted());", "sort changes xs in place and returns nothing; array::sort(xs) returns a sorted copy"},
+                // a deduced method's returned in-place builtin is the error at the return, used or not, whatever the receiver
+                {"class Stk { array<int> items; auto push(int x) { return items.push(x); } }\nStk st;\nst.push(1);", "push changes items in place and returns nothing"},
+                {"class Sorter { array<int> xs = [2, 1]; auto sorted() { return xs.sort(); } }\nvar srt = Sorter();\nprint(srt.sorted());", "sort changes xs in place and returns nothing; array::sort(xs) returns a sorted copy"},
+                {"auto k() { return f(); }\nauto k2() { return k(); }\nvar x = k2();", "the result of 'k2' is used, but 'k2' returns nothing: call it as a statement"},
+                {"auto gk<T>(T a) { return f(); }\nvar x = gk(1);", "the result of 'gk<int>' is used, but 'gk<int>' returns nothing: call it as a statement"},
+                {"array<int> xs = [1];\nauto k() { return xs.map(x => x); }\nauto m = array::map([1], x => k());", "the lambda returns nothing, but array::map needs a value from it"},
+                // a deduced body with a return that gives a value declares one: its return of nothing is the use
+                {"auto pick(bool p) { if (p) { return f(); } return 3; }", f_used},
+                {"auto pk = [](bool p) { if (p) { return f(); } return 3; };", f_used},
+                {"array<int> xs = [2, 1];\nauto pick(bool p) { if (p) { return xs.sort(); } return xs; }", "sort changes xs in place and returns nothing; array::sort(xs) returns a sorted copy"},
+                {"array<int> ys = [];\nint p(int x) { return ys.push(x); }", "push changes ys in place and returns nothing"},
+                {"function<int(int)> h2 = [](int x) { return f(); };", "'lambda' declared to return 'int' returns no value here"},
+                {"bool b = f() == null;", f_used},
+                {"string s = `${f()}`;", f_used},
+                {"var q = flag ? f() : 1;", f_used},
+                {"var x = C::reset_all();", "the result of 'C.reset_all' is used, but 'C.reset_all' returns nothing: call it as a statement"},
+                {"var x = ns::v();", "the result of 'ns::v' is used, but 'ns::v' returns nothing: call it as a statement"},
+                {"var x = over(1);", "the result of 'over' is used, but 'over' returns nothing: call it as a statement"},
+                {"var x = gen<int>(1);", "the result of 'gen<int>' is used, but 'gen<int>' returns nothing: call it as a statement"},
+                {"var x = gen(1);", "the result of 'gen<int>' is used, but 'gen<int>' returns nothing: call it as a statement"},
+                {"var x = sig();", "the result of 'sig' is used, but 'sig' returns nothing: call it as a statement"},
+                // an arrow whose one expression is a call that returns nothing returns nothing: a builtin that reads its callback's
+                // result, or a signature that returns a value, cannot take it
+                {"var m = array::map([1, 2], x => f());", "the lambda returns nothing, but array::map needs a value from it"},
+                {"array<int> xs = [1];\narray<int> ys = [];\nvar m = array::map(xs, x => ys.push(x));", "the lambda returns nothing, but array::map needs a value from it"},
+                {"array<int> xs = [1];\narray<int> ys = [];\nxs.filter(x => ys.push(x));", "the lambda returns nothing, but filter needs a bool from it"},
+                {"array<int> xs = [2, 1];\nxs.sort([](int a, int b) { f(); });", "the lambda returns nothing, but sort needs a bool from it"},
+                {"array<int> xs = [1];\nbool any = xs.some(x => flag ? f() : ns::v());", "the lambda returns nothing, but some needs a bool from it"},
+                {"map<string, int> m = {};\nauto kept = map::filter(m, (k, v) => f());", "the lambda returns nothing, but map::filter needs a bool from it"},
+                {"void take(int x) { }\nvar m = array::map([1], take);", "'take' returns nothing, but array::map needs a value from it"},
+                {"var r = [1, 2].reduce((a, b) => f(), 0);", "the lambda returns nothing, but reduce needs a value from it"},
+                {"array<int> xs = [1];\nvar m = array::map(xs, [](int x) { return f(); });", "the lambda returns nothing, but array::map needs a value from it"},
+                {"var t = parallel_transform([1, 2], x => f());", "the lambda returns nothing, but parallel_transform needs a value from it"},
+                {"var t = parallel_reduce([1, 2], 0, (a, b) => f(), (a, b) => a + b);", "the lambda returns nothing, but parallel_reduce needs a value from it"},
+                {"function<int(int)> h = x => f();", "'lambda' declared to return 'int' returns no value here"},
+            };
+            for (const auto& [stmt, text] : used) {
+                auto r = e->check(decls + stmt + "\nprint(1);");
+                check_eq((size_t)1, error_count(r), std::string(stmt) + "\n" + r.format());
+                check_true(has_diag(r, dlevel::error, text), std::string(stmt) + "\n" + r.format());
+            }
+            const char* kept[] = {"f();", "c.bump();", "C::reset_all();", "ns::v();", "gen<int>(1);", "sig();", "c.scale(2);", "flag ? f() : c.bump();",
+                                  "for (int i = 0; i < 1; f()) { i++; }", "void w() { f(); return; }", "int s = over(1, 2);", "C d = C::scale(c, 2);",
+                                  "var d = c;\nvar r = d.bump();", "function h = f;\nvar r = h();", "auto l = [&]() { f(); };\nl();",
+                                  "[1, 2].for_each(x => f());", "array<int> ys = [];\n[1, 2].for_each(x => ys.push(x));", "[1, 2].for_each(x => flag ? f() : c.bump());",
+                                  "function<void(int)> sink = x => f();\nsink(1);", "auto l = x => c.bump();\nl(1);", "var ys = [];\nvar m = array::map([1], x => ys.push(x));",
+                                  "array<int> ys = [];\nvar m = array::map([1], x => ys.size());", "var g = f;\nvar m = array::map([1], x => g());",
+                                  // a body that declares no value returns a call that returns nothing, as C++ does
+                                  "void g() { return f(); }", "void h(bool ok) { if (!ok) { return f(); } print(1); }", "auto lam = () => { return f(); };\nlam();",
+                                  "auto g() { return f(); }", "array<int> ys = [];\nvoid add(int x) { return ys.push(x); }",
+                                  // a lambda assigned again, or a receiver the arrow does not type, stays the run time's
+                                  "auto k2 = () => f();\nk2 = () => 3;\nvar x = k2();", "auto sorted = a => a.sort();\nvar r = sorted([2, 1]);",
+                                  "array<array<int>> ls = [[2, 1]];\nls.for_each(l => l.sort());", "auto k() { return f(); }\nk();\nauto lk = () => f();\nlk();",
+                                  // a body every path of which throws never returns: its call has no result to miss
+                                  // a method dispatches on the object: an override may give a value, so no use of a method's result is checked
+                                  "var x = c.bump();", "class D { void t() { } void u() { var r = t(); } }", "var x = gm.g<int>(1);", "var x = bi.m();", "var d = c.scale(2);", "var x = c.note(2);", "var x = c.tally(2);",
+                                  "class P1 { auto m() { print(\"m\"); } }\nclass Q1 : P1 { auto m() override { return 4; } }\nvoid use1(P1& p) { var r = p.m(); print(r); }",
+                                  "class P2 { void m() { } }\nclass Q2 : P2 { int m() override { return 4; } }\nvoid use2(P2& p) { print(p.m()); }",
+                                  "class P3 { auto m() { return f(); } }\nP3 p3;\nvar r = p3.m();", "class P4 { void push(int x) { return xs.push(x); } array<int> xs; }",
+                                  "class P5 { void m() { } void n() { var r = this.m(); } }",
+                                  "auto boom() { throw \"x\"; }\nvar x = boom();", "auto bl = () => { throw \"x\"; };\nprint(bl());",
+                                  // a name something may rebind is no known callee: assigned, passed where a reference may take it
+                                  "void set(var& slot) { slot = () => 5; }\nauto cb = () => f();\nset(cb);\nprint(cb());",
+                                  "void set2(function<var()>& slot) { slot = () => 5; }\nauto cb = () => f();\nset2(cb);\nprint(cb());",
+                                  "class Hold { void swap_in(var& s) { s = () => 6; } }\nHold hd;\nauto cb = () => f();\nhd.swap_in(cb);\nprint(cb());",
+                                  "auto g9() { f(); }\ng9 = () => 5;\nprint(g9());", "void g10() { }\ng10 = () => 5;\nprint(g10());",
+                                  "void g11() { }\nvoid set3(var& s) { s = () => 5; }\nset3(g11);\nprint(g11());",
+                                  "auto cb = () => f();\nauto rebind = [&]() { cb = () => 5; };\nrebind();\nprint(cb());",
+                                  "class K { array<int> xs; void add(int x) { return xs.push(x); } }", "void w2() { return flag ? f() : c.bump(); }",
+                                  // a parallel_reduce step that takes its accumulator by reference folds in place
+                                  "class Acc { int n = 0; }\nvoid fold(Acc& a, int x) { a.n += x; }\nAcc merge(Acc a, Acc b) { a.n += b.n; return a; }\nAcc t = parallel_reduce([1, 2], Acc(), fold, merge);",
+                                  "class Acc { int n = 0; }\nAcc t = parallel_reduce([1, 2], Acc(), [](Acc& a, int x) { a.n += x; }, [](Acc a, Acc b) -> Acc { a.n += b.n; return a; });"};
+            for (const char* stmt : kept) {
+                auto r = e->check(decls + stmt + "\nprint(1);");
+                check_eq((size_t)0, error_count(r), std::string(stmt) + "\n" + r.format());
+            }
+            check_eq((size_t)0, error_count(e->check(decls + "f()")), "the program's last expression is its result");
+            auto w = e->check("[[warn_mode]]; " + decls + "var x = f();\nprint(1);");
+            check_eq((size_t)0, error_count(w), w.format());
+            check_true(has_diag(w, dlevel::warning, f_used), w.format());
+
+            auto host = make_engine();
+            host->add_function("ping", []() { });
+            host->add_function("ping_count", []() -> script_int { return 1; });
+            host->add_function("tools::ping", []() { });
+            host->add_function("apply_one", [](std::function<script_int(script_int)> fn) -> script_int { return fn(1); });
+            dynamic_binder<void_probe>(*host, "VoidProbe").constructor<>()
+                .method("poke", [](void_probe& self) { self.value++; })
+                .method("grow", [](void_probe& self, script_int k) { self.value *= k; })
+                .static_method("grow", [](const void_probe& p, script_int k) -> void_probe { void_probe q = p; q.value *= k; return q; })
+                .method("shrink", [](void_probe& self, script_int k) { self.value -= k; })
+                .static_method("shrink", [](void_probe& p, script_int k) { p.value -= k; })
+                .method("tally", [](void_probe& self, script_int k) { self.value += k; })
+                .static_method("tally", [](const void_probe& p, script_int k) -> script_int { return p.value + k; })
+                .build();
+            const std::string probe = "VoidProbe p = VoidProbe();\n";
+            const std::pair<const char*, const char*> host_used[] = {
+                {"var x = ping();", "the result of 'ping' is used, but 'ping' returns nothing: call it as a statement"},
+                {"print(tools::ping());", "the result of 'tools::ping' is used, but 'tools::ping' returns nothing: call it as a statement"},
+                {"void f() { }\nvar r = apply_one(x => f());", "'lambda' declared to return 'int' returns no value here"},
+            };
+            for (const auto& [stmt, text] : host_used) {
+                auto r = host->check(probe + stmt + "\nprint(1);");
+                check_eq((size_t)1, error_count(r), std::string(stmt) + "\n" + r.format());
+                check_true(has_diag(r, dlevel::error, text), std::string(stmt) + "\n" + r.format());
+            }
+            // a script class may derive a bound class and override its methods: no use of a bound method's result is checked
+            for (const char* stmt : {"var x = p.poke();", "VoidProbe q = p.grow(2);", "var x = p.shrink(2);", "var x = p.tally(2);"}) {
+                auto hm = host->check(probe + stmt + "\nprint(1);");
+                check_eq((size_t)0, error_count(hm), std::string(stmt) + "\n" + hm.format());
+            }
+            const std::string host_kept = probe + "ping();\ntools::ping();\nint n = ping_count();\np.poke();\np.grow(2);\nVoidProbe q = VoidProbe::grow(p, 3);\nprint(1);";
+            auto hk = host->check(host_kept);
+            check_eq((size_t)0, error_count(hk), hk.format());
+
+            for (bool use_vm : {false, true}) {
+                auto p = make_engine();
+                p->set_backend(use_vm ? backend_type::vm : backend_type::interpreter);
+                std::string got;
+                try { p->execute("void f() { }\nvar x = f();"); } catch (const std::exception& ex) { got = ex.what(); }
+                check_true(got.find("2:11: error: " + f_used) != std::string::npos, got);
+                check_eq(std::string("null"), p->execute("void f() { }\nvar g = f;\nvar x = g();\nx == null ? \"null\" : \"value\";").to_string(), "a callee the load cannot resolve");
+            }
+        });
+
         // A lost write (guide/03-value-semantics.html#lost-writes): a store into a by-value copy that no path reads again, and that
         // nothing else can observe, fails the load; every way the write could be seen keeps the program legal
         test("a_lost_write_to_a_copy_fails_the_load", [this]() {
@@ -3858,7 +4195,7 @@ public:
                 {"var many = [v]; array<math::ivec2> xs = many;", "Cannot store math::vec2 in array<math::ivec2>"},
                 {"math::ivec2 a; math::ivec2& r = a; r = v;", "Cannot assign math::vec2 to 'r' (declared math::ivec2&)"},
                 {"math::vec2 big = math::vec2(1e30, 0.0); cast<math::ivec2>(big);", "Cannot convert float to integer: non-finite or out of range"},
-                {"math::vec3 nan = math::vec3(0.0, math::NAN_VALUE, 0.0); cast<math::ivec3>(nan);", "Cannot convert float to integer: non-finite or out of range"},
+                {"math::vec3 nan = math::vec3(0.0, math::nan, 0.0); cast<math::ivec3>(nan);", "Cannot convert float to integer: non-finite or out of range"},
                 {"void s(int& a) { var t = \"str\"; a = t; } int n = 0; s(n);", "Cannot assign string to 'a' (declared int&)"},
             };
             for (const auto& [src, text] : at_run) {
@@ -3953,18 +4290,22 @@ public:
                 "Dir d = Dir::south; Dir first; int n = d; auto a = Dir::west; a = pick(Dir.east); var v = Dir::west; Walker w;\n"
                 "array<int> xs = [d]; map<int,string> names = {}; names[d] = \"s\"; array<Dir> ds = [Dir::north]; ds.push(d); map<Dir,int> m = {}; m[Dir::east] = 1;\n"
                 "Dir c = cast<Dir>(5); string out = \"\"; switch (c) { case Dir::east: out = \"east\"; break; default: out = \"other\"; }\n"
-                "`${type_of(d)} ${type_of(first)}:${first} ${type_of(n)}:${n} ${type_of(d + 1)}:${d + 1} ${type_of(a)}:${a} ${type_of(v)}:${v} ${type_of(w.facing)}:${w.facing}${w.back} "
+                "`${reflect::type_of(d)} ${reflect::type_of(first)}:${first} ${reflect::type_of(n)}:${n} ${reflect::type_of(d + 1)}:${d + 1} ${reflect::type_of(a)}:${a} ${reflect::type_of(v)}:${v} ${reflect::type_of(w.facing)}:${w.facing}${w.back} "
                 "${d == 1} ${out} ${which(d)},${which(Dir::north)},${which(3)},${which(v)} ${Dir[\"east\"]} ${Dir.size()} ${ds.size()} ${m[Dir::east]}`;";
             auto rep = e->check(clean);
             check_eq((size_t)0, error_count(rep), rep.format(clean));
             check_eq(std::string("Dir Dir:0 int:1 int:2 Dir:5 int:6 Dir:01 true east Dir,Dir,int,int 5 4 2 1"), e->execute(clean).as_string());
+            // a value read again keeps its enum's type (the VM folds a repeated E::v read into a constant)
+            check_eq(std::string("DirDir DirDir DirDir"), e->execute(decl +
+                "string kinds() { auto k = Dir::east; auto j = Dir::west; j = Dir::north; return `${reflect::type_of(k)}${reflect::type_of(j)}`; }\n"
+                "`${kinds()} ${kinds()} ${kinds()}`;").as_string());
             // through a var the run time decides: one of the enum's values enters and takes the type, any other int is refused
             check_eq(std::string("Dir:5|Cannot initialize 'd' (declared Dir) with int|Cannot assign int to 'd' (declared Dir)|Cannot pass int to parameter 'where' of 'go' (declared Dir)|"
                                  "Cannot cast 3 to 'Dir': not one of its values|Cannot cast 'string' to 'Dir'"),
                      e->execute(decl +
                 "string t(function f) { string r = \"\"; try { r = `${f()}`; } catch (err) { r = err; } return r; }\n"
                 "void go(Dir where) {}\n"
-                "t([]() { var five = 5; Dir d = five; return `${type_of(d)}:${d}`; }) + \"|\" + t([]() { var three = 3; Dir d = three; return 1; }) + \"|\" +\n"
+                "t([]() { var five = 5; Dir d = five; return `${reflect::type_of(d)}:${d}`; }) + \"|\" + t([]() { var three = 3; Dir d = three; return 1; }) + \"|\" +\n"
                 "t([]() { var three = 3; Dir d = Dir::north; d = three; return 1; }) + \"|\" + t([]() { var three = 3; go(three); return 1; }) + \"|\" +\n"
                 "t([]() { return cast<Dir>(3); }) + \"|\" + t([]() { var s = \"east\"; return cast<Dir>(s); });").as_string());
         });
@@ -3992,8 +4333,8 @@ public:
                 "enum Dir { north, south } class P { int a = 0; }\n"
                 "bool c = true; float f = c ? 1 : 2.5; auto a = c ? 1 : 2.5; array<int> xs = [1]; float sum = 0.0; for (float w : xs) { sum += w; }\n"
                 "map<Dir, string> names = {Dir::south: \"S\", Dir::north: \"N\"};\n"
-                "string caught = \"\"; try { throw Dir::south; } catch (int e) { caught = \"int\"; } catch (Dir e) { caught = `${type_of(e)}:${e}`; }\n"
-                "`${type_of(a)} ${sum} ${names[Dir::south]}${names.size()} ${caught}`;";
+                "string caught = \"\"; try { throw Dir::south; } catch (int e) { caught = \"int\"; } catch (Dir e) { caught = `${reflect::type_of(e)}:${e}`; }\n"
+                "`${reflect::type_of(a)} ${sum} ${names[Dir::south]}${names.size()} ${caught}`;";
             auto rep = e->check(clean);
             check_eq((size_t)0, error_count(rep), rep.format(clean));
             check_eq(std::string("float 1.0 S2 Dir:1"), e->execute(clean).as_string());
@@ -4029,7 +4370,7 @@ public:
             }
             // conditions keep truthiness, numbers, null and handles still convert, and a var's string converts at run time
             const std::string clean = "class K {} string s = \"x\"; string none = \"\"; bool a = !s.empty(); bool b = s == \"x\"; bool c = 1; bool d = 0.5; bool e = !s; bool f = s && true;\n"
-                                      "var v = \"x\"; bool g = v; var blank = \"\"; bool g2 = blank; shared_ptr<K> p = null; bool h = p; int taken = 0; if (s) { taken += 1; } if (none) { taken += 10; }\n"
+                                      "var v = \"x\"; bool g = v; var blank = \"\"; bool g2 = blank; shared_ptr<K> p = null; bool h = p; int taken = 0; if (!s.empty()) { taken += 1; } if (!none.empty()) { taken += 10; }\n"
                                       "`${a}${b}${c}${d}${e}${f}${g}${g2}${h}${taken}`;";
             auto rep = e->check(clean);
             check_eq((size_t)0, error_count(rep), rep.format(clean));
@@ -4222,6 +4563,240 @@ public:
             check_eq(std::string("VALUE 8"), outcome(*e, "doubled(4)"), "the refused reload left the old code running");
             write_unit(dir, "main.jai", "import \"lib.jai\";\nint doubled(int v) { return twice(`${v}`).size(); }\n");
             check_eq(std::string("VALUE 2"), outcome(*e, run));
+            std::filesystem::remove_all(dir);
+        });
+
+        // A use that can never succeed (docs/site/guide/13-strict-checking.html): a call of a name declared with a type no call
+        // takes, in every place the load knows the one thing the name is
+        test("a_call_of_a_name_declared_with_a_type_no_call_takes_is_a_load_error", []() {
+            struct declared {
+                std::string type, init, what;
+            };
+            const std::vector<declared> types = {
+                {"int", "5", "an int"}, {"float", "1.5", "a float"}, {"bool", "true", "a bool"}, {"char", "'k'", "a char"},
+                {"string", "\"s\"", "a string"}, {"utf8_string", "\"u\"", "a utf8_string"}, {"array<int>", "[1]", "an array<int>"},
+                {"map<string, int>", "{\"k\": 1}", "a map<string,int>"}, {"math::vec2", "math::vec2(1.0, 2.0)", "a math::vec2"},
+                {"Mode", "Mode::high", "a Mode"},
+            };
+            // where the name is declared: the program's text (line 1 declares the enum every row may name), the place of the name's
+            // declaration as the error spells it, and the name the error shows
+            struct place {
+                std::string name;
+                std::string lib;       // another unit's text, empty for a one-file program
+                std::string root;      // ${decl}: TYPE limit = INIT;   ${type}: TYPE
+                std::string shown;
+                std::string where;     // ${col}: the column of `limit` in its declaration
+                size_t before;         // the characters ahead of the type on the declaration's line
+            };
+            const std::vector<place> places = {
+                {"the program scope of the unit", "", "enum Mode { low, high }\n${decl}\nvar use() { return limit(); }\n1;", "limit", "2:${col}", 0},
+                {"the program scope, called through ::", "", "enum Mode { low, high }\n${decl}\nclass K { var use() { return ::limit(); } }\n1;", "limit", "2:${col}", 0},
+                {"a local", "", "enum Mode { low, high }\nvar use() {\n${decl}\nreturn limit();\n}\n1;", "limit", "3:${col}", 0},
+                {"a local of a method", "", "enum Mode { low, high }\nclass K { var use() {\n${decl}\nreturn limit();\n} }\n1;", "limit", "3:${col}", 0},
+                {"a parameter (its place is its function's)", "", "enum Mode { low, high }\nvar use(${type} limit) { return limit(); }\n1;", "limit", "2:5", 0},
+                {"a parameter of a method", "", "enum Mode { low, high }\nclass K { var use(${type} limit) { return limit(); } }\n1;", "limit", "2:15", 0},
+                {"a lambda's parameter", "", "enum Mode { low, high }\nvar use() {\nvar f = (${type} limit) => limit();\nreturn 1;\n}\n1;", "limit", "3:9", 0},
+                {"a local a lambda captures", "", "enum Mode { low, high }\nvar use() {\n${decl}\nvar f = [=]() { return limit(); };\nreturn 1;\n}\n1;", "limit", "3:${col}", 0},
+                {"a namespace's variable, qualified in a method", "", "enum Mode { low, high }\nnamespace n { ${decl} }\nclass K { var use() { return n::limit(); } }\n1;", "n::limit", "2:${col}", 14},
+                {"a static, qualified in a method of a derived class", "", "enum Mode { low, high }\nclass C { static ${decl} }\nclass D : C { var use() { return C::limit(); } }\n1;", "C::limit", "2:${col}", 17},
+                {"a namespace's variable, qualified", "", "enum Mode { low, high }\nnamespace n { ${decl} }\nvar use() { return n::limit(); }\n1;", "n::limit", "2:${col}", 14},
+                {"a namespace's variable, bare in the namespace", "", "enum Mode { low, high }\nnamespace n { ${decl}\nvar use() { return limit(); } }\n1;", "n::limit", "2:${col}", 14},
+                {"a static, qualified", "", "enum Mode { low, high }\nclass C { static ${decl} }\nvar use() { return C::limit(); }\n1;", "C::limit", "2:${col}", 17},
+                {"the program scope of exactly one other unit", "enum Mode { low, high }\n${decl}\n", "import \"lib.jai\";\nvar use() { return limit(); }\n1;", "limit", "lib.jai:2:${col}", 0},
+                {"a namespace's variable of exactly one other unit", "enum Mode { low, high }\nnamespace n { ${decl} }\n", "import \"lib.jai\";\nvar use() { return n::limit(); }\n1;", "n::limit", "lib.jai:2:${col}", 14},
+                {"a static of another unit's class", "enum Mode { low, high }\nclass C { static ${decl} }\n", "import \"lib.jai\";\nvar use() { return C::limit(); }\n1;", "C::limit", "lib.jai:2:${col}", 17},
+            };
+            const auto fill = [](std::string text, const declared& d) {
+                const std::string decl = d.type + " limit = " + d.init + ";";
+                for (size_t at = text.find("${decl}"); at != std::string::npos; at = text.find("${decl}")) { text.replace(at, 7, decl); }
+                for (size_t at = text.find("${type}"); at != std::string::npos; at = text.find("${type}")) { text.replace(at, 7, d.type); }
+                return text;
+            };
+            std::string failures;
+            int made = 0;
+            for (const place& where : places) {
+                for (const declared& d : types) {
+                    const auto dir = closure_dir("never_" + std::to_string(made++));
+                    auto e = program_engine(dir);
+                    stdlib::register_all(*e);
+                    if (!where.lib.empty()) { write_unit(dir, "lib.jai", fill(where.lib, d)); }
+                    std::string at = where.where;
+                    if (const size_t col = at.find("${col}"); col != std::string::npos) { at.replace(col, 6, std::to_string(where.before + d.type.size() + 2)); }
+                    if (at.rfind("lib.jai", 0) == 0) { at = (dir / "lib.jai").string() + at.substr(7); }
+                    const std::string expected = "error: '" + where.shown + "' is " + d.what + " (declared at " + at + "), not a function";
+                    const std::string got = outcome(*e, fill(where.root, d));
+                    if (got.find(expected) == std::string::npos) { failures += where.name + ", " + d.type + ": wanted [" + expected + "] got [" + got + "]\n"; }
+                    std::filesystem::remove_all(dir);
+                }
+            }
+            check_true(failures.empty(), failures);
+        });
+
+        test("a_call_of_an_enum_or_a_member_of_a_function_is_a_load_error", []() {
+            struct row {
+                std::string name, lib, root, expected;
+            };
+            const std::vector<row> rows = {
+                {"an enum's value", "", "enum Mode { low, high }\nvar use() { return Mode::high(); }\n1;", "<script>:2:26: error: 'Mode::high' is a value of the enum 'Mode' (declared at 1:6), not a function"},
+                {"an enum's value, in a method", "", "enum Mode { low, high }\nclass K { var use() { return Mode::high(); } }\n1;", "<script>:2:36: error: 'Mode::high' is a value of the enum 'Mode' (declared at 1:6), not a function"},
+                {"an enum's name", "", "enum Mode { low, high }\nvar use() { return Mode(); }\n1;", "<script>:2:20: error: 'Mode' is an enum (declared at 1:6), not a function"},
+                {"an enum a function declares", "", "var use() {\nenum Mode { low, high }\nreturn Mode();\n}\n1;", "error: 'Mode' is an enum (declared at 2:6), not a function"},
+                {"another unit's enum's value", "enum Mode { low, high }\n", "import \"lib.jai\";\nvar use() { return Mode::high(); }\n1;", "error: 'Mode::high' is a value of the enum 'Mode' (declared at ${lib}:1:6), not a function"},
+                {"another unit's enum's name", "enum Mode { low, high }\n", "import \"lib.jai\";\nvar use() { return Mode(); }\n1;", "error: 'Mode' is an enum (declared at ${lib}:1:6), not a function"},
+                {"a variable declared auto from a literal", "", "auto limit = 5;\nvar use() { return limit(); }\n1;", "<script>:2:20: error: 'limit' is an int (declared at 1:6), not a function"},
+                {"a loop's variable", "", "var use() {\nfor (int i = 0; i < 1; i += 1) { i(); }\nreturn 1;\n}\n1;", "error: 'i' is an int (declared at 2:10), not a function"},
+                {"a range-for variable", "", "var use() {\nfor (string word : [\"a\"]) { word(); }\nreturn 1;\n}\n1;", "error: 'word' is a string (declared at 2:1), not a function"},
+                {"a const", "", "const int limit = 5;\nvar use() { return limit(); }\n1;", "error: 'limit' is an int (declared at 1:11), not a function"},
+                {"a function's member", "", "int limit() { return 5; }\nvar use() { return limit.n; }\n1;", "<script>:2:26: error: 'limit' is a function (declared at 1:5): it has no member 'n'"},
+                {"a function's member, stored", "", "int limit() { return 5; }\nvar use() { limit.n = 3; return 1; }\n1;", "error: 'limit' is a function (declared at 1:5): it has no member 'n'"},
+                {"a function's member, called", "", "int limit() { return 5; }\nvar use() { return limit.size(); }\n1;", "error: 'limit' is a function (declared at 1:5): it has no member 'size'"},
+                {"a function's member through ?.", "", "int limit() { return 5; }\nvar use() { return limit?.n; }\n1;", "error: 'limit' is a function (declared at 1:5): it has no member 'n'"},
+                {"a function's subscript", "", "int limit() { return 5; }\nvar use() { return limit[0]; }\n1;", "<script>:2:20: error: 'limit' is a function (declared at 1:5): it cannot be subscripted"},
+                {"a function's subscript, stored", "", "int limit() { return 5; }\nvar use() { limit[0] = 3; return 1; }\n1;", "error: 'limit' is a function (declared at 1:5): it cannot be subscripted"},
+                {"a local in a unit with an include the load cannot read", "", "string part = \"missing\" + \".jai\";\nvar use() { int limit = 5; include(part); return limit(); }\n1;", "error: 'limit' is an int (declared at 2:17), not a function"},
+                {"a namespace's variable through using", "", "namespace cfg { int lo = 1; }\nusing cfg::lo;\nvar use() { return lo(); }\n1;", "<script>:3:20: error: 'cfg::lo' is an int (declared at 1:21), not a function"},
+                {"a using name over a function of the unit declared above it", "", "namespace cfg { int lo = 1; }\nint lo() { return 3; }\nusing cfg::lo;\nvar use() { return lo(); }\n1;", "<script>:4:20: error: 'cfg::lo' is an int (declared at 1:21), not a function"},
+                {"a namespace's variable a later block declares", "", "namespace n { var use() { return v(); } }\nnamespace n { int v = 5; }\n1;", "<script>:1:34: error: 'n::v' is an int (declared at 2:19), not a function"},
+                {"a namespace's variable through using, in a method", "", "namespace cfg { int lo = 1; }\nusing cfg::lo;\nclass K { var use() { return lo(); } }\n1;", "<script>:3:30: error: 'cfg::lo' is an int (declared at 1:21), not a function"},
+                {"an enum's value through using", "", "enum Mode { low, high }\nusing Mode::low;\nvar use() { return low(); }\n1;", "error: 'Mode::low' is a value of the enum 'Mode' (declared at 1:6), not a function"},
+                {"a static in a static method", "", "class C { static int count = 5; static var use() { return C::count(); } }\n1;", "error: 'C::count' is an int (declared at 1:22), not a function"},
+                {"another unit's function's member", "int limit() { return 5; }\n", "import \"lib.jai\";\nvar use() { return limit.n; }\n1;", "error: 'limit' is a function (declared at ${lib}:1:5): it has no member 'n'"},
+                {"another unit's function's subscript", "int limit() { return 5; }\n", "import \"lib.jai\";\nvar use() { return limit[0]; }\n1;", "error: 'limit' is a function (declared at ${lib}:1:5): it cannot be subscripted"},
+                {"arithmetic on another unit's function, as on the unit's own", "int limit() { return 5; }\n", "import \"lib.jai\";\nvar use() { return limit + 1; }\n1;", "error: cannot apply '+' to 'function' and 'int'"},
+                {"a unary minus on another unit's function", "int limit() { return 5; }\n", "import \"lib.jai\";\nvar use() { return -limit; }\n1;", "error: Unary minus requires numeric operand"},
+                {"another unit's function into an int", "int limit() { return 5; }\n", "import \"lib.jai\";\nvar use() { int x = limit; return x; }\n1;", "error: cannot initialize 'x' declared 'int' with 'function'"},
+            };
+            std::string failures;
+            int made = 0;
+            for (const row& r : rows) {
+                const auto dir = closure_dir("never_other_" + std::to_string(made++));
+                auto e = program_engine(dir);
+                stdlib::register_all(*e);
+                if (!r.lib.empty()) { write_unit(dir, "lib.jai", r.lib); }
+                std::string expected = r.expected;
+                if (const size_t at = expected.find("${lib}"); at != std::string::npos) { expected.replace(at, 6, (dir / "lib.jai").string()); }
+                const std::string got = outcome(*e, r.root);
+                if (got.find(expected) == std::string::npos) { failures += r.name + ": wanted [" + expected + "] got [" + got + "]\n"; }
+                std::filesystem::remove_all(dir);
+            }
+            check_true(failures.empty(), failures);
+        });
+
+        test("a_use_that_may_succeed_when_the_line_runs_still_loads", []() {
+            // every row loads and answers 1: something may answer the name another way, or its type takes a call
+            struct row {
+                std::string name, lib, other, root;
+            };
+            const std::vector<row> rows = {
+                {"a var", "", "", "var limit = 5;\nvar use() { return limit(); }\n1;"},
+                {"an untyped parameter", "", "", "var use(limit) { return limit(); }\n1;"},
+                {"a lambda's untyped parameter", "", "", "var use() { var apply = x => x(); return apply(() => 1); }\n1;"},
+                {"a function variable", "", "", "function limit = () => 5;\nvar use() { return limit(); }\n1;"},
+                {"a function variable with a signature", "", "", "function<int()> limit = () => 5;\nvar use() { return limit(); }\n1;"},
+                {"a function variable's member", "", "", "function limit = () => 5;\nvar use() { return limit.n; }\n1;"},
+                {"a class with operator()", "", "", "class Fn { int operator()(int x) { return x + 1; } }\nFn limit;\nvar use() { return limit(2); }\n1;"},
+                {"a subclass of a class with operator()", "", "", "class Fn { int operator()(int x) { return x + 1; } }\nclass G : Fn { }\nG limit;\nvar use() { return limit(2); }\n1;"},
+                {"a handle", "", "", "class Fn { int operator()(int x) { return x + 1; } }\nshared_ptr<Fn> limit = new Fn();\nvar use() { return limit(2); }\n1;"},
+                {"a value of a host class", "", "", "RoProbe limit;\nvar use() { return limit(); }\n1;"},
+                {"a value of a host class with a call operator", "", "", "CallProbe limit;\nvar use() { return limit(2); }\n1;"},
+                {"a coroutine handle", "", "", "coroutine int waves() { yield 1; return 9; }\nvar use() { coroutine<int> limit = waves(); return limit(); }\n1;"},
+                {"a weak_ptr", "", "", "class Fn { int operator()(int x) { return x + 1; } }\nvar use() { shared_ptr<Fn> held = new Fn(); weak_ptr<Fn> limit = held; return limit(2); }\n1;"},
+                {"a name the host registers a function under", "", "", "int host_limit = 5;\nvar use() { return host_limit(); }\n1;"},
+                {"a variable and a function of one name in the unit", "", "", "int limit = 5;\nint limit() { return 3; }\nvar use() { return limit(); }\n1;"},
+                {"an enum and a function of one name in the unit", "", "", "enum Mode { low, high }\nint Mode() { return 3; }\nvar use() { return Mode(); }\n1;"},
+                {"a namespace's variable and function of one name", "", "", "namespace n { int v = 5; }\nnamespace n { int v() { return 3; } }\nvar use() { return n::v(); }\n1;"},
+                {"a name two units declare, a variable and a function", "int limit = 5;\n", "int limit() { return 3; }\n", "import \"lib.jai\";\nimport \"other.jai\";\nvar use() { return limit(); }\n1;"},
+                {"a name two units declare as variables", "int limit = 5;\n", "var limit = 6;\n", "import \"lib.jai\";\nimport \"other.jai\";\nvar use() { return limit(); }\n1;"},
+                {"the unit's variable beside another unit's function", "int limit() { return 3; }\n", "", "int limit = 5;\nimport \"lib.jai\";\nvar use() { return limit(); }\n1;"},
+                {"a unit with an include the load cannot read", "", "", "int limit = 5;\nstring part = \"missing\" + \".jai\";\nvar use() { include(part); return limit(); }\n1;"},
+                {"an enum's value in such a unit", "", "", "enum Mode { low, high }\nstring part = \"missing\" + \".jai\";\nvar use() { include(part); return Mode::high(); }\n1;"},
+                {"a static in such a unit", "", "", "class C { static int count = 5; }\nstring part = \"missing\" + \".jai\";\nvar use() { include(part); return C::count(); }\n1;"},
+                {"a function's member in such a unit", "", "", "int area(int w) { return w; }\nstring part = \"missing\" + \".jai\";\nvar use() { include(part); return area.w; }\n1;"},
+                {"a name a using declaration takes below the call", "", "", "namespace cfg { int lo = 1; }\nint lo() { return 3; }\nvar use() { return lo(); }\nusing cfg::lo;\n1;"},
+                {"a field, bare in its class", "", "", "class B { int limit = 5; var use() { return limit(); } }\n1;"},
+                {"a field through an object", "", "", "class B { int limit = 5; }\nvar use() { B b; return b.limit(); }\n1;"},
+                {"a field through this", "", "", "class B { int limit = 5; var use() { return this.limit(); } }\n1;"},
+                {"a static, bare in its class", "", "", "class B { static int count = 5; var use() { return count(); } }\n1;"},
+                {"a program-scope variable, bare in a method", "", "", "int limit = 5;\nclass B { var use() { return limit(); } }\n1;"},
+                {"an enum's name, bare in a method", "", "", "enum Mode { low, high }\nclass B { var use() { return Mode(); } }\n1;"},
+                {"a namespace's variable, bare in a method of the namespace's class", "", "", "namespace n { int v = 5; class B { var use() { return v(); } } }\n1;"},
+                {"a function's member, bare in a method", "", "", "int limit() { return 5; }\nclass B { var use() { return limit.n; } }\n1;"},
+                {"another unit's variable, bare in a method", "int limit = 5;\n", "", "import \"lib.jai\";\nclass B { var use() { return limit(); } }\n1;"},
+                {"a namespace's enum's value", "", "", "namespace n { enum Mode { low, high } }\nvar use() { return n::Mode::high(); }\n1;"},
+                {"a namespace's function's member", "", "", "namespace n { int f() { return 5; } }\nvar use() { return n::f.x; }\n1;"},
+                {"a static method's member", "", "", "class C { static int s() { return 2; } }\nvar use() { return C::s.x; }\n1;"},
+                {"a call in a [[warn_mode]] region", "", "", "int limit = 5;\nvar use() { [[warn_mode]] return limit(); }\n1;"},
+                {"a reference parameter", "", "", "var use(int& limit) { return limit(); }\n1;"},
+                {"a generic's parameter behind a test of its type", "", "", "var force<T>(T v) { if (reflect::type_of(v) == \"function\") { return v(); } return v; }\nvar use() { return force<int>(5); }\n1;"},
+                {"a namespace's variable a later block declares, bare in a method", "", "", "namespace n { class B { var use() { return v(); } } }\nnamespace n { int v = 5; }\n1;"},
+                {"a namespace's variable beside a function a third block declares", "", "", "namespace n { var use() { return v(); } }\nnamespace n { int v = 5; }\nnamespace n { int v() { return 3; } }\n1;"},
+                {"a reference local", "", "", "int x = 5;\nvar use() { int& limit = x; return limit(); }\n1;"},
+                {"a range-for reference", "", "", "var use() { array<int> all = [1]; for (int& each : all) { each(); } return 1; }\n1;"},
+                {"a namespace's enum, bare in the namespace", "", "", "namespace n { enum Mode { low, high } var use() { return Mode(); } }\n1;"},
+                {"an enum's value where a namespace of the name declares a function", "enum Mode { low, high }\n", "", "import \"lib.jai\";\nnamespace Mode { int high() { return 3; } }\nvar use() { return Mode::high(); }\n1;"},
+            };
+            std::string failures;
+            int made = 0;
+            for (const row& r : rows) {
+                const auto dir = closure_dir("never_loads_" + std::to_string(made++));
+                auto e = program_engine(dir);
+                stdlib::register_all(*e);
+                bind_read_only_probe(*e);
+                bind_call_probe(*e);
+                e->add_function("host_limit", []() -> int64_t { return 7; });
+                if (!r.lib.empty()) { write_unit(dir, "lib.jai", r.lib); }
+                if (!r.other.empty()) { write_unit(dir, "other.jai", r.other); }
+                const std::string got = outcome(*e, r.root);
+                if (got != "VALUE 1") { failures += r.name + ": " + got + "\n"; }
+                std::filesystem::remove_all(dir);
+            }
+            check_true(failures.empty(), failures);
+            // what the cases that load do when the line runs: each succeeds through the other answer
+            auto e = make_engine();
+            stdlib::register_all(*e);
+            bind_call_probe(*e);
+            check_eq(std::string("VALUE 3"), outcome(*e, "CallProbe probe;\nvar call_it() { return probe(2); }\ncall_it();"), "a host class's call operator answers the call");
+            check_eq(std::string("VALUE 9"), outcome(*e, "class B { int limit = 5; var use() { return limit(); } }\nclass D : B { var limit = 7; D() { limit = () => 9; } }\nD().use();"),
+                     "a derived class declares the field again as a var");
+            check_eq(std::string("VALUE 8"), outcome(*e, "int top = 5;\nclass P { var use() { return top(); } }\nclass Q : P { int top() { return 8; } }\nQ().use();"),
+                     "a derived class's method answers a bare name before the program's variable");
+            check_eq(std::string("VALUE 3"), outcome(*e, "int both = 5;\nint both() { return 3; }\nboth();"), "the function declared after the variable takes the name");
+            check_eq(std::string("VALUE 5"), outcome(*e, "var force<T>(T v) { if (reflect::type_of(v) == \"function\") { return v(); } return v; }\nforce<int>(5);"),
+                     "a generic's instance never reaches the call its type test guards");
+            check_eq(std::string("VALUE 9"), outcome(*e, "var held = 5;\nvar through(int& r) { held = () => 9; return r(); }\nthrough(held);"),
+                     "an int& bound to a var names whatever the var holds when the call runs");
+            check_eq(std::string("VALUE 9"), outcome(*e, "int area(int w) { return w; }\nclass S { var use() { return area.w; } }\nclass W { var w = 9; }\nclass T : S { var area = W(); }\nT().use();"),
+                     "a derived class's field answers a bare name before the program's function");
+        });
+
+        test("a_reload_that_changes_what_a_name_is_is_rejected_for_the_use_that_no_longer_fits", []() {
+            const auto dir = closure_dir("never_reload");
+            int tick = 0;
+            const auto write = [&](const std::string& file, const std::string& text) {
+                write_unit(dir, file, text);
+                std::error_code ec;
+                std::filesystem::last_write_time(dir / file, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(2 * ++tick + 5000), ec);
+            };
+            for (const bool to_variable : {true, false}) {
+                const std::string how = to_variable ? "a function that becomes a variable" : "a variable that becomes a function";
+                auto e = program_engine(dir);
+                stdlib::register_all(*e);
+                e->import_recheck_interval(0);
+                write("lib.jai", to_variable ? "int limit() { return 5; }\n" : "int limit = 5;\n");
+                write("root.jai", std::string("import \"lib.jai\";\nint use() { return ") + (to_variable ? "limit() + 1" : "limit + 1") + "; }\nint tick() { import(\"lib.jai\"); return use(); }\n");
+                e->execute_file((dir / "root.jai").string());
+                check_eq(std::string("VALUE 6"), outcome(*e, "tick();"), how + ": before the edit");
+                write("lib.jai", to_variable ? "int limit = 5;\n" : "int limit() { return 5; }\n");
+                const std::string rejected = outcome(*e, "tick();");
+                const std::string expected = (dir / "root.jai").string() + (to_variable
+                    ? ":2:20: error: 'limit' is an int (declared at " + (dir / "lib.jai").string() + ":1:5), not a function"
+                    : ":2:26: error: cannot apply '+' to 'function' and 'int'");
+                check_true(rejected.find("ERROR static check failed:") == 0 && rejected.find(expected) != std::string::npos, how + ": the reload is rejected at the caller: " + rejected);
+                check_eq(std::string("VALUE 6"), outcome(*e, "tick();"), how + ": the code the program had keeps running");
+                check_eq(std::string("VALUE 6"), outcome(*e, "use();"), how);
+                write("lib.jai", to_variable ? "int limit() { return 7; }\n" : "int limit = 7;\n");
+                check_eq(std::string("VALUE 8"), outcome(*e, "tick();"), how + ": an edit the caller fits reloads");
+            }
             std::filesystem::remove_all(dir);
         });
 

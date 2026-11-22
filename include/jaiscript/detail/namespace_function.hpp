@@ -83,7 +83,7 @@ namespace jai::detail {
 				if (decl->is_coroutine) {   // a coroutine member mints a handle over the namespace's scope
 					auto handle = std::make_shared<coroutine_handle>(owner);
 					handle->set_function(decl, args, body_env);
-					return script_value::make_coroutine_handle(engine_access::symbolize(*owner, "coroutine_handle"), std::static_pointer_cast<void>(handle), owner);
+					return script_value::make_coroutine_handle(engine_access::symbolize(*owner, "coroutine"), std::static_pointer_cast<void>(handle), owner);
 				}
 				script_callable payload;
 				payload.kind = script_callable::kind_type::function;

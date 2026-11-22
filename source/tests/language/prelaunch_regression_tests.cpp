@@ -345,8 +345,13 @@ public:
 			check_eq(script_int{42}, eng->execute("40 + 2;").as_int());
 		});
 
-		for (const std::string format : {"json", "binary", "base64"}) {
-			test("nested_class_roundtrip_" + format, [this, format]() {
+		const std::pair<const char*, const char*> formats[] = {
+			{"json", "from_json(to_json(payload))"}, {"binary", "from_binary(to_binary(payload))"},
+			{"base64", "from_binary(base64_decode(base64_encode(to_binary(payload))))"},
+		};
+		for (const auto& format : formats) {
+			const char* round_trip = format.second;
+			test(std::string("nested_class_roundtrip_") + format.first, [this, round_trip]() {
 				auto eng = make_engine();
 				stdlib::register_all(*eng);
 				eng->execute(R"(
@@ -356,11 +361,11 @@ public:
 					box.child = SavedPoint();
 					array<var> payload = [box, {"point": SavedPoint()}];
 				)");
-				eng->execute("var restored = from_" + format + "(to_" + format + "(payload));");
-				check_eq(std::string("SavedBox"), eng->execute("type_of(restored[0]);").as_string());
-				check_eq(std::string("SavedPoint"), eng->execute("type_of(restored[0].child);").as_string());
+				eng->execute(std::string("var restored = ") + round_trip + ";");
+				check_eq(std::string("SavedBox"), eng->execute("reflect::type_of(restored[0]);").as_string());
+				check_eq(std::string("SavedPoint"), eng->execute("reflect::type_of(restored[0].child);").as_string());
 				check_eq(script_int{17}, eng->execute("restored[0].child.x;").as_int());
-				check_eq(std::string("SavedPoint"), eng->execute("type_of(restored[1][\"point\"]);").as_string());
+				check_eq(std::string("SavedPoint"), eng->execute("reflect::type_of(restored[1][\"point\"]);").as_string());
 				check_eq(script_int{17}, eng->execute("restored[1][\"point\"].x;").as_int());
 			});
 		}

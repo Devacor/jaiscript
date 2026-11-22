@@ -435,23 +435,51 @@ public:
             eng->execute(R"(
                 auto map1 = {"key": "value1", "other": "data"};
                 auto map2 = {"key": "value2"};
-                auto merged = merge(map1, map2);
+                auto merged = map::merge(map1, map2);
             )");
 
-            // Second map should override first
+            // Second map should override first; map::merge leaves map1 as it is
             check_eq(eng->execute("merged[\"key\"]").as<std::string>(), "value2");
             check_eq(eng->execute("merged[\"other\"]").as<std::string>(), "data");
+            check_eq(eng->execute("map1[\"key\"]").as<std::string>(), "value1");
+
+            // the dot form merges into map1 itself
+            eng->execute("map1.merge(map2);");
+            check_eq(eng->execute("map1[\"key\"]").as<std::string>(), "value2");
+            check_eq(eng->execute("map1[\"other\"]").as<std::string>(), "data");
+            check_eq(eng->execute("map2.size()").as_int(), script_int{1});
         });
 
-        test("merge_arity_text_spells_the_count", [&]() {
+        test("merge_takes_one_map", [&]() {
             auto eng = make_engine();
             stdlib::register_all(eng);
             auto caught = eng->execute(R"(
-                var text = "";
-                try { merge({"a": 1}); } catch (e) { text = e; }
-                text
+                var m = {"a": 1};
+                var arity = "";
+                try { m.merge(); } catch (e) { arity = e; }
+                var kind = "";
+                try { m.merge(5); } catch (e) { kind = e; }
+                arity + "|" + kind
             )");
-            check_eq(std::string("merge() expects exactly 2 arguments, got 1"), caught.as<std::string>());
+            check_eq(std::string("merge() takes exactly one argument|merge() argument must be a map"), caught.as<std::string>());
+        });
+
+        test("merge_result_is_nothing_and_values_keep_their_type", [&]() {
+            auto eng = make_engine();
+            stdlib::register_all(eng);
+            const std::string in_place = "merge changes m in place and returns nothing; map::merge(m, other) returns a merged copy";
+            const auto used = eng->check("map<string, int> m = {\"a\": 1};\nauto c = m.merge({\"b\": 2});");
+            check_true(used.format("").find(in_place) != std::string::npos, used.format(""));
+            std::string raised;
+            try { eng->execute("[[warn_mode]];\nvar m = {\"a\": 1};\nvar c = m.merge({\"b\": 2});"); } catch (const std::exception& error) { raised = error.what(); }
+            check_true(raised.find(in_place) != std::string::npos, "a var receiver raises at run time: " + raised);
+            check_true(eng->check("const map<string, int> k = {\"a\": 1};\nk.merge({\"b\": 2});").has_errors(), "a const map does not merge in place");
+            check_eq(std::string("Cannot store 'float' in map value of type 'int' {\"a\":1}"), eng->execute(R"(
+                map<string, int> ints = {"a": 1};
+                string out = "";
+                try { ints.merge({"z": 3, "b": 2.5}); } catch (e) { out = e + " " + to_json(ints); }
+                out;
+            )").as_string());
         });
 
         test("map_with_numeric_string_keys", [&]() {
@@ -631,7 +659,7 @@ u["ab"] = 1;
 u[utf8_string("ab")] = 2;
 log += " | " + to_string(u.size());
 var f = {};
-f[0.0] = 1; f[-0.0] = 2; f[math::NAN_VALUE] = 3; f[-math::NAN_VALUE] = 4; f[1] = 5; f[1.0] = 6; f[math::vec2(0.0, 1.0)] = 7; f[math::vec2(-0.0, 1.0)] = 8;
+f[0.0] = 1; f[-0.0] = 2; f[math::nan] = 3; f[-math::nan] = 4; f[1] = 5; f[1.0] = 6; f[math::vec2(0.0, 1.0)] = 7; f[math::vec2(-0.0, 1.0)] = 8;
 string fs = "";
 for (auto [k, v] : f) { fs += to_string(v) + ","; }
 log += " | " + to_string(f.size()) + " " + fs;

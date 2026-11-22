@@ -286,7 +286,7 @@ function things_spawn_map() -> void {
 		if ((fl & 16) != 0 && !NET_GAME) { continue; }   // multiplayer-only items join netgames
 		if ((fl & SKILL_BIT) == 0) { continue; }     // skill spawn-filter bit
 		if (NET_GAME && !NP_COOP && MINFO.has(ty)) { continue; }   // deathmatch is -nomonsters
-		float ang = TH_ANG[t] * math::PI / 180.0;
+		float ang = TH_ANG[t] * math::pi / 180.0;
 		if (MINFO.has(ty)) {
 			var mi = MINFO[ty];
 			// co-op CLIENT spawns monsters as state-12 PUPPETS: the THINGS walk

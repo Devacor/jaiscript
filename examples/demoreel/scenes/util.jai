@@ -19,8 +19,8 @@ class Palette {
 		int ig = math::itrunc(g < 0.0 ? 0.0 : (g > 255.0 ? 255.0 : g));
 		int ib = math::itrunc(b < 0.0 ? 0.0 : (b > 255.0 ? 255.0 : b));
 		string c = `${ir};${ig};${ib}m`;
-		fg.push(ESC + "[38;2;" + c);
-		bg.push(ESC + "[48;2;" + c);
+		fg.push(esc + "[38;2;" + c);
+		bg.push(esc + "[48;2;" + c);
 		rgb.push(ir * 65536 + ig * 256 + ib);
 		return rgb.size() - 1;
 	}
@@ -91,7 +91,7 @@ int HB_ROWS = 0;
 int HB_WORKERS = 0;
 string HB_HALF = "▀";
 string HB_FULL = "█";
-string HB_RESET = ESC + "[0m";
+string HB_RESET = esc + "[0m";
 
 function utf8(int cp) -> string {
 	if (cp < 128) { return to_string(to_char(cp)); }
@@ -170,7 +170,7 @@ function hb_text(int cell, int dark, var& state) -> string {
 	int c = TXT_RGB[cell];
 	state[0] = -1;
 	int cp = TXT_CP[cell];
-	return result + `${ESC}[38;2;${c >> 16};${(c >> 8) & 255};${c & 255}m` + (cp < 128 ? to_string(to_char(cp)) : utf8(cp));
+	return result + `${esc}[38;2;${c >> 16};${(c >> 8) & 255};${c & 255}m` + (cp < 128 ? to_string(to_char(cp)) : utf8(cp));
 }
 
 function hb_row(int cy) -> string { return HB_SEXT ? hb_row_sext(cy) : hb_row_half(cy); }
@@ -544,5 +544,5 @@ class Gfx {
 
 }
 
-function sgr_fg(int r, int g, int b) -> string { return `${ESC}[38;2;${r};${g};${b}m`; }
-function sgr_bg(int r, int g, int b) -> string { return `${ESC}[48;2;${r};${g};${b}m`; }
+function sgr_fg(int r, int g, int b) -> string { return `${esc}[38;2;${r};${g};${b}m`; }
+function sgr_bg(int r, int g, int b) -> string { return `${esc}[48;2;${r};${g};${b}m`; }

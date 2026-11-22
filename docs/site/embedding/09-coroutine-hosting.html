@@ -76,8 +76,9 @@ print(to_json(seen));                                  // yielded values only</c
 <li><strong>Methods.</strong> A method coroutine&#x27;s handle keeps its receiver alive while suspended, <code>this</code> stays bound, and its writes to the object are visible while it is parked.</li>
 <li><strong>Parameters bind by value</strong>, reference-shaped arguments included. Captures behave as a lambda&#x27;s do.</li>
 <li><strong>Nothing can be sent in.</strong> <code>next()</code> takes only its count and <code>done()</code> takes no arguments.</li>
-<li><strong>Types.</strong> The checker types a coroutine call as a handle whose <code>next()</code> returns an unknown type; a member other than <code>next</code> or <code>done</code> is a load error. Declared yield and return types are enforced at run time, at the <code>next()</code> that runs them: <code>coroutine float</code> hands out 2.0 for <code>yield 2</code>, and a value the type rejects raises <code>Cannot yield string from 'k' (declared -&gt; int)</code> (catchable around the <code>yield</code>) or <code>Cannot return string from 'k' (declared -&gt; int)</code>. A bare <code>yield;</code> hands out nothing.</li>
+<li><strong>Types.</strong> The checker types a coroutine call as the <code>coroutine&lt;Y&gt;</code> of its declared type, whose <code>next()</code> and <code>result()</code> hand out a <code>Y</code>; a member that is none of <code>next</code>, <code>advance</code>, <code>done</code> and <code>result</code> is a load error. A yield or return of a known type <code>Y</code> does not take fails the load; a value that came through a <code>var</code> converts at the <code>next()</code> that runs it: <code>coroutine float</code> hands out 2.0 for <code>yield 2</code>, and a value the type rejects raises <code>Cannot yield string from 'k' (declared -&gt; int)</code> (catchable around the <code>yield</code>) or <code>Cannot return string from 'k' (declared -&gt; int)</code>. A bare <code>yield;</code> hands out nothing.</li>
 <li><strong>Budget.</strong> The <a href="05-safety-rails.html">execution budget</a> applies to each <code>execute()</code> or <code>next()</code> call. An overrun inside a coroutine is terminal: a <code>catch</code> around the <code>yield</code> does not catch it.</li>
+<li><strong>Saving.</strong> A handle saves and loads with the value that holds it (<a href="08-serialization.html#coroutines">Serialization</a>).</li>
 <li><strong>Hot reload.</strong> A suspended coroutine keeps the body it started with until it finishes; new calls get the new definition (<a href="07-hot-reload.html">Hot Reload</a>).</li>
 </ul>
 <p>Hosts moving from Lua coroutines or a C++20 scheduler have a mapping in <a href="../bridges/12-from-coroutines.html">From Lua Coroutines and C++20 Schedulers</a>.</p>
@@ -113,12 +114,13 @@ C++ next -&gt; -1</code></pre></div>
 <li><code>next(engine*)</code> returns <code>checked_result&lt;script_value&gt;</code>: test it before reading the value. <code>next(engine*, n)</code> is the script&#x27;s <code>next(n)</code>.</li>
 <li><code>get_status()</code> is one of <code>created</code>, <code>running</code>, <code>suspended</code>, <code>completed</code>, <code>failed</code>; <code>done()</code> is true for the last two.</li>
 <li>The <code>shared_ptr</code> keeps the coroutine alive, and with it a method coroutine&#x27;s receiver. This is how C++ owns a behavior.</li>
+<li>The handle may outlive its engine. Destroying the engine ends the coroutine while script still runs: its locals, arguments and receiver are destroyed then, after the program&#x27;s variables. Afterwards <code>done()</code> is true, <code>next</code> returns the error <code>Value outlived its engine.</code> without reading its engine argument, and dropping the handle is safe.</li>
 </ul>
 <nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/08-serialization.html"><span>&larr; previous</span>Serialization</a><a class="next" rel="next" href="../embedding/10-signals-properties.html"><span>next &rarr;</span>Signals &amp; Observable Properties</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

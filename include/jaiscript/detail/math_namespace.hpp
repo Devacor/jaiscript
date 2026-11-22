@@ -18,8 +18,8 @@ namespace jai::detail {
 				return eval_math_intrinsic(fn, arguments, a_args.size(), engine);
 			}, &a_engine);
 		}
-		for (const auto& constant : {std::pair{"PI", 3.14159265358979323846}, {"E", 2.71828182845904523536}, {"TAU", 6.28318530717958647692},
-			{"INF", std::numeric_limits<script_float>::infinity()}, {"NAN_VALUE", std::numeric_limits<script_float>::quiet_NaN()}}) {
+		for (const auto& constant : {std::pair{"pi", 3.14159265358979323846}, {"pie", 3.14159265358979323846}, {"e", 2.71828182845904523536}, {"tau", 6.28318530717958647692},
+			{"inf", std::numeric_limits<script_float>::infinity()}, {"nan", std::numeric_limits<script_float>::quiet_NaN()}}) {
 			ns->variables[engine_access::symbolize(a_engine, constant.first)] = script_value(constant.second, &a_engine);
 		}
 	}

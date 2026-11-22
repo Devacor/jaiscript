@@ -349,6 +349,100 @@ public:
                    "Cannot capture undefined variable 'weak_this'", "no instance to capture");
         });
 
+        test("a_copy_rebinds_the_lambdas_it_holds_to_itself", [expect]() {
+            // A lambda an object holds by value that is bound to the object, or to a value-held part of it, is bound to the
+            // copy's part: the copy behaves as a save and a load of the object would. Anything else it reaches stays shared
+            const std::string cls =
+                "int total = 0;\n"
+                "class Inner { int n = 0; var bump; void arm() { bump = [this]() { n += 1; return n; }; } }\n"
+                "class Outer {\n"
+                "  Inner inner; int hits = 0; var poke; var outside; var counted; var shared; var weak; var bound;\n"
+                "  array<var> list; map<string, var> named; var same;\n"
+                "  void arm(Inner& a_other) {\n"
+                "    inner.arm(); poke = inner.bump; outside = a_other.bump;\n"
+                "    int count = 0;\n"
+                "    counted = [this, count]() { count += 1; hits += 1; return count; };\n"
+                "    shared = [this, &total]() { total += 1; hits += 1000; return total; };\n"
+                "    weak = [weak_this]() { return weak_this.expired() ? -1 : weak_this.lock().hits; };\n"
+                "    bound = reflect::bind(this, \"score\");\n"
+                "    list.push([this]() { hits += 10; return hits; });\n"
+                "    named[\"h\"] = [this]() { hits += 100; return hits; };\n"
+                "    same = counted;\n"
+                "  }\n"
+                "  int score() { return hits; }\n"
+                "}\n"
+                "Inner elsewhere; elsewhere.arm();\n"
+                "Outer a; a.arm(elsewhere); a.counted();\n";
+            expect(cls + "Outer b = a; b.poke(); b.poke(); `${a.inner.n}|${b.inner.n}`", "0|2", "a lambda bound to a value-held part binds to the copy's part");
+            expect(cls + "Outer b = a; b.outside(); `${elsewhere.n}|${a.inner.n}|${b.inner.n}`", "1|0|0", "a lambda bound to another object stays bound to it");
+            expect(cls + "Outer b = a; `${b.counted()}|${b.same()}|${a.counted()}|${a.hits}|${b.hits}`", "2|3|2|2|3",
+                   "a copied capture is the copy's own, and two fields holding one lambda hold one lambda in the copy");
+            expect(cls + "Outer b = a; b.shared(); a.shared(); `${total}|${a.hits}|${b.hits}`", "2|1001|1001", "a by-reference capture stays shared");
+            expect(cls + "Outer b = a; b.hits = 7; `${a.weak()}|${b.weak()}|${a.bound()}|${b.bound()}`", "1|7|1|7", "weak_this and a bound method name the copy");
+            expect(cls + "Outer b = a; b.list[0](); b.named[\"h\"](); `${a.hits}|${b.hits}`", "1|111", "lambdas in container fields");
+            expect(cls + "void drive(Outer a_o) { a_o.counted(); a_o.poke(); } drive(a); array<Outer> all; all.push(a); all[0].poke(); "
+                   "map<string, Outer> by; by[\"k\"] = a; by[\"k\"].poke(); Outer c; c = a; c.poke(); Outer d = cast<Outer>(a); d.poke(); "
+                   "auto e = new Outer(a); e.poke(); auto f = [a]() { a.poke(); return a.inner.n; }; `${f()}|${a.hits}|${a.inner.n}`", "1|1|0",
+                   "every copy route: argument, element, entry, assignment, cast, new, capture");
+            expect(cls + "auto g = a.poke; g(); auto h = new Outer(); auto h2 = h; h2.arm(elsewhere); h.inner.bump(); `${a.inner.n}|${h2.inner.n}`", "1|1",
+                   "a copy of the lambda itself, and of a handle, shares");
+            expect(cls + "auto p = new Outer(); p.arm(elsewhere); Outer b = p; b.poke(); `${p.inner.n}|${b.inner.n}`", "0|1",
+                   "a copy made through a handle binds to the copy");
+            // the value copied is the root, whatever it is: a lambda in one element bound to another element binds to that element's copy
+            const std::string siblings =
+                "class Counter { int n = 0; var bump; var other; Counter() { bump = [this]() { n += 1; return n; }; } }\n"
+                "class Team { array<Counter> members; }\n"
+                "array<Counter> pair; pair.push(Counter()); pair.push(Counter()); pair[0].other = pair[1].bump;\n";
+            expect(siblings + "var copy = pair; copy[0].other(); copy[0].other(); `${pair[1].n}|${copy[1].n}`", "0|2", "an array of siblings");
+            expect(siblings + "Team t; t.members = pair; Team u = t; u.members[0].other(); `${pair[1].n}|${t.members[1].n}|${u.members[1].n}`", "0|0|1",
+                   "the same array inside an object");
+            expect(siblings + "map<string, Counter> named; named[\"a\"] = Counter(); named[\"b\"] = Counter(); named[\"a\"].other = named[\"b\"].bump; "
+                   "auto copy = named; copy[\"a\"].other(); `${named[\"b\"].n}|${copy[\"b\"].n}`", "0|1", "a map of siblings");
+            expect(siblings + "map<string, var> groups; groups[\"x\"] = [Counter()]; groups[\"y\"] = [Counter()]; groups[\"x\"][0].other = groups[\"y\"][0].bump; "
+                   "var copy = groups; copy[\"x\"][0].other(); `${groups[\"y\"][0].n}|${copy[\"y\"][0].n}`", "0|1", "arrays nested in a map");
+            expect(siblings + "array<var> mixed = [Counter(), 1, \"s\"]; mixed.push(mixed[0].bump); var copy = mixed; copy[3](); copy[3](); `${mixed[0].n}|${copy[0].n}`", "0|2",
+                   "an untyped array holding a lambda beside the object it is bound to");
+            expect(siblings + "int poke(array<Counter> a_pair) { a_pair[0].other(); return a_pair[1].n; } array<Counter> same() { return pair; } "
+                   "int inside = poke(pair); auto back = same(); back[0].other(); auto held = [pair]() { pair[0].other(); return pair[1].n; }; "
+                   "`${inside}|${back[1].n}|${held()}|${pair[1].n}`", "1|1|1|0", "a by-value argument, a return and a capture are copies of the array");
+            expect(siblings + "Counter outside; pair[1].other = outside.bump; var copy = pair; copy[1].other(); auto g = pair[1].bump; g(); `${outside.n}|${pair[1].n}|${copy[1].n}`",
+                   "1|1|0", "a lambda bound outside the copied value, and a lambda copied by itself, stay bound");
+            const std::string typed =
+                "class Unit { int n = 0; function<int()> bump; coroutine<int> route = walk(); Unit() { bump = [this]() { n += 1; return n; }; }\n"
+                "  coroutine int walk() { while (true) { n += 10; yield n; } } }\n"
+                "class Squad { array<Unit> members; array<function<int()>> orders; array<coroutine<int>> routes; }\n";
+            expect(typed + "array<Unit> units; units.push(Unit()); units.push(Unit()); auto copy = units; copy[0].bump(); copy[1].route.next(); "
+                   "`${units[0].n}|${units[1].n}|${copy[0].n}|${copy[1].n}`", "0|0|1|10", "function<R()> and coroutine<Y> fields");
+            expect(typed + "Squad s; s.members.push(Unit()); s.orders.push(s.members[0].bump); s.routes.push(s.members[0].walk()); "
+                   "Squad t = s; t.orders[0](); t.routes[0].next(); `${s.members[0].n}|${t.members[0].n}`", "0|11", "arrays of function<R()> and of coroutine<Y>");
+            // below the depth a copy nests natively its levels are steps on a work list: the rebind is the step after an object's members
+            const std::string deep =
+                "class Leaf { int n = 0; var bump; void arm() { bump = [this]() { n += 1; return n; }; } }\n"
+                "class Holder { Leaf leaf; var poke; void arm() { leaf.arm(); poke = leaf.bump; } }\n"
+                "int at_leaf(var& a_node, int a_depth, int a_what) {\n"
+                "  if (a_depth > 0) { return at_leaf(a_node[0], a_depth - 1, a_what); }\n"
+                "  switch (a_what) { case 0: return a_node.bump(); case 1: return a_node.n; case 2: return a_node.poke(); case 3: return a_node.leaf.n; default: return a_node(); }\n"
+                "}\n"
+                "class Deep { int n = 0; var nest; void arm() { var f = [this]() { n += 1; return n; }; nest = [f]; for (int i = 0; i < 40; ++i) { nest = [nest]; } }\n"
+                "  int fire() { return at_leaf(nest, 41, 4); } }\n"
+                "var wrapped(var a_leaf) { var nest = [a_leaf]; for (int i = 0; i < 40; ++i) { nest = [nest]; } return nest; }\n";
+            expect(deep + "Leaf leaf; leaf.arm(); var nest = wrapped(leaf); var copy = nest; at_leaf(copy, 41, 0); `${at_leaf(nest, 41, 1)}|${at_leaf(copy, 41, 1)}`", "0|1",
+                   "an object under 41 arrays");
+            expect(deep + "Holder holder; holder.arm(); var nest = wrapped(holder); var copy = nest; at_leaf(copy, 41, 2); `${at_leaf(nest, 41, 3)}|${at_leaf(copy, 41, 3)}`", "0|1",
+                   "an object and its value field under 41 arrays");
+            expect(deep + "Deep a; a.arm(); Deep b = a; b.fire(); `${a.n}|${b.n}`", "0|1", "a lambda under 41 arrays in the object's field");
+            const std::string ctor =
+                "class Cc { int n = 0; var f; Cc() { f = [this]() { n += 1; return n; }; } Cc(const Cc& a_other) { n = a_other.n; f = a_other.f; } }\n"
+                "Cc one; one.f();\n";
+            expect(ctor + "Cc two = one; two.f(); `${one.n}|${two.n}`", "1|2", "what a copy constructor takes from its source binds to the copy");
+            const std::string spelled =
+                "class Counter { int n = 0; var bump; Counter() { bump = [this]() { n += 1; return n; }; } Counter snapshot() { Counter old = this; return old; } }\n"
+                "Counter c1; c1.bump();\n";
+            expect(spelled + "auto r = new Counter(c1); r.bump(); Counter c2 = Counter(c1); c2.bump(); c2.bump(); Counter c3 = c1.snapshot(); c3.bump(); c3.bump(); c3.bump(); "
+                   "shared_ptr<Counter> p = new Counter(); p.bump(); Counter c4 = Counter(p); c4.bump(); `${c1.n}|${r.n}|${c2.n}|${c3.n}|${p.n}|${c4.n}`", "1|2|3|4|1|2",
+                   "a construction from an object of the class, from a handle to one, and a copy of this");
+        });
+
         test("mutation_through_ref_capture_visible_in_enclosing_scope_with_global", [expect, with_global, report]() {
             const std::string f = "int f() { int a = 1; auto lam = [&]() { a = a + 100; return 0; }; lam(); return a; }";
             expect(with_global + f + report, "101|5", "the enclosing local sees the write, the global does not");

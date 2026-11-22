@@ -148,7 +148,7 @@ public:
 						var v = from_json(text);
 						string out = to_string(to_json(v) == text);
 						out += " " + to_string(to_json(from_binary(to_binary(v))) == text);
-						out += " " + to_string(to_json(from_base64(to_base64(v))) == text);
+						out += " " + to_string(to_json(from_binary(base64_decode(base64_encode(to_binary(v))))) == text);
 						var copy = v;
 						out += " " + to_string(to_json(copy) == text);
 						v = null;

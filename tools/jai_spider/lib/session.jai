@@ -1,16 +1,16 @@
 // Cookie sessions kept in SQLite: the cookie carries only a random id (crypto::random_hex, the system's secure source),
 // the data stays on the server as JSON in the spider_sessions table.
 //
-//   spider::SessionStore sessions = spider::SessionStore(db);
-//   spider::Session s = sessions.load(req);      // the visitor's session, or a new empty one
+//   spider::session_store sessions = spider::session_store(db);
+//   spider::session s = sessions.load(req);      // the visitor's session, or a new empty one
 //   s.set("name", "Ada");
-//   spider::Response r = spider::redirect("/");
+//   spider::response r = spider::redirect("/");
 //   sessions.save(s, r);                         // writes the row and the cookie when the session changed
 import "spider.jai";
 
 namespace spider {
 
-class Session {
+class session {
 	string id;
 	map<string, var> data;
 	bool changed;
@@ -36,20 +36,20 @@ class Session {
 	}
 }
 
-class SessionStore {
-	Database db;
+class session_store {
+	database db;
 	string cookie_name = "session";
 	int max_age = 1209600;            // two weeks, renewed whenever the session is saved
 	bool secure_cookie = false;       // true once the site is served over HTTPS
 
-	SessionStore() {}
-	SessionStore(Database database) {
-		db = database;
+	session_store() {}
+	session_store(database opened) {
+		db = opened;
 		db.execute("CREATE TABLE IF NOT EXISTS spider_sessions (id TEXT PRIMARY KEY, data TEXT NOT NULL, expires INTEGER NOT NULL)");
 	}
 
-	spider::Session load(spider::Request req) {
-		spider::Session s;
+	spider::session load(spider::request req) {
+		spider::session s;
 		string id = req.cookie(cookie_name);
 		if (id != "") {
 			var row = db.query_one("SELECT data FROM spider_sessions WHERE id = ? AND expires > ?", id, now_seconds());
@@ -64,7 +64,7 @@ class SessionStore {
 		return s;
 	}
 
-	void save(spider::Session& s, spider::Response& resp) {
+	void save(spider::session& s, spider::response& resp) {
 		if (!s.changed || (s.is_new && s.data.size() == 0)) { return; }
 		db.execute("INSERT INTO spider_sessions (id, data, expires) VALUES (?, ?, ?) "
 			+ "ON CONFLICT(id) DO UPDATE SET data = excluded.data, expires = excluded.expires",
@@ -75,13 +75,13 @@ class SessionStore {
 	}
 
 	// a new id for the same data: call it when the visitor signs in, so an id seen before the sign-in is worth nothing
-	void rotate(spider::Session& s) {
+	void rotate(spider::session& s) {
 		db.execute("DELETE FROM spider_sessions WHERE id = ?", s.id);
 		s.id = crypto::random_hex(32);
 		s.changed = true;
 	}
 
-	void destroy(spider::Session& s, spider::Response& resp) {
+	void destroy(spider::session& s, spider::response& resp) {
 		db.execute("DELETE FROM spider_sessions WHERE id = ?", s.id);
 		resp.clear_cookie(cookie_name);
 		s.data = {};

@@ -5,7 +5,7 @@ add_executable(jaiscript_runner main.cpp)
 set_target_properties(jaiscript_runner PROPERTIES OUTPUT_NAME jaiscript)
 target_link_libraries(jaiscript_runner PRIVATE ${JAISCRIPT_VERIFIER_LIBRARY})
 
-# Download (tools/jaiscript/fetch.hpp): WinHTTP on Windows; libcurl on POSIX when present, else the
+# download (tools/jaiscript/fetch.hpp): WinHTTP on Windows; libcurl on POSIX when present, else the
 # curl executable at run time. No new dependency is required to build.
 # spider:: (tools/jaiscript/http_transport.hpp): WinHTTP on Windows; sockets elsewhere, with HTTPS through OpenSSL when
 # the build finds it (plain HTTP otherwise).

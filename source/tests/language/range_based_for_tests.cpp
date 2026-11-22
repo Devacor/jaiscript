@@ -84,7 +84,7 @@ public:
         test("range_for_over_a_string_visits_each_char_by_value", [this]() {
             const std::pair<const char*, const char*> cases[] = {
                 {"string s = \"abc\"; string joined = \"\"; for (auto c : s) { if (joined != \"\") { joined += \",\"; } joined += c; } joined", "a,b,c"},
-                {"string s = \"ab\"; string kinds = \"\"; int code = 0; for (auto c : s) { kinds += type_of(c); code = code * 1000 + (c + 0); } kinds + \":\" + to_string(code)", "charchar:97098"},
+                {"string s = \"ab\"; string kinds = \"\"; int code = 0; for (auto c : s) { kinds += reflect::type_of(c); code = code * 1000 + (c + 0); } kinds + \":\" + to_string(code)", "charchar:97098"},
                 {"string out = \"\"; for (auto c : \"xy\") { out += c; } out += \"|\"; var held = \"pq\"; "
                  "for (auto c : held) { out += c; } out += \"|\"; for (char c : \"mn\") { out += c; } out += \"|\"; "
                  "for (const auto c : \"rs\") { out += c; } out += \"|\"; var m = {\"k\": \"hi\"}; "
@@ -202,9 +202,9 @@ public:
                 try { for (auto& kv : tm) { kv.second = bad; } } catch (e) { r2 = e; }
                 map<string, float> fm = {"a": 1.0};
                 for (auto& [k, v] : fm) { v = 3; }
-                string t1 = type_of(fm["a"]);
+                string t1 = reflect::type_of(fm["a"]);
                 for (auto& kv : fm) { kv.second = 4; }
-                r1 + "#" + r2 + "#" + to_json(tm) + "#" + t1 + "#" + type_of(fm["a"])
+                r1 + "#" + r2 + "#" + to_json(tm) + "#" + t1 + "#" + reflect::type_of(fm["a"])
             )");
             check_eq(std::string("Cannot assign 'string' to element of type 'int'#Cannot assign 'string' to element of type 'int'#{\"q\":1}#float#float"),
                      result.as<std::string>());

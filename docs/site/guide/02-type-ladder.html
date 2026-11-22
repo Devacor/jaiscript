@@ -41,7 +41,7 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">The Type Ladder: typed, auto, var</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li class="current"><a href="../guide/02-type-ladder.html" aria-current="page">The Type Ladder: typed, auto, var</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">The Type Ladder: typed, auto, var</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li class="current"><a href="../guide/02-type-ladder.html" aria-current="page">The Type Ladder: typed, auto, var</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li><li><a href="../guide/21-generics.html">Generics</a></li></ol></details></aside>
 <script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
 var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>02</nav>
@@ -49,7 +49,7 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 <p>Every variable, field and parameter picks one of three rungs of strictness, and the rungs mix freely in one file:</p>
 <div class="tablewrap"><table><thead><tr><th>Declaration</th><th>Meaning</th></tr></thead><tbody><tr><td><code>int x = 5;</code> (any spelled type)</td><td><strong>Enforced.</strong> The slot holds that type for good. A store converts when <a href="#conversion-table-typed-locked-auto-targets">the conversion table</a> allows it and is an error when not.</td></tr><tr><td><code>auto x = 5;</code></td><td><strong>Inferred, then enforced.</strong> The slot takes the initializer&#x27;s static type and from then on behaves as if that type were spelled.</td></tr><tr><td><code>var x = 5;</code></td><td><strong>Dynamic.</strong> Any value at any time. An untyped parameter is a <code>var</code>.</td></tr></tbody></table></div>
 <p>Three of the names have a C++ spelling and a JavaScript spelling that mean the same thing:</p>
-<div class="tablewrap"><table><thead><tr><th></th><th>C++ spelling</th><th>JavaScript spelling</th></tr></thead><tbody><tr><td>dynamic variable</td><td></td><td><code>var x</code>, <code>let x</code></td></tr><tr><td>64-bit float</td><td><code>double</code></td><td><code>float</code> (the name <code>type_of</code> reports)</td></tr><tr><td>the empty handle</td><td><code>nullptr</code></td><td><code>null</code></td></tr></tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th></th><th>C++ spelling</th><th>JavaScript spelling</th></tr></thead><tbody><tr><td>dynamic variable</td><td></td><td><code>var x</code>, <code>let x</code></td></tr><tr><td>64-bit float</td><td><code>double</code></td><td><code>float</code> (the name <code>reflect::type_of</code> reports)</td></tr><tr><td>the empty handle</td><td><code>nullptr</code></td><td><code>null</code></td></tr></tbody></table></div>
 <p><code>let</code> stands wherever <code>var</code> may (<code>let x = 5;</code>, <code>for (let i = 0; ...)</code>, <code>let&amp; r = x;</code>). Every declaration, under any keyword, is scoped to its block, and a C-style <code>for</code> variable that a lambda captures by reference is a fresh variable on each iteration (<a href="06-functions.html#lambdas-and-captures">Functions &amp; Lambdas</a>).</p>
 <h2 id="when-a-mismatch-is-caught">When a mismatch is caught<a class="hlink" href="#when-a-mismatch-is-caught" aria-label="link">&#8203;</a></h2>
 <p>The checker reads the whole program before its first statement runs. A mismatch between two types it can see is a <strong>load error</strong>, and nothing executes:</p>
@@ -82,7 +82,7 @@ x is still 5</code></pre></div>
 int hits; float speed; string name; array&lt;int&gt; scores; var anything; Vec2 home;
 Vec2 a(3.0, 4.0);
 int lives{3};
-print("{} {} [{}] {} {} {} {} {}", hits, speed, name, scores.size(), type_of(anything), home.x, a.y, lives);</code></pre></div>
+print("{} {} [{}] {} {} {} {} {}", hits, speed, name, scores.size(), reflect::type_of(anything), home.x, a.y, lives);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">0 0.0 [] 0 null 1.5 4.0 3</code></pre></div>
 <p>A class value is never null. <code>Hero h = null;</code> is a load error that names <code>shared_ptr&lt;Hero&gt;</code> and <code>var</code>, the slots that can be empty, and a class cannot hold itself by value: <code>class Node { Node next; }</code> fails the load, and the link is a <code>shared_ptr&lt;Node&gt;</code>.</p>
 <h2 id="auto-locks-on-first-use">auto takes the static type<a class="hlink" href="#auto-locks-on-first-use" aria-label="link">&#8203;</a></h2>
@@ -100,7 +100,7 @@ a = "now a string";
 auto late;
 late = 5;            // locks to int here
 try { late = "s"; } catch (e) { print("caught: ", e); }
-print("{} ({}), {} ({}), {} ({})", y, type_of(y), a, type_of(a), late, type_of(late));</code></pre></div>
+print("{} ({}), {} ({}), {} ({})", y, reflect::type_of(y), a, reflect::type_of(a), late, reflect::type_of(late));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">caught: Cannot assign string to &#x27;late&#x27; (declared int)
 2.0 (float), now a string (string), 5 (int)</code></pre></div>
 <p id="auto-copies-a-value"><code>auto y = x;</code> copies what C++ <code>auto</code> copies: a value (a class instance, an array, a map) becomes a new value, a handle (<code>new T()</code>, a <code>shared_ptr&lt;T&gt;</code>) becomes a second handle to the same object, and a reference result is copied because <code>auto</code> drops the reference (<code>auto&amp;</code> keeps it). <code>T y = handle;</code> copies the object the handle points at. <a href="03-value-semantics.html">Value Semantics</a> shows each case.</p>
@@ -110,7 +110,7 @@ print("{} ({}), {} ({}), {} ({})", y, type_of(y), a, type_of(a), late, type_of(l
 y = "now a string";
 let mixed = [1, "two", 3.14, true];
 mixed = {"even": "a map now"};
-print("{} {}", type_of(y), type_of(mixed));</code></pre></div>
+print("{} {}", reflect::type_of(y), reflect::type_of(mixed));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">string map</code></pre></div>
 <h2 id="conversion-table-typed-locked-auto-targets">The one conversion table<a class="hlink" href="#conversion-table-typed-locked-auto-targets" aria-label="link">&#8203;</a></h2>
 <p>Every typed slot runs the same table: a declaration, <code>=</code>, a by-value parameter, a return, a field, a static. A refused store is a load error where the checker sees both types and a catchable run-time error where one arrives through a <code>var</code>.</p>
@@ -119,7 +119,7 @@ print("{} {}", type_of(y), type_of(mixed));</code></pre></div>
 <tr><td><code>bool</code></td><td>int, float, null, an object, by truthiness (<code>0</code> is <code>false</code>)</td><td>a string, an array or a map: <code>!s.empty()</code> or a comparison</td></tr>
 <tr><td><code>string</code></td><td>utf8_string (its bytes), char, an object with <code>to_string()</code></td><td>an int, float, bool, null or container: <code>to_string(x)</code> or <code>`${x}`</code></td></tr>
 <tr><td>class <code>C</code></td><td><code>C</code> or a subclass, as a copy that keeps its own class and overrides; a <code>shared_ptr</code> to one (copies the pointee); a value that exactly one one-argument constructor <code>C(src)</code> takes; on <code>=</code>, a value an <code>operator=</code> of <code>C</code> takes</td><td><code>null</code>; a parent, sibling or unrelated class</td></tr>
-<tr><td><code>shared_ptr&lt;C&gt;</code></td><td>a handle or an instance of <code>C</code> or a subclass (an instance becomes a new shared object), <code>null</code></td><td>a <code>shared_ptr&lt;Base&gt;</code>: <code>cast&lt;shared_ptr&lt;C&gt;&gt;(b)</code></td></tr>
+<tr><td><code>shared_ptr&lt;C&gt;</code></td><td>a handle to <code>C</code> or a subclass, <code>null</code></td><td>a <code>shared_ptr&lt;Base&gt;</code>: <code>cast&lt;shared_ptr&lt;C&gt;&gt;(b)</code>; a <code>C</code> value, which <code>make_shared&lt;C&gt;(value)</code> copies into a new handle</td></tr>
 </tbody></table></div>
 <p>Every slot (<code>float</code>, enums, <code>char</code>, containers, <code>weak_ptr</code>, <code>T&amp;</code>, <code>function</code>, <code>auto</code>): <a href="../reference/rules.html#type-conversions">the conversion table</a>.</p>
 <ul>
@@ -153,7 +153,7 @@ true 0 42</code></pre></div>
 <tr><td><code>cast&lt;string&gt;(e)</code></td><td>any value as text, as <code>to_string(e)</code></td></tr>
 <tr><td><code>cast&lt;T&gt;(obj)</code></td><td>a <strong>copy</strong> of an object that is a <code>T</code> or a subclass; the copy keeps its own class</td></tr>
 <tr><td><code>cast&lt;T&amp;&gt;(obj)</code></td><td>a <strong>reference</strong> to the same object: how a base-typed slot reaches a member only the subclass declares</td></tr>
-<tr><td><code>cast&lt;shared_ptr&lt;T&gt;&gt;(obj)</code></td><td>a <strong>handle</strong> sharing the same object</td></tr>
+<tr><td><code>cast&lt;shared_ptr&lt;T&gt;&gt;(obj)</code></td><td>a <strong>handle</strong> to the object another handle names; of a class value, a <a href="../reference/rules.html#handle-of-a-value">test</a></td></tr>
 </tbody></table></div>
 <p>Every form and its error texts: <a href="../reference/rules.html#cast">cast</a>.</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Base { int a = 1; }
@@ -162,9 +162,7 @@ print("{} {} {} {}", cast&lt;int&gt;(2.7), cast&lt;int&gt;('a'), cast&lt;char&gt
 try { var bad = cast&lt;char&gt;(256); } catch (e) { print("caught: ", e); }
 
 Base slot = Derived();                       // a Base slot holding a whole Derived
-cast&lt;Derived&amp;&gt;(slot).t = 5;                  // the same object, seen as a Derived
-shared_ptr&lt;Derived&gt; h = cast&lt;shared_ptr&lt;Derived&gt;&gt;(slot);
-h.t += 1;
+cast&lt;Derived&amp;&gt;(slot).t = 6;                  // the same object, seen as a Derived
 Derived copy = cast&lt;Derived&gt;(slot);          // a separate object
 copy.t = 0;
 print("{} {}", cast&lt;Derived&amp;&gt;(slot).t, copy.t);
@@ -176,6 +174,7 @@ caught: Cannot cast &#x27;int&#x27; to &#x27;Base&#x27;</code></pre></div>
 <ul>
 <li>The checker requires only that <code>T</code> names a type (<code>unknown type in cast: 'Nope'</code>). Whether the operand fits is decided when the cast runs: a mismatch raises the catchable <code>Cannot cast 'X' to 'T'</code>, where <code>X</code> is the object&#x27;s own class. An upcast always passes.</li>
 <li><code>null</code> passes the handle form and fails the value and reference forms (<code>Cannot cast 'null' to 'T&amp;'</code>).</li>
+<li>A primitive also converts by its own name, as a declaration constructs it: <code>int(x)</code> is <code>cast&lt;int&gt;(x)</code>, and <code>int()</code> or <code>int{}</code> is its zero; so for <code>float</code>, <code>string</code>, <code>bool</code> and <code>char</code>. A <a href="21-generics.html#as-written-by-hand">generic</a>&#x27;s <code>T(x)</code> reads that way when <code>T</code> is a primitive.</li>
 <li>The value form on a handle copies the object. The checker warns (<code>cast&lt;Derived&gt;(h) copies the instance - use cast&lt;Derived&amp;&gt;(h) to alias it or cast&lt;shared_ptr&lt;Derived&gt;&gt;(h) to share it</code>); a warning never stops a load, and the runner prints it under <code>--warnings</code>.</li>
 </ul>
 <h2 id="compound-assignment-typed-targets-convert-c-style-var-keeps-the-dynamic-result">Compound assignment<a class="hlink" href="#compound-assignment-typed-targets-convert-c-style-var-keeps-the-dynamic-result" aria-label="link">&#8203;</a></h2>
@@ -186,15 +185,15 @@ float f = 7.0;
 f /= 2;
 var v = 7;
 v /= 2;              // int / int: still an int
-print("{} {} {} ({})", i, f, v, type_of(v));
+print("{} {} {} ({})", i, f, v, reflect::type_of(v));
 v += 0.5;            // a float result changes what the var holds
-print("{} ({})", v, type_of(v));</code></pre></div>
+print("{} ({})", v, reflect::type_of(v));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">-3 3.5 3 (int)
 3.5 (float)</code></pre></div><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/01-hello.html"><span>&larr; previous</span>Hello &amp; Basics</a><a class="next" rel="next" href="../guide/03-value-semantics.html"><span>next &rarr;</span>Value Semantics &amp; References</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

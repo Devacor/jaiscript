@@ -50,13 +50,13 @@ function main() -> int {
 	int bh = 78;
 	bool simonly = false;
 	int limit = 0;
-	for (int a = 0; a < ARGS.size(); ++a) {
-		var arg = ARGS[a];
+	for (int a = 0; a < args.size(); ++a) {
+		var arg = args[a];
 		if (arg == "simonly") { simonly = true; }
 		else if (arg == "sext") { SEXTANTS = true; }
-		else if (arg == "fit" && a + 1 < ARGS.size()) { SEXT_FIT = ARGS[a + 1].to_int(1); a += 1; }
-		else if (arg == "tics" && a + 1 < ARGS.size()) { limit = ARGS[a + 1].to_int(0); a += 1; }
-		else if (arg == "workers" && a + 1 < ARGS.size()) { BLIT_WORKERS = ARGS[a + 1].to_int(0); a += 1; }
+		else if (arg == "fit" && a + 1 < args.size()) { SEXT_FIT = args[a + 1].to_int(1); a += 1; }
+		else if (arg == "tics" && a + 1 < args.size()) { limit = args[a + 1].to_int(0); a += 1; }
+		else if (arg == "workers" && a + 1 < args.size()) { BLIT_WORKERS = args[a + 1].to_int(0); a += 1; }
 		else if (arg.ends_with(".json")) { tape = arg; }
 		else {
 			int xat = arg.find("x");

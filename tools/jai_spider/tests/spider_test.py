@@ -6,13 +6,17 @@
 
 Covers routing, query/form/multipart/JSON parsing, headers and cookies, sessions, SQLite CRUD with bound parameters
 and transactions, script errors and the execution budget (500 with the process alive), hot reload between two
-requests, a rejected reload that keeps serving, state kept across a reload, static files (types, ETag, 304, HEAD,
-traversal), the limits (413, 431, 400), chunked bodies, keep-alive and pipelining, and the shutdown endpoint; then
-serves a copy of examples/guestbook and walks its pages, form, session and JSON API. With --runner, the runner's
+requests, a rejected reload that keeps serving, globals that start over in each request's engine, static files (types,
+ETag, 304, HEAD, traversal), the limits (413, 431, 400), chunked bodies, keep-alive and pipelining, and the shutdown
+endpoint; the workers (tests/workers: slow requests that run at once, pipelined answers in order, --workers 1 and the
+queue's 503, transactions that read and then write on eight workers at once, spider::every's runs that never overlap and
+survive a reload); then serves a copy of examples/guestbook
+and walks its pages, form, session and JSON API. With --runner, the runner's
 spider:: client (tests/client.jai, tests/client_catch.jai) calls the same server through each transport the build has:
 methods, content kinds, options, the redirect policy, timeouts and errors.
 """
 import argparse
+import base64
 import http.client
 import json
 import os
@@ -28,6 +32,7 @@ import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 FIXTURE = HERE / "app"
+WORKERS_FIXTURE = HERE / "workers"
 EXAMPLE = HERE.parent / "examples" / "guestbook"
 SHUTDOWN_TOKEN = "spider-test-token"
 # seconds a wait for what must happen may take: a hang rail, never a speed bound, so machine load never decides a check
@@ -35,10 +40,10 @@ HANG_RAIL = 600
 
 
 class Server:
-	def __init__(self, exe, app_dir, backend, extra):
+	def __init__(self, exe, app_dir, backend, extra, app="app.jai"):
 		self.lines = queue.Queue()
 		self.log = []
-		args = [exe, str(app_dir / "app.jai"), "--port", "0", "--allow-shutdown", SHUTDOWN_TOKEN, "--backend", backend] + extra
+		args = [exe, str(app_dir / app), "--port", "0", "--allow-shutdown", SHUTDOWN_TOKEN, "--backend", backend] + extra
 		self.process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(app_dir))
 		threading.Thread(target=self._pump, daemon=True).start()
 		self.port = None
@@ -171,6 +176,7 @@ class Suite:
 		self.cookies_and_sessions()
 		self.database()
 		self.sql_safety()
+		self.typed_rows()
 		self.errors()
 		self.hot_reload()
 		self.static_files()
@@ -195,7 +201,7 @@ class Suite:
 		r = self.request("GET", "/null")
 		self.check("a null answer is 204", r.status == 204 and r.body == b"")
 		r = self.request("GET", "/status/418")
-		self.check("Response(status, body) keeps its status", r.status == 418 and r.text() == "custom status")
+		self.check("spider::response(status, body) keeps its status", r.status == 418 and r.text() == "custom status")
 
 	def parsing(self):
 		r = self.request("GET", "/echo?a=1&b=two%20words&c=x+y&empty&d=%26%3D", headers={"x-test-agent": "probe"})
@@ -222,6 +228,14 @@ class Suite:
 		got = r.json() if r.status == 200 else {}
 		self.check("multipart fields land in form()", got.get("fields") == {"title": "Hello there"}, r.text())
 		self.check("multipart files land in files()", got.get("files") == {"upload": {"filename": "notes.txt", "size": 18, "type": "text/plain", "data": "line one\r\nline two"}}, r.text())
+		# an image upload through the image:: module: scaled, encoded and read back, and an upload that is no image refused
+		def upload(data):
+			return ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"picture\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\n").encode("latin-1") + data + ("\r\n--" + boundary + "--\r\n").encode("latin-1")
+		picture = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAEAAAAAwCAIAAAAuKetIAAAAQ0lEQVR42u3PQQkAAAgEsItjRCMaywp+hcEKLNP1WgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQErhaJouDxNuBloAAAAABJRU5ErkJggg==")
+		r = self.request("POST", "/image/avatar", upload(picture), {"Content-Type": "multipart/form-data; boundary=" + boundary})
+		self.check("an uploaded PNG is scaled to an avatar and saved", r.status == 200 and r.json() == {"source": "png", "format": "png", "width": 16, "height": 16}, r.text())
+		r = self.request("POST", "/image/avatar", upload(b"/etc/passwd"), {"Content-Type": "multipart/form-data; boundary=" + boundary})
+		self.check("an upload reading /etc/passwd is no image, and no file is read", r.status == 422 and r.text() == "Image data is not a JPEG, PNG or GIF (read a file with image::load(file::read(path)))", r.text())
 		r = self.request("POST", "/echo/body", "x" * 1000)
 		self.check("a Content-Length body arrives whole", r.json() == {"method": "POST", "body": "x" * 1000, "length": 1000})
 		chunked = b"POST /echo/body HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n5;ext=1\r\nhello\r\n6\r\n world\r\n0\r\nX-Trailer: 1\r\n\r\n"
@@ -300,6 +314,41 @@ class Suite:
 		self.check("int, float, bool, null and text bind as themselves", r.json() == [
 			{"t": "integer", "v": 1}, {"t": "real", "v": 2.5}, {"t": "integer", "v": 1}, {"t": "null", "v": None}, {"t": "text", "v": "it's \"q\" é"}], r.text())
 
+	def typed_rows(self):
+		r = self.request("POST", "/members", json.dumps({"handle": "rex", "admin": True, "score": 2, "tags": ["pup", "artist"]}), {"Content-Type": "application/json"})
+		self.check("from_json<T> builds a class, and insert writes its fields as columns", r.status == 201 and r.json() == {"id": 1}, r.text())
+		r = self.request("POST", "/members/from-map")
+		self.check("insert takes a map, and a key that is no column is skipped", r.json() == {"id": 2}, r.text())
+		r = self.request("GET", "/members")
+		self.check("query<T> answers records: an INTEGER 0/1 column fills a bool, a REAL a float, a JSON TEXT an array",
+			r.json() == {"shown": ["rex (admin) 2.0", "mapped (admin) 0.0"], "tags": ["pup", "artist"]}, r.text())
+		r = self.request("GET", "/members/generic")
+		self.check("a generic's instance is a row type, and a generic function wraps the rows of a typed query",
+			r.json() == {"labels": ["rex", "mapped"], "total": 2, "first": "rex", "type": "Page<Member>", "one": "rex Labeled<string>"}, r.text())
+		r = self.request("GET", "/members/1")
+		self.check("query_one<T> answers a handle", r.json() == {"handle": "rex", "admin": True, "tags": ["pup", "artist"]}, r.text())
+		r = self.request("GET", "/members/9")
+		self.check("query_one<T> of no row is null", r.status == 404, r.text())
+		r = self.request("PUT", "/members/1")
+		self.check("update writes the other columns WHERE the primary key matches", r.json() == {"changed": 1}, r.text())
+		r = self.request("GET", "/members")
+		self.check("the update stored the float and the array", r.json()["shown"][0] == "rex (admin) 9.5", r.text())
+		r = self.request("GET", "/members/1")
+		self.check("an array field round-trips as JSON text", r.json()["tags"] == ["pup", "artist", "edited"], r.text())
+		r = self.request("GET", "/member-errors/wrong-type")
+		self.check("a column that does not fit its field raises naming both types",
+			r.status == 500 and b"database.query: field &#39;handle&#39; of &#39;WrongMember&#39; is int, not string" in r.body, r.text()[:200])
+		r = self.request("GET", "/member-errors/run-time-table?t=items")
+		self.check("a table name the program does not spell is refused",
+			r.status == 500 and b"a table name must be a constant; a value never names a table" in r.body, r.text()[:200])
+		r = self.request("GET", "/member-errors/no-table")
+		self.check("insert into a missing table raises", r.status == 500 and b"SQLite error: no table named &#39;nowhere_at_all&#39;" in r.body, r.text()[:200])
+		r = self.request("GET", "/member-errors/no-key")
+		self.check("update needs a primary key", r.status == 500 and b"SQLite error: table &#39;keyless&#39; has no primary key, which update needs" in r.body, r.text()[:200])
+		r = self.request("GET", "/member-errors/missing-key")
+		self.check("update needs the record's key field",
+			r.status == 500 and b"SQLite error: the record has no field &#39;id&#39; for the primary key of &#39;members&#39;" in r.body, r.text()[:200])
+
 	def errors(self):
 		r = self.request("GET", "/boom")
 		self.check("a run-time error is a 500 with the error under --dev", r.status == 500 and b"Division by zero" in r.body, r.text()[:200])
@@ -320,8 +369,9 @@ class Suite:
 
 	def hot_reload(self):
 		r = self.request("GET", "/count")
+		self.check("a request's engine starts with the app's globals as the app sets them", r.text() == "1", r.text())
 		r = self.request("GET", "/count")
-		self.check("state counts before a reload", r.text() == "2", r.text())
+		self.check("a global one request changed is not there for the next", r.text() == "1", r.text())
 		self.check("the module answers its first version", self.request("GET", "/greeting").text() == "version one")
 		self.write_module("greeting.jai", 'string greeting() { return "version two, edited"; }\n')
 		r = self.request("GET", "/greeting")
@@ -333,7 +383,13 @@ class Suite:
 		self.check("the rejected edit's listing is logged", self.wait_for_log("cannot initialize 'n' declared 'int'"), self.server.log_text()[-400:])
 		r = self.request("GET", "/greeting")
 		self.check("the app keeps serving while the edit stays broken", r.text() == "version two, edited", r.text())
-		self.write_module("greeting.jai", 'string greeting() { Database d = open_database(":memory:"); string who = "x"; return d.value("SELECT \'" + who + "\'"); }\n')
+		for _ in range(4):
+			self.request("GET", "/greeting", fresh=True)
+		listed = self.server.log_text().count("cannot initialize 'n' declared 'int'")
+		self.check("the rejected edit is listed once, however many engines are built from the last good code", listed == 1, str(listed) + " listings")
+		copies = list((self.app_dir / ".cache").glob("jai_spider-last-good-*"))
+		self.check("the last good code is copied under the app's .cache folder", len(copies) == 1 and any(copies[0].rglob("greeting.jai")), str(copies))
+		self.write_module("greeting.jai", 'string greeting() { database d = open_database(":memory:"); string who = "x"; return d.value("SELECT \'" + who + "\'"); }\n')
 		r = self.request("GET", "/greeting")
 		self.check("an edit that builds SQL text is rejected at load", r.text() == "version two, edited" and self.wait_for_log("argument 1 of 'value' is not a constant: SQL text must be a constant; pass values as parameters (?)"), self.server.log_text()[-400:])
 		self.write_module("greeting.jai", 'string greeting() { return "version three after the fix"; }\n')
@@ -344,7 +400,7 @@ class Suite:
 		r = self.request("GET", "/")
 		self.check("an edit to the app itself applies", r.text() == "<h1>home, edited</h1>", r.text())
 		r = self.request("GET", "/count")
-		self.check("a variable declared without an initializer keeps its value across the app's reload", r.text() == "3", r.text())
+		self.check("a global declared without an initializer starts over after the app's reload too", r.text() == "1", r.text())
 
 	def static_files(self):
 		css = (self.app_dir / "public" / "style.css").read_bytes()
@@ -482,6 +538,7 @@ def run_backend(exe, runner, backend, verbose):
 		try:
 			code = server.process.wait(timeout=HANG_RAIL)
 			suite.check("the process exits cleanly after the shutdown request", code == 0, "exit code " + str(code))
+			suite.check("a clean exit removes the copy of the last good code", not list((app_dir / ".cache").glob("jai_spider-last-good-*")))
 		except subprocess.TimeoutExpired:
 			suite.check("the process exits cleanly after the shutdown request", False, "still running")
 	finally:
@@ -519,15 +576,171 @@ def run_broken_start(exe, backend, verbose):
 	return not suite.failures
 
 
+def wait_for_file(path):
+	deadline = time.time() + HANG_RAIL
+	while time.time() < deadline:
+		if path.exists():
+			return True
+		time.sleep(0.02)
+	return False
+
+
+def in_threads(*calls):
+	results = [None] * len(calls)
+	def run(i, call):
+		results[i] = call()
+	threads = [threading.Thread(target=run, args=(i, call)) for i, call in enumerate(calls)]
+	for t in threads:
+		t.start()
+	for t in threads:
+		t.join(HANG_RAIL)
+	return results
+
+
+def worker_server(exe, backend, verbose, label, extra, app, body):
+	work = pathlib.Path(tempfile.mkdtemp(prefix="spider_workers_"))
+	app_dir = work / "workers"
+	shutil.copytree(WORKERS_FIXTURE, app_dir)
+	server = Server(exe, app_dir, backend, extra, app)
+	suite = Suite(server, app_dir, verbose)
+	try:
+		body(suite)
+	finally:
+		server.stop()
+		if suite.failures or verbose:
+			print("---- " + label + " log (" + backend + ")")
+			print(server.log_text())
+		shutil.rmtree(work, ignore_errors=True)
+	print(label + " " + backend + ": " + str(suite.passed) + " passed, " + str(len(suite.failures)) + " failed")
+	return not suite.failures
+
+
+def check_two_workers(suite):
+	seen = [suite.request("GET", "/touch").text() for _ in range(4)]
+	suite.check("workers: a global one request changed is not there for the next, on any worker", seen == ["1"] * 4, str(seen))
+	def slow(ms):
+		return lambda: suite_request_fresh(suite, "/sleep/" + str(ms))
+	began = time.time()
+	first, second = in_threads(slow(1000), slow(1001))
+	elapsed = time.time() - began
+	ok = first is not None and second is not None and first.status == 200 and second.status == 200
+	runs = [first.json(), second.json()] if ok else []
+	suite.check("workers: two slow requests run at once on two workers",
+		ok and max(r["started"] for r in runs) < min(r["ended"] for r in runs), str(runs))
+	suite.check("workers: two 1 s requests take about 1 s together, not 2", elapsed < 2.0, "%.2f s" % elapsed)
+	raw = suite.raw(b"GET /sleep/300 HTTP/1.1\r\nHost: localhost\r\n\r\nGET /touch HTTP/1.1\r\nHost: localhost\r\n\r\n"
+		b"GET /sleep/20 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+	in_order = raw.count(b"HTTP/1.1 200") == 3 and b'"ms":"300"' in raw and b'"ms":"20"' in raw \
+		and raw.index(b'"ms":"300"') < raw.index(b"\r\n\r\n1") < raw.index(b'"ms":"20"')
+	suite.check("workers: pipelined requests on one connection are answered in order", in_order, raw.decode("latin-1")[:600])
+
+
+def suite_request_fresh(suite, path):
+	c = http.client.HTTPConnection("127.0.0.1", suite.server.port, timeout=HANG_RAIL)
+	try:
+		c.request("GET", path)
+		r = c.getresponse()
+		return Result(r.status, r.getheaders(), r.read())
+	finally:
+		c.close()
+
+
+def check_one_worker(suite):
+	r = suite.request("GET", "/touch")
+	suite.check("one worker: a request is answered", r.status == 200 and r.text() == "1", r.text())
+	slow = [None]
+	holder = threading.Thread(target=lambda: slow.__setitem__(0, suite_request_fresh(suite, "/sleep/2000")))
+	holder.start()
+	started = wait_for_file(suite.app_dir / "started-2000.txt")
+	touch = b"GET /touch HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+	answers = in_threads(lambda: suite.raw(touch), lambda: suite.raw(touch)) if started else []
+	holder.join(HANG_RAIL)
+	refused = [a for a in answers if a.startswith(b"HTTP/1.1 503")]
+	served = [a for a in answers if a.startswith(b"HTTP/1.1 200")]
+	suite.check("one worker, a queue of 1: the request past the queue is 503 with Retry-After",
+		started and len(refused) == 1 and b"Retry-After: 1\r\n" in refused[0] and b"every worker is busy" in refused[0],
+		"; ".join(a[:160].decode("latin-1") for a in answers))
+	suite.check("one worker, a queue of 1: the queued request is answered once the worker is free", len(served) == 1 and served[0].endswith(b"\r\n\r\n1"),
+		"; ".join(a[:160].decode("latin-1") for a in answers))
+	suite.check("one worker: the slow request finishes", slow[0] is not None and slow[0].status == 200)
+	r = suite.request("GET", "/touch", fresh=True)
+	suite.check("one worker: the server serves on after a 503", r.status == 200 and r.text() == "1", r.text())
+
+
+def check_transactions(suite):
+	count = 16
+	def hit():
+		try:
+			return suite_request_fresh(suite, "/hit")
+		except (http.client.HTTPException, OSError):
+			return None
+	answers = in_threads(*[hit] * count)
+	said = ["none" if a is None else str(a.status) + " " + a.text()[:200] for a in answers]
+	committed = [a for a in answers if a is not None and a.status == 200]
+	suite.check("transactions: %d that read and then write at once all commit" % count, len(committed) == count, "; ".join(said))
+	suite.check("transactions: each read what the one before it wrote",
+		sorted(a.text() for a in committed) == sorted(str(n) for n in range(1, count + 1)), "; ".join(said))
+	total = suite.request("GET", "/hits", fresh=True)
+	suite.check("transactions: the count ends at exactly %d" % count, total.status == 200 and total.text() == str(count), total.text()[:200])
+
+
+def check_tasks(suite):
+	def finished_runs():
+		return [row for row in suite.request("GET", "/runs").json() if row["ended"] is not None]
+	def wait_runs(count):
+		deadline = time.time() + HANG_RAIL
+		while time.time() < deadline:
+			runs = finished_runs()
+			if len(runs) >= count:
+				return runs
+			time.sleep(0.2)
+		return finished_runs()
+	runs = wait_runs(3)
+	suite.check("spider::every: the task runs again and again", len(runs) >= 3, str(runs))
+	suite.check("spider::every: a run never starts before the last one ended, though it outlasts its period",
+		all(runs[i + 1]["started"] >= runs[i]["ended"] for i in range(len(runs) - 1)), str(runs))
+	suite.check("spider::every: a failing task is logged with its place and period",
+		suite.wait_for_log("jai_spider: spider::every task 2 (every 1 s) failed:") and suite.wait_for_log("thrown by a task"), suite.server.log_text()[-600:])
+	stopper = lambda: len(suite.request("GET", "/stopper").json())
+	suite.check("spider::every: a task that returns false on its second run stops there",
+		suite.wait_for_log("jai_spider: spider::every task 3 (every 0.2 s) stopped: it returned false") and stopper() == 2, str(stopper()))
+	time.sleep(1.5)
+	later = wait_runs(len(runs) + 2)
+	suite.check("spider::every: the stopped task is not run again over several periods, while a task that returns nothing goes on",
+		stopper() == 2 and len(later) >= len(runs) + 2, str(stopper()) + " stopper runs, " + str(len(later)) + " runs after " + str(len(runs)))
+	before = len(later)
+	text = (suite.app_dir / "tasks.jai").read_text(encoding="utf-8")
+	suite.write_module("tasks.jai", text.replace("thrown by a task", "thrown after the edit"))
+	suite.check("spider::every: a task runs the edited code after a reload, with no request to start it",
+		suite.wait_for_log("thrown after the edit") and suite.wait_for_log("jai_spider: reloaded tasks.jai"), suite.server.log_text()[-600:])
+	runs = wait_runs(before + 2)
+	suite.check("spider::every: the schedule goes on across the reload", len(runs) >= before + 2, str(len(runs)) + " runs after " + str(before))
+	suite.check("spider::every: a stopped task stays stopped across the reload", stopper() == 2, str(stopper()))
+
+
+def run_workers(exe, backend, verbose):
+	return all([
+		worker_server(exe, backend, verbose, "two workers", ["--workers", "2"], "app.jai", check_two_workers),
+		worker_server(exe, backend, verbose, "one worker", ["--workers", "1", "--queue", "1"], "app.jai", check_one_worker),
+		worker_server(exe, backend, verbose, "transactions", ["--workers", "8"], "app.jai", check_transactions),
+		worker_server(exe, backend, verbose, "tasks", ["--workers", "2"], "tasks.jai", check_tasks),
+	])
+
+
 def run_guestbook(exe, backend, verbose):
 	work = pathlib.Path(tempfile.mkdtemp(prefix="spider_guestbook_"))
-	app_dir = work / "guestbook"
+	# the app sits about 150 characters deep, as a project in a user's folders can: a copy of the last good code whose
+	# path held the app's path twice would pass the 260 characters a path ends at on Windows
+	app_dir = work / ("d" * max(8, 150 - len(str(work)) - len("/guestbook") - 1)) / "guestbook"
 	shutil.copytree(EXAMPLE, app_dir, ignore=shutil.ignore_patterns("*.db", "*.db-*", ".cache"))
 	server = Server(exe, app_dir, backend, [])
 	suite = Suite(server, app_dir, verbose)
 	try:
 		r = suite.request("GET", "/")
 		suite.check("guestbook: the home page renders", r.status == 200 and b"No one has signed yet." in r.body, r.text()[:200])
+		again = suite.request("GET", "/")
+		suite.check("guestbook: the page count is kept in SQLite, so the next engine sees it",
+			b"<footer>1 page views so far</footer>" in r.body and b"<footer>2 page views so far</footer>" in again.body, again.text()[-200:])
 		r = suite.request("GET", "/style.css")
 		suite.check("guestbook: the stylesheet is served", r.status == 200 and r.header("Content-Type") == "text/css; charset=utf-8")
 		r = suite.request("POST", "/sign", "name=Ada&message=%3Cb%3Ehi%3C%2Fb%3E", {"Content-Type": "application/x-www-form-urlencoded"})
@@ -548,7 +761,7 @@ def run_guestbook(exe, backend, verbose):
 		card.write_text(original.replace("<article>", '<article class="edited">'), encoding="utf-8")
 		r = suite.request("GET", "/")
 		suite.check("guestbook: an edited template applies on the next request", b'<article class="edited">' in r.body, r.text()[:400])
-		card.write_text(original.replace('${entry["message"]}', "${missing_name}"), encoding="utf-8")
+		card.write_text(original.replace('${entry.message}', "${missing_name}"), encoding="utf-8")
 		r = suite.request("GET", "/")
 		suite.check("guestbook: a template edit that does not check leaves the last version serving",
 			r.status == 200 and b'<article class="edited">' in r.body and b"&lt;b&gt;hi&lt;/b&gt;" in r.body, r.text()[:400])
@@ -579,7 +792,8 @@ def main():
 	backends = ["vm", "interp"] if args.backend == "both" else [args.backend]
 	results = []
 	for backend in backends:
-		results += [run_backend(exe, runner, backend, args.verbose), run_broken_start(exe, backend, args.verbose), run_guestbook(exe, backend, args.verbose)]
+		results += [run_backend(exe, runner, backend, args.verbose), run_broken_start(exe, backend, args.verbose), run_workers(exe, backend, args.verbose),
+			run_guestbook(exe, backend, args.verbose)]
 	ok = all(results)
 	print("jai_spider: " + ("every check holds" if ok else "FAILED"))
 	return 0 if ok else 1

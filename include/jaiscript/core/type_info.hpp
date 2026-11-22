@@ -16,7 +16,7 @@
 
 namespace jai {
 
-    // The script spelling of a math kind (the type name, type_of, diagnostics); null for any other type
+    // The script spelling of a math kind (the type name, reflect::type_of, diagnostics); null for any other type
     constexpr const char* math_type_name(script_value_type kind) noexcept {
         switch (kind) {
             case script_value_type::jai_vec2_type: return "math::vec2";
@@ -63,9 +63,10 @@ namespace jai {
         return script_value_type::jai_null_type;
     }
 
-    // A template instance's registered name: the base, then each argument's canonical spelling (type_info::canonical_name
-    // for a script type, type_name_helper for a C++ one), so the parser's Box<array<int>> and a host's
-    // Box<std::vector<int64_t>> name one class
+    // A template instance's registered name: the base, then each argument's spelling (type_info::spelling for a script
+    // type, type_name_helper for a C++ one), so the parser's Box<array<int>> and a host's Box<std::vector<int64_t>> name
+    // one class. The arguments are joined with ", " (Pair<string, int>); a builtin container's own name is not
+    // (map<string,int>, type_info::canonical_name).
     inline std::string template_instance_name(std::string_view base, const std::vector<std::string>& arguments) {
         std::string name(base);
         name += '<';
@@ -76,6 +77,19 @@ namespace jai {
         name += '>';
         return name;
     }
+
+    // Name<A, B>: the base name and the text of each argument, cut at the commas of the name's own brackets; false for a
+    // name that spells no argument list
+    bool template_name_arguments(std::string_view name, std::string_view& base, std::vector<std::string_view>& arguments);
+
+    // The sized numbers a host template's argument is spelled by (jai::type_name_helper, core/template_binder.hpp: int8 int16
+    // int32, uint8 uint16 uint32 uint, float32) are no script types: the kind a value of one reads as, jai_int_type or
+    // jai_float_type, and jai_null_type for any other name
+    script_value_type sized_number_kind(std::string_view spelling);
+
+    // Where a class's qualified name parts from its namespace: its last "::" outside the brackets of an instance's arguments
+    // (shop::Shelf<shop::Item> is Shelf<shop::Item> of shop), npos for a name no namespace qualifies
+    size_t class_qualifier_cut(std::string_view name);
 
     // Forward declarations
     class type_info;
@@ -109,6 +123,9 @@ namespace jai {
         // An enum's types, set when its declaration runs (engine::note_enum): the interned object spelling of its name, which a
         // slot declares, and the int type its values are stamped with (a stamp of the first lands as the second: set_type_info)
         bool is_enum = false;
+        // coroutine<Y>, a coroutine handle's type: an object type named by its spelling whose one parameter is the type each yield
+        // and the return convert to (engine::get_type_info_coroutine)
+        bool is_coroutine = false;
         std::string type_name;  // For Object<T>, this would be the class name
         uint64_t id = 0;        // Interned canonical name for O(1) type comparison
 
@@ -163,6 +180,8 @@ namespace jai {
         bool is_map() const { return base_type == script_value_type::jai_map_type; }
         bool is_object() const { return base_type == script_value_type::jai_object_type; }
         bool is_function() const { return base_type == script_value_type::jai_function_type; }
+        // function<R(A...)>: a callable slot with a signature (the bare `function` spelling has none)
+        bool is_signature() const { return base_type == script_value_type::jai_function_type && !type_params.empty(); }
         bool is_reference() const { return base_type == script_value_type::jai_reference_type; }
         bool is_weak_ptr() const { return base_type == script_value_type::jai_weak_ptr_type; }
         // a value of this type can own an instance (its end observable through a destructor, a weak_ptr or a use count): anything
@@ -217,6 +236,10 @@ namespace jai {
         // The script spelling a reader sees (reflection, reports): canonical_name with an untyped container spelled bare
         // ("array", "map") and a dynamic element as var ("map<string,var>"); "var" for any
         std::string spelling() const;
+
+        // An instance's name from its arguments' types (template_instance_name over each one's spelling: Box<var>, never
+        // Box<any>); "auto" for an argument still to be named
+        static std::string instance_name(std::string_view base, const std::vector<type_info_ptr>& arguments);
 
         // Equality comparison
         bool equals(const type_info& other) const;
@@ -280,6 +303,9 @@ namespace jai {
         static type_info make_callable(string_symbolizer& symbolizer);
 
         static type_info make_function(string_symbolizer& symbolizer, type_info_ptr return_type, std::vector<type_info_ptr> arg_types);
+
+        // coroutine<Y>
+        static type_info make_coroutine(string_symbolizer& symbolizer, type_info_ptr yield_type);
 
         // An integral or floating C++ type of that size, as make<T> reaches it
         static type_info make_native_int(string_symbolizer& symbolizer, size_t native_size, bool is_signed);

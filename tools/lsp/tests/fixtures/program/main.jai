@@ -23,3 +23,9 @@ void run() {
 }
 
 run();
+
+void inspect(var who) {
+	if (dynamic_cast<Hero>(who)) {
+		who.heal(1);
+	}
+}

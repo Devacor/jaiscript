@@ -13,7 +13,10 @@
 #define JAI_MAX_HOST_RECORD_DEPTH 1024
 #endif
 
-namespace jai::detail { bool native_stack_low() noexcept; }
+namespace jai::detail {
+bool native_stack_low() noexcept;
+struct deferred_receivers;   // signals/receiver_save.hpp
+}
 
 #include <jaiscript/serialization/serialization_metadata.hpp>
 #include <jaiscript/serialization/traits.hpp>
@@ -31,6 +34,7 @@ namespace jai::detail { bool native_stack_low() noexcept; }
 #include <memory>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <optional>
 #include <tuple>
@@ -39,6 +43,9 @@ namespace jai::detail { bool native_stack_low() noexcept; }
 #include <stack>
 
 namespace jai {
+
+class coroutine_handle;
+class class_instance;
 
 class serialization_error : public runtime_error {
 public:
@@ -96,6 +103,9 @@ void read_binding_record(any_archive_reader& ar, engine* eng, std::type_index ty
 std::string bound_type_name(engine* eng, std::type_index type);
 // The registry entry of the binding record eng binds under name, or null
 const polymorphic_registry::type_entry* binding_entry_named(engine* eng, const std::string& name);
+// The entry a polymorphic "$type" loads through: the registry's, eng's binding record's, or (hybrid_class and hybrid_base
+// set) the bound C++ base's of the script class it names. A name that is no registered spelling answers by its type_name_key
+const polymorphic_registry::type_entry* polymorphic_load_entry(engine* eng, const std::string& name, std::string& hybrid_class, std::string& hybrid_base);
 
 #define JAI_DETAIL_SERIALIZATION_ROUTES \
     "give the type a member serialize(Archive&), or save(Archive&) and load(Archive&) (non-public ones with 'friend jai::access;'), " \
@@ -247,11 +257,29 @@ protected:
     std::unique_ptr<std::unordered_map<std::type_index, void*>> user_contexts_;
 
     std::unique_ptr<std::unordered_map<const void*, uint32_t>> shared_ptr_ids_;
+    // ids a signal receiver named before the archive wrote their objects: the object's first write still carries its payload
+    std::unique_ptr<std::unordered_set<const void*>> referenced_ahead_;
     uint32_t next_shared_id_ = 1;  // 0 reserved for null
 
     std::stack<SerializationContext, std::vector<SerializationContext>> context_stack_;
 
     uint32_t version_ = 0;
+
+    // A coroutine's record (detail/coroutine_snapshot.hpp) with its receiver: "owner", the count of instances being written
+    // in place out to the one that is the receiver, else "this", a handle the save's other handles to the receiver share
+    std::vector<std::pair<std::string, script_value>> coroutine_fields(coroutine_handle& a_coroutine);
+    // An instance written in place opens and closes around its members; a coroutine saved on its own that took it as its
+    // receiver would save it twice, which the save refuses
+    void open_written_instance(const class_instance* a_instance);
+    void close_written_instance() { open_instances_.pop_back(); }
+    void open_coroutine_record(const coroutine_handle& a_coroutine);
+    void close_coroutine_record() { open_coroutines_.pop_back(); }
+    // A function value among what an open coroutine record holds: the load would run on without it
+    void refuse_function_in_coroutine(const script_value& a_value) const;
+    std::vector<const class_instance*> open_instances_;
+    std::vector<const coroutine_handle*> open_coroutines_;
+    std::unique_ptr<std::unordered_set<const void*>> written_instances_;
+    std::unique_ptr<std::unordered_map<const void*, const coroutine_handle*>> lone_receivers_;
 
     struct record_frame {
         const void* object;
@@ -298,6 +326,9 @@ public:
 
     std::pair<uint32_t, bool> get_or_assign_shared_id(const void* raw_ptr) { return track_shared_ptr(raw_ptr); }
     uint32_t lookup_shared_id(const void* raw_ptr) const;
+    // The id a method receiver's object has in this archive (0 for no object); one the archive writes later keeps its payload
+    // for that write
+    uint32_t reference_object(const script_value& a_object);
 
     void set_version(uint32_t version) { version_ = version; }
     uint32_t get_version() const { return version_; }
@@ -940,6 +971,10 @@ protected:
     // The outermost read is one load: a load session opens there and completes when it returns, so the script
     // post_load hooks of everything it loaded run once the whole archive is loaded (a read that throws drops them)
     int read_depth_ = 0;
+    // the saved signal receivers read so far, connected once the outermost read is whole (signal_receivers.cpp)
+    std::unique_ptr<std::vector<detail::deferred_receivers>> deferred_receivers_;
+    void arm_deferred_receivers();
+    void drop_deferred_receivers() noexcept;
 
     // C++ shared_ptr tracking for property serialization (type-erased). The stored pointer
     // is the COMPLETE object (most-derived) and `type` its dynamic type, so a back-reference
@@ -999,6 +1034,9 @@ public:
     // address. Used by both the templated get above and any_archive_reader.
     std::shared_ptr<void> get_deserialized_shared_adjusted(uint32_t id, std::type_index target) const;
 
+    // A signal's saved receivers: connected when the outermost read completes, or now outside of one
+    void defer_receivers(detail::deferred_receivers&& a_receivers);
+
     // Type-erased registration: `complete` is the most-derived pointer, `type` its dynamic
     // type (computed by the caller, which still has the static type).
     void register_deserialized_shared_typed(uint32_t id, std::shared_ptr<void> complete, std::type_index type) {
@@ -1039,10 +1077,13 @@ protected:
         explicit read_scope(archive_reader_impl* a_reader) : reader(a_reader) {
             if (reader->read_depth_++ == 0 && reader->engine_ref_) { session.emplace(reader->engine_ref_); }
         }
-        ~read_scope() { --reader->read_depth_; }
+        ~read_scope() {
+            if (--reader->read_depth_ == 0 && reader->deferred_receivers_) { reader->drop_deferred_receivers(); }
+        }
         read_scope(const read_scope&) = delete;
         read_scope& operator=(const read_scope&) = delete;
         void done() {
+            if (reader->read_depth_ == 1 && reader->deferred_receivers_) { reader->arm_deferred_receivers(); }
             if (session) { session->complete(); }
         }
     };
@@ -1550,27 +1591,9 @@ private:
                 self()->serialize("$type", poly_type);
             }
             if (!poly_type.empty()) {
-                auto* entry = polymorphic_registry::instance().find(poly_type);
-                if (!entry) {
-                    entry = binding_entry_named(engine_ref_, poly_type);
-                }
                 std::string hybrid_class;
                 std::string hybrid_base;
-                if (!entry && engine_ref_) {
-                    // A $type naming a script class deriving a bound C++ base: load through
-                    // the base's registry entry, then re-attach the script layer below.
-                    std::string base_name = detail::engine_access::script_layer_base_name(*engine_ref_, poly_type);
-                    if (!base_name.empty()) {
-                        entry = polymorphic_registry::instance().find(base_name);
-                        if (!entry) {
-                            entry = binding_entry_named(engine_ref_, base_name);
-                        }
-                        if (entry) {
-                            hybrid_class = poly_type;
-                            hybrid_base = base_name;
-                        }
-                    }
-                }
+                const polymorphic_registry::type_entry* entry = polymorphic_load_entry(engine_ref_, poly_type, hybrid_class, hybrid_base);
                 // Reject a tampered $type that names a registered type unrelated to the
                 // requested base BEFORE constructing it — otherwise the void->elem_type cast
                 // below would reinterpret an unrelated object as elem_type (type confusion

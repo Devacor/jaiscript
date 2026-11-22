@@ -72,8 +72,8 @@ function game_save(string path) -> bool {
 		"anim": {"phase": ANIM_PHASE, "tick": ANIM_TICK, "btn_ld": BTN_LD, "btn_tics": BTN_TICS},
 		"stats": {"kills": KILLS, "kill_total": KILL_TOTAL, "items": ITEMS_TAKEN, "item_total": ITEM_TOTAL}
 	};
-	write_file(path, to_json(st));
-	return file_exists(path);
+	file::write(path, to_json(st));
+	return file::exists(path);
 }
 
 function ld_farr(var& src) -> array<float> {
@@ -111,8 +111,8 @@ function seg_tex_restore(var& saved, var& live) -> void {
 
 function game_load(string path) -> bool {
 	path = data_path(path);
-	if (!file_exists(path)) { return false; }
-	var txt = read_file(path);
+	if (!file::exists(path)) { return false; }
+	var txt = file::read(path);
 	if (txt.size() < 2) { return false; }
 	var st = from_json(txt);
 	if (st == null || !st.has("version") || st["version"] + 0 != SAVE_VERSION) { return false; }

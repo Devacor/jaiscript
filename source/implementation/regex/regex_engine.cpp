@@ -1174,10 +1174,24 @@ namespace jai::detail::regex_engine {
 		}
 	}
 
+	// A search's poll: a scan asks once per block of text and ends unanswered when the budget is spent
+	struct scan_watch {
+		regex::poll watch;
+		bool stopped = false;
+		bool spent(size_t units) {
+			if (watch.spent && watch.spent(watch.context, units)) [[unlikely]] { stopped = true; }
+			return stopped;
+		}
+	};
+	inline constexpr size_t k_dfa_poll_bytes = size_t(1) << 16;   // a table step a byte
+	inline constexpr size_t k_dfa_poll_units = k_dfa_poll_bytes / 4;
+	inline constexpr size_t k_pike_poll_characters = size_t(1) << 10;   // every live thread a character
+	inline constexpr size_t k_pike_poll_units = k_pike_poll_characters * 8;
+
 	// The leftmost-first match from `start` (only there when anchored); the scan stops at `stop`, where a bounded run knows
 	// the match ends. full: a match counts only at the end of the text.
 	inline bool pike_run(const program& p, std::string_view text, size_t start, size_t stop, bool anchored, bool full,
-	                     std::vector<size_t>& out, pike_scratch& s) {
+	                     std::vector<size_t>& out, pike_scratch& s, scan_watch& w) {
 		s.prepare(p);
 		const size_t nslots = p.slots;
 		sparse_set* clist = &s.lists[0];
@@ -1190,6 +1204,7 @@ namespace jai::detail::regex_engine {
 		std::fill(s.work.begin(), s.work.end(), npos);
 		pike_add(p, text, start, anchored ? p.start_anchored : p.start_unanchored, s.work, *clist, *ccaps, s);
 		for (size_t at = start; clist->size != 0; ++at) {
+			if (((at - start) & (k_pike_poll_characters - 1)) == k_pike_poll_characters - 1 && w.spent(k_pike_poll_units)) [[unlikely]] { return false; }
 			const bool more = at < stop;
 			const unsigned c = more ? static_cast<uint8_t>(text[at]) : 0;
 			nlist->clear();
@@ -1367,7 +1382,7 @@ namespace jai::detail::regex_engine {
 		}
 	};
 
-	enum class scan { found, none, gave_up };
+	enum class scan { found, none, gave_up, stopped };
 
 	// A second cache reset before the bytes since the first paid for the states it held hands the search to the Pike VM
 	struct reset_watch {
@@ -1383,46 +1398,55 @@ namespace jai::detail::regex_engine {
 		}
 	};
 
-	inline scan scan_forward(dfa& d, std::string_view text, size_t from, size_t& end) {
+	inline scan scan_forward(dfa& d, std::string_view text, size_t from, size_t& end, scan_watch& w) {
 		const size_t n = text.size();
 		int32_t s = d.start(false, from > 0 ? static_cast<int>(static_cast<uint8_t>(text[from - 1])) : -1);
 		reset_watch watch(d);
 		bool found = false;
-		for (size_t i = from; i < n; ++i) {
-			s = d.step(s, d.class_of(static_cast<uint8_t>(text[i])));
-			if (watch.thrashing(d, i)) { return scan::gave_up; }
-			if (d.is_match(s)) { found = true; end = i; }
-			if (d.is_dead(s)) { return found ? scan::found : scan::none; }
+		for (size_t i = from; i < n;) {
+			for (const size_t block = std::min(n, i + k_dfa_poll_bytes); i < block; ++i) {
+				s = d.step(s, d.class_of(static_cast<uint8_t>(text[i])));
+				if (watch.thrashing(d, i)) { return scan::gave_up; }
+				if (d.is_match(s)) { found = true; end = i; }
+				if (d.is_dead(s)) { return found ? scan::found : scan::none; }
+			}
+			if (i < n && w.spent(k_dfa_poll_units)) [[unlikely]] { return scan::stopped; }
 		}
 		s = d.step(s, d.eot());
 		if (d.is_match(s)) { found = true; end = n; }
 		return found ? scan::found : scan::none;
 	}
 
-	inline scan scan_reverse(dfa& d, std::string_view text, size_t end, size_t lo, size_t& begin) {
+	inline scan scan_reverse(dfa& d, std::string_view text, size_t end, size_t lo, size_t& begin, scan_watch& w) {
 		const size_t n = text.size();
 		int32_t s = d.start(true, end < n ? static_cast<int>(static_cast<uint8_t>(text[end])) : -1);
 		reset_watch watch(d);
 		bool found = false;
-		for (size_t i = end; i > lo; --i) {
-			s = d.step(s, d.class_of(static_cast<uint8_t>(text[i - 1])));
-			if (watch.thrashing(d, i)) { return scan::gave_up; }
-			if (d.is_match(s)) { found = true; begin = i; }
-			if (d.is_dead(s)) { return found ? scan::found : scan::none; }
+		for (size_t i = end; i > lo;) {
+			for (const size_t block = i - lo > k_dfa_poll_bytes ? i - k_dfa_poll_bytes : lo; i > block; --i) {
+				s = d.step(s, d.class_of(static_cast<uint8_t>(text[i - 1])));
+				if (watch.thrashing(d, i)) { return scan::gave_up; }
+				if (d.is_match(s)) { found = true; begin = i; }
+				if (d.is_dead(s)) { return found ? scan::found : scan::none; }
+			}
+			if (i > lo && w.spent(k_dfa_poll_units)) [[unlikely]] { return scan::stopped; }
 		}
 		s = d.step(s, lo > 0 ? d.class_of(static_cast<uint8_t>(text[lo - 1])) : d.eot());
 		if (d.is_match(s)) { found = true; begin = lo; }
 		return found ? scan::found : scan::none;
 	}
 
-	inline scan scan_full(dfa& d, std::string_view text) {
+	inline scan scan_full(dfa& d, std::string_view text, scan_watch& w) {
 		const size_t n = text.size();
 		int32_t s = d.start(true, -1);
 		reset_watch watch(d);
-		for (size_t i = 0; i < n; ++i) {
-			s = d.step(s, d.class_of(static_cast<uint8_t>(text[i])));
-			if (watch.thrashing(d, i)) { return scan::gave_up; }
-			if (d.is_dead(s)) { return scan::none; }
+		for (size_t i = 0; i < n;) {
+			for (const size_t block = std::min(n, i + k_dfa_poll_bytes); i < block; ++i) {
+				s = d.step(s, d.class_of(static_cast<uint8_t>(text[i])));
+				if (watch.thrashing(d, i)) { return scan::gave_up; }
+				if (d.is_dead(s)) { return scan::none; }
+			}
+			if (i < n && w.spent(k_dfa_poll_units)) [[unlikely]] { return scan::stopped; }
 		}
 		s = d.step(s, d.eot());
 		return d.is_match(s) ? scan::found : scan::none;
@@ -1606,8 +1630,9 @@ namespace jai::detail::regex {
 		const compiled& re;
 		const regex_engine::subject_programs& sp;
 		held leftmost, longest, backward;
+		regex_engine::scan_watch watch;
 
-		state(const compiled& r, subject s) : re(r), sp(r.subjects[static_cast<int>(s)]) {}
+		state(const compiled& r, subject s, poll w) : re(r), sp(r.subjects[static_cast<int>(s)]), watch{w} {}
 
 		regex_engine::dfa& acquire(held& h, regex_engine::dfa_slots& slots, const regex_engine::program& p, regex_engine::dfa::kind k) {
 			if (h.d) { return *h.d; }
@@ -1626,8 +1651,10 @@ namespace jai::detail::regex {
 	static_assert(sizeof(searcher::state) <= searcher::k_state_size && alignof(searcher::state) <= alignof(std::max_align_t));
 
 	searcher::state& searcher::st() { return *std::launder(reinterpret_cast<state*>(storage_)); }
-	searcher::searcher(const compiled& re, subject s) { new (storage_) state(re, s); }
+	const searcher::state& searcher::st() const { return *std::launder(reinterpret_cast<const state*>(storage_)); }
+	searcher::searcher(const compiled& re, subject s, poll watch) { new (storage_) state(re, s, watch); }
 	searcher::~searcher() { st().~state(); }
+	bool searcher::stopped() const { return st().watch.stopped; }
 
 	bool searcher::find(std::string_view text, size_t from, bool groups, std::vector<size_t>& slots) {
 		using namespace regex_engine;
@@ -1636,27 +1663,28 @@ namespace jai::detail::regex {
 		slots.assign(2 * (st.re.groups + 1), npos);
 		if (from > text.size() || st.sp.refusal.refused()) { return false; }
 		size_t end = 0, begin = 0;
-		const scan f = scan_forward(st.acquire(st.leftmost, st.sp.leftmost, fwd, dfa::kind::leftmost), text, from, end);
-		if (f == scan::none) { return false; }
-		if (f == scan::found && scan_reverse(st.acquire(st.backward, st.sp.backward, st.sp.reverse, dfa::kind::longest), text, end, from, begin) == scan::found) {
+		const scan f = scan_forward(st.acquire(st.leftmost, st.sp.leftmost, fwd, dfa::kind::leftmost), text, from, end, st.watch);
+		if (f == scan::none || f == scan::stopped) { return false; }
+		if (f == scan::found && scan_reverse(st.acquire(st.backward, st.sp.backward, st.sp.reverse, dfa::kind::longest), text, end, from, begin, st.watch) == scan::found) {
 			if (!groups || st.re.groups == 0) {
 				slots[0] = begin;
 				slots[1] = end;
 				return true;
 			}
-			if (pike_run(fwd, text, begin, end, true, false, slots, st.leftmost.pike()) && slots[0] == begin && slots[1] == end) { return true; }
+			if (pike_run(fwd, text, begin, end, true, false, slots, st.leftmost.pike(), st.watch) && slots[0] == begin && slots[1] == end) { return true; }
 		}
-		return pike_run(fwd, text, from, text.size(), false, false, slots, st.leftmost.pike());
+		if (st.watch.stopped) { return false; }
+		return pike_run(fwd, text, from, text.size(), false, false, slots, st.leftmost.pike(), st.watch);
 	}
 
 	bool searcher::full(std::string_view text) {
 		using namespace regex_engine;
 		state& st = this->st();
 		if (st.sp.refusal.refused()) { return false; }
-		const scan r = scan_full(st.acquire(st.longest, st.sp.longest, st.sp.forward, dfa::kind::longest), text);
+		const scan r = scan_full(st.acquire(st.longest, st.sp.longest, st.sp.forward, dfa::kind::longest), text, st.watch);
 		if (r != scan::gave_up) { return r == scan::found; }
 		std::vector<size_t> slots;
-		return pike_run(st.sp.forward, text, 0, text.size(), true, true, slots, st.longest.pike());
+		return pike_run(st.sp.forward, text, 0, text.size(), true, true, slots, st.longest.pike(), st.watch);
 	}
 
 } // namespace jai::detail::regex

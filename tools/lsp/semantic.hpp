@@ -18,9 +18,10 @@ struct unit_index {
 	std::unordered_map<std::string, const jai::enum_decl*> enum_values;
 	std::unordered_map<std::string, const jai::class_decl*> classes;
 	std::unordered_set<std::string> namespaces;
+	std::unordered_map<const jai::declaration*, const jai::detail::generic_definition*> generics;   // a generic's view: its definition
 };
 
-void build_unit_index(const std::vector<jai::declaration_ptr>& decls, const std::string& prefix, unit_index& out);
+void build_unit_index(const std::vector<jai::declaration_ptr>& decls, const std::string& prefix, unit_index& out, const generic_view_map* views);
 
 // The program as a lookup surface: the current unit first, then the other units of its program,
 // then the host's registrations.
@@ -40,6 +41,11 @@ public:
 	};
 
 	const jai::class_decl* find_class(std::string_view name);
+	const jai::class_decl* find_instance(std::string_view name);   // a generic class's instance the program's checks declared
+	const jai::function_decl* find_instance_function(std::string_view name);   // and a generic function's or method's, by its name
+	const jai::detail::generic_definition* generic_of(const jai::declaration* d);   // the generic whose view d is
+	const jai::declaration* view_of(const jai::generic_decl& g);
+	std::string shown_name(const jai::declaration* d, std::string_view name);   // the name with a generic's parameter list
 	bool class_known(std::string_view name);
 	member_ref find_member(std::string_view cls, std::string_view member, bool want_static, int depth = 0);
 	std::vector<top_ref> top_level(const std::string& qualified);
@@ -57,6 +63,8 @@ public:
 	uint32_t enum_value_symbol(unit_model& m, const jai::enum_decl* e, std::string_view value);
 	uint32_t host_symbol(unit_model& m, const std::string& name, symbol_kind kind);
 	uint32_t builtin_symbol(unit_model& m, std::string_view receiver, std::string_view member);
+	uint32_t instance_symbol(unit_model& m, const std::string& instance, const std::string& generic);
+	uint32_t instance_call_symbol(unit_model& m, uint32_t generic, const jai::function_decl& instance);
 	nav_type declared_type(const jai::declaration* d);
 
 	std::optional<text_span> decl_span(const jai::declaration* node, std::string_view name);
@@ -67,6 +75,12 @@ public:
 	workspace& ws;
 	const program& prog;
 	unit& current;
+
+private:
+	void index_instances();
+	bool instances_indexed_ = false;
+	std::unordered_map<std::string, const jai::class_decl*> instances_;   // by name and by type_name_key
+	std::unordered_map<std::string, const jai::function_decl*> instance_functions_;
 };
 
 uint32_t add_symbol(unit_model& m, symbol s);
@@ -90,8 +104,15 @@ private:
 	std::unordered_map<const jai::expression*, uint32_t> expr_symbol_;
 	std::unordered_map<uint32_t, nav_type> symbol_type_;
 	std::unordered_map<const jai::expression*, nav_type> nav_memo_;
+	struct type_parameter_region {
+		text_pos start, end;
+		std::unordered_map<std::string, uint32_t> names;   // each type parameter's symbol
+		std::unordered_map<std::string, nav_type> bounds;  // what a value of it is known to be (its bound's class; unknown without one)
+	};
+	std::vector<type_parameter_region> parameter_regions_;
+	std::vector<size_t> active_parameters_;
 
-	void occur(text_span span, uint32_t sym, bool declaration);
+	void occur(text_span span, uint32_t sym, bool declaration, std::string narrowed = {});
 	void push_scope(text_pos start, text_pos end);
 	void pop_scope();
 	uint32_t declare_local(std::string_view name, text_span span, symbol_kind kind, const std::string& type_shown, nav_type type, bool with_occurrence = true, const std::string& inferred = {});
@@ -115,6 +136,10 @@ private:
 	bool walk_static_path(const jai::member_expr* m);
 	void resolve_member_on(const nav_type& t, const jai::member_expr* m);
 	void walk_lambda(const jai::lambda_expr* l);
+	void walk_generic(const jai::generic_decl* g, const jai::class_decl* owner);
+	void walk_method(const jai::class_decl* owner, const jai::function_decl* fn);
+	const uint32_t* type_parameter(std::string_view name) const;
+	nav_type through_parameters(nav_type t) const;
 	void type_name_pass();
 
 	text_pos stmt_end(const jai::statement* s);

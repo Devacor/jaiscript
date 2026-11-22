@@ -45,7 +45,7 @@ function rgb_idx(int r, int g, int b) -> int {
 	PAL_BG.push(sgr_color(48, r, g, b));
 	PAL_LUM.push(r * 2 + g * 3 + b);
 	PAL_RGB.push(key);
-	if (HOST_ASCII) {
+	if (host_ascii) {
 		string density = " .:-=+*#%@";
 		string ch = density.substr((r * 2 + g * 3 + b) * 10 / 1536, 1);
 		PAL_ASCII.push(sgr_color(48, r * 2 / 5, g * 2 / 5, b * 2 / 5) + sgr_color(38, r, g, b) + ch);
@@ -55,8 +55,8 @@ function rgb_idx(int r, int g, int b) -> int {
 }
 
 function sgr_color(int layer, int r, int g, int b) -> string {
-	if (HOST_TRUECOLOR) { return `${ESC}[${layer};2;${r};${g};${b}m`; }
-	return `${ESC}[${layer};5;${xterm256(r, g, b)}m`;
+	if (host_truecolor) { return `${esc}[${layer};2;${r};${g};${b}m`; }
+	return `${esc}[${layer};5;${xterm256(r, g, b)}m`;
 }
 
 // the nearest of the 6x6x6 color cube and the 24-step gray ramp
@@ -83,7 +83,7 @@ function cube_step(int v) -> int {
 }
 
 function col(string code, string text) -> string {
-	return `${ESC}[${code}m${text}${ESC}[0m`;
+	return `${esc}[${code}m${text}${esc}[0m`;
 }
 
 // pad/truncate plain text to n columns

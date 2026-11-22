@@ -281,10 +281,22 @@ error naming the extraction that works. <code>unchecked_array_node()</code> requ
 <tr><td>a borrow: a <code>script_value</code> C++ receives as an argument, reads out of a container, or copies from a held value</td><td>for the call, like a C++ reference parameter</td></tr>
 <tr><td>a <code>jai::held_value</code>: what <code>execute</code>, <code>execute_file</code>, <code>get_variable</code> and <code>eng-&gt;hold(v)</code> return</td><td>until its engine is destroyed. It never keeps the engine alive.</td></tr>
 <tr><td>a held value after its engine is gone</td><td><code>valid()</code> is false, <code>get_engine()</code> is null, every read throws <code>jai::runtime_error</code> <code>Value outlived its engine.</code>; copying, assigning and destroying it are safe</td></tr>
+<tr><td>a <code>jai::coroutine_handle</code> C++ owns after its engine is gone</td><td><code>done()</code> is true and <code>next</code> returns the error <code>Value outlived its engine.</code>; dropping it is safe</td></tr>
+<tr><td>a <code>std::function</code> made of a script function (a <code>std::function</code> parameter, <code>convert_script_function</code>) after its engine is gone</td><td>a call throws <code>jai::runtime_error</code> <code>Cannot call a script function after its engine was destroyed</code>; copying, moving and destroying it are safe</td></tr>
+<tr><td>a plain <code>script_value</code> C++ kept after its engine is gone</td><td>only dropping it is safe. The engine already destroyed the object it names</td></tr>
 </tbody></table></div>
 <ul>
 <li><strong>Teardown.</strong> A destroyed engine first releases every held payload while it can still run script, so a
-held instance's destructor runs then.</li>
+held instance's destructor runs then. The program's variables die next, last constructed first, and then every coroutine
+still alive ends, the last made first: its locals, arguments and receiver are destroyed while script still runs
+(<a href="../embedding/09-coroutine-hosting.html#driving-from-c-pattern-2-the-native-handle">Driving from C++ with the native handle</a>).
+Then the engine lets go of what the host's callbacks hold, the last made first: the script function inside each
+<code>std::function</code> the host made of one, and what each script receiver on a signal binds or captures
+(<a href="../embedding/10-signals-properties.html#destroy-order">Destroy order</a>). Last, every script object still alive
+is destroyed, its destructor running once: one that handles reaching each other kept, and one a plain
+<code>script_value</code> of the host's still names
+(<a href="../guide/07-classes.html#what-the-engine-destroys">What the engine destroys</a> has the order). So no destructor
+is left unrun when the engine is gone, and nothing the host drops afterwards runs script.</li>
 <li><strong>Threads.</strong> Another thread may copy, read, assign or drop a value only while the engine is idle, with
 the hand-off synchronized as for any C++ object. Debug builds assert when an object dies on another thread while its
 engine runs.</li>
@@ -364,7 +376,7 @@ sink <code>eng-&gt;set_script_error_handler(...)</code> installs; the default wr
 <h2 id="constant-arguments">Constant arguments<a class="hlink" href="#constant-arguments" aria-label="link">&#8203;</a></h2>
 <p>Some arguments must never come from data: SQL text, a shell command. <code>engine::constant_argument(callable, index,
 refusal)</code> declares that argument <code>index</code> of a host function (<code>"run_sql"</code>) or bound method
-(<code>"Database.query"</code>) takes only the program's own constants: a string literal, a <code>const</code> variable
+(<code>"database.query"</code>) takes only the program's own constants: a string literal, a <code>const</code> variable
 initialized with a constant, a ternary whose arms are constants, a <code>+</code> of constants, or an array literal of
 them. A template string with a splice is not one, nor is anything read, computed or passed in.</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::engine* raw = eng.get();
@@ -384,7 +396,8 @@ run_sql("SELECT * FROM posts WHERE title = '" + title + "'", 0);   // a load err
 &#x27;run_sql&#x27; is not a constant: SQL text must be a constant; pass values as parameters (?)</code>. For a method
 it does so wherever it knows the receiver's class.</li>
 <li><strong>At run time</strong> nothing rests on the checker. As each unit loads (a <code>.jaibite</code> and a
-<code>[[warn_mode]]</code> region included) the engine gathers the constant texts its calls pass to the argument, and
+<code>[[warn_mode]]</code> region included) the engine gathers the constant texts its calls pass to the argument (a
+<code>const</code> counts under its name and under its qualified one, <code>queries::FIND</code>, <code>Report::ALL</code>), and
 <code>constant_argument_admits(callable, index, text)</code> answers whether a text is one of them. The host function
 refuses the rest, however they arrived (a <code>var</code>, a function value, <code>reflect::invoke</code>).</li>
 <li><strong>Declare before any script loads:</strong> a unit loaded earlier was never gathered, so its texts are
@@ -405,11 +418,61 @@ take the option too, in a list with the others: <code>jai::nodiscard, jai::seria
 namespace entry described with a <code>host_entry_signature</code> sets its <code>nodiscard</code> field;
 <code>in_place_twin</code> adds that the entry copies what the same-named method changes in place, and the error then
 names that method.</p>
+<p>The other way round needs no option: a function whose C++ result is <code>void</code> returns nothing, and a script that uses the result of a call the checker resolves to one fails the load (<code>the result of 'ping' is used,
+but 'ping' returns nothing: call it as a statement</code>; <a href="../guide/06-functions.html#returning-nothing">Returning
+nothing</a>). A bound method is not checked this way: a script class may derive the class and override the method.</p>
+<h2 id="type-arguments-host">Type arguments<a class="hlink" href="#type-arguments-host" aria-label="link">&#8203;</a></h2>
+<p>A script call may pass types ahead of its arguments, <code>load&lt;Pet&gt;("rex")</code> (<a href="../guide/06-functions.html#type-arguments">Type arguments</a>). Each arrives as the host object <code>reflect::type</code>, which a function or bound method takes as a <code>const jai::script_type&amp;</code> parameter (<code>jaiscript/core/script_type.hpp</code>): <code>name()</code> is the canonical spelling (<code>"array&lt;Pet&gt;"</code>), <code>class_name()</code> the class it names (<code>T</code> or <code>shared_ptr&lt;T&gt;</code>'s pointee, else empty) and <code>info()</code> the engine's <code>type_info</code>. A class is named, not captured, so the host builds whatever class of that name is loaded when it builds.</p>
+<p>A trailing option declares the result in terms of the first type argument, so the checker types the call: <code>jai::returns&lt;jai::type_arg&gt;</code> (<code>T</code>), <code>jai::returns&lt;jai::array_of&lt;jai::type_arg&gt;&gt;</code> (<code>array&lt;T&gt;</code>) or <code>jai::returns&lt;jai::shared_ptr_of&lt;jai::type_arg&gt;&gt;</code> (<code>shared_ptr&lt;T&gt;</code>). It goes on <code>add_function</code>, <code>add_variadic_function</code>, a binder's <code>.method</code> and <code>.static_method</code>, beside the others, and covers every call with type arguments of that name; the host must return a value of that type. <code>type_argument_result(callable)</code> asks, by <code>"name"</code> or <code>"Class.method"</code>.</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::engine* raw = eng.get();
+eng-&gt;add_function("load", [raw](const jai::script_type&amp; type, const std::string&amp; name) {
+    jai::record_field_list fields = read_saved_fields(name);         // (name, value) pairs
+    auto made = jai::make_record(*raw, type, fields, "load");
+    if (!made) { throw std::runtime_error(raw-&gt;format_error(made)); }
+    return std::move(made.value());
+}, jai::returns&lt;jai::type_arg&gt;);</code></pre></div>
+<div class="codeblock cb-jai" data-host="load"><span class="cb-label">jaiscript (with the host above)</span><pre><code class="lang-jai">auto rex = load&lt;Pet&gt;("rex");      // a Pet: rex.nmae is a load error</code></pre></div>
+<ul>
+<li><strong>A script callee takes them only as a generic.</strong> A script function, method or class that declares type parameters is a <a href="../guide/21-generics.html">generic</a>: the load folds the type arguments into its instance&#x27;s name and passes nothing at run time. A call with type arguments the checker resolves to any other script function, method, constructor or local lambda fails the load: <code>'f' takes no type arguments: it is not a generic function</code>.</li>
+<li><strong>Host templates and script generics share a naming.</strong> A host template instance (<code>Point&lt;int&gt;</code>, bound with its template binder) and a script generic&#x27;s instance (<code>Stack&lt;int&gt;</code>) are both classes named <code>Name&lt;args&gt;</code> by <code>jai::template_instance_name</code>, each argument in its canonical spelling. A host template keeps its name: a script generic class of that name fails the load (<code>'Point' is a host template: a generic cannot take its name</code>). A <code>jai::script_type</code> naming an instance (<code>load&lt;Stack&lt;Pet&gt;&gt;("x")</code>) is a class like any other to <code>make_record</code>.</li>
+<li><strong>Constant arguments count the value arguments.</strong> <code>constant_argument("database.query", 0, ...)</code> names the SQL text of <code>db.query(sql)</code> and of <code>db.query&lt;User&gt;(sql)</code> alike; the host's own index is its C++ parameter's, after the types.</li>
+<li><strong>Overloads.</strong> A typed form binds beside an untyped one of the same name: the <code>jai::script_type</code> parameter takes only a type value, so <code>query(sql, id)</code> and <code>query&lt;User&gt;(sql)</code> each find theirs.</li>
+</ul>
+<h2 id="final-host">A class no script derives from<a class="hlink" href="#final-host" aria-label="link">&#8203;</a></h2>
+<p>A binder's <code>.final()</code> marks the class final, as C++'s <code>final</code> does: a script class that names it as a base fails the load at its declaration, and so does the declaration when it runs where the load did not check it (a <code>[[warn_mode]]</code> region), on every backend. The library's <code>image</code> is bound this way.</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">jai::dynamic_binder&lt;Texture&gt;(*eng, "Texture")
+    .final()
+    .constructor&lt;&gt;()
+    .property("width", &amp;Texture::width)
+    .build();</code></pre></div>
+<div class="codeblock cb-jai" data-host="Texture"><span class="cb-label">jaiscript (with the host above)</span><pre><code class="lang-jai">class Tiled { Texture texture; int tiles = 4; }   // loads: a field of the final class
+class Glowing : Texture { }                       // Class 'Glowing' cannot derive from 'Texture': 'Texture' is final; give 'Glowing' a field of type 'Texture' instead</code></pre></div>
+<ul>
+<li><strong>Every class declaration.</strong> A namespace's class reads <code>'art::Glowing'</code>, and a generic class is checked as each of its instances is, so <code>class Glowing&lt;T&gt; : Texture</code> fails where <code>Glowing&lt;int&gt;</code> is asked for. The derivation is the class's one error: its methods' <code>override</code> markers are not checked beside it.</li>
+<li><strong>Not with <code>jai::script_extensible</code>.</strong> A class that derives <code>jai::script_extensible</code> itself exists for script classes to extend (<a href="13-script-extensible.html">Script-extensible objects</a>), so <code>.final()</code> on it does not compile: <code>a class that derives jai::script_extensible is made for script classes to derive from it, so it cannot be final</code>. A <code>property_owner</code> carries that slot for every class and may be final.</li>
+<li><strong>Saved programs.</strong> Finality is part of the <a href="04-jaibite.html#registration-fingerprint">registration fingerprint</a>, so a <code>.jaibite</code> checked clean against a class that was not yet final is checked again.</li>
+</ul>
+<h2 id="records">Records<a class="hlink" href="#records" aria-label="link">&#8203;</a></h2>
+<p><code>jaiscript/core/records.hpp</code> builds script class instances from named values and reads them back, by the rules a script store follows; a database row, a JSON document or a form are the usual sources. <code>who</code> leads every error text.</p>
+<div class="tablewrap"><table><thead><tr><th>Call</th><th>Answers</th></tr></thead><tbody>
+<tr><td><code>jai::make_record(eng, type, fields, who)</code></td><td>a <code>T</code>: constructed with <code>T()</code>, then each named value stored in the field of that name. <code>fields</code> is a <code>jai::record_field_list</code> (<code>(name, value)</code> pairs) or a map with string keys. A name the class has no field for is skipped; a field nothing names keeps its initializer.</td></tr>
+<tr><td><code>jai::make_shared_record(eng, type, fields, who)</code></td><td>the same object as a <code>shared_ptr&lt;T&gt;</code>, as <code>make_shared&lt;T&gt;()</code> answers it</td></tr>
+<tr><td><code>jai::record_fields(eng, record, who)</code></td><td>an instance's fields, bases first and in declaration order, or a map's string-keyed entries; an array, map or class value as its <code>to_json</code> text, for storage</td></tr>
+</tbody></table></div>
+<p>Each answers a <code>checked_result</code>; <code>eng.format_error(result)</code> is the text. Beyond a script store, <code>make_record</code> converts what a row or a document holds: an int <code>0</code> or <code>1</code> into a <code>bool</code> field, an int into a <code>float</code> field, text into an array, map or class field (read as JSON, as <code>from_json&lt;T&gt;</code> reads it: an object written with its <code>$type</code> loads as that class, its members by these rules), a map into a class or <code>shared_ptr</code> field (its own record), and each element of an array or map field the same way. What still does not fit raises:</p>
+<ul>
+<li><code>load: field 'age' of 'Pet' is int, not string</code>: a value the field's type refuses (the class, the field and both types).</li>
+<li><code>load: field 'age' of 'Pet' is int and cannot be null</code>: null into a field that cannot be empty.</li>
+<li><code>load: 'Pet' has no constructor taking no arguments</code>: every constructor of the class takes arguments.</li>
+<li><code>load: a record is an object of a script class, not array&lt;Pet&gt;</code>: the type names no script class (<code>unknown class 'Nope'</code>, <code>'Inventory' is not a script class</code> for a host one).</li>
+<li><code>load: text for 'array&lt;string&gt;' is not JSON: ...</code>: a text field value that does not parse.</li>
+<li><code>record_fields: a record is an object of a script class or a map, not int</code>.</li>
+</ul>
 <h2 id="the-time-source">The time source<a class="hlink" href="#the-time-source" aria-label="link">&#8203;</a></h2>
 <p>Every <code>time::</code> call a script makes (<a href="../guide/14-time.html">Time</a>) reads an engine-owned clock
 the host can replace. It lives on <code>eng-&gt;time()</code>, in <code>&lt;jaiscript/core/engine_time.hpp&gt;</code>.</p>
 <div class="tablewrap"><table><thead><tr><th>Provider</th><th>Behind</th><th>Empty means</th></tr></thead><tbody>
-<tr><td>monotonic</td><td><code>time::now()</code>, <code>time::engine_elapsed()</code>, <code>time::execute_elapsed()</code>, every stopwatch</td><td><code>steady_clock</code></td></tr>
+<tr><td>monotonic</td><td><code>time::engine_elapsed()</code>, <code>time::execute_elapsed()</code>, every stopwatch</td><td><code>steady_clock</code></td></tr>
 <tr><td>wall (nanoseconds since the Unix epoch, UTC)</td><td><code>time::unix_time()</code>, every date</td><td><code>system_clock</code></td></tr>
 <tr><td>sleep</td><td>a <code>sleep</code> that blocks</td><td><code>this_thread::sleep_for</code></td></tr>
 </tbody></table></div>
@@ -421,7 +484,7 @@ eng-&gt;time().source(
     [&amp;] { return epoch + sim_now; },                                  // wall
     [&amp;](std::chrono::nanoseconds d) { sim_now += d; });              // sleep advances the simulation
 sim_now += std::chrono::milliseconds(1500);
-eng-&gt;execute(&quot;print(time::now(), &#x27; &#x27;, time::utc_now().to_string());&quot;);</code></pre></div>
+eng-&gt;execute(&quot;print(time::engine_elapsed(), &#x27; &#x27;, time::utc_now().to_string());&quot;);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1.5 2023-11-14T22:13:21.500Z</code></pre></div>
 <ul>
 <li><strong>Reads are countable,</strong> so a provider that replays recorded readings sees the same sequence on every
@@ -447,7 +510,7 @@ runs as a <strong>run</strong>: <code>eng-&gt;start(...)</code> runs it to its f
 eng-&gt;time().source([&amp;] { return now; }, {}, {});
 jai::script_run run = eng-&gt;start(R&quot;(
     for (int wave = 1; wave &lt;= 3; ++wave) {
-        print(&quot;wave {} at {}&quot;, wave, time::now());
+        print(&quot;wave {} at {}&quot;, wave, time::engine_elapsed());
         sleep(2.0);
     }
     &quot;cleared&quot;;
@@ -493,12 +556,12 @@ off the slow cores.</p>
 asks the system never to throttle it to save power (EcoQoS on Windows, user-initiated QoS on Apple platforms).</p>
 <h2 id="http-transport">The HTTP transport<a class="hlink" href="#http-transport" aria-label="link">&#8203;</a></h2>
 <p>The <a href="../guide/17-web.html#spider"><code>spider::</code> client</a> (<code>spider::catch</code>,
-<code>sling</code>, <code>get</code>, <code>post</code>, <code>spider::Response</code>) is opt-in and sends nothing by
+<code>sling</code>, <code>get</code>, <code>post</code>, <code>spider::response</code>) is opt-in and sends nothing by
 itself: the host supplies the HTTP stack. Three calls make a working client:</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/stdlib/spider.hpp&gt;
 #include &lt;jaiscript/net/http_socket_transport.hpp&gt;   // or your own jai::http_transport
 
-jai::stdlib::register_spider(*eng);                  // the functions and spider::Response
+jai::stdlib::register_spider(*eng);                  // the functions and spider::response
 eng-&gt;http_transport(std::make_shared&lt;jai::net::http_socket_transport&gt;());
 eng-&gt;enable(jai::permissions::network);                           // off by default: the host grants it</code></pre></div>
 <p>Without a transport a call raises <code>spider::catch: no HTTP transport installed: the host provides one with
@@ -526,7 +589,7 @@ environment makes them use the socket transport on Windows too (plain HTTP only 
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

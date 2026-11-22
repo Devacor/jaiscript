@@ -309,7 +309,7 @@ function fit_screen() -> void {
 
 // the colour depth and glyphs, and a view sized to the console
 function setup_screen() -> void {
-	term_setup(HOST_TRUECOLOR, HOST_ASCII);
+	term_setup(host_truecolor, host_ascii);
 	VPAL_KEYS = {};
 	VPAL_FG = [];
 	VPAL_BG = [];
@@ -317,7 +317,7 @@ function setup_screen() -> void {
 	VPAL_MEAN = {};
 	view_cache_invalidate();
 	CHROME_FLOOR = -1;
-	if (SCREEN_COLS == 0 && HOST_INTERACTIVE) {
+	if (SCREEN_COLS == 0 && host_interactive) {
 		SCREEN_COLS = term_cols();
 		SCREEN_ROWS = term_rows();
 	}
@@ -326,7 +326,7 @@ function setup_screen() -> void {
 
 // a console resized mid-run re-fits the view
 function follow_console_size() -> void {
-	if (!HOST_INTERACTIVE) { return; }
+	if (!host_interactive) { return; }
 	int cols = term_cols();
 	int rows = term_rows();
 	if (cols == SCREEN_COLS && rows == SCREEN_ROWS) { return; }
@@ -369,12 +369,12 @@ function render_game() -> void {
 	OVERLAY_ON = false;
 }
 
-// Interactive play animates; so does a headless run that asks for it (HOST_ANIM), which builds
+// Interactive play animates; so does a headless run that asks for it (host_anim), which builds
 // every in-between frame (a dump keeps them) and skips the pauses.
-function animating() -> bool { return !G.show_map && (HOST_ANIM || (!G.smoke && !HOST_SCRIPTED)); }
+function animating() -> bool { return !G.show_map && (host_anim || (!G.smoke && !host_scripted)); }
 
 function anim_pause(float seconds) -> void {
-	if (!HOST_ANIM) { sleep(seconds); }
+	if (!host_anim) { sleep(seconds); }
 }
 
 // a 90-degree snap turn swept through 30 and 60 degrees, so it reads as motion

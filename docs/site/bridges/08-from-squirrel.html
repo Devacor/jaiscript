@@ -150,7 +150,7 @@ sq_pop(vm, 1);</code></pre></div>
 auto eng = jai::engine::make();
 jai::stdlib::register_all(eng);
 
-jai::dynamic_binder&lt;gloom_rng&gt;(*eng, "Rng")
+jai::dynamic_binder&lt;gloom_rng&gt;(*eng, "seeded_rng")
     .constructor&lt;jai::script_int&gt;()
     .method("roll", &amp;gloom_rng::roll);
 
@@ -227,7 +227,7 @@ print(p.x, " ", q.sum(), " / ", h.x, " / ", a[0], " ", b[0]);</code></pre></div>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

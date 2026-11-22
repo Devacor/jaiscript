@@ -1,21 +1,32 @@
 #include "../../include/jaiscript/detail/parser.hpp"
 #include "../../include/jaiscript/core/engine.hpp"
+#include "../../include/jaiscript/detail/load_collector.hpp"
 #include "../../include/jaiscript/core/script_namespace.hpp"
 #include "../../include/jaiscript/detail/integer_ops.hpp"  // checked constant folding
 #include "../../include/jaiscript/detail/scalar_ops.hpp"  // an enumerator initializer's arithmetic
 #include "../../include/jaiscript/detail/transient_read.hpp"
 #include "../../include/jaiscript/detail/lexer.hpp"  // a spliced include is lexed here
 #include "../../include/jaiscript/detail/map_entry_binding.hpp"
+#include "../../include/jaiscript/detail/operator_ids.hpp"
 #include "../../include/jaiscript/detail/expr_children.hpp"
 #include "../../include/jaiscript/detail/program_slots.hpp"
 #include "../../include/jaiscript/detail/template_library.hpp"
+#include "../../include/jaiscript/detail/less_than.hpp"
+#include "../../include/jaiscript/detail/type_checker.hpp"
+#include "../../include/jaiscript/detail/method_value.hpp"
 #include <algorithm>
-#include <fstream>
 #include <iterator>
+#include <map>
 #include <sstream>
 #include <optional>
 
 namespace jai {
+
+namespace {
+    constexpr uint32_t k_paren_unknown = 0xFFFFFFFFu;
+    constexpr uint32_t k_paren_unclosed = 0xFFFFFFFEu;
+}
+
 
 namespace {
 
@@ -89,6 +100,30 @@ namespace {
         void escape_arg(const expression* arg) {
             if (arg && arg->get_type() == node_type::identifier_expr) {
                 escape(static_cast<const identifier_expr*>(arg)->symbol_id);
+            }
+        }
+        // A returned chain (local[0], local.h.x, either arm of a conditional) keeps alive the local it starts from: the local
+        // boxes, and the reference the chain mints holds its cell
+        void escape_returned_chain(const expression* e) {
+            while (e) {
+                switch (e->get_type()) {
+                    case node_type::member_expr: e = static_cast<const member_expr*>(e)->object.get(); break;
+                    case node_type::binary_expr: {
+                        const auto* b = static_cast<const binary_expr*>(e);
+                        if (b->op.type != token_type::left_bracket) { return; }
+                        e = b->left.get();
+                        break;
+                    }
+                    case node_type::cast_expr: e = static_cast<const cast_expr*>(e)->operand.get(); break;
+                    case node_type::ternary_expr: {
+                        const auto* t = static_cast<const ternary_expr*>(e);
+                        escape_returned_chain(t->then_expression.get());
+                        e = t->else_expression.get();
+                        break;
+                    }
+                    case node_type::identifier_expr: escape_arg(e); return;
+                    default: return;
+                }
             }
         }
 
@@ -325,6 +360,7 @@ namespace {
             if (inits) {
                 for (const auto& ci : *inits) {
                     walk_args(ci.arguments);
+                    if (ci.value) { walk_expr(ci.value.get()); }
                 }
             }
             walk_stmt(body);
@@ -535,7 +571,7 @@ namespace {
                         // Ref-return producer: the operand binds as a reference; a
                         // bare-identifier operand escapes (its decl boxes from the start)
                         r->binds_reference = true;
-                        escape_arg(r->value.get());
+                        escape_returned_chain(r->value.get());
                     }
                     walk_expr(r->value.get());
                     break;
@@ -718,7 +754,7 @@ bool detail::run_ast_marking_passes(const std::vector<declaration_ptr>& declarat
 }
 
 parser::parser(const std::vector<token>& tokens, string_symbolizer* symbolizer, engine* eng, const std::unordered_set<std::string>& registeredTemplateTypes, const std::string& filename)
-    : stream_(&tokens), filename_(filename), current_(0), registered_template_types_(registeredTemplateTypes), symbolizer_(symbolizer), engine_(eng) {
+    : tokens_(&tokens), stream_(&tokens), filename_(filename), registered_template_types_(registeredTemplateTypes), symbolizer_(symbolizer), engine_(eng) {
     if (!symbolizer_) {
         throw std::invalid_argument("parser requires a valid string_symbolizer");
     }
@@ -758,6 +794,11 @@ bool parser::apply_using_declarations(const std::vector<token>& in, std::vector<
                 std::vector<token> target(in.begin() + static_cast<std::ptrdiff_t>(start), in.begin() + static_cast<std::ptrdiff_t>(j));
                 const std::string_view last = target.back().lexeme;
                 const size_t cut = last.rfind("::");
+                if (target.size() == 1 && cut == std::string_view::npos && j < n && in[j].type == token_type::equal) {
+                    report_foreign(detail::foreign_word::using_alias, target.back());
+                    ok = false;
+                    break;
+                }
                 if (target.size() == 1 && cut == std::string_view::npos) {
                     report_error("'using" + std::string(" ") + std::string(last) + "' names no namespace: a using declaration takes a qualified name (using ns::name;)", in[start]);
                     ok = false;
@@ -805,7 +846,12 @@ bool parser::apply_using_declarations(const std::vector<token>& in, std::vector<
 namespace {
     // The block a token sits in: a namespace's (its own path and the index of the namespace around it), a class body's (its bare
     // name) or any other. A qualified name is built only when a lookup needs it, so nesting costs no more than its depth.
-    struct name_scope { enum kind_t { other, space, klass } kind; std::string name; size_t outer = SIZE_MAX; };
+    struct name_scope {
+        enum kind_t { other, space, klass, enumeration } kind;
+        std::string name;
+        size_t outer = SIZE_MAX;
+        std::vector<std::string_view> local_enums;   // the enums a function or a block declared so far: its own, whatever the namespace declares
+    };
 
     struct name_scope_walk {
         std::vector<name_scope> scopes;
@@ -814,6 +860,12 @@ namespace {
         size_t innermost_namespace() const {
             for (size_t k = scopes.size(); k-- > 0;) { if (scopes[k].kind == name_scope::space) { return k; } }
             return SIZE_MAX;
+        }
+        bool local_enum(std::string_view name) const {
+            for (size_t k = scopes.size(); k-- > 0 && scopes[k].kind != name_scope::space;) {
+                if (std::find(scopes[k].local_enums.begin(), scopes[k].local_enums.end(), name) != scopes[k].local_enums.end()) { return true; }
+            }
+            return false;
         }
         std::string qualified(size_t k) const {
             std::vector<const std::string*> parts;
@@ -848,6 +900,9 @@ namespace {
                 case token_type::class_keyword:
                     if (i + 1 < in.size() && in[i + 1].type == token_type::identifier) { pending = {name_scope::klass, std::string(in[i + 1].lexeme)}; }
                     break;
+                case token_type::enum_keyword:
+                    if (i + 1 < in.size() && in[i + 1].type == token_type::identifier) { pending = {name_scope::enumeration, std::string(in[i + 1].lexeme)}; }
+                    break;
                 case token_type::semicolon:
                     pending = {name_scope::other, {}};
                     break;
@@ -867,46 +922,92 @@ namespace {
 
 bool parser::qualify_namespace_classes(const std::vector<token>& in, std::vector<token>& out) {
     if (std::none_of(in.begin(), in.end(), [](const token& t) { return t.type == token_type::namespace_keyword; })) return false;
-    std::unordered_map<std::string, std::unordered_set<std::string_view>> declared;   // namespace -> the classes this stream declares in it
+    std::unordered_map<std::string, std::unordered_set<std::string_view>> declared;   // namespace -> the classes and enums this stream declares in it
     std::unordered_set<std::string_view> declared_anywhere;
+    // the namespaces this stream opens, as a tree of their segments: no path is built to record one, so nesting costs its depth
+    std::vector<size_t> space_parent{SIZE_MAX};
+    std::map<std::pair<size_t, uint64_t>, size_t> space_children;
+    std::unordered_set<uint64_t> nested_space_names;
+    std::vector<size_t> scope_spaces;   // the tree node each open scope stands in
+    auto follow_scopes = [&](const name_scope_walk& walk, token_type kind) {
+        if (kind == token_type::right_brace) {
+            if (scope_spaces.size() > walk.scopes.size()) { scope_spaces.pop_back(); }
+            return;
+        }
+        if (kind != token_type::left_brace || walk.scopes.empty()) { return; }
+        const name_scope& opened = walk.scopes.back();
+        if (opened.kind != name_scope::space) {
+            scope_spaces.push_back(scope_spaces.empty() ? 0 : scope_spaces.back());
+            return;
+        }
+        size_t node = opened.outer == SIZE_MAX ? 0 : scope_spaces[opened.outer];
+        for (size_t start = 0;;) {
+            const size_t cut = opened.name.find("::", start);
+            const uint64_t segment = symbolizer_->intern(std::string_view(opened.name).substr(start, cut == std::string::npos ? std::string::npos : cut - start));
+            if (node != 0) { nested_space_names.insert(segment); }
+            const auto [child, fresh] = space_children.try_emplace({node, segment}, space_parent.size());
+            if (fresh) { space_parent.push_back(node); }
+            node = child->second;
+            if (cut == std::string::npos) { break; }
+            start = cut + 2;
+        }
+        scope_spaces.push_back(node);
+    };
     {
         name_scope_walk walk;
         for (size_t i = 0; i < in.size(); ++i) {
-            if (in[i].type == token_type::class_keyword && i + 1 < in.size() && in[i + 1].type == token_type::identifier &&
+            if ((in[i].type == token_type::class_keyword || in[i].type == token_type::enum_keyword) && i + 1 < in.size() && in[i + 1].type == token_type::identifier &&
                 !walk.scopes.empty() && walk.scopes.back().kind == name_scope::space) {
                 declared[walk.qualified(walk.scopes.size() - 1)].insert(in[i + 1].lexeme);
                 declared_anywhere.insert(in[i + 1].lexeme);
             }
             walk.step(in, i);
+            follow_scopes(walk, in[i].type);
         }
     }
-    auto& spaces = detail::engine_access::script_namespaces(*engine_);
+    scope_spaces.clear();
+    // beyond this stream: a class or an enum a namespace holds from an earlier run, or one another unit of the program declares in it
     auto names_class = [&](const std::string& space, std::string_view name) {
         if (auto d = declared.find(space); d != declared.end() && d->second.count(name)) { return true; }
-        namespace_queries_.insert(space + "::" + std::string(name));
-        const auto space_id = symbolizer_->find(space);
-        const auto name_id = space_id ? symbolizer_->find(name) : std::nullopt;
-        if (!name_id) { return false; }
-        auto ns = spaces.find(*space_id);
-        return ns != spaces.end() && ns->second && ns->second->classes.count(*name_id) != 0;
+        return detail::engine_access::namespace_class_known(*engine_, *namespace_queries_.insert(space + "::" + std::string(name)).first);
     };
-    // a name no namespace declares as a class needs no qualified name built
+    // a name no namespace declares as a class or an enum needs no qualified name built
     auto some_namespace_class = [&](std::string_view name) {
         if (declared_anywhere.count(name)) { return true; }
-        namespace_queries_.emplace(name);
-        const auto name_id = symbolizer_->find(name);
-        if (!name_id) { return false; }
-        return std::any_of(spaces.begin(), spaces.end(), [&](const auto& ns) { return ns.second && ns.second->classes.count(*name_id) != 0; });
+        return detail::engine_access::namespace_class_known(*engine_, *namespace_queries_.emplace(name).first);
     };
-    // the innermost namespace that declares the name, its enclosing ones after it (C++ lookup); empty when none does
-    auto qualifier_for = [&](const name_scope_walk& walk, std::string_view name) -> std::string {
+    // "space::name" opens a namespace (the question's trailing :: tells it from a class of that name)
+    auto names_namespace = [&](const std::string& space, size_t node, std::string_view name) {
+        const auto id = symbolizer_->find(name);
+        if (id && space_children.count({node, *id})) { return true; }
+        return detail::engine_access::namespace_class_known(*engine_, *namespace_queries_.insert(space + "::" + std::string(name) + "::").first);
+    };
+    // a name no nested namespace ends in needs no qualified name built
+    std::unordered_map<std::string_view, bool> nested_name_answers;
+    auto some_nested_namespace = [&](std::string_view name) {
+        const auto [answer, fresh] = nested_name_answers.try_emplace(name, false);
+        if (fresh) {
+            const auto id = symbolizer_->find(name);
+            answer->second = (id && nested_space_names.count(*id) != 0) ||
+                             detail::engine_access::namespace_class_known(*engine_, *namespace_queries_.insert(std::string(name) + "::").first);
+        }
+        return answer->second;
+    };
+    // the innermost namespace that declares the name, its enclosing ones after it (C++ lookup); empty when none does. The first
+    // segment of a qualified name (path_head) also finds a namespace nested there: inner::k inside outer is outer::inner::k
+    auto qualifier_for = [&](const name_scope_walk& walk, std::string_view name, bool path_head) -> std::string {
         const size_t innermost = walk.innermost_namespace();
-        if (innermost == SIZE_MAX || !some_namespace_class(name)) { return {}; }
+        if (innermost == SIZE_MAX) { return {}; }
+        const bool may_be_class = some_namespace_class(name);
+        const bool may_be_namespace = path_head && some_nested_namespace(name);
+        if (!may_be_class && !may_be_namespace) { return {}; }
+        size_t node = scope_spaces[innermost];
         for (std::string space = walk.qualified(innermost);;) {   // every enclosing namespace's name is a prefix of the innermost's
-            if (names_class(space, name)) { return space; }
+            if ((may_be_class && names_class(space, name)) || (may_be_namespace && names_namespace(space, node, name))) { return space; }
             const size_t cut = space.rfind("::");
             if (cut == std::string::npos) { break; }
             space.resize(cut);
+            node = space_parent[node];
         }
         return {};
     };
@@ -914,15 +1015,22 @@ bool parser::qualify_namespace_classes(const std::vector<token>& in, std::vector
     out.reserve(in.size());
     name_scope_walk walk;
     bool any = false;
+    bool in_extern = false;   // an extern's own name is already relative to its namespace (namespace game { extern ai::depth; })
     for (size_t i = 0; i < in.size(); ++i) {
         const token& t = in[i];
+        if (t.type == token_type::extern_keyword) { in_extern = true; }
+        if (t.type == token_type::semicolon) { in_extern = false; }
         if (t.type == token_type::identifier && !walk.scopes.empty()) {
             const token_type before = out.empty() ? token_type::eof : out.back().type;
+            if (before == token_type::enum_keyword && walk.scopes.back().kind != name_scope::space) { walk.scopes.back().local_enums.push_back(t.lexeme); }
             const token_type after = i + 1 < in.size() ? in[i + 1].type : token_type::eof;
             const bool return_type = before == token_type::arrow && (after == token_type::left_brace || after == token_type::ampersand || after == token_type::semicolon);
             const bool member_name = before == token_type::dot || before == token_type::question_dot || before == token_type::colon_colon ||
                                      (before == token_type::arrow && !return_type);
-            const bool declared_name = before == token_type::class_keyword || before == token_type::tilde || before == token_type::namespace_keyword;
+            // an enum's values are its own names, whatever the namespace declares under them
+            const bool enum_value_name = walk.scopes.back().kind == name_scope::enumeration && (before == token_type::left_brace || before == token_type::comma);
+            const bool declared_name = before == token_type::class_keyword || before == token_type::tilde || before == token_type::namespace_keyword ||
+                                       before == token_type::enum_keyword || enum_value_name;
             // ClassName( at a member's start in its own body is the constructor, named by the class's own spelling
             const bool after_visibility = before == token_type::colon && out.size() >= 2 &&
                 (out[out.size() - 2].type == token_type::public_keyword || out[out.size() - 2].type == token_type::private_keyword ||
@@ -930,8 +1038,8 @@ bool parser::qualify_namespace_classes(const std::vector<token>& in, std::vector
             const bool constructor = walk.scopes.back().kind == name_scope::klass && walk.scopes.back().name == t.lexeme &&
                 after == token_type::left_paren && (before == token_type::left_brace || before == token_type::semicolon ||
                                                     before == token_type::right_brace || after_visibility);
-            if (!member_name && !declared_name && !constructor) {
-                if (const std::string space = qualifier_for(walk, t.lexeme); !space.empty()) {
+            if (!member_name && !declared_name && !constructor && !walk.local_enum(t.lexeme)) {
+                if (const std::string space = qualifier_for(walk, t.lexeme, after == token_type::colon_colon && !in_extern); !space.empty()) {
                     for (size_t start = 0;;) {
                         const size_t cut = space.find("::", start);
                         const std::string_view segment = std::string_view(space).substr(start, cut == std::string::npos ? std::string::npos : cut - start);
@@ -949,6 +1057,7 @@ bool parser::qualify_namespace_classes(const std::vector<token>& in, std::vector
         }
         out.push_back(t);
         walk.step(in, i);
+        follow_scopes(walk, t.type);
     }
     return any;
 }
@@ -969,7 +1078,7 @@ bool parser::reject_using_name(const token& t, const char* what) {
                      " by a using declaration; a " + std::string(what) + " cannot be declared with that name", t);
         return true;
     }
-    if (t.lexeme.find("::") != std::string_view::npos) {
+    if (t.lexeme.find('<') == std::string_view::npos && t.lexeme.find("::") != std::string_view::npos) {   // an instance's name (Stack<shop::Item>) is no source spelling
         report_error("'" + std::string(t.lexeme) + "' is a qualified name; a " + std::string(what) + " cannot be declared with it", t);
         return true;
     }
@@ -996,8 +1105,85 @@ void parser::check_reload_hook(const jai::declaration& d, bool& seen) {
     }
 }
 
+static bool names_literal_unit(const std::vector<declaration_ptr>& a_declarations) {
+    for (const auto& d : a_declarations) {
+        if (!d) { continue; }
+        if (d->get_type() == node_type::import_decl && !static_cast<const import_decl&>(*d).path_expr) { return true; }
+        if (d->get_type() == node_type::include_decl && !static_cast<const include_decl&>(*d).path_expr) { return true; }
+    }
+    std::vector<std::string> nested;
+    detail::collect_unit_imports(a_declarations, nested);
+    return !nested.empty();
+}
+
+void parser::adopt_pass(parser& a_pass) {
+    errors_ = std::move(a_pass.errors_);
+    recovered_ = std::move(a_pass.recovered_);
+    spliced_files_ = std::move(a_pass.spliced_files_);
+    unsettled_file_ = std::move(a_pass.unsettled_file_);
+    namespace_queries_ = std::move(a_pass.namespace_queries_);
+    foreign_stop_ = a_pass.foreign_stop_;
+    less_sites_ = std::move(a_pass.less_sites_);
+    less_site_index_ = std::move(a_pass.less_site_index_);
+    less_queries_ = std::move(a_pass.less_queries_);
+}
+
+// a pass records each '<' site with the reading it took; the lookup answers every site over the
+// pass's own declarations, and a reading that was not the answer's is fixed for a pass that parses the tokens again
 checked_result<std::vector<declaration_ptr>> parser::parse() {
+    using parsed = checked_result<std::vector<declaration_ptr>>;
+    std::optional<parsed> result;
+    result.emplace(parse_pass());
+    if (less_sites_.empty()) { return std::move(*result); }
+    std::optional<parsed> first_failure;
+    std::vector<parse_diagnostic> first_errors;
+    std::vector<declaration_ptr> first_recovered;
+    bool forced = false;   // a provisional parse failed: every site nothing declares compares
+    for (int pass = 0; pass < 4; ++pass) {
+        const bool parsed_whole = static_cast<bool>(*result);
+        const std::vector<declaration_ptr>& unit = parsed_whole ? result->value() : recovered_;
+        less_settled_ = forced || !less_may_be_provisional_ || (parsed_whole && !names_literal_unit(unit));
+        less_answers_ = detail::engine_access::less_than_answers(*engine_, unit, less_queries_);
+        const auto readings = [&](std::map<less_place, bool>& a_fixed) {
+            bool moved = false;
+            for (const less_site& site : less_sites_) {
+                const bool want = detail::less_opens(less_answers_[site.query], less_settled_);
+                a_fixed[site.at] = want;
+                moved = moved || want != site.opens;
+            }
+            return moved;
+        };
+        std::map<less_place, bool> fixed;
+        bool moved = readings(fixed);
+        if (!moved && !parsed_whole && !less_settled_) {
+            forced = true;
+            less_settled_ = true;
+            moved = readings(fixed);
+        }
+        if (!moved) { break; }
+        if (!parsed_whole && !first_failure) {
+            first_errors = errors_;
+            first_recovered = recovered_;
+            first_failure.emplace(std::move(*result));
+        }
+        parser again(*tokens_, symbolizer_, engine_, registered_template_types_, filename_);
+        again.source_ = source_;
+        again.less_fixed_ = std::move(fixed);
+        again.inherited_check_mode_ = inherited_check_mode_;
+        result.emplace(again.parse_pass());
+        adopt_pass(again);
+    }
+    if (!*result && forced && first_failure) {
+        errors_ = std::move(first_errors);
+        recovered_ = std::move(first_recovered);
+        return std::move(*first_failure);
+    }
+    return std::move(*result);
+}
+
+checked_result<std::vector<declaration_ptr>> parser::parse_pass() {
     stack_.arm();
+    less_in_pass_ = true;
     paren_close_.clear();
     std::vector<declaration_ptr> declarations;
     bool reload_hook_seen = false;
@@ -1017,8 +1203,14 @@ checked_result<std::vector<declaration_ptr>> parser::parse() {
                 synchronize();
             } else {
                 auto decl = std::move(decl_result.value());
+                flush_generic_uses(declarations);
                 if (decl) {
                     check_reload_hook(*decl, reload_hook_seen);
+                    if (decl->get_type() == node_type::variable_decl) {
+                        unit_variables_.insert(static_cast<const variable_decl&>(*decl).name_id);
+                    } else if (decl->get_type() == node_type::destructuring_decl) {
+                        for (const auto& name : static_cast<const destructuring_decl&>(*decl).names) { unit_variables_.insert(name.second); }
+                    }
                     declarations.push_back(std::move(decl));
                 }
             }
@@ -1030,6 +1222,17 @@ checked_result<std::vector<declaration_ptr>> parser::parse() {
     if (!errors_.empty()) {
         recovered_ = std::move(declarations);
         return failed_parse();
+    }
+
+    // a generic declared under the file's own [[warn_mode]] / [[strict_mode]] checks its instances under it, wherever they are made
+    uint8_t file_mode = inherited_check_mode_;
+    for (const auto& d : declarations) {
+        if (!d || d->get_type() == node_type::generic_instance_decl) { continue; }
+        if (d->check_mode_attr != check_mode_attr_none) { file_mode = d->check_mode_attr; }
+        break;
+    }
+    if (file_mode != check_mode_attr_none) {
+        for (detail::generic_definition* g : file_generics_) { if (g->check_mode == check_mode_attr_none) { g->check_mode = file_mode; } }
     }
 
     // Escape-mark + transient-read passes (shared with jaibite loads, which must
@@ -1084,6 +1287,7 @@ void parser::report_error(const std::string& message, const token& token) {
 }
 
 void parser::report_error_at(const std::string& message, const source_location& at) {
+    if (errors_.size() >= foreign_stop_) { return; }   // what follows a foreign construct is the construct's own text, not more errors
     errors_.push_back({at, message});
 }
 
@@ -1091,6 +1295,13 @@ std::vector<std::string> parser::get_errors() const {
     std::vector<std::string> result;
     result.reserve(errors_.size());
     for (const auto& e : errors_) { result.push_back(e.at.to_string() + ": " + e.message); }
+    return result;
+}
+
+std::vector<parser::issue> parser::issues() const {
+    std::vector<issue> result;
+    result.reserve(errors_.size());
+    for (const auto& e : errors_) { result.push_back({e.at, e.message}); }
     return result;
 }
 
@@ -1240,9 +1451,12 @@ void parser::synchronize_class_member(size_t class_open_index) {
         if ((*stream_)[i].type == token_type::left_brace) { ++depth; }
         else if ((*stream_)[i].type == token_type::right_brace) { --depth; }
     }
+    if (depth <= 0) {   // the member read past the class's own '}': no member boundary is left, and a recovery reads on
+        synchronize();
+        return;
+    }
     const size_t entry = current_;
     while (!is_at_end()) {
-        if (depth <= 0) { return; }
         if (depth == 1) {
             if (check(token_type::right_brace)) { return; }
             if (current_ > entry &&
@@ -1374,6 +1588,10 @@ JAI_NOINLINE checked_result<expression_ptr> parser::primary_rest() {
     if (arrow_function_ahead()) {
         return arrow_function_expression();
     }
+    if (std_qualifier_ahead()) {
+        stop_at_foreign(detail::foreign_word::std_namespace, peek());
+        return make_error_code(parse_error_code::syntax_error);
+    }
     if (check(token_type::identifier) && peek().lexeme == "const_cast" && current_ + 1 < stream_->size() && (*stream_)[current_ + 1].type == token_type::less) {
         report_foreign(detail::foreign_word::const_cast_call, peek());
         return make_error_code(parse_error_code::syntax_error);
@@ -1482,7 +1700,7 @@ JAI_NOINLINE checked_result<expression_ptr> parser::primary_rest() {
 
     if (template_call_ahead()) {
         if (peek().lexeme == "template") { return template_call(); }
-        return scoped_template_call(peek().lexeme == "scoped_template_text");
+        return untrusted_template_call(peek().lexeme == "untrusted_template_text");
     }
 
     // import(...) in expression position: true when a module (re)ran (`if (import(MODULES)) { ... }`)
@@ -1500,6 +1718,14 @@ JAI_NOINLINE checked_result<expression_ptr> parser::primary_rest() {
     const bool make_shared_spelling = check(token_type::identifier) && peek().lexeme == "make_shared" &&
         current_ + 1 < stream_->size() && (*stream_)[current_ + 1].type == token_type::less;
     if (make_shared_spelling || match(token_type::new_keyword)) { return new_expression(make_shared_spelling); }
+    // dynamic_cast<T>(e) and dynamic_cast<T&>(e); the word alone stays an ordinary name, as C++'s dynamic_pointer_cast does
+    if (check(token_type::identifier) && current_ + 1 < stream_->size() && (*stream_)[current_ + 1].type == token_type::less) {
+        if (peek().lexeme == "dynamic_cast") { return dynamic_cast_expression(); }
+        if (peek().lexeme == "dynamic_pointer_cast") {
+            report_foreign(detail::foreign_word::dynamic_pointer_cast_call, peek());
+            return make_error_code(parse_error_code::syntax_error);
+        }
+    }
 
     // A math type (one fused token, lexer.cpp) in expression position is the static member math::K the math::
     // intrinsics resolve, so math::vec3(1, 2, 3) calls the constructor intrinsic
@@ -1527,7 +1753,7 @@ JAI_NOINLINE checked_result<expression_ptr> parser::primary_rest() {
 
     // Check if a keyword is being used as a namespace identifier (e.g., string::length)
     // This must come before identifier handling
-    if (peek().type != token_type::identifier && peek().type != token_type::eof) {
+    if (is_keyword_word(peek().type)) {
         // Check if this token is followed by ::
         size_t lookAhead = current_ + 1;
         if (lookAhead < stream_->size() && (*stream_)[lookAhead].type == token_type::colon_colon) {
@@ -1570,11 +1796,11 @@ JAI_NOINLINE checked_result<expression_ptr> parser::primary_rest() {
 bool parser::template_call_ahead() const {
     if (!check(token_type::identifier) || current_ + 1 >= stream_->size() || (*stream_)[current_ + 1].type != token_type::left_paren) { return false; }
     const std::string_view word = peek().lexeme;
-    return word == "template" || word == "scoped_template" || word == "scoped_template_text";
+    return word == "template" || word == "untrusted_template" || word == "untrusted_template_text";
 }
 
 // A name the innermost barriers do not admit: neither declared in the template's own scopes nor passed through every barrier
-// between the use and its declaration. A scoped barrier admits its own names and ends the walk.
+// between the use and its declaration. An untrusted barrier admits its own names and ends the walk.
 bool parser::template_hides(uint64_t symbol_id) const {
     size_t top = function_scope_stack_.size();
     for (size_t b = template_barriers_.size(); b-- > 0;) {
@@ -1583,7 +1809,7 @@ bool parser::template_hides(uint64_t symbol_id) const {
             if (function_scope_stack_[i].symbol_to_slot.count(symbol_id)) { return false; }
         }
         if (std::find(barrier.names.begin(), barrier.names.end(), symbol_id) == barrier.names.end()) { return true; }
-        if (barrier.scoped) { return false; }
+        if (barrier.untrusted) { return false; }
         top = barrier.scope_count;
     }
     return false;
@@ -1593,7 +1819,7 @@ bool parser::template_hides(uint64_t symbol_id) const {
 // trusted template's raw is its builtin.
 void parser::resolve_name(identifier_expr& id) {
     if (!template_barriers_.empty() && template_hides(id.symbol_id)) {
-        if (id.name == "raw" && !template_barriers_.back().scoped) {
+        if (id.name == "raw" && !template_barriers_.back().untrusted) {
             auto [raw_id, raw_view] = symbolizer_->intern_with_view(detail::template_library::k_raw);
             id.name = raw_view;
             id.symbol_id = raw_id;
@@ -1614,6 +1840,7 @@ expression_ptr parser::template_builtin(std::string_view name, const source_loca
 
 // A template's text parsed here, under `barrier`: its tokens replace the stream until the body ends
 checked_result<expression_ptr> parser::template_text_body(const std::string& content, const std::string& file, template_barrier barrier) {
+    detail::load_phase_scope reporting(engine_ ? detail::engine_access::load_report_collector(*engine_) : nullptr, file, load_phase::template_compile);
     lexer lex(content, symbolizer_, file);
     const std::vector<token> tokens = lex.tokenize_template(symbolizer_->intern(detail::template_library::k_joiner), symbolizer_->intern(detail::template_library::k_splice));
     const std::vector<token>* saved_stream = stream_;
@@ -1710,13 +1937,11 @@ JAI_NOINLINE checked_result<expression_ptr> parser::template_call() {
     if (std::find(template_chain_.begin(), template_chain_.end(), resolved.value()) != template_chain_.end() || template_chain_.size() >= 32) {
         return dynamic(literal_text(resolved.value()));
     }
-    std::ifstream file(resolved.value(), std::ios::binary);
-    if (!file) {
-        report_error("template file '" + spelled_path + "' cannot be read", name);
+    std::string content;
+    if (!load_spliced(resolved.value(), content)) {
+        report_error(unsettled_file_ == resolved.value() ? detail::unsettled_source_text(resolved.value()) : "template file '" + spelled_path + "' cannot be read", name);
         return reported();
     }
-    const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    spliced_files_.push_back(resolved.value());
     template_chain_.push_back(resolved.value());
     auto body = template_text_body(content, resolved.value(), std::move(barrier));
     template_chain_.pop_back();
@@ -1724,13 +1949,13 @@ JAI_NOINLINE checked_result<expression_ptr> parser::template_call() {
     return body;
 }
 
-// scoped_template(path, map) / scoped_template_text(text, map): a literal source is checked here against the scoped rules, and
-// the call renders its text (kept in the call, so the program runs the version it loaded) through template#scoped
-JAI_NOINLINE checked_result<expression_ptr> parser::scoped_template_call(bool text_form) {
+// untrusted_template(path, map) / untrusted_template_text(text, map): a literal source is checked here against the untrusted rules, and
+// the call renders its text (kept in the call, so the program runs the version it loaded) through template#untrusted
+JAI_NOINLINE checked_result<expression_ptr> parser::untrusted_template_call(bool text_form) {
     const token name = advance();
     advance();   // '('
     const source_location at = name.location;
-    const std::string spelling = text_form ? "scoped_template_text(text, map)" : "scoped_template(path, map)";
+    const std::string spelling = text_form ? "untrusted_template_text(text, map)" : "untrusted_template(path, map)";
     std::vector<expression_ptr> arguments;
     if (!check(token_type::right_paren)) {
         do {
@@ -1756,60 +1981,57 @@ JAI_NOINLINE checked_result<expression_ptr> parser::scoped_template_call(bool te
         call.push_back(std::move(arguments[0]));
         call.push_back(literal_text(text_form ? std::string(detail::template_library::k_text_label) : at.filename));
         call.push_back(std::move(arguments[1]));
-        return template_builtin(text_form ? detail::template_library::k_scoped : detail::template_library::k_scoped_file, at, std::move(call));
+        return template_builtin(text_form ? detail::template_library::k_untrusted : detail::template_library::k_untrusted_file, at, std::move(call));
     }
     const std::string source(static_cast<literal_expr*>(arguments[0].get())->value.unchecked_as_string());
     std::string content = source;
     std::string label(detail::template_library::k_text_label);
     if (!text_form) {
-        if (!engine_->is_enabled(permissions::scoped_template)) {   // the render raises the permission error, as include does
+        if (!engine_->is_enabled(permissions::untrusted_template)) {   // the render raises the permission error, as include does
             call.push_back(std::move(arguments[0]));
             call.push_back(literal_text(at.filename));
             call.push_back(std::move(arguments[1]));
-            return template_builtin(detail::template_library::k_scoped_file, at, std::move(call));
+            return template_builtin(detail::template_library::k_untrusted_file, at, std::move(call));
         }
-        const auto found = detail::template_library::resolve_scoped_file(*engine_, source, at.filename);
+        const auto found = detail::template_library::resolve_untrusted_file(*engine_, source, at.filename);
         if (!found.error.empty()) {
             report_error(found.error, name);
             return reported();
         }
         const std::string& resolved_path = found.resolved;
-        std::ifstream file(resolved_path, std::ios::binary);
-        if (!file) {
-            report_error("template file '" + source + "' cannot be read", name);
+        if (!load_spliced(resolved_path, content)) {
+            report_error(unsettled_file_ == resolved_path ? detail::unsettled_source_text(resolved_path) : "template file '" + source + "' cannot be read", name);
             return reported();
         }
-        content.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        spliced_files_.push_back(resolved_path);
         label = resolved_path;
     }
     template_barrier barrier;
     barrier.scope_count = function_scope_stack_.size();
     barrier.names.push_back(symbolizer_->intern("args"));
-    barrier.scoped = true;
+    barrier.untrusted = true;
     auto body = template_text_body(content, label, std::move(barrier));
     if (!body) { return reported(); }
     std::vector<detail::template_library::violation> violations;
-    detail::template_library::scoped_violations(*body.value(), *symbolizer_, violations);
+    detail::template_library::untrusted_violations(*body.value(), *symbolizer_, violations);
     for (const auto& v : violations) { report_error_at(v.message, v.at); }
     if (!violations.empty()) { return reported(); }
     call.push_back(literal_text(content));
     call.push_back(literal_text(label));
     call.push_back(std::move(arguments[1]));
-    return template_builtin(detail::template_library::k_scoped, at, std::move(call));
+    return template_builtin(detail::template_library::k_untrusted, at, std::move(call));
 }
 
-checked_result<expression_ptr> parser::parse_scoped_template_body() {
+checked_result<expression_ptr> parser::parse_untrusted_template_body() {
     template_barrier barrier;
     barrier.names.push_back(symbolizer_->intern("args"));
-    barrier.scoped = true;
+    barrier.untrusted = true;
     template_barriers_.push_back(std::move(barrier));
     auto body = expression();
     if (body && !is_at_end()) { report_error("unexpected text after the template body", peek()); }
     template_barriers_.pop_back();
     if (body && errors_.empty()) {
         std::vector<detail::template_library::violation> violations;
-        detail::template_library::scoped_violations(*body.value(), *symbolizer_, violations);
+        detail::template_library::untrusted_violations(*body.value(), *symbolizer_, violations);
         for (const auto& v : violations) { report_error_at(v.message, v.at); }
     }
     if (!body && errors_.empty()) { report_error(format_error(body, *symbolizer_), peek()); }
@@ -1854,6 +2076,7 @@ JAI_NOINLINE checked_result<expression_ptr> parser::identifier_expression() {
         current_--; // Back up to re-parse as type
         const size_t errors_before = errors_.size();
         const std::optional<token> pushed_before = pushed_back_token_;
+        const size_t uses_before = generic_uses_.size();
 
         auto type_result = parse_type();
         if (type_result && errors_.size() == errors_before) {
@@ -1873,6 +2096,7 @@ JAI_NOINLINE checked_result<expression_ptr> parser::identifier_expression() {
         current_ = savedPos + 1;
         errors_.resize(errors_before);
         pushed_back_token_ = pushed_before;
+        generic_uses_.resize(uses_before);
     }
 
     auto id_expr = std::make_shared<identifier_expr>(identToken.location, identToken.lexeme, get_symbol_id(identToken));
@@ -1891,6 +2115,22 @@ JAI_NOINLINE std::optional<checked_result<expression_ptr>> parser::type_construc
             current_ = savedPos;
             token typeToken = advance();
             std::string type_name(typeToken.lexeme);
+
+            // int(x), string(), bool{}: a primitive's own construction, as a declaration spells it (int n(x);): no argument is
+            // its zero, one is that value converted (cast<int>(x)). A generic's T(x) reads so when T is a primitive.
+            if ((check(token_type::left_paren) || check(token_type::left_brace)) &&
+                (typeToken.type == token_type::int_keyword || typeToken.type == token_type::float_keyword || typeToken.type == token_type::string_keyword ||
+                 typeToken.type == token_type::bool_keyword || typeToken.type == token_type::char_keyword)) {
+                const bool is_brace = check(token_type::left_brace);
+                advance();
+                JAISCRIPT_TRY_ASSIGN(auto arguments, construction_arguments(is_brace));
+                if (arguments.empty()) { return checked_result<expression_ptr>(default_initializer(type, typeToken.location)); }
+                if (arguments.size() == 1) {
+                    return checked_result<expression_ptr>(std::make_shared<cast_expr>(typeToken.location, type, false, std::move(arguments[0])));
+                }
+                report_error("a '" + type->canonical_name() + "' is initialized by one value, not " + std::to_string(arguments.size()), previous());
+                return checked_result<expression_ptr>(make_error_code(parse_error_code::syntax_error));
+            }
 
             // For template types, we need to parse the full type
             if (check(token_type::less)) {
@@ -1941,6 +2181,13 @@ JAI_NOINLINE checked_result<expression_ptr> parser::bracket_expression() {
                     if (t == token_type::right_bracket && i + 1 < stream_->size() && (*stream_)[i + 1].type == token_type::left_paren) {
                         current_ -= 1;
                         return lambda_expression();
+                    }
+                    if (t == token_type::right_bracket && i + 1 < stream_->size() && (*stream_)[i + 1].type == token_type::less) {
+                        const size_t close = type_parameters_end(i + 1);
+                        if (close != SIZE_MAX && close < stream_->size() && (*stream_)[close].type == token_type::left_paren) {
+                            report_error("a lambda takes no type parameters: give it auto parameters ([](auto x) { ... }), which take any type", (*stream_)[i + 1]);
+                            return make_error_code(parse_error_code::syntax_error);
+                        }
                     }
                     break;
                 }
@@ -2040,7 +2287,7 @@ JAI_NOINLINE checked_result<expression_ptr> parser::cast_expression() {
     const token& castToken = previous();
     JAISCRIPT_TRY(expect(token_type::less, "expected '<' after 'cast'"));
     if (check(token_type::auto_keyword) || check(token_type::var_keyword) ||
-        check(token_type::void_keyword) || check(token_type::function_keyword)) {
+        check(token_type::void_keyword) || (check(token_type::function_keyword) && !callable_type_ahead())) {
         report_error("cast needs a concrete type: cast<T>(e), cast<T&>(e) or cast<shared_ptr<T>>(e)", peek());
         return make_error_code(parse_error_code::syntax_error);
     }
@@ -2059,8 +2306,76 @@ JAI_NOINLINE checked_result<expression_ptr> parser::cast_expression() {
     return std::make_shared<cast_expr>(castToken.location, target, by_reference, std::move(operand));
 }
 
+// A cast whose result is read only for its truth: a handle form there is a test and makes no handle
+static void note_read_for_truth(const expression_ptr& e) {
+    if (e && e->get_type() == node_type::cast_expr) { static_cast<cast_expr*>(e.get())->truth_read = true; }
+}
+static bool is_null_literal(const expression_ptr& e) {
+    return e && e->get_type() == node_type::literal_expr && static_cast<const literal_expr*>(e.get())->value.is_null();
+}
+static void note_operands_read_for_truth(token_type op, const expression_ptr& left, const expression_ptr& right) {
+    if (op == token_type::ampersand_ampersand || op == token_type::pipe_pipe) {
+        note_read_for_truth(left);
+        note_read_for_truth(right);
+    } else if (op == token_type::equal_equal || op == token_type::bang_equal) {
+        if (is_null_literal(right)) { note_read_for_truth(left); }
+        if (is_null_literal(left)) { note_read_for_truth(right); }
+    }
+}
+
+// dynamic_cast<T>(e) for a class T is C++'s dynamic_cast<T*>: e's object as a shared_ptr<T> when it is a T and null when it is not
+// (a T already spelled shared_ptr<U> is that handle). dynamic_cast<T&>(e) is cast<T&>(e): the reference, or the cast's error
+JAI_NOINLINE checked_result<expression_ptr> parser::dynamic_cast_expression() {
+    const token word = advance();
+    const char* const forms = "dynamic_cast takes a class: dynamic_cast<T>(e) is e as a shared_ptr<T>, null when it is no T, and dynamic_cast<T&>(e) is the reference";
+    advance();   // '<'
+    if (!check(token_type::identifier) && !check(token_type::shared_ptr_keyword)) {
+        report_error(forms, peek());
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    JAISCRIPT_TRY_ASSIGN(type_info_ptr target, parse_type());
+    const bool by_reference = match(token_type::ampersand);
+    const bool handle = target && target->base_type == script_value_type::jai_shared_ptr_type;
+    const type_info* named = handle ? target->element_type().get() : target.get();
+    const bool class_named = named && named->base_type == script_value_type::jai_object_type && !named->type_name.empty();
+    if (!class_named || (handle && by_reference)) {
+        // shared_ptr<shared_ptr<T>>, as a generic's dynamic_cast<shared_ptr<T>> spells with a handle for T
+        const type_info* inner = named;
+        while (inner && inner->base_type == script_value_type::jai_shared_ptr_type) { inner = inner->element_type().get(); }
+        if (handle && !by_reference && inner != named && inner && inner->base_type == script_value_type::jai_object_type && !inner->type_name.empty()) {
+            report_error("dynamic_cast<" + target->canonical_name() + "> names a handle to a handle: dynamic_cast takes a class or one shared_ptr to it, dynamic_cast<" +
+                         inner->canonical_name() + ">(e)", word);
+        } else {
+            report_error(forms, word);
+        }
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    if (!handle && !by_reference) { target = shared_ptr_type_of(target); }
+    consume_greater_in_generic("expected '>' after dynamic_cast type");
+    JAISCRIPT_TRY(expect(token_type::left_paren, "expected '(' after dynamic_cast type"));
+    JAISCRIPT_TRY_ASSIGN(auto operand, expression());
+    JAISCRIPT_TRY(expect(token_type::right_paren, "expected ')' after dynamic_cast operand"));
+    if (by_reference) { operand = bound_conditional(std::move(operand)); }
+    auto made = std::make_shared<cast_expr>(word.location, target, by_reference, std::move(operand));
+    made->dynamic = true;
+    return expression_ptr(made);
+}
+
 // Type parsing
 checked_result<type_info_ptr> parser::parse_type() {
+    auto type = parse_type_head();
+    if (type && check(token_type::star) && !pushed_back_token_ && current_ + 1 < stream_->size()) {
+        const token_type next = (*stream_)[current_ + 1].type;
+        if (next == token_type::identifier || next == token_type::comma || next == token_type::right_paren || next == token_type::greater ||
+            next == token_type::star || next == token_type::ampersand) {
+            stop_at_foreign(detail::foreign_word::pointer_type, peek());
+            return make_error_code(parse_error_code::syntax_error);
+        }
+    }
+    return type;
+}
+
+checked_result<type_info_ptr> parser::parse_type_head() {
     stack_.guard(peek().location);
     switch (peek().type) {
         case token_type::array_keyword:
@@ -2075,9 +2390,72 @@ checked_result<type_info_ptr> parser::parse_type() {
         case token_type::shared_ptr_keyword:
             advance();
             return shared_ptr_type();
+        case token_type::function_keyword:
+        case token_type::coroutine_keyword:
+            if (callable_type_ahead()) {
+                return advance().type == token_type::coroutine_keyword ? coroutine_type() : signature_type();
+            }
+            return named_type();
         default:
             return named_type();
     }
+}
+
+// function<R(A...)> or coroutine<Y> starts here: the keyword with '<' after it (`function name`, `function (` and the coroutine
+// prefix never have one)
+bool parser::callable_type_ahead() const { return !pushed_back_token_ && callable_type_at(current_); }
+
+bool parser::callable_type_at(size_t at) const {
+    const std::vector<token>& tokens = *stream_;
+    return at + 1 < tokens.size() && (tokens[at].type == token_type::function_keyword || tokens[at].type == token_type::coroutine_keyword) &&
+           tokens[at + 1].type == token_type::less;
+}
+
+// function<R(A, B&, ...)>: the result, then each parameter's type, by reference with '&'; a name after a type is read and dropped
+JAI_NOINLINE checked_result<type_info_ptr> parser::signature_type() {
+    advance();   // '<'
+    if (check(token_type::auto_keyword)) {
+        report_error("a function signature declares its result: function<R(A...)>, with void for none and var for any", peek());
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    JAISCRIPT_TRY_ASSIGN(type_info_ptr result, parse_type());
+    if (check(token_type::ampersand)) {
+        report_error("a function signature returns by value: function<R(A...)>", peek());
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    JAISCRIPT_TRY(expect(token_type::left_paren, "expected '(' after the result type of a function signature: function<R(A...)>"));
+    std::vector<type_info_ptr> arguments;
+    if (!check(token_type::right_paren)) {
+        do {
+            if (check(token_type::auto_keyword)) {
+                report_error("a function signature declares each parameter's type: function<R(A...)>, with var for any", peek());
+                return make_error_code(parse_error_code::syntax_error);
+            }
+            JAISCRIPT_TRY_ASSIGN(type_info_ptr argument, parse_type());
+            if (argument && argument->base_type == script_value_type::jai_null_type) {
+                report_error("a function signature's parameter cannot be void: function<R()> takes none", previous());
+                return make_error_code(parse_error_code::syntax_error);
+            }
+            if (match(token_type::ampersand)) { argument = type_info_ptr(detail::engine_access::get_type_info_reference(*engine_, argument.get())); }
+            if (check(token_type::identifier)) { advance(); }
+            arguments.push_back(argument);
+        } while (match(token_type::comma));
+    }
+    JAISCRIPT_TRY(expect(token_type::right_paren, "expected ')' after the parameters of a function signature"));
+    consume_greater_in_generic("expected '>' after a function signature");
+    return store_type_info(type_info::make_function(*symbolizer_, result, std::move(arguments)));
+}
+
+// coroutine<Y>: a handle whose yields and return are Y
+JAI_NOINLINE checked_result<type_info_ptr> parser::coroutine_type() {
+    advance();   // '<'
+    if (check(token_type::auto_keyword) || check(token_type::void_keyword)) {
+        report_error("a coroutine type declares what its coroutine yields: coroutine<T>, with var for any", peek());
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    JAISCRIPT_TRY_ASSIGN(type_info_ptr yields, parse_type());
+    consume_greater_in_generic("expected '>' after a coroutine's yield type");
+    return store_type_info(type_info::make_coroutine(*symbolizer_, yields));
 }
 
 JAI_NOINLINE checked_result<type_info_ptr> parser::named_type() {
@@ -2092,7 +2470,7 @@ JAI_NOINLINE checked_result<type_info_ptr> parser::named_type() {
 
     // Handle var - dynamic typing (any type allowed, never locks)
     if (match(token_type::var_keyword)) {
-        return store_type_info(type_info::make_any(*symbolizer_));
+        return builtin_type("var", store_type_info(type_info::make_any(*symbolizer_)));
     }
 
     // `function`: a callable-or-null slot (a std::function's rule) at every boundary
@@ -2102,19 +2480,19 @@ JAI_NOINLINE checked_result<type_info_ptr> parser::named_type() {
 
     // Primitive types
     if (match(token_type::int_keyword)) {
-        return store_type_info(type_info::make_int(*symbolizer_));
+        return builtin_type("int", store_type_info(type_info::make_int(*symbolizer_)));
     }
     if (match(token_type::float_keyword)) {
-        return store_type_info(type_info::make_float(*symbolizer_));
+        return builtin_type("float", store_type_info(type_info::make_float(*symbolizer_)));
     }
     if (match(token_type::string_keyword)) {
-        return store_type_info(type_info::make_string(*symbolizer_));
+        return builtin_type("string", store_type_info(type_info::make_string(*symbolizer_)));
     }
     if (match(token_type::bool_keyword)) {
-        return store_type_info(type_info::make_bool(*symbolizer_));
+        return builtin_type("bool", store_type_info(type_info::make_bool(*symbolizer_)));
     }
     if (match(token_type::char_keyword)) {
-        return store_type_info(type_info::make_char(*symbolizer_));
+        return builtin_type("char", store_type_info(type_info::make_char(*symbolizer_)));
     }
     if (match(token_type::void_keyword)) {
         return store_type_info(type_info::make_void(*symbolizer_));
@@ -2122,7 +2500,7 @@ JAI_NOINLINE checked_result<type_info_ptr> parser::named_type() {
 
     if (check(token_type::identifier) && peek().lexeme == "utf8_string") {
         advance();
-        return store_type_info(type_info::make_utf8_string(*symbolizer_));
+        return builtin_type("utf8_string", store_type_info(type_info::make_utf8_string(*symbolizer_)));
     }
 
     if (check(token_type::identifier) && (peek().lexeme == "uint8" || peek().lexeme == "int8")) {
@@ -2133,15 +2511,26 @@ JAI_NOINLINE checked_result<type_info_ptr> parser::named_type() {
     if (check(token_type::identifier)) {
         const script_value_type math_kind = math_type_from_name(peek().lexeme);
         if (math_kind != script_value_type::jai_null_type) {
-            advance();
-            return store_type_info(type_info::make_math(*symbolizer_, math_kind));
+            const std::string_view name = advance().lexeme;
+            return builtin_type(name, store_type_info(type_info::make_math(*symbolizer_, math_kind)));
         }
     }
 
     // Handle "double" as an alias for float (since we only have float_keyword)
     if (check(token_type::identifier) && peek().lexeme == "double") {
         advance();  // consume "double"
-        return store_type_info(type_info::make_float(*symbolizer_));
+        return builtin_type("double", store_type_info(type_info::make_float(*symbolizer_)));
+    }
+
+    if (check(token_type::identifier)) {
+        if (const auto word = foreign_type_word(peek().lexeme)) {
+            stop_at_foreign(*word, peek());
+            return make_error_code(parse_error_code::syntax_error);
+        }
+        if (std_qualifier_ahead()) {
+            stop_at_foreign(detail::foreign_word::std_namespace, peek());
+            return make_error_code(parse_error_code::syntax_error);
+        }
     }
 
     // User-defined type (potentially templated)
@@ -2155,31 +2544,17 @@ JAI_NOINLINE checked_result<type_info_ptr> parser::named_type() {
             type_name += advance().lexeme;
         }
 
-        // A host template's base name followed by '<' is a template (Point<int>); the bare name stays an ordinary identifier
-        if (check(token_type::less) && is_registered_template_type(type_name)) {
-            advance();
-            std::vector<type_info_ptr> templateParams;
-            std::vector<std::string> spellings;
-            do {
-                type_info_ptr param;
-                if (check(token_type::identifier) && (peek().lexeme == "uint8" || peek().lexeme == "int8")) {
-                    param = store_type_info(advance().lexeme == "uint8" ? type_info::make_uint8(*symbolizer_) : type_info::make_int8(*symbolizer_));
-                } else {
-                    JAISCRIPT_TRY_ASSIGN(param, parse_type());
-                }
-                if (!param) {
-                    report_error("a template argument needs a concrete type", previous());
-                    return make_error_code(parse_error_code::syntax_error);
-                }
-                spellings.push_back(param->canonical_name());
-                templateParams.push_back(param);
-            } while (match(token_type::comma));
-
-            consume_greater_in_generic("expected '>' after template parameters");
-
-            type_info info = type_info::make_object(*symbolizer_, template_instance_name(type_name, spellings));
-            info.type_params = std::move(templateParams);
-            return store_type_info(std::move(info));
+        // A name followed by type arguments is a template's instance: a host template's (Point<int>), which keeps precedence,
+        // else a generic class's (Stack<int>), declared by the unit that names it; the bare name stays an ordinary identifier
+        const bool host_template = check(token_type::less) && is_registered_template_type(type_name);
+        bool split = false;
+        if (host_template || (check(token_type::less) && !pushed_back_token_ && type_arguments_end(current_, split, true) != SIZE_MAX)) {
+            // an instance would spell its argument there, and type arguments go on a generic's name only
+            if (const std::string_view generic = type_parameter_generic(type_name); !generic.empty()) {
+                report_error(detail::no_type_arguments_text(type_name, detail::plain_type_kind::type_parameter, generic), previous());
+                return make_error_code(parse_error_code::syntax_error);
+            }
+            return instance_type(type_name, host_template);
         }
 
         return store_type_info(type_info::make_object(*symbolizer_, type_name));
@@ -2187,6 +2562,50 @@ JAI_NOINLINE checked_result<type_info_ptr> parser::named_type() {
 
     report_error("expected type", peek());
     return make_error_code(parse_error_code::syntax_error);
+}
+
+// const and a reference are a variable's, never a type argument's
+JAI_NOINLINE static std::string qualified_type_argument_text(const std::string& type, bool is_const) {
+    if (is_const) { return "a type argument names a type: 'const " + type + "' is not one an instance can be made with; const goes on the variable, never in a type argument"; }
+    return "a type argument names a type: '" + type + "&' is a reference, not one an instance can be made with; a generic writes T& in its own parameter list";
+}
+
+JAI_NOINLINE checked_result<type_info_ptr> parser::instance_type(const std::string& type_name, bool host_template) {
+    const token open = advance();
+    std::vector<type_info_ptr> templateParams;
+    do {
+        type_info_ptr param;
+        const token argument_start = peek();
+        const bool is_const = match(token_type::const_keyword);
+        if (check(token_type::identifier) && (peek().lexeme == "uint8" || peek().lexeme == "int8")) {
+            param = store_type_info(advance().lexeme == "uint8" ? type_info::make_uint8(*symbolizer_) : type_info::make_int8(*symbolizer_));
+        } else {
+            JAISCRIPT_TRY_ASSIGN(param, parse_type());
+        }
+        if (param && (is_const || check(token_type::ampersand))) {
+            report_error(qualified_type_argument_text(param->canonical_name(), is_const), is_const ? argument_start : peek());
+            return make_error_code(parse_error_code::syntax_error);
+        }
+        if (!param || (!host_template && param->base_type == script_value_type::jai_null_type)) {
+            report_error(host_template ? "a template argument needs a concrete type"
+                                       : "a type argument names a type: '" + std::string(param ? "void" : "auto") + "' is not one an instance can be made with", previous());
+            return make_error_code(parse_error_code::syntax_error);
+        }
+        templateParams.push_back(param);
+    } while (match(token_type::comma));
+
+    consume_greater_in_generic(host_template ? "expected '>' after template parameters" : "expected '>' after type arguments");
+
+    if (!host_template) { note_generic_use(type_name, templateParams, open.location); }
+    type_info info = type_info::make_object(*symbolizer_, type_info::instance_name(type_name, templateParams));
+    info.type_params = std::move(templateParams);
+    return store_type_info(std::move(info));
+}
+
+JAI_NOINLINE checked_result<type_info_ptr> parser::builtin_type(std::string_view name, type_info_ptr type) {
+    bool split = false;
+    if (!check(token_type::less) || pushed_back_token_ || type_arguments_end(current_, split, true) == SIZE_MAX) { return type; }
+    return instance_type(std::string(name), false);
 }
 
 JAI_NOINLINE checked_result<type_info_ptr> parser::array_type() {
@@ -2199,6 +2618,7 @@ JAI_NOINLINE checked_result<type_info_ptr> parser::array_type() {
     } else {
         JAISCRIPT_TRY_ASSIGN(element_type, parse_type());
     }
+    if (check(token_type::ampersand)) { return expected_token(reference_storage_text(element_type, "an element")); }
     consume_greater_in_generic("expected '>' after array element type");
     return array_type_of(element_type);
 }
@@ -2210,6 +2630,7 @@ JAI_NOINLINE checked_result<type_info_ptr> parser::map_type() {
     JAISCRIPT_TRY_ASSIGN(type_info_ptr keyType, parse_type());
     JAISCRIPT_TRY(expect(token_type::comma, "expected ',' after map key type"));
     JAISCRIPT_TRY_ASSIGN(type_info_ptr valueType, parse_type());
+    if (check(token_type::ampersand)) { return expected_token(reference_storage_text(valueType, "an element")); }
     consume_greater_in_generic("expected '>' after map value type");
     return map_type_of(keyType, valueType);
 }
@@ -2348,11 +2769,8 @@ checked_result<expression_ptr> parser::expression() {
 }
 
 // One frame per operand on the way down: what follows the operand climbs in operator_rest
-// The operator after an operand: a token's, or the word instanceof, an operator only there (a relational one, as in JavaScript)
 int parser::infix_precedence() const {
-    const token& next = peek();
-    if (next.type == token_type::identifier && next.lexeme == "instanceof") { return k_relational_precedence; }
-    return operator_precedence(next.type);
+    return operator_precedence(peek().type);
 }
 
 checked_result<expression_ptr> parser::operator_expression(int min_precedence) {
@@ -2363,31 +2781,8 @@ checked_result<expression_ptr> parser::operator_expression(int min_precedence) {
     return operator_rest(std::move(left.value()), min_precedence, operand_start);
 }
 
-// e instanceof T: T a class by name (ns::T too); the node is a cast that answers instead of converting
-JAI_NOINLINE checked_result<expression_ptr> parser::instance_test_rest(expression_ptr left) {
-    const token word = advance();
-    if (!check(token_type::identifier)) {
-        report_error(is_type_keyword_token(peek().type)
-            ? "'instanceof' tests a class, and '" + std::string(peek().lexeme) + "' is a builtin type: compare type_of(x) == \"" + std::string(peek().lexeme) + "\""
-            : std::string("expected a class name after 'instanceof'"), peek());
-        return make_error_code(parse_error_code::syntax_error);
-    }
-    JAISCRIPT_TRY_ASSIGN(type_info_ptr target, parse_type());
-    if (!target || target->base_type != script_value_type::jai_object_type || target->type_name.empty()) {
-        report_error("expected a class name after 'instanceof'", word);
-        return make_error_code(parse_error_code::syntax_error);
-    }
-    auto test = std::make_shared<cast_expr>(word.location, target, false, std::move(left));
-    test->instance_test = true;
-    return expression_ptr(test);
-}
-
 JAI_NOINLINE checked_result<expression_ptr> parser::operator_rest(expression_ptr left, int min_precedence, size_t operand_start) {
     for (int precedence = infix_precedence(); precedence >= min_precedence; precedence = infix_precedence()) {
-        if (precedence == k_relational_precedence && peek().type == token_type::identifier) {
-            JAISCRIPT_TRY_ASSIGN(left, instance_test_rest(std::move(left)));
-            continue;
-        }
         if (precedence == k_assignment_precedence) { return assignment_rest(std::move(left), operand_start); }
         if (precedence == k_ternary_precedence) {
             JAISCRIPT_TRY_ASSIGN(left, ternary_rest(std::move(left)));
@@ -2407,6 +2802,7 @@ JAI_NOINLINE checked_result<expression_ptr> parser::operator_rest(expression_ptr
         if (precedence >= k_additive_precedence) {
             left = try_constant_fold(std::move(left), op, std::move(right));
         } else {
+            note_operands_read_for_truth(op.type, left, right);
             left = std::make_shared<binary_expr>(op.location, std::move(left), op, std::move(right));
         }
     }
@@ -2588,6 +2984,7 @@ JAI_NOINLINE expression_ptr parser::identifier_map_key() {
 }
 
 JAI_NOINLINE checked_result<expression_ptr> parser::ternary_rest(expression_ptr condition) {
+    note_read_for_truth(condition);
     advance();
     const token& question = previous();
     JAISCRIPT_TRY_ASSIGN(expression_ptr then_expression, expression());
@@ -2602,6 +2999,16 @@ JAI_NOINLINE checked_result<expression_ptr> parser::coalesce_rest(expression_ptr
     const token& op = previous();
     JAISCRIPT_TRY_ASSIGN(expression_ptr right, operator_expression(k_coalesce_precedence));
     return std::make_shared<binary_expr>(op.location, left, op, right);
+}
+
+// `E`, or `a::b::E` for an enum a namespace declares: the enum's own name before one of its values
+static bool spells_enum_name(const expression* e, std::string_view name) {
+    if (e->get_type() == node_type::identifier_expr) { return static_cast<const identifier_expr*>(e)->name == name; }
+    if (e->get_type() != node_type::member_expr) { return false; }
+    const auto* m = static_cast<const member_expr*>(e);
+    const size_t cut = name.rfind("::");
+    return m->is_static && m->object && cut != std::string_view::npos && m->member == name.substr(cut + 2) &&
+           spells_enum_name(m->object.get(), name.substr(0, cut));
 }
 
 // An enumerator's initializer, evaluated at parse time as C++ evaluates it: an integer or char literal, an earlier enumerator
@@ -2623,8 +3030,7 @@ static bool enum_initializer_value(const expression* e, const enum_decl& d, std:
                 name = static_cast<const identifier_expr*>(e)->name;
             } else {
                 const auto* m = static_cast<const member_expr*>(e);
-                if (m->null_safe || m->is_arrow || !m->object || m->object->get_type() != node_type::identifier_expr ||
-                    static_cast<const identifier_expr*>(m->object.get())->name != d.name) {
+                if (m->null_safe || m->is_arrow || !m->object || !spells_enum_name(m->object.get(), d.name)) {
                     why = "needs a constant integer";
                     return false;
                 }
@@ -2832,6 +3238,7 @@ JAI_NOINLINE checked_result<expression_ptr> parser::unary_operator() {
                 return std::make_shared<literal_expr>(op.location, script_value(script_value::ast_literal_tag{}, -lv.unchecked_as_float()));
             }
         }
+        if (op.type == token_type::bang) { note_read_for_truth(right); }
         return std::make_shared<unary_expr>(op.location, op, right);
     }
 
@@ -2871,24 +3278,744 @@ checked_result<expression_ptr> parser::postfix() {
     const size_t chain_start = current_;
     const bool chain_starts_clean = !pushed_back_token_.has_value();
     auto operand = primary();
-    if (!operand || !postfix_operator_ahead()) { return operand; }
+    if (!operand || !postfix_operator_ahead(operand.value())) { return operand; }
     return postfix_rest(std::move(operand.value()), chain_start, chain_starts_clean);
 }
 
-bool parser::postfix_operator_ahead() const {
+bool parser::postfix_operator_ahead(const expression_ptr& expr) {
     switch (peek().type) {
         case token_type::left_paren: case token_type::left_brace: case token_type::dot: case token_type::question_dot:
         case token_type::arrow: case token_type::colon_colon: case token_type::left_bracket: case token_type::plus_plus:
         case token_type::minus_minus:
             return true;
+        case token_type::less:   // f<T>(...), a.m<T>(...), ns::f<T>(...)
+            return expr && (expr->get_type() == node_type::identifier_expr || expr->get_type() == node_type::member_expr) && type_arguments_ahead(*expr);
         default:
             return false;
     }
 }
 
+// '<' after a head can open type arguments only when the type-shaped run it starts closes on a
+// '>' that a '(', a '{' or a '::' follows ('>>' closes two): a site. A run that holds a type's keyword (l<int>(2)) and a '>'
+// before an empty '()' are spelled by no comparison and open them whatever the head; a '(...)' that '=>' follows is a lambda,
+// which only a comparison takes. Otherwise the head decides: a variable the parse holds compares, and any other head is asked
+// by name (less_site_reading). A '>' that nothing a comparison continues with follows names an instance as a value, which
+// type_argument_call refuses.
+bool parser::type_arguments_ahead(jai::expression& head) {
+    if (pushed_back_token_ || peek().type != token_type::less) { return false; }
+    bool split = false;
+    const size_t end = type_arguments_end(current_, split);
+    const std::vector<token>& tokens = *stream_;
+    if (end == SIZE_MAX || split || end >= tokens.size()) { return false; }
+    bool keyword = false;
+    for (size_t i = current_ + 1; i + 1 < end && !keyword; ++i) {
+        const token_type t = tokens[i].type;
+        keyword = t != token_type::identifier && t != token_type::colon_colon && t != token_type::comma && t != token_type::less && t != token_type::greater &&
+                  t != token_type::right_shift;
+    }
+    const bool held = names_variable(head);
+    switch (tokens[end].type) {
+        case token_type::left_paren: case token_type::left_brace: case token_type::colon_colon:
+            break;
+        case token_type::semicolon: case token_type::comma: case token_type::right_paren: case token_type::right_bracket: case token_type::eof:
+            return !held || keyword;
+        default:
+            return false;
+    }
+    if (keyword) { return true; }
+    if (tokens[end].type == token_type::left_paren) {
+        const uint32_t close = paren_close(end);
+        if (close != k_paren_unclosed && close + 1 < tokens.size() && tokens[close + 1].type == token_type::fat_arrow) { return false; }
+        if (close == end + 1) { return true; }
+    }
+    const uint8_t carried = tokens[current_].less_reading;
+    const bool opens = carried != 0 ? carried == 2 : !held && (names_type_parameter(head) || less_site_reading(head));
+    if (!opens && !held) {
+        if (head.get_type() == node_type::identifier_expr) { static_cast<identifier_expr&>(head).less_compared = true; }
+        else { static_cast<member_expr&>(head).less_compared = true; }
+    }
+    if (carried != 0) { return opens; }
+    if (generic_text_readings_) {
+        const source_location& at = tokens[current_].location;
+        generic_text_readings_->push_back({{{}, static_cast<uint32_t>(at.line), static_cast<uint32_t>(at.column)}, 0, opens});
+    }
+    return opens;
+}
+
+// the name a head begins with: x, the A of A::B::x
+static const identifier_expr* less_head_root(const jai::expression& a_head) {
+    const jai::expression* e = &a_head;
+    while (e->get_type() == node_type::member_expr && static_cast<const member_expr*>(e)->is_static) { e = static_cast<const member_expr*>(e)->object.get(); }
+    return e && e->get_type() == node_type::identifier_expr ? static_cast<const identifier_expr*>(e) : nullptr;
+}
+
+bool parser::names_type_parameter(const jai::expression& a_head) const {
+    if (generic_type_parameters_.empty()) { return false; }
+    const identifier_expr* root = less_head_root(a_head);
+    return root && !type_parameter_generic(root->name).empty();
+}
+
+std::string_view parser::type_parameter_generic(std::string_view a_name) const {
+    for (size_t i = generic_type_parameters_.size(); i-- > 0;) {   // a generic method's own parameter hides its class's
+        if (generic_type_parameters_[i].name == a_name) { return generic_type_parameters_[i].generic; }
+    }
+    return {};
+}
+
+// The reading of the site at the current '<': the one this pass was given, else type arguments (every generic use parses under
+// it) until the pass's declarations answer. The site is recorded once, with what it asks.
+bool parser::less_site_reading(const jai::expression& a_head) {
+    const source_location& at = (*stream_)[current_].location;
+    less_place place{std::string(at.filename), static_cast<uint32_t>(at.line), static_cast<uint32_t>(at.column)};
+    if (const auto seen = less_site_index_.find(place); seen != less_site_index_.end()) { return less_sites_[seen->second].opens; }
+    detail::less_query query;
+    query.cls = std::string(enclosing_class_);
+    for (const std::string& part : current_namespace_path_) { query.space += (query.space.empty() ? "" : "::") + part; }
+    const identifier_expr* root = less_head_root(a_head);
+    if (a_head.get_type() == node_type::identifier_expr) {
+        query.form = root->global_qualified ? detail::less_head::global : detail::less_head::bare;
+        query.head = std::string(root->name);
+    } else if (root && static_cast<const member_expr&>(a_head).is_static) {
+        query.form = detail::less_head::qualified;
+        for (const jai::expression* e = &a_head; e != root; e = static_cast<const member_expr*>(e)->object.get()) {
+            query.head.insert(0, "::" + std::string(static_cast<const member_expr*>(e)->member));
+        }
+        query.head.insert(0, root->name);
+    } else {
+        query.form = detail::less_head::member;
+        query.head = std::string(static_cast<const member_expr&>(a_head).member);
+    }
+    const std::string text = query.text();
+    size_t asked = static_cast<size_t>(std::find(less_queries_.begin(), less_queries_.end(), text) - less_queries_.begin());
+    if (asked == less_queries_.size()) { less_queries_.push_back(text); }
+    const auto fixed = less_fixed_.find(place);
+    bool opens = fixed == less_fixed_.end() || fixed->second;
+    if (!less_in_pass_) { opens = detail::less_opens(detail::engine_access::less_than_answers(*engine_, {}, {text})[0], true); }
+    less_site_index_.emplace(place, less_sites_.size());
+    less_sites_.push_back({std::move(place), static_cast<uint32_t>(asked), opens});
+    return opens;
+}
+
+size_t parser::type_arguments_end(size_t open, bool& split, bool placeholders) const {
+    split = false;
+    const std::vector<token>& tokens = *stream_;
+    int depth = 0;
+    uint64_t signatures = 0;   // bit d: the '<' that opened depth d follows `function`, so one parameter list may stand there
+    for (size_t i = open; i < tokens.size(); ++i) {
+        switch (tokens[i].type) {
+            case token_type::less:
+                ++depth;
+                if (depth < 64) {
+                    const bool callable = i > open && tokens[i - 1].type == token_type::function_keyword && callable_type_at(i - 1);
+                    signatures = callable ? signatures | (1ull << depth) : signatures & ~(1ull << depth);
+                }
+                break;
+            case token_type::left_paren: {   // function<R(A, B&)>: a signature's parameter list, which only a type spells
+                if (depth < 1 || depth >= 64 || !((signatures >> depth) & 1)) { return SIZE_MAX; }
+                signatures &= ~(1ull << depth);
+                int parens = 0;
+                for (; i < tokens.size(); ++i) {
+                    const token_type t = tokens[i].type;
+                    if (t == token_type::left_paren) { ++parens; continue; }
+                    if (t == token_type::right_paren) { if (--parens == 0) { break; } continue; }
+                    if (t != token_type::identifier && t != token_type::colon_colon && t != token_type::comma && t != token_type::less &&
+                        t != token_type::greater && t != token_type::right_shift && t != token_type::ampersand && !is_type_keyword_token(t) &&
+                        t != token_type::function_keyword && t != token_type::coroutine_keyword && t != token_type::const_keyword) { return SIZE_MAX; }
+                }
+                if (i >= tokens.size()) { return SIZE_MAX; }
+                break;
+            }
+            case token_type::coroutine_keyword:   // coroutine<Y>: a type only before '<'
+                if (depth == 0 || !callable_type_at(i)) { return SIZE_MAX; }
+                break;
+            case token_type::greater:
+                if (--depth == 0) { return i + 1; }
+                break;
+            case token_type::right_shift:
+                if (depth == 1) { split = true; return i; }
+                depth -= 2;
+                if (depth == 0) { return i + 1; }
+                break;
+            case token_type::identifier: case token_type::colon_colon: case token_type::comma: case token_type::int_keyword:
+            case token_type::float_keyword: case token_type::string_keyword: case token_type::bool_keyword: case token_type::char_keyword:
+            case token_type::array_keyword: case token_type::map_keyword: case token_type::shared_ptr_keyword:
+            case token_type::weak_ptr_keyword: case token_type::var_keyword: case token_type::function_keyword:
+                if (depth == 0) { return SIZE_MAX; }
+                break;
+            case token_type::ampersand:   // Box<int&>: no expression has '&' before '>' or ','; the type parse says what is wrong
+                if (depth == 0 || !placeholders || i + 1 >= tokens.size() ||
+                    (tokens[i + 1].type != token_type::greater && tokens[i + 1].type != token_type::right_shift && tokens[i + 1].type != token_type::comma)) { return SIZE_MAX; }
+                break;
+            case token_type::const_keyword:   // Box<const int>: no expression starts with const
+                if (depth == 0 || !placeholders || (tokens[i - 1].type != token_type::less && tokens[i - 1].type != token_type::comma)) { return SIZE_MAX; }
+                break;
+            case token_type::void_keyword:   // function<void(A...)>: a signature's result is a type's spelling wherever it stands
+                if (depth < 64 && ((signatures >> depth) & 1) && tokens[i - 1].type == token_type::less) { break; }
+                [[fallthrough]];
+            case token_type::auto_keyword:
+                if (depth == 0 || !placeholders) { return SIZE_MAX; }
+                break;
+            default:
+                return SIZE_MAX;
+        }
+    }
+    return SIZE_MAX;
+}
+
+size_t parser::type_run_end(size_t at) const {
+    const std::vector<token>& tokens = *stream_;
+    if (at >= tokens.size()) { return SIZE_MAX; }
+    bool split = false;
+    switch (tokens[at].type) {
+        case token_type::int_keyword: case token_type::float_keyword: case token_type::string_keyword: case token_type::bool_keyword:
+        case token_type::char_keyword: case token_type::void_keyword: case token_type::auto_keyword: case token_type::var_keyword:
+            return at + 1;
+        case token_type::array_keyword: case token_type::map_keyword: case token_type::shared_ptr_keyword: case token_type::weak_ptr_keyword: {
+            if (at + 1 >= tokens.size() || tokens[at + 1].type != token_type::less) { return SIZE_MAX; }
+            const size_t end = type_arguments_end(at + 1, split, true);
+            return split ? SIZE_MAX : end;
+        }
+        case token_type::identifier: {
+            size_t after = at + 1;
+            while (after + 1 < tokens.size() && tokens[after].type == token_type::colon_colon && tokens[after + 1].type == token_type::identifier) { after += 2; }
+            if (after < tokens.size() && tokens[after].type == token_type::less) {
+                const size_t end = type_arguments_end(after, split, true);
+                if (end != SIZE_MAX && !split) { return end; }
+            }
+            return after;
+        }
+        default:
+            return SIZE_MAX;
+    }
+}
+
+// A declaration's type parameters: names, bounds (T : Base<T>) and whatever else the declaration reports by name
+size_t parser::type_parameters_end(size_t open) const {
+    const std::vector<token>& tokens = *stream_;
+    if (open >= tokens.size() || tokens[open].type != token_type::less) { return SIZE_MAX; }
+    int depth = 0;
+    for (size_t i = open; i < tokens.size(); ++i) {
+        switch (tokens[i].type) {
+            case token_type::less: ++depth; break;
+            case token_type::greater:
+                if (--depth == 0) { return i + 1; }
+                break;
+            case token_type::right_shift:
+                depth -= 2;
+                if (depth == 0) { return i + 1; }
+                if (depth < 0) { return SIZE_MAX; }
+                break;
+            case token_type::identifier: case token_type::colon_colon: case token_type::comma: case token_type::colon: case token_type::equal:
+            case token_type::dot: case token_type::int_keyword: case token_type::float_keyword: case token_type::string_keyword:
+            case token_type::bool_keyword: case token_type::char_keyword: case token_type::array_keyword: case token_type::map_keyword:
+            case token_type::shared_ptr_keyword: case token_type::weak_ptr_keyword: case token_type::var_keyword: case token_type::function_keyword:
+            case token_type::auto_keyword: case token_type::void_keyword: case token_type::class_keyword: case token_type::integer_literal:
+                break;
+            default:
+                return SIZE_MAX;
+        }
+    }
+    return SIZE_MAX;
+}
+
+size_t parser::attributes_end(size_t at) const {
+    const std::vector<token>& tokens = *stream_;
+    while (at + 4 < tokens.size() && tokens[at].type == token_type::left_bracket && tokens[at + 1].type == token_type::left_bracket &&
+           tokens[at + 2].type == token_type::identifier && tokens[at + 3].type == token_type::right_bracket &&
+           tokens[at + 4].type == token_type::right_bracket) {
+        at += 5;
+    }
+    return at;
+}
+
+size_t parser::generic_function_head(size_t at, bool member) const {
+    if (pushed_back_token_) { return SIZE_MAX; }
+    const std::vector<token>& tokens = *stream_;
+    const auto names_list = [&](size_t name) {
+        if (name + 1 >= tokens.size() || tokens[name].type != token_type::identifier || tokens[name + 1].type != token_type::less) { return false; }
+        const size_t close = type_parameters_end(name + 1);
+        return close != SIZE_MAX && close < tokens.size() && tokens[close].type == token_type::left_paren;
+    };
+    at = attributes_end(at);
+    bool coroutine = false;
+    for (; at < tokens.size(); ++at) {
+        if (tokens[at].type == token_type::coroutine_keyword) { coroutine = true; continue; }
+        if (!member || (tokens[at].type != token_type::static_keyword && tokens[at].type != token_type::override_keyword)) { break; }
+    }
+    if (at >= tokens.size()) { return SIZE_MAX; }
+    if (tokens[at].type == token_type::function_keyword) { return names_list(at + 1) ? at + 1 : SIZE_MAX; }
+    size_t name = type_run_end(at);
+    if (name != SIZE_MAX && name < tokens.size() && tokens[name].type == token_type::ampersand) { ++name; }
+    if (name != SIZE_MAX && names_list(name)) { return name; }
+    return coroutine && names_list(at) ? at : SIZE_MAX;   // coroutine each<T>(...): the bare head
+}
+
+bool parser::generic_parameters(detail::generic_definition& definition, size_t open, size_t& list_end) {
+    const std::vector<token>& tokens = *stream_;
+    const std::string generic(definition.name);
+    const auto fail = [&](const std::string& message, const token& at) {
+        report_error(message, at);
+        return false;
+    };
+    size_t i = open + 1;
+    if (tokens[i].type == token_type::greater) {
+        return fail("generic '" + generic + "' lists no type parameter: name at least one (" + generic + "<T>)", tokens[i]);
+    }
+    for (;;) {
+        const token& t = tokens[i];
+        const token& next = tokens[i + 1 < tokens.size() ? i + 1 : i];
+        if (t.type == token_type::class_keyword || (t.type == token_type::identifier && t.lexeme == "typename" && next.type == token_type::identifier)) {
+            return fail("a type parameter is its name alone: " + generic + "<T>, not <" + std::string(t.lexeme) + " T>", t);
+        }
+        if (t.type != token_type::identifier || next.type == token_type::less || next.type == token_type::colon_colon) {
+            if (is_type_keyword_token(t.type) && next.type == token_type::identifier) {
+                return fail("'" + generic + "' declares a non-type parameter ('" + std::string(t.lexeme) + " " + std::string(next.lexeme) +
+                            "'): a generic's parameters are types (" + generic + "<T>)", t);
+            }
+            if (is_type_keyword_token(t.type) || t.type == token_type::identifier) {
+                return fail("'" + generic + "' names a type where a type parameter belongs: specialization is not supported (declare " + generic +
+                            "<T> once, for every T)", t);
+            }
+            return fail("expected a type parameter's name in the list of '" + generic + "'", t);
+        }
+        if (next.type == token_type::identifier) {
+            return fail("'" + generic + "' declares a non-type parameter ('" + std::string(t.lexeme) + " " + std::string(next.lexeme) +
+                        "'): a generic's parameters are types (" + generic + "<T>)", t);
+        }
+        if (next.type == token_type::equal) {
+            return fail("default type arguments are not supported: declare '" + std::string(t.lexeme) + "' alone and name the argument at each use", next);
+        }
+        if (next.type == token_type::dot) {
+            return fail("variadic type parameters are not supported: list each parameter of '" + generic + "'", next);
+        }
+        if (t.lexeme == definition.name) {
+            return fail("'" + generic + "' is the generic's own name: its type parameter needs another", t);
+        }
+        for (const auto& earlier : definition.parameters) {
+            if (earlier.name == t.lexeme) { return fail("duplicate type parameter '" + std::string(t.lexeme) + "' in '" + generic + "'", t); }
+        }
+        if (const std::string_view enclosing = type_parameter_generic(t.lexeme); !enclosing.empty()) {
+            return fail("'" + std::string(t.lexeme) + "' is a type parameter of '" + std::string(enclosing) + "': the generic method '" + generic +
+                        "' cannot declare it again; give its parameter another name (" + generic + "<U>)", t);
+        }
+        detail::generic_parameter parameter;
+        parameter.name = symbolizer_->intern_with_view(t.lexeme).second;
+        parameter.name_id = get_symbol_id(t);
+        parameter.location = t.location;
+        ++i;
+        bool closed = false;
+        if (tokens[i].type == token_type::colon) {
+            const token& colon = tokens[i];
+            int depth = 0;
+            for (++i; i < tokens.size(); ++i) {
+                const token_type k = tokens[i].type;
+                if (depth == 0 && (k == token_type::comma || k == token_type::greater)) { break; }
+                if (k == token_type::less) { ++depth; }
+                else if (k == token_type::greater) { --depth; }
+                else if (k == token_type::right_shift) {
+                    if (depth == 1) {   // the bound's own '>' and the list's
+                        parameter.bound.emplace_back(token_type::greater, ">", tokens[i].location);
+                        closed = true;
+                        ++i;
+                        break;
+                    }
+                    depth -= 2;
+                    parameter.bound.emplace_back(token_type::greater, ">", tokens[i].location);
+                    parameter.bound.emplace_back(token_type::greater, ">", tokens[i].location);
+                    continue;
+                }
+                else if (k != token_type::identifier && k != token_type::colon_colon && k != token_type::comma && !is_type_keyword_token(k)) {
+                    return fail("expected a class after ':': '" + std::string(parameter.name) + " : Base' bounds " + std::string(parameter.name) + " by a class", tokens[i]);
+                }
+                parameter.bound.push_back(tokens[i]);
+            }
+            if (parameter.bound.empty() || parameter.bound.front().type != token_type::identifier) {
+                return fail("expected a class after ':': '" + std::string(parameter.name) + " : Base' bounds " + std::string(parameter.name) + " by a class",
+                            parameter.bound.empty() ? colon : parameter.bound.front());
+            }
+            if (parameter.bound.size() == 1 && parameter.bound.front().lexeme == parameter.name) {
+                return fail("'" + std::string(parameter.name) + "' is bounded by itself in '" + generic + "': a bound names the class " + std::string(parameter.name) +
+                            " must be or derive from (" + std::string(parameter.name) + " : Base)", parameter.bound.front());
+            }
+        }
+        definition.parameters.push_back(std::move(parameter));
+        if (closed) { list_end = i; return true; }
+        if (i < tokens.size() && tokens[i].type == token_type::comma) { ++i; continue; }
+        if (i < tokens.size() && tokens[i].type == token_type::greater) { list_end = i + 1; return true; }
+        return fail("expected ',' or '>' after type parameter '" + std::string(definition.parameters.back().name) + "'", tokens[i < tokens.size() ? i : tokens.size() - 1]);
+    }
+}
+
+// From the end of the type parameters to past the body's closing brace
+bool parser::generic_extent(detail::generic_kind kind, size_t list_end, size_t& end) {
+    const std::vector<token>& tokens = *stream_;
+    const char* const expected = kind == detail::generic_kind::class_type ? "expected '{' before class body" : "expected '{' before function body";
+    size_t i = list_end;
+    size_t depth = 0;
+    for (; i < tokens.size(); ++i) {   // the head: a parameter list, a base list, a trailing return type
+        const token_type k = tokens[i].type;
+        if (k == token_type::left_paren || k == token_type::left_bracket) { ++depth; }
+        else if (k == token_type::right_paren || k == token_type::right_bracket) { if (depth > 0) { --depth; } }
+        else if (depth == 0 && k == token_type::left_brace) { break; }
+        else if (k == token_type::eof || (depth == 0 && (k == token_type::semicolon || k == token_type::right_brace))) {
+            report_error(expected, tokens[i]);
+            return false;
+        }
+    }
+    for (depth = 0; i < tokens.size(); ++i) {
+        const token_type k = tokens[i].type;
+        if (k == token_type::left_brace) { ++depth; }
+        else if (k == token_type::right_brace) {
+            if (--depth == 0) { end = i + 1; return true; }
+        }
+    }
+    report_error(kind == detail::generic_kind::class_type ? "expected '}' after class body" : "expected '}' after block", tokens.back());
+    return false;
+}
+
+// A constructor and an operator are no generics, as in this version a lambda is not: Box<T>(T x) and operator+<T>(T x) in a
+// class say so, and so does a generic class's constructor spelled with the class's own parameters (Pair<K, V>(...))
+bool parser::refuse_generic_member_head(std::string_view class_name) {
+    if (pushed_back_token_) { return false; }
+    const std::vector<token>& tokens = *stream_;
+    size_t at = attributes_end(current_);
+    while (at < tokens.size() && (tokens[at].type == token_type::static_keyword || tokens[at].type == token_type::override_keyword ||
+                                  tokens[at].type == token_type::coroutine_keyword)) { ++at; }
+    const auto listed = [&](size_t open) {   // the type parameters at `open` and a parameter list after them
+        const size_t close = open < tokens.size() && tokens[open].type == token_type::less ? type_parameters_end(open) : SIZE_MAX;
+        return close != SIZE_MAX && close < tokens.size() && tokens[close].type == token_type::left_paren ? close : SIZE_MAX;
+    };
+    if (const size_t close = at + 1 < tokens.size() && tokens[at].type == token_type::identifier && tokens[at].lexeme == class_name ? listed(at + 1) : SIZE_MAX;
+        close != SIZE_MAX) {
+        std::vector<std::string_view> written, declared;   // Pair<K, V>: the class's own parameters, in order
+        for (size_t i = at + 2; i < close; i += 2) { written.push_back(tokens[i].lexeme); }
+        for (const auto& parameter : generic_type_parameters_) { if (parameter.generic == class_name) { declared.push_back(parameter.name); } }
+        const bool own = !declared.empty() && written == declared;
+        std::string instance(class_name);
+        for (size_t i = 0; i < declared.size(); ++i) { instance += (i ? ", " : "<") + std::string(declared[i]) + (i + 1 == declared.size() ? ">" : ""); }
+        report_error(own ? "a constructor is named by its class's bare name: write " + std::string(class_name) + "(...); inside the class, " +
+                               std::string(class_name) + " is " + instance
+                         : "a constructor takes no type parameters: give the class them (class " + std::string(class_name) +
+                               "<T>), or declare a constructor for each type it takes", tokens[at + 1]);
+        current_ = close;
+        return true;
+    }
+    size_t name = type_run_end(at);
+    if (name != SIZE_MAX && name < tokens.size() && tokens[name].type == token_type::ampersand) { ++name; }
+    if (name == SIZE_MAX || name + 1 >= tokens.size() || tokens[name].type != token_type::identifier || tokens[name].lexeme != "operator") { return false; }
+    size_t open = name + 2;   // past the operator's own token, or its two: () and []
+    if ((tokens[name + 1].type == token_type::left_paren && open < tokens.size() && tokens[open].type == token_type::right_paren) ||
+        (tokens[name + 1].type == token_type::left_bracket && open < tokens.size() && tokens[open].type == token_type::right_bracket)) { ++open; }
+    if (listed(open) == SIZE_MAX) { return false; }
+    std::string spelled = "operator";
+    for (size_t i = name + 1; i < open; ++i) { spelled += tokens[i].lexeme; }
+    report_error("an operator takes no type parameters: give the class them (class " + std::string(class_name) + "<T>), or declare " + spelled +
+                 " for each type it takes", tokens[open]);
+    current_ = open;
+    return true;
+}
+
+// A type parameter's name is reserved in its generic: an instance replaces every bare use of it, so a variable, a parameter, a
+// field or a method of that name would not survive (a member read, x.T, is no use of the parameter)
+bool parser::reserved_parameter_names(const detail::generic_definition& definition) {
+    const std::vector<token>& tokens = definition.tokens;
+    for (size_t i = 1; i + 1 < tokens.size(); ++i) {
+        if (tokens[i].type != token_type::identifier || (i > definition.name_token && i < definition.list_end)) { continue; }
+        const bool parameter = std::any_of(definition.parameters.begin(), definition.parameters.end(),
+            [&](const detail::generic_parameter& p) { return p.name == tokens[i].lexeme; });
+        if (!parameter) { continue; }
+        const token& before = tokens[i - 1];
+        const token_type after = tokens[i + 1].type;
+        const bool names_type = before.type == token_type::identifier || before.type == token_type::const_keyword ||
+                                (is_type_keyword_token(before.type) && before.type != token_type::array_keyword && before.type != token_type::map_keyword &&
+                                 before.type != token_type::shared_ptr_keyword && before.type != token_type::weak_ptr_keyword);
+        const bool closes_type = before.type == token_type::greater || before.type == token_type::right_shift || before.type == token_type::ampersand;
+        const bool ends_declarator = after == token_type::semicolon || after == token_type::equal || after == token_type::comma ||
+                                     after == token_type::right_paren || after == token_type::colon;
+        const bool opens_declarator = after == token_type::left_paren || after == token_type::left_brace;
+        if ((names_type && (ends_declarator || opens_declarator)) || (closes_type && ends_declarator)) {
+            report_error("'" + std::string(tokens[i].lexeme) + "' is a type parameter of '" + std::string(definition.name) + "': a declaration cannot reuse its name", tokens[i]);
+            return false;
+        }
+    }
+    return true;
+}
+
+// A generic's text (detail::generic_instance_tokens: program-scope text, in its namespace or its class) parsed here, in place of
+// the stream; null when it reports an error
+declaration_ptr parser::parse_generic_text(const std::vector<token>& text, detail::generic_definition* definition) {
+    const std::vector<token>* saved_stream = stream_;
+    const size_t saved_current = current_;
+    const std::optional<token> saved_pushed_back = pushed_back_token_;
+    std::vector<generic_use> saved_uses = std::move(generic_uses_);
+    const size_t saved_generics = file_generics_.size();
+    std::vector<std::string> saved_namespace = std::move(current_namespace_path_);
+    std::vector<function_scope> saved_scopes = std::move(function_scope_stack_);
+    std::vector<uint64_t> saved_block_variables = std::move(program_block_variables_);
+    std::vector<size_t> saved_block_marks = std::move(program_block_marks_);
+    std::vector<template_barrier> saved_barriers = std::move(template_barriers_);
+    const jump_targets saved_jumps = jumps_;
+    const int saved_nesting = nesting_depth_;
+    const size_t saved_boundary = slot_lookup_boundary_;
+    const bool saved_flags[] = {in_switch_case_, in_coroutine_, in_constructor_, returns_reference_, coroutine_body_pending_, returns_value_};
+    generic_uses_.clear(); current_namespace_path_.clear(); function_scope_stack_.clear(); template_barriers_.clear();
+    program_block_variables_.clear(); program_block_marks_.clear();
+    jumps_ = {}; nesting_depth_ = 0; slot_lookup_boundary_ = 0;
+    in_switch_case_ = in_coroutine_ = in_constructor_ = returns_reference_ = coroutine_body_pending_ = returns_value_ = false;
+    stream_ = &text; current_ = 0; pushed_back_token_.reset();
+    const size_t errors_before = errors_.size();
+    std::vector<less_site> readings;
+    const std::vector<type_parameter_name> saved_parameters = generic_type_parameters_;   // a generic class's stay types in its generic methods
+    std::vector<less_site>* const saved_readings = generic_text_readings_;
+    if (definition) {
+        for (const auto& parameter : definition->parameters) { generic_type_parameters_.push_back({parameter.name, definition->name}); }
+        generic_text_readings_ = &readings;
+    }
+    auto parsed = declaration();
+    generic_type_parameters_ = saved_parameters;
+    generic_text_readings_ = saved_readings;
+    if (definition) {   // each site's reading rides its '<': an instance's parse reads the text as its declaration did
+        for (const less_site& site : readings) {
+            for (token& t : definition->tokens) {
+                if (t.type == token_type::less && t.location.line == site.at.line && t.location.column == site.at.column) { t.less_reading = site.opens ? 2 : 1; }
+            }
+        }
+    }
+    if (parsed && errors_.size() == errors_before && !is_at_end()) { report_error("unexpected text after the generic's declaration", peek()); }
+    stream_ = saved_stream; current_ = saved_current; pushed_back_token_ = saved_pushed_back;
+    generic_uses_ = std::move(saved_uses);
+    current_namespace_path_ = std::move(saved_namespace);
+    function_scope_stack_ = std::move(saved_scopes);
+    program_block_variables_ = std::move(saved_block_variables);
+    program_block_marks_ = std::move(saved_block_marks);
+    template_barriers_ = std::move(saved_barriers);
+    jumps_ = saved_jumps; nesting_depth_ = saved_nesting; slot_lookup_boundary_ = saved_boundary;
+    in_switch_case_ = saved_flags[0]; in_coroutine_ = saved_flags[1]; in_constructor_ = saved_flags[2];
+    returns_reference_ = saved_flags[3]; coroutine_body_pending_ = saved_flags[4]; returns_value_ = saved_flags[5];
+    paren_close_.erase(&text);
+    file_generics_.resize(saved_generics);   // the caller drops the text's parse, and with it every generic the text declares
+    if (!parsed) {
+        if (errors_.size() == errors_before) { report_error_at(format_error(parsed, *symbolizer_), text.front().location); }
+        return nullptr;
+    }
+    return errors_.size() == errors_before ? std::move(parsed.value()) : nullptr;
+}
+
+checked_result<declaration_ptr> parser::generic_declaration(const generic_site& site) {
+    const std::vector<token>& tokens = *stream_;
+    const token name = tokens[site.name_at];
+    const bool is_class = site.kind == detail::generic_kind::class_type;
+    if (reject_using_name(name, is_class ? "class" : site.kind == detail::generic_kind::method ? "member" : "function")) {
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    auto definition = std::make_shared<detail::generic_definition>();
+    definition->kind = site.kind;
+    for (size_t at = site.begin; at + 4 < tokens.size() && tokens[at].type == token_type::left_bracket && tokens[at + 1].type == token_type::left_bracket; at += 5) {
+        if (tokens[at + 2].lexeme == "warn_mode") { definition->check_mode = check_mode_attr_warn; }
+        else if (tokens[at + 2].lexeme == "strict_mode") { definition->check_mode = check_mode_attr_strict; }
+    }
+    file_generics_.push_back(definition.get());
+    definition->name = symbolizer_->intern_with_view(name.lexeme).second;
+    definition->space = std::string(site.space);
+    definition->owner = std::string(site.owner);
+    definition->visibility = site.visibility;
+    definition->location = name.location;
+    size_t list_end = type_parameters_end(site.name_at + 1);
+    size_t end = 0;
+    if (list_end == SIZE_MAX) {
+        report_error("expected '>' after the type parameters of '" + std::string(name.lexeme) + "'", tokens[site.name_at + 1]);
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    if (!is_class && tokens[list_end].type != token_type::left_paren) {
+        report_error("expected '(' after the type parameters of '" + std::string(name.lexeme) + "'", tokens[list_end]);
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    if (!generic_extent(site.kind, list_end, end)) { return make_error_code(parse_error_code::syntax_error); }
+    const auto refuse = [&](const std::string& message, const token& at) {
+        report_error(message, at);
+        current_ = end;
+        return make_error_code(parse_error_code::syntax_error);
+    };
+    if (in_function_scope()) {
+        return refuse("generic '" + std::string(name.lexeme) + "' is declared inside a function body: a generic is declared at program scope, in a namespace or in a class", name);
+    }
+    if (!generic_parameters(*definition, site.name_at + 1, list_end)) {
+        current_ = end;
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    for (const auto& parameter : definition->parameters) {   // a bound is a type's text: a parameter there takes no type arguments either
+        for (size_t i = 0; i + 1 < parameter.bound.size(); ++i) {
+            const token& named = parameter.bound[i];
+            if (named.type != token_type::identifier || parameter.bound[i + 1].type != token_type::less || (i > 0 && parameter.bound[i - 1].type == token_type::colon_colon)) { continue; }
+            const bool own = std::any_of(definition->parameters.begin(), definition->parameters.end(), [&](const detail::generic_parameter& p) { return p.name == named.lexeme; });
+            const std::string_view generic = own ? definition->name : type_parameter_generic(named.lexeme);
+            if (!generic.empty()) { return refuse(detail::no_type_arguments_text(named.lexeme, detail::plain_type_kind::type_parameter, generic), named); }
+        }
+    }
+    if (site.kind == detail::generic_kind::method) {
+        for (size_t i = site.begin; i < end && tokens[i].type != token_type::left_brace; ++i) {
+            if (i >= site.name_at && i < list_end) { continue; }
+            if (tokens[i].type == token_type::static_keyword && i < site.name_at) { definition->is_static = true; }
+            if (tokens[i].type == token_type::override_keyword) {
+                return refuse("generic method '" + std::string(name.lexeme) + "' cannot be marked override: a generic method is not virtual (the receiver's class as the checker knows it picks the instance)", tokens[i]);
+            }
+        }
+    }
+    definition->tokens.assign(tokens.begin() + static_cast<std::ptrdiff_t>(site.begin), tokens.begin() + static_cast<std::ptrdiff_t>(end));
+    detail::own_token_text(*definition, *symbolizer_);
+    definition->name_token = static_cast<uint32_t>(site.name_at - site.begin);
+    definition->list_end = static_cast<uint32_t>(list_end - site.begin);
+    if (!reserved_parameter_names(*definition)) {
+        current_ = end;
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    const declaration_ptr parsed = parse_generic_text(detail::generic_instance_tokens(*definition, {}, definition->name, *symbolizer_), definition.get());
+    definition->stamp = detail::generic_stamp(definition->tokens);
+    current_ = end;
+    if (!parsed) { return make_error_code(parse_error_code::syntax_error); }
+    if (is_class) {
+        const jai::declaration* d = parsed.get();
+        while (d && d->get_type() == node_type::namespace_decl && !static_cast<const namespace_decl*>(d)->declarations.empty()) {
+            d = static_cast<const namespace_decl*>(d)->declarations.front().get();
+        }
+        if (d && d->get_type() == node_type::class_decl) {
+            const auto& declared = static_cast<const class_decl&>(*d);
+            for (const auto& member : declared.members) {
+                if (!member.declaration) { continue; }
+                if (member.declaration->get_type() == node_type::variable_decl) {
+                    definition->member_variables.push_back(static_cast<const variable_decl&>(*member.declaration).name);
+                } else if (member.declaration->get_type() == node_type::function_decl) {
+                    definition->member_functions.push_back(static_cast<const function_decl&>(*member.declaration).name);
+                } else if (member.declaration->get_type() == node_type::generic_decl) {
+                    definition->member_functions.push_back(static_cast<const generic_decl&>(*member.declaration).definition->name);
+                }
+            }
+            for (const std::string_view base : declared.base_classes) { definition->bases.emplace_back(base.substr(0, base.find('<'))); }
+        }
+    }
+    if (!is_class) {
+        const jai::declaration* d = parsed.get();
+        while (d && d->get_type() == node_type::namespace_decl && !static_cast<const namespace_decl*>(d)->declarations.empty()) {
+            d = static_cast<const namespace_decl*>(d)->declarations.front().get();
+        }
+        if (d && d->get_type() == node_type::class_decl && !static_cast<const class_decl*>(d)->members.empty()) {
+            d = static_cast<const class_decl*>(d)->members.front().declaration.get();
+        }
+        if (!d || d->get_type() != node_type::function_decl) {
+            return refuse("generic '" + std::string(name.lexeme) + "' is not a function declaration", name);
+        }
+        for (const auto& p : static_cast<const function_decl*>(d)->parameters) {
+            definition->values.push_back({p.type, p.is_reference, p.default_value != nullptr});
+        }
+    }
+    auto generic = std::make_shared<generic_decl>(name.location, std::move(definition));
+    generic->check_mode_attr = generic->definition->check_mode;   // a leading one is the file's, as a plain declaration's is
+    return declaration_ptr(std::move(generic));
+}
+
+// callee<T1, T2>(args) is callee(T1, T2, args): each type argument a type value (cast_expr::type_value), which a host takes
+// as a jai::script_type and the checker folds into the name when the callee is a generic (callee<T1, T2>)
+JAI_NOINLINE checked_result<expression_ptr> parser::type_argument_call(expression_ptr callee) {
+    if (callee->get_type() == node_type::identifier_expr) {
+        const std::string_view name = static_cast<const identifier_expr&>(*callee).name;
+        if (const std::string_view generic = type_parameter_generic(name); !generic.empty()) {
+            report_error_at(detail::no_type_arguments_text(name, detail::plain_type_kind::type_parameter, generic), callee->location);
+            return make_error_code(parse_error_code::syntax_error);
+        }
+    }
+    const token open = advance();   // '<'
+    std::vector<type_info_ptr> types;
+    std::vector<source_location> places;
+    do {
+        places.push_back(peek().location);
+        JAISCRIPT_TRY_ASSIGN(type_info_ptr type, parse_type());   // never auto or void: type_arguments_ahead admits neither
+        types.push_back(std::move(type));
+    } while (match(token_type::comma));
+    if (types.size() > UINT8_MAX) {
+        report_error("a call takes at most 255 type arguments", previous());
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    consume_greater_in_generic("expected '>' after type arguments");
+    if (!check(token_type::left_paren)) { return generic_instance_reference(std::move(callee), std::move(types), open); }
+    advance();   // '('
+    std::vector<expression_ptr> type_values;
+    for (size_t i = 0; i < types.size(); ++i) {
+        auto value = std::make_shared<cast_expr>(places[i], types[i], false,
+            std::make_shared<literal_expr>(places[i], script_value(script_value::ast_literal_tag{}, std::monostate{})));
+        value->type_value = true;
+        type_values.push_back(std::move(value));
+    }
+    JAISCRIPT_TRY_ASSIGN(expression_ptr call, finish_call(std::move(callee)));
+    auto* c = static_cast<call_expr*>(call.get());
+    c->arguments.insert(c->arguments.begin(), std::make_move_iterator(type_values.begin()), std::make_move_iterator(type_values.end()));
+    c->type_argument_count = static_cast<uint8_t>(type_values.size());
+    return call;
+}
+
+// Name<Args>{...}, Name<Args>::member and Name<Args> where a value stands name a generic class's instance as a class's own name
+// would; a generic function's instance is no value, which the check says once it knows what the name declares
+JAI_NOINLINE checked_result<expression_ptr> parser::generic_instance_reference(expression_ptr callee, std::vector<type_info_ptr> arguments, const token& at) {
+    std::string generic;
+    bool named = true;
+    for (const jai::expression* e = callee.get(); e;) {
+        if (e->get_type() == node_type::identifier_expr) {
+            generic.insert(0, static_cast<const identifier_expr*>(e)->name);
+            break;
+        }
+        if (e->get_type() != node_type::member_expr || !static_cast<const member_expr*>(e)->is_static) { named = false; break; }
+        generic.insert(0, "::" + std::string(static_cast<const member_expr*>(e)->member));
+        e = static_cast<const member_expr*>(e)->object.get();
+    }
+    if (!named) {   // a receiver's generic method: the receiver's class, which picks the instance, is no parse fact
+        const auto* m = static_cast<const member_expr*>(callee.get());
+        const std::string spelled = type_info::instance_name(m->member, arguments);
+        report_error(detail::generic_method_value_text(spelled, m->member, detail::method_value_receiver(m), spelled), at);
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    const bool qualified = callee->get_type() == node_type::member_expr;
+    const std::string_view last = qualified ? static_cast<const member_expr*>(callee.get())->member : static_cast<const identifier_expr*>(callee.get())->name;
+    const auto [id, view] = symbolizer_->intern_with_view(type_info::instance_name(last, arguments));
+    note_generic_use(generic, std::move(arguments), callee->location, !(check(token_type::left_brace) || check(token_type::colon_colon)));
+    if (qualified) {
+        return expression_ptr(std::make_shared<member_expr>(callee->location, static_cast<const member_expr*>(callee.get())->object, view, id, false, true));
+    }
+    auto name = std::make_shared<identifier_expr>(callee->location, view, id);
+    resolve_name(*name);
+    return expression_ptr(std::move(name));
+}
+
+checked_result<type_info_ptr> parser::parse_type_text(std::vector<declaration_ptr>& requests) {
+    stack_.arm();
+    auto type = parse_type();
+    if (type && !is_at_end()) {
+        report_error("expected a class", peek());
+        return make_error_code(parse_error_code::syntax_error);
+    }
+    if (type && errors_.empty()) { flush_generic_uses(requests); }
+    return type;
+}
+
+void parser::note_generic_use(std::string_view generic, std::vector<type_info_ptr> arguments, const source_location& at, bool as_value) {
+    const std::string_view generic_view = symbolizer_->intern_with_view(generic).second;
+    const auto [name_id, name_view] = symbolizer_->intern_with_view(detail::generic_instance_name(generic, arguments));
+    generic_uses_.push_back({name_view, name_id, generic_view, std::move(arguments), at, as_value});
+}
+
+void parser::flush_generic_uses(std::vector<declaration_ptr>& out) {
+    for (auto& use : generic_uses_) {
+        if (!requested_instances_.insert(use.name_id).second) { continue; }
+        auto request = std::make_shared<generic_instance_decl>(use.at, use.name, use.name_id);
+        request->generic = use.generic;
+        request->arguments = std::move(use.arguments);
+        request->as_value = use.as_value;
+        out.push_back(std::move(request));
+    }
+    generic_uses_.clear();
+}
+
 JAI_NOINLINE checked_result<expression_ptr> parser::postfix_rest(expression_ptr expr, size_t chain_start, bool chain_starts_clean) {
     std::vector<size_t> null_links;   // the ?. tokens of this chain
-    while (postfix_operator_ahead()) {
+    while (postfix_operator_ahead(expr)) {
         JAISCRIPT_TRY_ASSIGN(expr, postfix_operator(std::move(expr), null_links));
     }
     if (!null_links.empty() && chain_starts_clean && !pushed_back_token_) { return null_chain_rest(chain_start, null_links, expr); }
@@ -2910,6 +4037,7 @@ JAI_NOINLINE checked_result<expression_ptr> parser::postfix_operator(expression_
     if (match(token_type::arrow)) { return finish_member_access(std::move(expr), true); }
     if (match(token_type::colon_colon)) { return static_member_access(std::move(expr)); }
     if (match(token_type::left_bracket)) { return subscript(std::move(expr)); }
+    if (check(token_type::less)) { return type_argument_call(std::move(expr)); }
     advance();
     const token& op = previous();   // postfix increment/decrement
     if (expr->get_type() != node_type::identifier_expr) {
@@ -2918,30 +4046,33 @@ JAI_NOINLINE checked_result<expression_ptr> parser::postfix_operator(expression_
     return std::make_shared<unary_expr>(op.location, op, expr, true);  // true = postfix
 }
 
-// Brace initialization: Type{args...}, only after a type name
+// Brace initialization: Type{args...}, only after a type name, bare or qualified (shop::Item{}, shop::Shelf<int>{})
 JAI_NOINLINE checked_result<expression_ptr> parser::brace_construction(expression_ptr expr) {
-    if (expr->get_type() == node_type::identifier_expr) {
-        auto* identExpr = static_cast<identifier_expr*>(expr.get());
+    std::string name;
+    const jai::expression* head = expr.get();
+    while (head->get_type() == node_type::member_expr && static_cast<const member_expr*>(head)->is_static) {
+        name.insert(0, "::" + std::string(static_cast<const member_expr*>(head)->member));
+        head = static_cast<const member_expr*>(head)->object.get();
+    }
+    if (head->get_type() == node_type::identifier_expr) {
+        name.insert(0, static_cast<const identifier_expr*>(head)->name);
         JAISCRIPT_TRY_ASSIGN(auto arguments, construction_arguments(true));
-        auto type_info = store_type_info(type_info::make_object(*symbolizer_, identExpr->name));
-        return std::make_shared<new_expr>(identExpr->location, type_info, std::move(arguments));
+        auto type_info = store_type_info(type_info::make_object(*symbolizer_, name));
+        return std::make_shared<new_expr>(head->location, type_info, std::move(arguments));
     }
     report_error("expected ';' after expression", previous());   // `i++ {`: only a type name takes a brace initializer
     return make_error_code(parse_error_code::syntax_error);
 }
 
-// Static member access or namespace member access; keywords are member names too (namespace members)
+// Static member access or namespace member access; keywords are member names too (namespace members). No other token is a
+// name: a literal's lexeme dies with the lexer, and a node keeps its name's text
 JAI_NOINLINE checked_result<expression_ptr> parser::static_member_access(expression_ptr expr) {
-    token name = peek();
-    if (name.type == token_type::identifier ||
-        (name.type != token_type::eof && name.type != token_type::left_paren &&
-         name.type != token_type::right_paren && name.type != token_type::semicolon)) {
-        advance();
-        uint64_t member_id = get_symbol_id(name);
-        return std::make_shared<member_expr>(name.location, expr, name.lexeme, member_id, false, true);
+    if (!check(token_type::identifier) && !is_keyword_word(peek().type)) {
+        report_error("expected member name after '::'", peek());
+        return make_error_code(parse_error_code::syntax_error);
     }
-    report_error("expected member name after '::'", name);
-    return make_error_code(parse_error_code::syntax_error);
+    const token name = advance();
+    return std::make_shared<member_expr>(name.location, expr, name.lexeme, get_symbol_id(name), false, true);
 }
 
 JAI_NOINLINE checked_result<expression_ptr> parser::subscript(expression_ptr expr) {
@@ -2950,13 +4081,36 @@ JAI_NOINLINE checked_result<expression_ptr> parser::subscript(expression_ptr exp
     return subscript_node(std::move(expr), std::move(index), previous().location);
 }
 
+// The rewrite's conditional, and the lambda an impure base binds through, are the chain's own: texts name the chain and no trace a frame
+// of the lambda
+void parser::mark_null_chain(jai::expression* rewritten) {
+    if (rewritten->get_type() == node_type::ternary_expr) {
+        static_cast<ternary_expr*>(rewritten)->null_chain = ternary_expr::chain_test;
+    } else if (rewritten->get_type() == node_type::call_expr) {
+        auto* call = static_cast<call_expr*>(rewritten);
+        if (!call->callee || call->callee->get_type() != node_type::lambda_expr) { return; }
+        auto* lambda = static_cast<lambda_expr*>(call->callee.get());
+        lambda->null_chain = true;
+        const ast_node* body = lambda->body.get();   // lambda_expression_body: one return of the conditional
+        if (body && body->get_type() == node_type::block_stmt) {
+            const auto& declarations = static_cast<const block_stmt*>(body)->declarations;
+            body = declarations.size() == 1 ? declarations.front().get() : nullptr;
+        }
+        if (body && body->get_type() == node_type::statement_decl) { body = static_cast<const statement_decl*>(body)->statement.get(); }
+        const jai::expression* value = body && body->get_type() == node_type::return_stmt ? static_cast<const return_stmt*>(body)->value.get() : nullptr;
+        if (value && value->get_type() == node_type::ternary_expr) {
+            const_cast<ternary_expr*>(static_cast<const ternary_expr*>(value))->null_chain = ternary_expr::chain_lambda_test;
+        }
+    }
+}
+
 // a?.b.c: a null before the ?. skips the rest of the chain, which then yields null (JavaScript's and C#'s optional chaining). The
 // last ?. a plain link follows (one more than its member and that member's call) is rewritten over the tokens: a base that runs no
 // code reads twice, `(null != base) ? base.rest : null`; any other base is evaluated once into an arrow function's parameter,
 // `((p) => (null != p) ? p.rest : null)(base)`. Each part parses again, so an earlier ?. in it is rewritten the same way.
 checked_result<expression_ptr> parser::null_chain_rest(size_t chain_start, const std::vector<size_t>& links, expression_ptr expr) {
     const std::vector<token>& tokens = *stream_;
-    const size_t chain_end = current_;
+    size_t chain_end = current_;
     auto group_end = [&](size_t at) {   // past the balanced group opened at `at`
         size_t depth = 0;
         for (size_t i = at; i < chain_end; ++i) {
@@ -2967,12 +4121,24 @@ checked_result<expression_ptr> parser::null_chain_rest(size_t chain_start, const
         }
         return chain_end;
     };
-    size_t link = SIZE_MAX;
-    for (size_t k = links.size(); k-- > 0;) {
-        size_t at = links[k] + 2;   // past ?. and the member's name
-        if (at < chain_end && tokens[at].type == token_type::left_paren) { at = group_end(at); }
-        if (at < chain_end && tokens[at].type != token_type::question_dot) { link = links[k]; break; }
+    auto last_plain_link = [&]() {
+        for (size_t k = links.size(); k-- > 0;) {
+            size_t at = links[k] + 2;   // past ?. and the member's name
+            if (at < chain_end && tokens[at].type == token_type::left_paren) { at = group_end(at); }
+            if (at < chain_end && tokens[at].type != token_type::question_dot) { return links[k]; }
+        }
+        return SIZE_MAX;
+    };
+    // a postfix ++/-- after the chain's plain links is a store to the chain, as `chain += 1` is: it stays outside the rewrite
+    const token_type last = chain_end > chain_start ? tokens[chain_end - 1].type : token_type::eof;
+    const bool counted = last == token_type::plus_plus || last == token_type::minus_minus;
+    if (counted) { --chain_end; }
+    size_t link = last_plain_link();
+    if (counted && link == SIZE_MAX) {
+        ++chain_end;
+        link = last_plain_link();
     }
+    const bool store_outside = counted && chain_end < current_;
     if (link == SIZE_MAX) { return expr; }
 
     bool pure = true;
@@ -3044,6 +4210,8 @@ checked_result<expression_ptr> parser::null_chain_rest(size_t chain_start, const
         report_error("unexpected tokens in an optional chain", tokens[link]);
         return make_error_code(parse_error_code::syntax_error);
     }
+    mark_null_chain(parsed.value().get());
+    if (store_outside) { return desugar_incdec(tokens[chain_end], parsed.value(), true); }
     return parsed.value();
 }
 
@@ -3138,12 +4306,37 @@ expression_ptr parser::bound_conditional(expression_ptr value) {
     return value;
 }
 
+// What a reference binds where one surely binds (a T& declaration, a reference return): a conditional's arms as places, and `this`
+// as the object it names (C++ *this), a reference to it
+expression_ptr parser::reference_binding(expression_ptr value) {
+    if (value && value->get_type() == node_type::this_expr && !enclosing_class_.empty()) {
+        return std::make_shared<cast_expr>(value->location, store_type_info(type_info::make_object(*symbolizer_, enclosing_class_)), true, std::move(value));
+    }
+    return bound_conditional(std::move(value));
+}
+
 checked_result<declaration_ptr> parser::declaration() {
     if (!check_mode_attribute_ahead()) { return declaration_body(); }
     return attributed_declaration();
 }
 
 JAI_NOINLINE checked_result<declaration_ptr> parser::attributed_declaration() {
+    // a generic keeps its attributes in its tokens: each instance parses them as its own
+    if (const size_t name_at = generic_function_head(current_); name_at != SIZE_MAX) {
+        JAISCRIPT_TRY_ASSIGN(declaration_ptr generic, generic_declaration({detail::generic_kind::function, current_, name_at, {}, {}}));
+        match(token_type::semicolon);
+        return generic;
+    }
+    {
+        size_t head = attributes_end(current_);
+        if (head < stream_->size() && (*stream_)[head].type == token_type::nocopy_keyword) { ++head; }
+        if (head + 2 < stream_->size() && (*stream_)[head].type == token_type::class_keyword && (*stream_)[head + 1].type == token_type::identifier &&
+            (*stream_)[head + 2].type == token_type::less && !pushed_back_token_) {
+            JAISCRIPT_TRY_ASSIGN(declaration_ptr generic, generic_declaration({detail::generic_kind::class_type, current_, head + 1, {}, {}}));
+            match(token_type::semicolon);
+            return generic;
+        }
+    }
     if (nodiscard_attribute_ahead()) {
         const source_location at = peek().location;
         current_ += 5;
@@ -3192,6 +4385,11 @@ JAI_NOINLINE checked_result<declaration_ptr> parser::declaration_rest() {
     }
     if (foreign_word_at_statement()) { return make_error_code(parse_error_code::syntax_error); }
     if (check(token_type::const_keyword)) { return const_declaration(); }
+    if (const size_t name_at = generic_function_head(current_); name_at != SIZE_MAX) {
+        JAISCRIPT_TRY_ASSIGN(declaration_ptr generic, generic_declaration({detail::generic_kind::function, current_, name_at, {}, {}}));
+        match(token_type::semicolon);
+        return generic;
+    }
 
     if (match(token_type::nocopy_keyword)) {
         const token at = previous();
@@ -3230,43 +4428,9 @@ JAI_NOINLINE checked_result<declaration_ptr> parser::declaration_rest() {
         return result;
     }
 
-    // Check for enum keyword
-    if (match(token_type::enum_keyword)) {
-        if (check(token_type::identifier) && reject_using_name(peek(), "enum")) { return make_error_code(parse_error_code::syntax_error); }
-        JAISCRIPT_TRY_ASSIGN(token name_tok, consume(token_type::identifier, "expected enum name"));
-        auto [name_id, name_view] = symbolizer_->intern_with_view(name_tok.lexeme);
-        JAISCRIPT_TRY(expect(token_type::left_brace, "expected '{' after enum name"));
+    if (match(token_type::enum_keyword)) { return enum_declaration(); }
 
-        auto decl = std::make_shared<enum_decl>(name_tok.location, name_view, name_id);
-
-        if (!check(token_type::right_brace)) {
-            do {
-                const bool keyword_value = is_declarable_keyword_name(peek().type) && current_ + 1 < stream_->size() &&
-                                           ((*stream_)[current_ + 1].type == token_type::comma || (*stream_)[current_ + 1].type == token_type::right_brace ||
-                                            (*stream_)[current_ + 1].type == token_type::equal);
-                JAISCRIPT_TRY_ASSIGN(token val_tok, keyword_value ? checked_result<token>(advance()) : consume(token_type::identifier, "expected enum value name"));
-                auto [val_id, val_view] = symbolizer_->intern_with_view(val_tok.lexeme);
-                decl->values.push_back({val_view, val_id});
-                script_int number = 0;
-                if (match(token_type::equal)) {
-                    const token& at = peek();
-                    JAISCRIPT_TRY_ASSIGN(expression_ptr init, expression());
-                    std::string why;
-                    if (!enum_initializer_value(init.get(), *decl, decl->numbers, number, why)) {
-                        report_error("enum value '" + std::string(val_tok.lexeme) + "' " + why, at);
-                        return make_error_code(parse_error_code::syntax_error);
-                    }
-                } else if (!decl->numbers.empty() && !ints::try_add(decl->numbers.back(), 1, number)) {
-                    report_error("enum value '" + std::string(val_tok.lexeme) + "' overflows the int range: the value before it is the largest int", val_tok);
-                    return make_error_code(parse_error_code::syntax_error);
-                }
-                decl->numbers.push_back(number);
-            } while (match(token_type::comma));
-        }
-
-        JAISCRIPT_TRY(expect(token_type::right_brace, "expected '}' after enum values"));
-        return decl;
-    }
+    if (callable_type_ahead()) { return callable_typed_declaration(); }
 
     if (match(token_type::coroutine_keyword)) {
         const bool was_in_coroutine = in_coroutine_;
@@ -3397,12 +4561,33 @@ JAI_NOINLINE checked_result<declaration_ptr> parser::declaration_rest() {
             }
         }
 
+        // Stack<int> s; / shop::Stack<int>& r = s; / Stack<int> make() {...}: a generic's instance declares as a plain class
+        // name does (a < b > c; is no comparison a program can make: a bool has none with c)
+        if (after < stream_->size() && (*stream_)[after].type == token_type::less && !pushed_back_token_ &&
+            !(after == current_ && is_registered_template_type(firstIdentifier))) {
+            bool split = false;
+            const size_t end = type_arguments_end(after, split, true);
+            if (end != SIZE_MAX && !split && end + 1 < stream_->size()) {
+                const bool reference = (*stream_)[end].type == token_type::ampersand;
+                const size_t name_at = end + (reference ? 1 : 0);
+                if (name_at + 1 < stream_->size() && (*stream_)[name_at].type == token_type::identifier) {
+                    const token_type then = (*stream_)[name_at + 1].type;
+                    if (then == token_type::semicolon || then == token_type::equal || then == token_type::left_paren || (then == token_type::left_brace && !reference)) {
+                        const bool is_function = then == token_type::left_paren && !paren_group_ends_statement(name_at + 1);
+                        current_ = savedPos;
+                        return is_function ? function_declaration() : variable_declaration();
+                    }
+                }
+            }
+        }
+
         if (check(token_type::less) && is_registered_template_type(firstIdentifier)) {
             // Point<int> p; / Point<int>& r = q; / Point<int> make() {...}: the same declaration rules as a plain class name;
             // a failed type parse is an expression (Point < x)
             current_ = savedPos;
             const size_t errors_before = errors_.size();
             const std::optional<token> pushed_before = pushed_back_token_;
+            const size_t uses_before = generic_uses_.size();
             auto type_result = parse_type();
             if (type_result && type_result.value() && errors_.size() == errors_before && !pushed_back_token_) {
                 const bool reference = check(token_type::ampersand);
@@ -3419,8 +4604,8 @@ JAI_NOINLINE checked_result<declaration_ptr> parser::declaration_rest() {
             current_ = savedPos;
             errors_.resize(errors_before);
             pushed_back_token_ = pushed_before;
-        } else if (check(token_type::identifier) && !(peek().lexeme == "instanceof" && current_ + 1 < stream_->size() &&
-                                                      (*stream_)[current_ + 1].type == token_type::identifier)) {   // x instanceof T ... is an expression
+            generic_uses_.resize(uses_before);
+        } else if (check(token_type::identifier)) {
             // Pattern: identifier identifier - a declaration. A '(' after the second
             // identifier makes it a class-typed free function (C++ return-type-first,
             // same as the namespace path); otherwise a variable: Point p; / Point mk() {...}
@@ -3522,6 +4707,15 @@ JAI_NOINLINE checked_result<expression_ptr> parser::finish_member_access(express
 checked_result<std::vector<parameter>> parser::parse_parameter_list() {
     std::vector<parameter> params;
 
+    if (std::exchange(postfix_marker_ahead_, false) && check(token_type::int_keyword) && current_ + 1 < stream_->size() &&
+        (*stream_)[current_ + 1].type == token_type::right_paren) {
+        advance();
+        parameter marker(store_type_info(type_info::make_int(*symbolizer_)), std::string(detail::k_postfix_marker_name));
+        marker.symbol_id = symbolizer_->intern(marker.name);
+        params.push_back(std::move(marker));
+        return params;
+    }
+
     if (!check(token_type::right_paren)) {
         do {
             const bool is_const = match(token_type::const_keyword);
@@ -3533,6 +4727,7 @@ checked_result<std::vector<parameter>> parser::parse_parameter_list() {
             type_info_ptr type = nullptr;
             std::string name;
             bool is_reference = false;
+            bool untyped = false;
 
             // Check for :name syntax (shorthand for auto: name)
             if (match(token_type::colon)) {
@@ -3546,7 +4741,7 @@ checked_result<std::vector<parameter>> parser::parse_parameter_list() {
                      check(token_type::function_keyword) || check(token_type::int_keyword) || check(token_type::float_keyword) ||
                      check(token_type::string_keyword) || check(token_type::bool_keyword) || check(token_type::char_keyword) ||
                      check(token_type::void_keyword) || check(token_type::array_keyword) || check(token_type::map_keyword) ||
-                     check(token_type::weak_ptr_keyword) || check(token_type::shared_ptr_keyword)) {
+                     check(token_type::weak_ptr_keyword) || check(token_type::shared_ptr_keyword) || callable_type_ahead()) {
 
                 JAISCRIPT_TRY_ASSIGN(type, parse_type());
 
@@ -3567,6 +4762,7 @@ checked_result<std::vector<parameter>> parser::parse_parameter_list() {
                         type->type_name.find("::") == std::string::npos) {
                         name = type->type_name;
                         type = store_type_info(type_info::make_any(*symbolizer_));
+                        untyped = true;
                     } else {
                         report_expected_name("expected parameter name", "parameter");
     return make_error_code(parse_error_code::syntax_error);
@@ -3584,6 +4780,7 @@ checked_result<std::vector<parameter>> parser::parse_parameter_list() {
 
             parameter param(type, name, is_reference, is_const);
             param.symbol_id = symbolizer_->intern(name);
+            param.untyped = untyped;
 
             if (match(token_type::equal)) {
                 JAISCRIPT_TRY_ASSIGN(param.default_value, expression());
@@ -3611,7 +4808,25 @@ checked_result<std::vector<parameter>> parser::parse_parameter_list() {
 checked_result<expression_ptr> parser::lambda_expression() {
     auto lambda = std::make_shared<lambda_expr>(peek().location);
     JAISCRIPT_TRY(lambda_captures(*lambda));
-    return finish_lambda_after_captures(std::move(lambda));
+    JAISCRIPT_TRY(lambda_signature(*lambda));
+    const token body_open = peek();
+    lambda_expr& made = *lambda;
+    auto result = finish_lambda_body(std::move(lambda), false);
+    if (result) { note_saved_source(made, body_open); }
+    return result;
+}
+
+void parser::note_saved_source(lambda_expr& lambda, const token& body_open) {
+    const token& body_close = previous();
+    if (lambda.default_capture != lambda_expr::capture_default::none || splice_depth_ != 0 || !template_barriers_.empty() ||
+        body_open.type != token_type::left_brace || body_close.type != token_type::right_brace || body_close.offset <= body_open.offset ||
+        body_close.offset >= source_.size() || source_[body_open.offset] != '{' || source_[body_close.offset] != '}') {
+        return;
+    }
+    for (const auto& capture : lambda.captures) {
+        if (capture.by_reference || capture.name == "this") { return; }
+    }
+    lambda.saved_source = symbolizer_->intern_with_view(source_.substr(body_open.offset, body_close.offset + 1 - body_open.offset)).second;
 }
 
 JAI_NOINLINE checked_result<void> parser::lambda_captures(lambda_expr& lambda) {
@@ -3663,11 +4878,6 @@ JAI_NOINLINE checked_result<void> parser::lambda_signature(lambda_expr& lambda) 
     return {};
 }
 
-namespace {
-    constexpr uint32_t k_paren_unknown = 0xFFFFFFFFu;
-    constexpr uint32_t k_paren_unclosed = 0xFFFFFFFEu;
-}
-
 bool parser::arrow_function_ahead() const {
     const std::vector<token>& tokens = *stream_;
     if (pushed_back_token_) return false;
@@ -3717,6 +4927,7 @@ checked_result<expression_ptr> parser::arrow_function_expression() {
         token name = advance();
         parameter param(store_type_info(type_info::make_any(*symbolizer_)), std::string(name.lexeme));
         param.symbol_id = get_symbol_id(name);
+        param.untyped = true;
         lambda->parameters.push_back(std::move(param));
     } else {
         JAISCRIPT_TRY(expect(token_type::left_paren, "expected '(' for arrow function parameters"));
@@ -3754,6 +4965,8 @@ checked_result<expression_ptr> parser::finish_lambda_body(std::shared_ptr<lambda
     in_constructor_ = false;
     coroutine_scope ref_return_scope{returns_reference_, returns_reference_};
     returns_reference_ = lambda->return_type && lambda->return_type->base_type == script_value_type::jai_reference_type;
+    coroutine_scope value_return_scope{returns_value_, returns_value_};
+    returns_value_ = declares_a_value(lambda->return_type.get());
     if (expression_body && !check(token_type::left_brace)) { return lambda_expression_body(std::move(lambda)); }
     if (check(token_type::identifier) && peek().lexeme == "mutable") {
         report_foreign(detail::foreign_word::mutable_lambda, peek());
@@ -3786,7 +4999,8 @@ JAI_NOINLINE checked_result<expression_ptr> parser::lambda_expression_body(std::
         return value.error_value();
     }
     std::vector<declaration_ptr> body;
-    auto ret = std::make_shared<return_stmt>(at, returns_reference_ ? bound_conditional(value.value()) : value.value());
+    auto ret = std::make_shared<return_stmt>(at, returns_reference_ ? reference_binding(value.value()) : value.value());
+    discard_returned_call(*ret);
     body.push_back(std::make_shared<statement_decl>(at, ret));
     lambda->body = std::make_shared<block_stmt>(at, std::move(body));
     lambda->local_count = exit_function_scope();
@@ -4011,6 +5225,17 @@ void parser::reject_class_in_function_body(const token& at) {
     report_error("a class cannot be declared inside a function body (a class is a program-scope type); declare it at program scope or import its file", at);
 }
 
+// A file this parse reads into the program (a function-body include, a template): its bytes from the engine's loader, noted
+// with the stamp of those bytes. False = it cannot be opened, or it never read whole (unsettled_file_ names it then).
+bool parser::load_spliced(const std::string& resolved_path, std::string& content) {
+    detail::loaded_source loaded = detail::engine_access::load_source(*engine_, resolved_path, detail::source_mode::binary);
+    if (loaded.status == detail::loaded_source::state::unsettled && unsettled_file_.empty()) { unsettled_file_ = resolved_path; }
+    if (loaded.status != detail::loaded_source::state::loaded) return false;
+    content = std::move(loaded.text);
+    spliced_files_.push_back({resolved_path, loaded.stamp.mtime, loaded.stamp.size});
+    return true;
+}
+
 // A literal include inside a function body is textual at parse time, as C++'s is: the included file's declarations are
 // parsed here, in this scope, so the function's parameters and locals are theirs and theirs are the function's, and the
 // checker and both backends see one function. A computed path stays a runtime include (it runs in the environment and
@@ -4033,9 +5258,12 @@ bool parser::splice_include(const declaration_ptr& decl, std::vector<declaration
         report_error_at("include '" + path + "' includes itself or nests too deep", decl->location);
         return true;
     }
-    std::ifstream file(resolved.value(), std::ios::binary);
-    if (!file) return false;
-    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    std::string content;
+    if (!load_spliced(resolved.value(), content)) {
+        if (unsettled_file_ != resolved.value()) return false;
+        report_error_at(detail::unsettled_source_text(resolved.value()), decl->location);
+        return true;
+    }
     lexer lex(content, symbolizer_, resolved.value());
     const std::vector<token> lexed = lex.tokenize();
     std::vector<token> qualified;
@@ -4061,7 +5289,6 @@ bool parser::splice_include(const declaration_ptr& decl, std::vector<declaration
     splice_active_.pop_back(); --splice_depth_;
     stream_ = saved_stream; current_ = saved_current; pushed_back_token_ = saved_pushed_back;
     paren_close_.erase(&tokens);
-    spliced_files_.push_back(resolved.value());
     return true;
 }
 
@@ -4073,6 +5300,7 @@ checked_result<statement_ptr> parser::expression_statement() {
 
 // `if (a = b)`: the assignment is the condition itself; `if ((a = b))` has parentheses of its own and is left unmarked
 void parser::mark_bare_condition(const expression_ptr& condition, size_t first_token) {
+    note_read_for_truth(condition);
     if (!condition || condition->get_type() != node_type::assignment_expr) return;
     auto* assign = static_cast<assignment_expr*>(condition.get());
     if (assign->op.type != token_type::equal || assign->incdec_desugar) return;
@@ -4089,13 +5317,133 @@ void parser::mark_bare_condition(const expression_ptr& condition, size_t first_t
     assign->bare_condition = true;
 }
 
+// A ';' before the ')' that closes an if's parentheses: C++17's `if (init; condition)`
+bool parser::init_statement_ahead() const {
+    size_t depth = 0;
+    for (size_t at = current_; at < stream_->size(); ++at) {
+        switch ((*stream_)[at].type) {
+            case token_type::left_paren: case token_type::left_bracket: case token_type::left_brace: ++depth; break;
+            case token_type::right_paren: case token_type::right_bracket: case token_type::right_brace:
+                if (depth == 0) { return false; }
+                --depth;
+                break;
+            case token_type::semicolon:
+                if (depth == 0) { return true; }
+                break;
+            default: break;
+        }
+    }
+    return false;
+}
+
+// One declarator and no ';' (a for's init, a condition's declaration); null when an expression is ahead. In a condition a type
+// declares only where a name follows it (`int(x)` is an expression there), and after a class name's '&' only where '=' follows
+// the name (`a & b` is an expression); the initializer is the condition
+JAI_NOINLINE checked_result<declaration_ptr> parser::unterminated_declaration(bool condition) {
+    const token const_at = peek();
+    const bool is_const = match(token_type::const_keyword);
+    const bool keyword_type = check(token_type::auto_keyword) || check(token_type::var_keyword) ||
+                              check(token_type::int_keyword) || check(token_type::float_keyword) ||
+                              check(token_type::string_keyword) || check(token_type::bool_keyword) ||
+                              check(token_type::char_keyword) || check(token_type::array_keyword) ||
+                              check(token_type::map_keyword) || check(token_type::shared_ptr_keyword) ||
+                              check(token_type::weak_ptr_keyword) || callable_type_ahead();
+    bool declares = keyword_type && !condition;
+    if (!declares && (keyword_type || check(token_type::identifier))) {
+        const size_t type_start = current_;
+        const size_t errors_before = errors_.size();
+        const std::optional<token> pushed_before = pushed_back_token_;
+        const size_t uses_before = generic_uses_.size();
+        auto type_probe = parse_type();
+        if (type_probe && errors_.size() == errors_before) {
+            const bool binary_and = match(token_type::ampersand) && condition && !keyword_type;
+            declares = check(token_type::identifier) &&
+                       (!binary_and || (current_ + 1 < stream_->size() && (*stream_)[current_ + 1].type == token_type::equal));
+        }
+        current_ = type_start;
+        errors_.resize(errors_before);
+        pushed_back_token_ = pushed_before;
+        generic_uses_.resize(uses_before);
+    }
+    // const i = 0: const alone is const auto
+    const bool bare_const = is_const && check(token_type::identifier) && current_ + 1 < stream_->size() &&
+                            (*stream_)[current_ + 1].type == token_type::equal;
+    if (!declares && !bare_const) {
+        if (is_const) {
+            report_foreign(detail::foreign_word::const_misplaced, const_at);
+            return make_error_code(parse_error_code::syntax_error);
+        }
+        return declaration_ptr();
+    }
+    type_info_ptr type;
+    if (!bare_const) {
+        JAISCRIPT_TRY_ASSIGN(type_info_ptr spelled_type, parse_type());
+        type = std::move(spelled_type);
+    }
+    if (match(token_type::ampersand)) {
+        type_info refType(script_value_type::jai_reference_type);
+        refType.type_name = type ? (type->type_name + "&") : "auto&";
+        refType.type_params.push_back(type);
+        refType.id = symbolizer_->intern(refType.canonical_name());
+        type = store_type_info(std::move(refType));
+    }
+    JAISCRIPT_TRY_ASSIGN(token name, consume_name("expected variable name", "variable"));
+
+    expression_ptr initializer = nullptr;
+    const bool spelled_initializer = match(token_type::equal);
+    if (spelled_initializer) {
+        JAISCRIPT_TRY_ASSIGN(initializer, expression());
+    } else if (condition) {
+        report_error("a condition's declaration needs an initializer: if (auto " + std::string(name.lexeme) + " = e)", name);
+        return make_error_code(parse_error_code::syntax_error);
+    } else {
+        initializer = default_initializer(type, name.location);
+    }
+
+    auto declared = std::make_shared<variable_decl>(name.location, type, name.lexeme, get_symbol_id(name), initializer);
+    declared->default_initialized = is_const && !spelled_initializer;
+    if (declared->name_id != UINT64_MAX) {
+        declared->slot_index = allocate_slot(declared->name_id);
+    }
+    if (is_const && !finish_const(declared, const_at, false)) { return make_error_code(parse_error_code::syntax_error); }
+    return declaration_ptr(declared);
+}
+
+// What stands between an if's or a while's parentheses: an expression, or one declaration whose variable is the condition
+// (C++17 `if (auto d = e)`); an if may lead with an init statement (`if (init; condition)`). The declarations are returned in
+// order, and the statement that owns them wraps itself in their block
+checked_result<expression_ptr> parser::condition_clause(std::vector<declaration_ptr>& declarations, bool init_allowed) {
+    if (init_allowed && init_statement_ahead()) {
+        if (!check(token_type::semicolon)) {
+            JAISCRIPT_TRY_ASSIGN(declaration_ptr init, unterminated_declaration(false));
+            if (!init) {
+                JAISCRIPT_TRY_ASSIGN(expression_ptr expr, expression());
+                init = std::make_shared<statement_decl>(expr->location, std::make_shared<expression_stmt>(expr->location, expr));
+            }
+            declarations.push_back(std::move(init));
+        }
+        JAISCRIPT_TRY(expect(token_type::semicolon, "expected ';' after the init statement of an if"));
+    }
+    const size_t condition_start = current_;
+    JAISCRIPT_TRY_ASSIGN(declaration_ptr declared, unterminated_declaration(true));
+    if (declared) {
+        const auto* variable = static_cast<const variable_decl*>(declared.get());
+        expression_ptr value = hidden_identifier(variable->name_id, variable->name, variable->location);
+        declarations.push_back(std::move(declared));
+        return value;
+    }
+    JAISCRIPT_TRY_ASSIGN(expression_ptr condition, expression());
+    mark_bare_condition(condition, condition_start);
+    return condition;
+}
+
 checked_result<statement_ptr> parser::if_statement() {
     const token& ifToken = previous();
 
     JAISCRIPT_TRY(expect(token_type::left_paren, "expected '(' after 'if'"));
-    const size_t condition_start = current_;
-    JAISCRIPT_TRY_ASSIGN(expression_ptr condition, expression());
-    mark_bare_condition(condition, condition_start);
+    block_scope_guard condition_scope(*this);   // a name the condition declares lives to the end of the else
+    std::vector<declaration_ptr> declarations;
+    JAISCRIPT_TRY_ASSIGN(expression_ptr condition, condition_clause(declarations, /*init_allowed=*/true));
     JAISCRIPT_TRY(expect(token_type::right_paren, "expected ')' after if condition"));
 
     JAISCRIPT_TRY_ASSIGN(statement_ptr then_statement, statement());
@@ -4105,7 +5453,10 @@ checked_result<statement_ptr> parser::if_statement() {
         JAISCRIPT_TRY_ASSIGN(else_statement, statement());
     }
 
-    return std::make_shared<if_stmt>(ifToken.location, condition, then_statement, else_statement);
+    statement_ptr test = std::make_shared<if_stmt>(ifToken.location, condition, then_statement, else_statement);
+    if (declarations.empty()) { return test; }
+    declarations.push_back(std::make_shared<statement_decl>(ifToken.location, std::move(test)));
+    return std::make_shared<block_stmt>(ifToken.location, std::move(declarations));
 }
 
 checked_result<statement_ptr> parser::while_statement() {
@@ -4113,14 +5464,21 @@ checked_result<statement_ptr> parser::while_statement() {
     jump_scope loop(jumps_, {jumps_.breakable + 1, jumps_.continuable + 1, jumps_.parallel_body});
 
     JAISCRIPT_TRY(expect(token_type::left_paren, "expected '(' after 'while'"));
-    const size_t condition_start = current_;
-    JAISCRIPT_TRY_ASSIGN(expression_ptr condition, expression());
-    mark_bare_condition(condition, condition_start);
+    block_scope_guard turn_scope(*this);   // a name the condition declares is made again for each turn
+    std::vector<declaration_ptr> declarations;
+    JAISCRIPT_TRY_ASSIGN(expression_ptr condition, condition_clause(declarations, /*init_allowed=*/false));
     JAISCRIPT_TRY(expect(token_type::right_paren, "expected ')' after while condition"));
 
     JAISCRIPT_TRY_ASSIGN(statement_ptr body, statement());
 
-    return std::make_shared<while_stmt>(whileToken.location, condition, body);
+    if (declarations.empty()) { return std::make_shared<while_stmt>(whileToken.location, condition, body); }
+    // while (T x = e) body: for (;;) { T x = e; if (!x) break; body }
+    const source_location& at = whileToken.location;
+    token bang(token_type::bang, "!", at);
+    statement_ptr leave = std::make_shared<if_stmt>(at, std::make_shared<unary_expr>(at, bang, condition), std::make_shared<break_stmt>(at));
+    declarations.push_back(std::make_shared<statement_decl>(at, std::move(leave)));
+    declarations.push_back(std::make_shared<statement_decl>(body->location, body));
+    return std::make_shared<for_stmt>(at, nullptr, nullptr, nullptr, std::make_shared<block_stmt>(at, std::move(declarations)));
 }
 
 // parallel_for (auto& x : arr) { body } — range-for SYNTAX, but the body is parsed as a
@@ -4408,7 +5766,7 @@ checked_result<statement_ptr> parser::for_statement() {
                 auto binding = std::make_shared<variable_decl>(names[i].location, binding_type, names[i].lexeme,
                                                                get_symbol_id(names[i]), half);
                 binding->is_const = is_const;
-                if (in_function_scope()) { binding->slot_index = allocate_slot(binding->name_id); }
+                binding->slot_index = allocate_slot(binding->name_id);
                 bindings.push_back(std::move(binding));
             }
             JAISCRIPT_TRY_ASSIGN(statement_ptr body, statement());
@@ -4438,7 +5796,7 @@ checked_result<statement_ptr> parser::for_statement() {
                 block_scope_guard loop_var_scope(*this);
                 uint64_t var_id = get_symbol_id(varName);
                 size_t var_slot = SIZE_MAX;
-                if (in_function_scope() && var_id != UINT64_MAX) {
+                if (var_id != UINT64_MAX) {
                     var_slot = allocate_slot(var_id);
                 }
 
@@ -4462,76 +5820,12 @@ traditional_for:
     // Init — the loop variable's slot stops resolving after the loop closes
     block_scope_guard loop_var_scope(*this);
     declaration_ptr init = nullptr;
-    const token init_const_at = peek();
-    const bool init_const = match(token_type::const_keyword);
-    // An identifier starts a declaration only when a type spelling is followed by a name (C++: whatever can be a
-    // declaration is one); `i = 0`, `o[0] = 1`, `j += 1` are expression initializers
-    bool identifier_declares = false;
-    if (check(token_type::identifier)) {
-        const size_t type_start = current_;
-        const size_t errors_before = errors_.size();
-        const std::optional<token> pushed_before = pushed_back_token_;
-        auto type_probe = parse_type();
-        if (type_probe && errors_.size() == errors_before) {
-            match(token_type::ampersand);
-            identifier_declares = check(token_type::identifier);
+    if (!match(token_type::semicolon)) {
+        JAISCRIPT_TRY_ASSIGN(init, unterminated_declaration(false));
+        if (!init) {
+            JAISCRIPT_TRY_ASSIGN(expression_ptr expr, expression());
+            init = std::make_shared<expression_decl>(expr->location, std::move(expr));
         }
-        current_ = type_start;
-        errors_.resize(errors_before);
-        pushed_back_token_ = pushed_before;
-    }
-    // for (const i = 0; ...): const alone is const auto
-    const bool bare_const_init = init_const && check(token_type::identifier) && current_ + 1 < stream_->size() &&
-                                 (*stream_)[current_ + 1].type == token_type::equal;
-    if (match(token_type::semicolon)) {
-        // No init
-    } else if (check(token_type::auto_keyword) || check(token_type::var_keyword) ||
-               check(token_type::int_keyword) || check(token_type::float_keyword) ||
-               check(token_type::string_keyword) || check(token_type::bool_keyword) ||
-               check(token_type::char_keyword) || check(token_type::array_keyword) ||
-               check(token_type::map_keyword) || identifier_declares || bare_const_init) {
-        // Parse variable declaration without consuming the semicolon
-        // (the for loop will handle it)
-        type_info_ptr type;
-        if (!bare_const_init) {
-            JAISCRIPT_TRY_ASSIGN(type_info_ptr spelled_type, parse_type());
-            type = std::move(spelled_type);
-        }
-
-        // Check for reference after type
-        if (match(token_type::ampersand)) {
-            type_info refType(script_value_type::jai_reference_type);
-            refType.type_name = type ? (type->type_name + "&") : "auto&";
-            refType.type_params.push_back(type);
-            refType.id = symbolizer_->intern(refType.canonical_name());
-            type = store_type_info(std::move(refType));
-        }
-
-        JAISCRIPT_TRY_ASSIGN(token name, consume_name("expected variable name", "variable"));
-
-        expression_ptr initializer = nullptr;
-        const bool spelled_initializer = match(token_type::equal);
-        if (spelled_initializer) {
-            JAISCRIPT_TRY_ASSIGN(initializer, expression());
-        } else {
-            initializer = default_initializer(type, name.location);
-        }
-
-        auto var_init = std::make_shared<variable_decl>(name.location, type, name.lexeme, get_symbol_id(name), initializer);
-        var_init->default_initialized = init_const && !spelled_initializer;
-        if (in_function_scope() && var_init->name_id != UINT64_MAX) {
-            var_init->slot_index = allocate_slot(var_init->name_id);
-        }
-        if (init_const && !finish_const(var_init, init_const_at, false)) { return make_error_code(parse_error_code::syntax_error); }
-        init = var_init;
-        // Note: NOT consuming semicolon here - the for loop will handle it
-    } else {
-        if (init_const) {
-            report_foreign(detail::foreign_word::const_misplaced, init_const_at);
-            return make_error_code(parse_error_code::syntax_error);
-        }
-        JAISCRIPT_TRY_ASSIGN(expression_ptr expr, expression());
-        init = std::make_shared<expression_decl>(expr->location, std::move(expr));
     }
 
     // Consume semicolon after init
@@ -4570,12 +5864,28 @@ checked_result<statement_ptr> parser::return_statement() {
             return make_error_code(parse_error_code::syntax_error);
         }
         JAISCRIPT_TRY_ASSIGN(value, expression());
-        if (returns_reference_ && !in_coroutine_) { value = bound_conditional(std::move(value)); }
+        if (returns_reference_ && !in_coroutine_) { value = reference_binding(std::move(value)); }
     }
 
     JAISCRIPT_TRY(expect(token_type::semicolon, "expected ';' after return value"));
 
-    return std::make_shared<return_stmt>(returnToken.location, value);
+    auto ret = std::make_shared<return_stmt>(returnToken.location, value);
+    discard_returned_call(*ret);
+    return ret;
+}
+
+// A body that declares no value to return returns a call that returns nothing as C++ does (`return f();` in a void function)
+void parser::discard_returned_call(return_stmt& a_return) const {
+    if (!a_return.value || returns_value_ || in_coroutine_) { return; }
+    a_return.value_discarded = true;
+    mark_result_discarded(a_return.value.get());
+}
+
+// A declared result that is a value: not void or auto (a deduced body returns whatever its returns give); var declares one
+bool parser::declares_a_value(const type_info* a_type) {
+    if (!a_type) { return false; }
+    if (a_type->base_type == script_value_type::jai_null_type && a_type->type_name == "void") { return false; }
+    return a_type->type_name != "auto";
 }
 
 checked_result<statement_ptr> parser::break_statement() {
@@ -4628,7 +5938,7 @@ checked_result<statement_ptr> parser::try_statement() {
             catch_var = var_name.lexeme;
             JAISCRIPT_TRY(expect(token_type::right_paren, "expected ')' after catch variable"));
             catch_var_id = get_symbol_id(var_name);
-            if (in_function_scope() && catch_var_id != UINT64_MAX) {
+            if (catch_var_id != UINT64_MAX) {
                 catch_slot = allocate_slot(catch_var_id);
             }
         }
@@ -4692,7 +6002,7 @@ checked_result<statement_ptr> parser::try_statement() {
             reference.id = symbolizer_->intern(reference.canonical_name());
             auto declared = std::make_shared<variable_decl>(name.location, store_type_info(std::move(reference)), name.lexeme, get_symbol_id(name),
                                                             hidden_identifier(caught_id, caught_name, name.location));
-            if (in_function_scope() && declared->name_id != UINT64_MAX) { declared->slot_index = allocate_slot(declared->name_id); }
+            if (declared->name_id != UINT64_MAX) { declared->slot_index = allocate_slot(declared->name_id); }
             return declared;
         };
         if (typed_clause()) {
@@ -4723,7 +6033,7 @@ checked_result<statement_ptr> parser::try_statement() {
             std::shared_ptr<variable_decl> declared;
             if (type) {
                 declared = std::make_shared<variable_decl>(var_name.location, type, var_name.lexeme, get_symbol_id(var_name), value_of_caught(var_name.location));
-                if (in_function_scope() && declared->name_id != UINT64_MAX) { declared->slot_index = allocate_slot(declared->name_id); }
+                if (declared->name_id != UINT64_MAX) { declared->slot_index = allocate_slot(declared->name_id); }
             } else {
                 declared = name_of_caught(var_name);
             }
@@ -4778,6 +6088,9 @@ checked_result<declaration_ptr> parser::class_declaration(bool nocopy, std::stri
     stack_.guard(peek().location);
     if (check(token_type::identifier) && reject_using_name(peek(), "class")) { return make_error_code(parse_error_code::syntax_error); }
     JAISCRIPT_TRY_ASSIGN(token className, consume(token_type::identifier, "expected class name"));
+    if (check(token_type::less) && !pushed_back_token_) {   // class Name<T, ...>: a generic class
+        return generic_declaration({detail::generic_kind::class_type, current_ - 2 - (nocopy ? 1 : 0), current_ - 1, space, {}});
+    }
     if (check(token_type::identifier) && peek().lexeme == "extends") {
         report_foreign(detail::foreign_word::extends_base, peek());
         return make_error_code(parse_error_code::syntax_error);
@@ -4786,6 +6099,16 @@ checked_result<declaration_ptr> parser::class_declaration(bool nocopy, std::stri
     std::vector<std::string_view> base_classes;
     if (match(token_type::colon)) {
         do {
+            if (check(token_type::identifier) && !pushed_back_token_) {   // Base<Args>: a template's or a generic's instance, by its one name
+                size_t after = current_ + 1;
+                while (after + 1 < stream_->size() && (*stream_)[after].type == token_type::colon_colon && (*stream_)[after + 1].type == token_type::identifier) { after += 2; }
+                bool split = false;
+                if (after < stream_->size() && (*stream_)[after].type == token_type::less && type_arguments_end(after, split, true) != SIZE_MAX) {
+                    JAISCRIPT_TRY_ASSIGN(type_info_ptr base, named_type());
+                    base_classes.emplace_back(symbolizer_->intern_with_view(base->type_name).second);
+                    continue;
+                }
+            }
             JAISCRIPT_TRY_ASSIGN(token base_class_tok, consume(token_type::identifier, "expected base class name"));
             if (!check(token_type::colon_colon)) {
                 // Token lexeme already points to symbolizer storage (identifiers are interned during lexing)
@@ -4809,6 +6132,8 @@ checked_result<declaration_ptr> parser::class_declaration(bool nocopy, std::stri
     auto [class_name_id, class_name_view] = space.empty() ? symbolizer_->intern_with_view(className.lexeme)
                                                           : symbolizer_->intern_with_view(std::string(space) + "::" + std::string(className.lexeme));
     auto classDecl = std::make_shared<class_decl>(className.location, class_name_view, class_name_id);
+    struct enclosing_class_restore { std::string_view& slot; std::string_view saved; ~enclosing_class_restore() { slot = saved; } } enclosing_scope{enclosing_class_, enclosing_class_};
+    enclosing_class_ = class_name_view;
     classDecl->base_classes = std::move(base_classes);
     classDecl->nocopy = nocopy;
 
@@ -4860,6 +6185,19 @@ checked_result<declaration_ptr> parser::class_declaration(bool nocopy, std::stri
 
         if (foreign_word_at_statement()) {
             synchronize_class_member(class_open_index);
+            continue;
+        }
+        if (refuse_generic_member_head(className.lexeme)) {
+            synchronize_class_member(class_open_index);
+            continue;
+        }
+        if (const size_t name_at = generic_function_head(current_, true); name_at != SIZE_MAX) {   // T name<T>(...): a generic method
+            auto generic = generic_declaration({detail::generic_kind::method, current_, name_at, space, class_name_view, static_cast<uint8_t>(visibility)});
+            if (!generic) {
+                synchronize_class_member(class_open_index);
+                continue;
+            }
+            classDecl->members.push_back({visibility, std::move(generic.value())});
             continue;
         }
 
@@ -4922,7 +6260,7 @@ checked_result<declaration_ptr> parser::class_declaration(bool nocopy, std::stri
             in_coroutine_ = true;
             coroutine_body_pending_ = true;
             for (;;) {
-                if (match(token_type::coroutine_keyword)) { member_is_coroutine = true; }
+                if (!callable_type_ahead() && match(token_type::coroutine_keyword)) { member_is_coroutine = true; }
                 else if (match(token_type::static_keyword)) { leading_static = true; }
                 else if (match(token_type::override_keyword)) { leading_override = true; }
                 else { break; }
@@ -4983,7 +6321,7 @@ checked_result<declaration_ptr> parser::class_declaration(bool nocopy, std::stri
             auto var_decl = std::make_shared<variable_decl>(name.location, store_type_info(type_info::make_callable(*symbolizer_)), name.lexeme, get_symbol_id(name), init);
             var_decl->function_spelling = true;
             member = var_decl;
-        } else if (match(token_type::function_keyword) || (member_is_coroutine && bare_coroutine_head())) {
+        } else if ((!callable_type_ahead() && match(token_type::function_keyword)) || (member_is_coroutine && bare_coroutine_head())) {
             // Method declaration with 'function' keyword: function name(...) or function operator=(...);
             // the bare coroutine head (coroutine name(...) / coroutine operator+(...)) lands here too
             bool is_static = leading_static;
@@ -5034,7 +6372,7 @@ checked_result<declaration_ptr> parser::class_declaration(bool nocopy, std::stri
             // Regular member (variable or function)
             bool is_static = leading_static || match(token_type::static_keyword);
             bool is_override = leading_override || match(token_type::override_keyword);
-            const bool function_spelling = check(token_type::function_keyword);
+            const bool function_spelling = check(token_type::function_keyword) && !callable_type_ahead();
 
             auto type_result = parse_type();
             if (!type_result) {
@@ -5042,7 +6380,13 @@ checked_result<declaration_ptr> parser::class_declaration(bool nocopy, std::stri
                 continue;
             }
             type_info_ptr type = std::move(type_result.value());
-            if (reference_method_head()) { type = wrap_reference_return_type(std::move(type)); }   // float& px() { ... }
+            if (reference_method_head()) {
+                type = wrap_reference_return_type(std::move(type));   // float& px() { ... }
+            } else if (!function_spelling && check(token_type::ampersand)) {   // H& r; names storage it does not hold
+                report_error(reference_storage_text(type, "a field"), peek());
+                synchronize_class_member(class_open_index);
+                continue;
+            }
             const type_info_ptr method_return_type = function_spelling ? nullptr : type;
 
             if (check(token_type::identifier) && reject_using_name(peek(), "member")) {
@@ -5151,6 +6495,11 @@ checked_result<declaration_ptr> parser::class_declaration(bool nocopy, std::stri
                         continue;
                     }
 
+                    struct ref_return_restore { bool& flag; bool saved; ~ref_return_restore() { flag = saved; } } ref_return_scope{returns_reference_, returns_reference_};
+                    returns_reference_ = func->return_type && func->return_type->base_type == script_value_type::jai_reference_type;
+                    ref_return_restore value_return_scope{returns_value_, returns_value_};
+                    returns_value_ = declares_a_value(func->return_type.get());
+
                     // Enter function scope for slot-based local variable tracking
                     enter_function_scope();
 
@@ -5194,7 +6543,7 @@ checked_result<declaration_ptr> parser::class_declaration(bool nocopy, std::stri
                     if (!init) { init = default_initializer(type, name.location); }
                     auto var_decl = std::make_shared<variable_decl>(name.location, type, name.lexeme, get_symbol_id(name), init);
                     var_decl->is_static = is_static;
-                    var_decl->default_initialized = member_const && !spelled_init;   // a class constant needs its initializer (finish_const)
+                    var_decl->default_initialized = !spelled_init;   // a class constant needs its initializer (finish_const)
                     var_decl->function_spelling = function_spelling;
                     member = var_decl;
                 }
@@ -5247,8 +6596,115 @@ checked_result<declaration_ptr> parser::class_declaration(bool nocopy, std::stri
 
     in_coroutine_ = class_entry_in_coroutine;
     JAISCRIPT_TRY(expect(token_type::right_brace, "expected '}' after class body"));
+    resolve_constructor_initializers(*classDecl);
 
     return classDecl;
+}
+
+// C++ [class.base.init]: a name in a constructor's initializer list is the class itself (a delegation, as `this`), one of its bases,
+// or an instance field the class declares; a name that is none of them stays unresolved for the load to report
+void parser::resolve_constructor_initializers(class_decl& cls) {
+    using kind_t = constructor_initializer::kind_t;
+    for (auto& member : cls.members) {
+        if (!member.declaration || member.declaration->get_type() != node_type::function_decl) { continue; }
+        auto& ctor = static_cast<function_decl&>(*member.declaration);
+        if (ctor.name != cls.name) { continue; }
+        for (auto& init : ctor.initializers) {
+            if (init.kind != kind_t::unresolved) { continue; }
+            const bool brace = !init.arg_captures.empty() && init.arg_captures[0] != 0;
+            init.arg_captures.clear();
+            if (init.target == cls.name || detail::initializer_names(init.target, cls.name)) {   // a namespace's class is ns::Name: its bare name delegates too
+                init.target = "this";
+                init.kind = kind_t::delegation;
+                continue;
+            }
+            if (std::any_of(cls.base_classes.begin(), cls.base_classes.end(), [&](std::string_view base) { return detail::initializer_names(init.target, base); })) {
+                init.kind = kind_t::base;
+                continue;
+            }
+            for (const auto& other : cls.members) {
+                if (!other.declaration || other.declaration->get_type() != node_type::variable_decl) { continue; }
+                const auto& field = static_cast<const variable_decl&>(*other.declaration);
+                if (field.is_static || field.name != init.target) { continue; }
+                init.kind = kind_t::field;
+                init.value = field_initializer_value(field, std::move(init.arguments), brace, init.location);
+                init.arguments.clear();
+                break;
+            }
+        }
+    }
+}
+
+// A field's member initializer, name(arguments) or name{arguments}: a class or math value is constructed from them, as the declaration
+// `T name(arguments);` constructs it; any other field takes its one value as `=` would store it (no argument: the type's default);
+// an array also takes a braced list of two or more elements and a (size, value) pair
+expression_ptr parser::field_initializer_value(const variable_decl& field, std::vector<expression_ptr> arguments, bool brace, const source_location& at) {
+    const type_info_ptr& type = field.type;
+    const script_value_type base = type ? type->base_type : script_value_type::jai_any_type;
+    const auto null_value = [&] { return expression_ptr(std::make_shared<literal_expr>(at, script_value(script_value::ast_literal_tag{}, std::monostate{}))); };
+    switch (base) {
+    case script_value_type::jai_vec2_type: case script_value_type::jai_vec3_type: case script_value_type::jai_vec4_type: case script_value_type::jai_color_type:
+    case script_value_type::jai_ivec2_type: case script_value_type::jai_ivec3_type:
+        return math_constructor_call(base, std::move(arguments), at);
+    case script_value_type::jai_object_type:
+        if (!type->type_name.empty()) { return std::make_shared<new_expr>(at, type, std::move(arguments)); }
+        break;
+    case script_value_type::jai_array_type:
+        if (brace && arguments.size() >= 2) { return std::make_shared<array_literal_expr>(at, std::move(arguments)); }
+        if (!brace && arguments.size() == 2) {
+            auto sized = construction(type, std::move(arguments), false, at);
+            return sized ? sized.value() : null_value();
+        }
+        break;
+    default:
+        break;
+    }
+    if (arguments.size() == 1) { return std::move(arguments[0]); }
+    if (arguments.empty()) {
+        expression_ptr zero = default_initializer(type, at);
+        return zero ? zero : null_value();
+    }
+    report_error_at("field '" + std::string(field.name) + "' declared '" + (type ? type->canonical_name() : std::string("auto")) +
+                    "' is initialized by one value, not " + std::to_string(arguments.size()), at);
+    return null_value();
+}
+
+// enum Name { a, b = 2 } after the keyword; one a namespace declares is named ns::Name, as its classes are
+checked_result<declaration_ptr> parser::enum_declaration(std::string_view space) {
+    if (check(token_type::identifier) && reject_using_name(peek(), "enum")) { return make_error_code(parse_error_code::syntax_error); }
+    JAISCRIPT_TRY_ASSIGN(token name_tok, consume(token_type::identifier, "expected enum name"));
+    auto [name_id, name_view] = symbolizer_->intern_with_view(space.empty() ? std::string(name_tok.lexeme) : std::string(space) + "::" + std::string(name_tok.lexeme));
+    JAISCRIPT_TRY(expect(token_type::left_brace, "expected '{' after enum name"));
+
+    auto decl = std::make_shared<enum_decl>(name_tok.location, name_view, name_id);
+
+    if (!check(token_type::right_brace)) {
+        do {
+            const bool keyword_value = is_declarable_keyword_name(peek().type) && current_ + 1 < stream_->size() &&
+                                       ((*stream_)[current_ + 1].type == token_type::comma || (*stream_)[current_ + 1].type == token_type::right_brace ||
+                                        (*stream_)[current_ + 1].type == token_type::equal);
+            JAISCRIPT_TRY_ASSIGN(token val_tok, keyword_value ? checked_result<token>(advance()) : consume(token_type::identifier, "expected enum value name"));
+            auto [val_id, val_view] = symbolizer_->intern_with_view(val_tok.lexeme);
+            decl->values.push_back({val_view, val_id});
+            script_int number = 0;
+            if (match(token_type::equal)) {
+                const token& at = peek();
+                JAISCRIPT_TRY_ASSIGN(expression_ptr init, expression());
+                std::string why;
+                if (!enum_initializer_value(init.get(), *decl, decl->numbers, number, why)) {
+                    report_error("enum value '" + std::string(val_tok.lexeme) + "' " + why, at);
+                    return make_error_code(parse_error_code::syntax_error);
+                }
+            } else if (!decl->numbers.empty() && !ints::try_add(decl->numbers.back(), 1, number)) {
+                report_error("enum value '" + std::string(val_tok.lexeme) + "' overflows the int range: the value before it is the largest int", val_tok);
+                return make_error_code(parse_error_code::syntax_error);
+            }
+            decl->numbers.push_back(number);
+        } while (match(token_type::comma));
+    }
+
+    JAISCRIPT_TRY(expect(token_type::right_brace, "expected '}' after enum values"));
+    return decl;
 }
 
 checked_result<declaration_ptr> parser::namespace_declaration() {
@@ -5259,33 +6715,19 @@ checked_result<declaration_ptr> parser::namespace_declaration() {
     source_location start_loc = peek().location;
 
     // Parse first namespace name
-    token first_name = advance();
-    if (first_name.type == token_type::eof ||
-        first_name.type == token_type::left_brace ||
-        first_name.type == token_type::right_brace ||
-        first_name.type == token_type::left_paren ||
-        first_name.type == token_type::right_paren ||
-        first_name.type == token_type::semicolon ||
-        first_name.type == token_type::colon_colon) {
-        report_error("expected namespace name", first_name);
-    return make_error_code(parse_error_code::syntax_error);
+    if (!check(token_type::identifier) && !is_keyword_word(peek().type)) {
+        report_error("expected namespace name", peek());
+        return make_error_code(parse_error_code::syntax_error);
     }
-    namespace_path.emplace_back(first_name.lexeme);
+    namespace_path.emplace_back(advance().lexeme);
 
     // Check for :: (nested namespace syntax like C++17)
     while (match(token_type::colon_colon)) {
-        token next_name = advance();
-        if (next_name.type == token_type::eof ||
-            next_name.type == token_type::left_brace ||
-            next_name.type == token_type::right_brace ||
-            next_name.type == token_type::left_paren ||
-            next_name.type == token_type::right_paren ||
-            next_name.type == token_type::semicolon ||
-            next_name.type == token_type::colon_colon) {
-            report_error("expected namespace name after '::'", next_name);
-    return make_error_code(parse_error_code::syntax_error);
+        if (!check(token_type::identifier) && !is_keyword_word(peek().type)) {
+            report_error("expected namespace name after '::'", peek());
+            return make_error_code(parse_error_code::syntax_error);
         }
-        namespace_path.emplace_back(next_name.lexeme);
+        namespace_path.emplace_back(advance().lexeme);
     }
 
     JAISCRIPT_TRY(expect(token_type::left_brace, "expected '{' before namespace body"));
@@ -5326,6 +6768,16 @@ checked_result<declaration_ptr> parser::namespace_declaration() {
             report_error("import is a statement, not a member: it is not allowed directly in a class or a namespace body", peek());
             return make_error_code(parse_error_code::syntax_error);
         }
+        if (const size_t name_at = generic_function_head(current_); name_at != SIZE_MAX) {
+            auto generic = generic_declaration({detail::generic_kind::function, current_, name_at, full_namespace_name, {}});
+            if (!generic) {
+                synchronize();
+                continue;
+            }
+            match(token_type::semicolon);
+            namespace_decl_node->declarations.push_back(std::move(generic.value()));
+            continue;
+        }
         source_location nodiscard_at{};
         const bool nodiscard_member = nodiscard_attribute_ahead();
         if (nodiscard_member) {
@@ -5348,7 +6800,7 @@ checked_result<declaration_ptr> parser::namespace_declaration() {
             }
             member_decl = std::move(class_result.value());
             match(token_type::semicolon);  // Consume optional semicolon after class
-        } else if (!inline_member && !const_member && match(token_type::coroutine_keyword)) {
+        } else if (!inline_member && !const_member && !callable_type_ahead() && match(token_type::coroutine_keyword)) {
             // a coroutine member: the program-scope spellings (a namespace body is declaration*)
             const bool was_in_coroutine = in_coroutine_;
             in_coroutine_ = true;
@@ -5369,6 +6821,13 @@ checked_result<declaration_ptr> parser::namespace_declaration() {
             if (reject_coroutine_reference_parameter(*func)) { continue; }
             member_decl = std::move(parsed.value());
             match(token_type::semicolon);
+        } else if (!inline_member && !const_member && match(token_type::enum_keyword)) {
+            auto enum_result = enum_declaration(full_namespace_name);
+            if (!enum_result) {
+                synchronize();
+                continue;
+            }
+            member_decl = std::move(enum_result.value());
         } else if (match(token_type::namespace_keyword)) {
             // Nested namespaces
             auto namespace_result = namespace_declaration();
@@ -5386,7 +6845,7 @@ checked_result<declaration_ptr> parser::namespace_declaration() {
             member_decl = std::move(extern_result.value());
         } else {
             // Function or variable declaration
-            const bool function_spelling = check(token_type::function_keyword);
+            const bool function_spelling = check(token_type::function_keyword) && !callable_type_ahead();
             type_info_ptr type;
             if (!((inline_member || const_member) && untyped_member_declaration_ahead())) {
                 auto type_result = parse_type();
@@ -5580,6 +7039,17 @@ std::optional<std::string> parser::parse_operator_method_symbol() {
     if (check(token_type::right_shift)) { advance(); return std::string(">>"); }
     if (check(token_type::spaceship)) { advance(); return std::string("<=>"); }
     if (check(token_type::tilde)) { advance(); return std::string("~"); }
+    // the in-place forms, as C++ declares them: a op= b calls operator op=, ++a operator++() and a++ operator++(int)
+    switch (peek().type) {
+        case token_type::plus_equal: case token_type::minus_equal: case token_type::star_equal: case token_type::slash_equal:
+        case token_type::percent_equal: case token_type::ampersand_equal: case token_type::pipe_equal: case token_type::caret_equal:
+        case token_type::left_shift_equal: case token_type::right_shift_equal:
+            return std::string(advance().lexeme);
+        case token_type::plus_plus: case token_type::minus_minus:
+            postfix_marker_ahead_ = true;
+            return std::string(advance().lexeme);
+        default: break;
+    }
     if (check(token_type::left_paren) && current_ + 1 < stream_->size() && (*stream_)[current_ + 1].type == token_type::right_paren) {
         advance(); advance();
         return std::string("()");
@@ -5729,7 +7199,7 @@ checked_result<declaration_ptr> parser::extern_declaration() {
         }
         return false;
     };
-    if (!is_const && match(token_type::function_keyword)) {
+    if (!is_const && !callable_type_ahead() && match(token_type::function_keyword)) {
         is_function = true;
     } else if (!untyped_name_ahead()) {
         JAISCRIPT_TRY_ASSIGN(type, parse_type());
@@ -5802,7 +7272,7 @@ checked_result<declaration_ptr> parser::destructuring_declaration() {
         JAISCRIPT_TRY_ASSIGN(token name_tok, consume_name("expected variable name in destructuring", "variable"));
         auto [sym_id, sym_view] = symbolizer_->intern_with_view(name_tok.lexeme);
         decl->names.push_back({sym_view, sym_id});
-        decl->slot_indices.push_back(in_function_scope() ? allocate_slot(sym_id) : SIZE_MAX);
+        decl->slot_indices.push_back(allocate_slot(sym_id));
     } while (match(token_type::comma));
     JAISCRIPT_TRY(expect(token_type::right_bracket, "expected ']' after destructuring names"));
     JAISCRIPT_TRY(expect(token_type::equal, "expected '=' after destructuring pattern"));
@@ -5829,7 +7299,7 @@ checked_result<declaration_ptr> parser::const_declaration() {
         JAISCRIPT_TRY(expect(token_type::semicolon, "expected ';' after variable declaration"));
         auto var = std::make_shared<variable_decl>(name.location, type_info_ptr{}, name.lexeme, get_symbol_id(name), init);
         var->default_initialized = !init;
-        if (in_function_scope() && var->name_id != UINT64_MAX) { var->slot_index = allocate_slot(var->name_id); }
+        if (var->name_id != UINT64_MAX) { var->slot_index = allocate_slot(var->name_id); }
         decl = var;
     } else if (check(token_type::inline_keyword) || check(token_type::extern_keyword) || check(token_type::static_keyword)) {
         report_error("write '" + std::string(peek().lexeme) + " const', not 'const " + std::string(peek().lexeme) + "'", peek());
@@ -5907,6 +7377,10 @@ bool parser::nodiscard_attribute_ahead() const {
 
 // [[nodiscard]] marks a function or a method that returns a value; false (an error reported) for anything else
 bool parser::mark_nodiscard(const declaration_ptr& decl, const source_location& at, std::string_view class_name) {
+    if (decl && decl->get_type() == node_type::generic_decl &&
+        static_cast<const generic_decl*>(decl.get())->definition->kind != detail::generic_kind::class_type) {
+        return true;   // the attribute is among the generic's tokens: each instance is marked as it parses
+    }
     auto* fn = decl && decl->get_type() == node_type::function_decl ? static_cast<function_decl*>(decl.get()) : nullptr;
     if (!fn || (!class_name.empty() && (fn->name == class_name || (fn->name.size() > 1 && fn->name[0] == '~')))) {
         report_error_at("[[nodiscard]] applies to a function or a method", at);
@@ -5934,6 +7408,16 @@ bool parser::reject_coroutine_reference_parameter(const function_decl& coroutine
 }
 
 // `& name(` / `& operator..` after a member's type: a reference-returning method (a class has no reference fields)
+// A reference names storage it does not hold, so no slot is one: a class referent steers to the handles, any other to the value
+std::string parser::reference_storage_text(const type_info_ptr& referent, std::string_view slot) {
+    const bool object = referent && referent->base_type == script_value_type::jai_object_type && !referent->type_name.empty();
+    const std::string name = !referent || referent->base_type == script_value_type::jai_any_type ? std::string("value") : referent->canonical_name();
+    if (object) {
+        return "A reference cannot be " + std::string(slot) + ": hold a shared_ptr<" + name + "> (owning) or a weak_ptr<" + name + "> (observing)";
+    }
+    return "A reference cannot be " + std::string(slot) + ": hold the " + name + " itself, or a shared_ptr<T> to the object that owns it";
+}
+
 bool parser::reference_method_head() const {
     if (!check(token_type::ampersand) || current_ + 2 >= stream_->size() || (*stream_)[current_ + 1].type != token_type::identifier) {
         return false;
@@ -5963,7 +7447,7 @@ bool parser::bare_coroutine_head() const {
 
 bool parser::coroutine_modifier_run() const {
     for (size_t i = current_; i < stream_->size(); ++i) {
-        if ((*stream_)[i].type == token_type::coroutine_keyword) return true;
+        if ((*stream_)[i].type == token_type::coroutine_keyword) return i + 1 >= stream_->size() || (*stream_)[i + 1].type != token_type::less;
         if ((*stream_)[i].type != token_type::static_keyword && (*stream_)[i].type != token_type::override_keyword) return false;
     }
     return false;
@@ -5975,9 +7459,24 @@ checked_result<declaration_ptr> parser::bare_coroutine_declaration() {
     return parse_function_body(name_view, name_id, nullptr);
 }
 
+// function<R(A...)> name ... / coroutine<Y> name ...: a function when '(' follows the name, else a variable
+checked_result<declaration_ptr> parser::callable_typed_declaration() {
+    const size_t start = current_;
+    JAISCRIPT_TRY(parse_type());
+    match(token_type::ampersand);
+    const bool is_function = check(token_type::identifier) && current_ + 1 < stream_->size() &&
+                             (*stream_)[current_ + 1].type == token_type::left_paren && !paren_group_ends_statement(current_ + 1);
+    current_ = start;
+    pushed_back_token_.reset();
+    if (!is_function) { return variable_declaration(); }
+    JAISCRIPT_TRY_ASSIGN(auto result, function_declaration());
+    match(token_type::semicolon);
+    return result;
+}
+
 checked_result<declaration_ptr> parser::function_declaration() {
     type_info_ptr return_type;
-    if (!match(token_type::function_keyword)) { JAISCRIPT_TRY_ASSIGN(return_type, parse_type()); }   // `function f(...)` declares no return type
+    if (callable_type_ahead() || !match(token_type::function_keyword)) { JAISCRIPT_TRY_ASSIGN(return_type, parse_type()); }   // `function f(...)` declares no return type
     return_type = wrap_reference_return_type(return_type);
 
     if (check(token_type::identifier) && reject_using_name(peek(), "function")) { return make_error_code(parse_error_code::syntax_error); }
@@ -6043,7 +7542,7 @@ checked_result<declaration_ptr> parser::parse_function_body(std::string_view nam
                     } while (match(token_type::comma));
                 }
                 JAISCRIPT_TRY(expect(token_type::right_paren, "expected ')' after super arguments"));
-                func->initializers.emplace_back("super", std::move(args));
+                func->initializers.emplace_back("super", std::move(args), constructor_initializer::kind_t::base, previous().location);
             } else if (match(token_type::this_keyword)) {
                 // Parse this(args)
                 JAISCRIPT_TRY(expect(token_type::left_paren, "expected '(' after 'this'"));
@@ -6055,22 +7554,32 @@ checked_result<declaration_ptr> parser::parse_function_body(std::string_view nam
                     } while (match(token_type::comma));
                 }
                 JAISCRIPT_TRY(expect(token_type::right_paren, "expected ')' after this arguments"));
-                func->initializers.emplace_back("this", std::move(args));
+                func->initializers.emplace_back("this", std::move(args), constructor_initializer::kind_t::delegation, previous().location);
             } else if (check(token_type::identifier)) {
-                // Parse Base(args): the base it names constructs with them (C++ [class.base.init])
-                std::string base_name(advance().lexeme);
-                JAISCRIPT_TRY(expect(token_type::left_paren, "expected '(' after base class name"));
-                std::vector<expression_ptr> args;
-                if (!check(token_type::right_paren)) {
-                    do {
-                        JAISCRIPT_TRY_ASSIGN(auto arg, expression());
-                        args.push_back(bound_conditional(std::move(arg)));
-                    } while (match(token_type::comma));
+                // name(args) or name{args}: a base, the class itself (a delegation) or a field (C++ [class.base.init]); which one is
+                // settled when the class body closes (resolve_constructor_initializers). Base<Args> names an instance
+                const token name = peek();
+                std::string written;
+                bool split = false;
+                if (current_ + 1 < stream_->size() && (*stream_)[current_ + 1].type == token_type::less && !pushed_back_token_ &&
+                    type_arguments_end(current_ + 1, split, true) != SIZE_MAX) {
+                    JAISCRIPT_TRY_ASSIGN(type_info_ptr base, named_type());
+                    written = base->type_name;
+                } else {
+                    written = std::string(advance().lexeme);
+                    while (check(token_type::colon_colon) && current_ + 1 < stream_->size() && (*stream_)[current_ + 1].type == token_type::identifier) {
+                        advance();
+                        written += "::" + std::string(advance().lexeme);   // a qualified base, or a namespace's class by its full name
+                    }
                 }
-                JAISCRIPT_TRY(expect(token_type::right_paren, "expected ')' after base constructor arguments"));
-                func->initializers.emplace_back(std::move(base_name), std::move(args));
+                const bool brace = check(token_type::left_brace);
+                if (!brace) { JAISCRIPT_TRY(expect(token_type::left_paren, "expected '(' or '{' after a name in a constructor initializer list")); }
+                else { advance(); }
+                JAISCRIPT_TRY_ASSIGN(auto args, construction_arguments(brace, brace ? "expected '}' after initializer arguments" : "expected ')' after initializer arguments"));
+                func->initializers.emplace_back(std::move(written), std::move(args), constructor_initializer::kind_t::unresolved, name.location);
+                func->initializers.back().arg_captures.assign(1, brace ? 1 : 0);   // the bracket, until the name is resolved
             } else {
-                report_error("expected 'super', 'this' or a base class name in constructor initializer list", peek());
+                report_error("expected 'super', 'this', a base class or a field in constructor initializer list", peek());
     return make_error_code(parse_error_code::syntax_error);
             }
         } while (match(token_type::comma));
@@ -6078,6 +7587,8 @@ checked_result<declaration_ptr> parser::parse_function_body(std::string_view nam
 
     coroutine_scope ref_return_scope{returns_reference_, returns_reference_};
     returns_reference_ = func->return_type && func->return_type->base_type == script_value_type::jai_reference_type;
+    coroutine_scope value_return_scope{returns_value_, returns_value_};
+    returns_value_ = declares_a_value(func->return_type.get());
 
     // Enter function scope for slot-based local variable tracking
     const bool nested_function = in_function_scope();
@@ -6121,6 +7632,7 @@ expression_ptr parser::default_initializer(const type_info_ptr& type, const sour
     case script_value_type::jai_array_type: return std::make_shared<array_literal_expr>(loc, std::vector<expression_ptr>());
     case script_value_type::jai_map_type: return std::make_shared<map_literal_expr>(loc, std::vector<std::pair<expression_ptr, expression_ptr>>());
     case script_value_type::jai_object_type:
+        if (type->is_coroutine) return nullptr;   // a handle starts null
         if (!type->type_name.empty()) return std::make_shared<new_expr>(loc, type, std::vector<expression_ptr>());
         return nullptr;
     case script_value_type::jai_vec2_type: case script_value_type::jai_vec3_type: case script_value_type::jai_vec4_type: case script_value_type::jai_color_type:
@@ -6196,7 +7708,7 @@ bool parser::paren_group_ends_statement(size_t lparen) const {
 }
 
 checked_result<declaration_ptr> parser::variable_declaration() {
-    const bool function_spelling = check(token_type::function_keyword);
+    const bool function_spelling = check(token_type::function_keyword) && !callable_type_ahead();
     JAISCRIPT_TRY_ASSIGN(type_info_ptr type, parse_type());
 
     // Check for reference after type (e.g., int& x or auto& x)
@@ -6216,7 +7728,7 @@ checked_result<declaration_ptr> parser::variable_declaration() {
     expression_ptr initializer = nullptr;
     if (match(token_type::equal)) {
         JAISCRIPT_TRY_ASSIGN(initializer, expression());
-        if (is_reference) { initializer = bound_conditional(std::move(initializer)); }
+        if (is_reference) { initializer = reference_binding(std::move(initializer)); }
     } else if ((check(token_type::left_brace) || check(token_type::left_paren)) && type && !is_reference) {
         // Type name{args...} / Type name(args...): construction with the declared type (a primitive takes its one value)
         const bool brace = check(token_type::left_brace);
@@ -6241,8 +7753,7 @@ checked_result<declaration_ptr> parser::variable_declaration() {
     decl->function_spelling = function_spelling;
     decl->default_initialized = default_initialized;
 
-    // If we're inside a function, assign a slot for this local variable
-    if (in_function_scope() && decl->name_id != UINT64_MAX) {
+    if (decl->name_id != UINT64_MAX) {
         decl->slot_index = allocate_slot(decl->name_id);
     }
 
@@ -6460,12 +7971,69 @@ void parser::report_foreign(detail::foreign_word w, const token& at) {
     report_error(std::string(detail::foreign_word_text(w)), at);
 }
 
+void parser::stop_at_foreign(detail::foreign_word w, const token& at) {
+    report_foreign(w, at);
+    foreign_stop_ = errors_.size();
+    current_ = stream_->size() - 1;
+    pushed_back_token_.reset();
+}
+
+// The name is the script's own when this unit declares it
+bool parser::unit_declares_type_name(std::string_view name) const {
+    for (size_t i = 0; i + 1 < stream_->size(); ++i) {
+        const token_type k = (*stream_)[i].type;
+        if ((k == token_type::class_keyword || k == token_type::enum_keyword || k == token_type::namespace_keyword) &&
+            (*stream_)[i + 1].type == token_type::identifier && (*stream_)[i + 1].lexeme == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::optional<detail::foreign_word> parser::foreign_type_word(std::string_view name) const {
+    const std::optional<detail::foreign_word> word = name == "unsigned" ? detail::foreign_word::unsigned_type
+                                                   : name == "long" ? detail::foreign_word::long_type
+                                                   : name == "short" ? detail::foreign_word::short_type
+                                                   : std::optional<detail::foreign_word>{};
+    return word && !unit_declares_type_name(name) ? word : std::nullopt;
+}
+
+bool parser::std_qualifier_ahead() const {
+    return check(token_type::identifier) && peek().lexeme == "std" && current_ + 1 < stream_->size() &&
+           (*stream_)[current_ + 1].type == token_type::colon_colon && !unit_declares_type_name("std");
+}
+
 bool parser::foreign_word_at_statement() {
     const token& t = peek();
     if (t.type != token_type::identifier || current_ + 1 >= stream_->size()) return false;
     const token& next = (*stream_)[current_ + 1];
     const bool declaration_follows = next.type == token_type::identifier || is_type_keyword_token(next.type) || next.type == token_type::const_keyword ||
                                      next.type == token_type::static_keyword;
+    const token_type after_next = current_ + 2 < stream_->size() ? (*stream_)[current_ + 2].type : token_type::eof;
+    std::optional<detail::foreign_word> stop;
+    if (t.lexeme == "struct" && next.type == token_type::identifier &&
+        (after_next == token_type::left_brace || after_next == token_type::colon || after_next == token_type::semicolon)) {
+        stop = detail::foreign_word::struct_declaration;
+    } else if (t.lexeme == "typedef" && declaration_follows) {
+        stop = detail::foreign_word::typedef_declaration;
+    } else if (declaration_follows && next.type != token_type::static_keyword) {
+        stop = foreign_type_word(t.lexeme);
+    } else if (next.type == token_type::star && after_next == token_type::identifier && current_ + 3 < stream_->size()) {
+        // T* p; (T a class this unit declares), T* p = e; T* f(...) { }: x * y; stays the expression it is
+        const token_type then = (*stream_)[current_ + 3].type;
+        if ((then == token_type::semicolon && unit_declares_type_name(t.lexeme)) || then == token_type::equal ||
+            (then == token_type::left_paren && !paren_group_ends_statement(current_ + 3))) {
+            stop = detail::foreign_word::pointer_type;
+        }
+    }
+    if (stop) {
+        stop_at_foreign(*stop, t);
+        return true;
+    }
+    if (t.lexeme == "template" && next.type == token_type::less) {
+        report_foreign(detail::foreign_word::template_prefix, t);
+        return true;
+    }
     if (t.lexeme == "constexpr" && declaration_follows) {
         report_foreign(detail::foreign_word::constexpr_declaration, t);
         return true;

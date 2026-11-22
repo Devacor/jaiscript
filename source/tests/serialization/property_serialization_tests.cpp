@@ -294,6 +294,7 @@ public:
 
     void addOwned(const std::string& id, const std::string& script) { onPingSignal.connect(id, script); }
     bool hasOwned(const std::string& id) { return onPingSignal.connected(id); }
+    jai::signal_emitter<PingSignature>& pingEmitter() { return onPingSignal; }
 
     signal_test_object() = default;
 };
@@ -353,6 +354,30 @@ public:
             binary_reader.end_object();
 
             check_true(bin_restored.hasOwned("ping1"));
+        });
+
+        // A signal writes one receivers field, only when a named receiver saves: no signal-level names, no unnamed receivers
+        test("signal_property_saves_only_its_named_receivers_compactly", [&]() {
+            auto eng = make_engine();
+            signal_test_object original;
+            original.pingEmitter().parameter_names({"v"});
+            auto unnamed_text = original.pingEmitter().connect(std::string("print(v);"));
+            auto unnamed_host = original.pingEmitter().connect([](int) {});
+            original.pingEmitter().connect("host", [](int) {});
+            check_eq(std::string("{\"onPing\": {}}"), jai::to_json(*eng, original, 0), "nothing to save writes an empty signal");
+            auto empty_copy = jai::from_binary<signal_test_object>(*eng, jai::to_binary(*eng, original));
+            check_eq((size_t)0, empty_copy.pingEmitter().observer_count());
+
+            original.addOwned("named", "print(v);");
+            const std::string json = jai::to_json(*eng, original, 0);
+            check_eq(std::string("{\"onPing\": {\"receivers\": {\"named\": {\"source\": \"print(v);\",\"parameter_names\": [\"v\"]}}}}"), json);
+            auto json_copy = jai::from_json<signal_test_object>(*eng, json);
+            auto binary_copy = jai::from_binary<signal_test_object>(*eng, jai::to_binary(*eng, original));
+            for (auto* copy : { &json_copy, &binary_copy }) {
+                check_eq((size_t)1, copy->pingEmitter().observer_count(), "only the named receiver loads");
+                check_true(copy->pingEmitter().connected("named"));
+                check_false(copy->pingEmitter().has_parameter_names(), "the signal's own names are the host's configuration, not saved");
+            }
         });
 
         test("function_property_lambda_assign", [&]() {
@@ -612,7 +637,7 @@ public:
                 check_eq(std::string("echoed"), host->received);
             }
 
-            // a plain class holding an emitter returns by value, its named and unnamed text receivers armed
+            // a plain class holding an emitter returns by value, its named text receiver armed and the unnamed one left out
             host->onNotice.disconnect("echo");
             host->onNotice.connect("named", "messages.received += \"n\";");
             auto unnamed = host->onNotice.connect("messages.received += \"u\";");
@@ -620,11 +645,10 @@ public:
             auto binary_value = jai::from_binary<emitter_host>(*eng, jai::to_binary(*eng, *host));
             for (auto* copy : { &json_value, &binary_value }) {
                 check_true(copy->onNotice.connected("named"));
-                check_eq((size_t)2, copy->onNotice.observer_count());
+                check_eq((size_t)1, copy->onNotice.observer_count());
                 host->received.clear();
                 copy->onNotice("x");
-                check_eq((size_t)2, host->received.size());
-                check_true(host->received.find('n') != std::string::npos && host->received.find('u') != std::string::npos);
+                check_eq(std::string("n"), host->received);
             }
         });
 

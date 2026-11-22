@@ -6,6 +6,7 @@
 #include <jaiscript/core/value.hpp>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace jai {
@@ -37,6 +38,7 @@ struct script_namespace_data {
     std::unordered_map<uint64_t, std::vector<std::shared_ptr<function_decl>>> functions;  // function_name_id -> overloads
     std::unordered_map<uint64_t, script_value> variables;                                 // variable_name_id -> value
     std::unordered_map<uint64_t, std::shared_ptr<class_definition>> classes;              // class_name_id -> definition
+    std::unordered_set<uint64_t> enums;   // enum_name_id: the type is ns::Name, and the scope's const cell of the bare name holds its value table
     std::shared_ptr<environment> scope;   // the cells of the script-declared variables and functions, parented on the enclosing namespace's scope, else the global environment (detail/namespace_scope.hpp)
     uint64_t enclosing = 0;   // the namespace "a" for "a::b" once the scope exists; 0 for one at program scope
     std::shared_ptr<environment> host_layer;   // over the scope: the host entries its classes' members read by bare name (detail/namespace_function.hpp)

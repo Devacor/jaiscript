@@ -1,7 +1,7 @@
 // Gator Quest - sound and music with zero audio assets: every effect is
 // synthesized into an 8-bit WAV and every realm's theme is composed into a
 // MIDI file on first use, cached under the data folder. Playback is the
-// runner's Sound: each effect loads once and replays, the theme loops on
+// runner's sound: each effect loads once and replays, the theme loops on
 // its own (no sound where the runner has none).
 
 import "gq_render.jai";
@@ -9,9 +9,9 @@ import "gq_render.jai";
 bool AUDIO_ON;
 string AUDIO_DIR;
 map<string, string> SFX_PATH;
-map<string, var> SFX_SOUND;     // name -> its loaded Sound, null when it will not load
+map<string, var> SFX_SOUND;     // name -> its loaded sound, null when it will not load
 map<string, int> SFX_LAST;
-var MUSIC = null;               // the theme's Sound
+var MUSIC = null;               // the theme's sound
 
 int SFX_RATE = 11025;
 
@@ -146,12 +146,12 @@ array<string> SFX_NAMES = ["hit", "crit", "swing", "bow", "arrowhit", "zap", "fi
 // build any missing wavs; true when the cache is complete
 bool audio_prepare(string dir) {
 	AUDIO_DIR = dir;
-	if (!writable_dir(dir)) { return false; }
+	if (!file::ensure_writable_directory(dir)) { return false; }
 	SFX_PATH = {};
 	for (int i = 0; i < SFX_NAMES.size(); ++i) {
 		string p = dir + "/sfx_" + SFX_NAMES[i] + ".wav";
-		if (!file_exists(p)) {
-			if (!write_file(p, wav_wrap(sfx_samples(SFX_NAMES[i])))) { continue; }
+		if (!file::exists(p)) {
+			if (!file::write(p, wav_wrap(sfx_samples(SFX_NAMES[i])))) { continue; }
 		}
 		SFX_PATH[SFX_NAMES[i]] = p;
 	}
@@ -281,7 +281,7 @@ void music_play(int which) {
 	if (!MUSIC_ON) { return; }
 	int theme = which == -1 ? 8 : (which == -2 ? 9 : WORLDS[which].music);
 	string p = AUDIO_DIR + "/theme" + to_string(theme) + ".mid";
-	if (!file_exists(p)) { write_file(p, midi_theme(theme)); }
+	if (!file::exists(p)) { file::write(p, midi_theme(theme)); }
 	MUSIC = load_sound(p);
 	if (MUSIC != null) { MUSIC.play(true); }
 }

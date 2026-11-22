@@ -55,7 +55,7 @@ public:
 				random b(9);
 				random c;
 				random d;
-				`${to_string(a.state == b.state)} ${(a.next_int(0, 1000000) == b.next_int(0, 1000000))} ${type_of(c)} ${type_of(random())} ${c.state.size()} ${(c.state != d.state)}`;)"));
+				`${to_string(a.state == b.state)} ${(a.next_int(0, 1000000) == b.next_int(0, 1000000))} ${reflect::type_of(c)} ${reflect::type_of(random())} ${c.state.size()} ${(c.state != d.state)}`;)"));
 			check_eq(std::string("true"), es("random r(5); r.next_int(0, 9); r.seed(5); random fresh(5); to_string(r.state == fresh.state);"));
 		});
 
@@ -82,11 +82,11 @@ public:
 				random a(1234);
 				a.next_float();
 				var json = from_json(to_json(a));
-				var binary = from_base64(to_base64(a));
+				var binary = from_binary(base64_decode(base64_encode(to_binary(a))));
 				random copied(1);
 				copied.state = a.state;
 				int x = a.next_int(0, 1000000000);
-				`${type_of(json)} ${(json.next_int(0, 1000000000) == x)} ${(binary.next_int(0, 1000000000) == x)} ${(copied.next_int(0, 1000000000) == x)}`;)"));
+				`${reflect::type_of(json)} ${(json.next_int(0, 1000000000) == x)} ${(binary.next_int(0, 1000000000) == x)} ${(copied.next_int(0, 1000000000) == x)}`;)"));
 			check_eq(std::string("random::state expects 64 hex digits, not all zero"), es("string m = \"\"; random r(1); try { r.state = \"zz\"; } catch (e) { m = e; } m;"));
 			check_eq(std::string("random::state expects 64 hex digits, not all zero"), es("string m = \"\"; random r(1); try { r.state = string::repeat(\"0\", 64); } catch (e) { m = e; } m;"));
 			auto engine = make_engine();
@@ -105,7 +105,7 @@ public:
 		test("refused_draws_raise_their_catalogued_texts", [this, caught, es]() {
 			check_eq(std::string("random::next_int range is inverted (max < min)"), caught("random r(1); r.next_int(5, 1);"));
 			check_eq(std::string("random::next_float range is inverted (max < min)"), caught("random r(1); r.next_float(2.0, 1.0);"));
-			check_eq(std::string("random::next_float bounds must be finite"), caught("random r(1); r.next_float(0.0, math::INF);"));
+			check_eq(std::string("random::next_float bounds must be finite"), caught("random r(1); r.next_float(0.0, math::inf);"));
 			check_eq(std::string("true"), caught("random r(1); float x = r.next_float(-1.7e308, 1.7e308); throw to_string(x >= -1.7e308 && x < 1.7e308);"),
 			         "finite bounds a float cannot span draw from the whole range");
 			check_eq(std::string("Out of memory"), caught("random r(1); r.next_bytes(9223372036854775807);"));
@@ -128,7 +128,7 @@ public:
 				try { engine->execute(source); } catch (const std::exception&) { rejected = true; }
 				check_true(rejected, source);
 			}
-			check_eq(std::string("random"), engine->execute("random h(2.5); type_of(h);").as<std::string>());
+			check_eq(std::string("random"), engine->execute("random h(2.5); reflect::type_of(h);").as<std::string>());
 		});
 
 		test("shuffle_and_pick_work_on_every_array_kind", [this, es]() {

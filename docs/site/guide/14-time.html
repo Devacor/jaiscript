@@ -41,7 +41,7 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Time: Clocks, Stopwatches &amp; Dates</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li class="current"><a href="../guide/14-time.html" aria-current="page">Time: Clocks, Stopwatches &amp; Dates</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Time: Clocks, Stopwatches &amp; Dates</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li class="current"><a href="../guide/14-time.html" aria-current="page">Time: Clocks, Stopwatches &amp; Dates</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li><li><a href="../guide/21-generics.html">Generics</a></li></ol></details></aside>
 <script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
 var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>14</nav>
@@ -55,15 +55,15 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 </ul>
 <h2 id="clocks">Clocks<a class="hlink" href="#clocks" aria-label="link">&#8203;</a></h2>
 <div class="tablewrap"><table><thead><tr><th>Call</th><th>Answers</th></tr></thead><tbody>
-<tr><td><code>time::now()</code>, <code>time::engine_elapsed()</code></td><td>float seconds on the monotonic clock since the engine was constructed (two names, one clock)</td></tr>
+<tr><td><code>time::engine_elapsed()</code></td><td>float seconds on the monotonic clock since the engine was constructed</td></tr>
 <tr><td><code>time::execute_elapsed()</code></td><td>seconds since the running host entry began: the <code>execute()</code> the host called, or the script function or coroutine it invoked while no script was running. Nested executes, includes and imports belong to the entry that runs them</td></tr>
 <tr><td><code>time::unix_time()</code>, <code>time::unix_ms()</code></td><td>wall-clock time since the Unix epoch: float seconds, whole int milliseconds</td></tr>
 <tr><td><code>time::date_now(template)</code></td><td>the current <strong>local</strong> date and time as a string, <a href="#formatting">formatted by a template</a>; for UTC, format <code>time::utc_now()</code></td></tr>
 </tbody></table></div>
-<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">float t0 = time::now();
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">float t0 = time::engine_elapsed();
 sleep(0.02);
-float waited = time::now() - t0;
-print(waited &gt;= 0.02, " ", time::execute_elapsed() &gt;= waited, " ", time::unix_ms() + 1 &gt; time::unix_time() * 1000.0);</code></pre></div>
+float waited = time::engine_elapsed() - t0;
+print(waited &gt;= 0.02, " ", time::execute_elapsed() &gt;= waited, " ", time::unix_time() * 1000.0 - time::unix_ms() &lt; 1000.0);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">true true true</code></pre></div>
 <p>Waiting is the language&#x27;s <code>sleep(seconds)</code> (<a href="08-coroutines.html#sleep">Coroutines</a>), on the same time source: it suspends a run the host started with <code>engine::start</code>, and blocks the thread in a plain <code>execute()</code>, counting against the execution budget.</p>
 <h2 id="stopwatches">Stopwatches<a class="hlink" href="#stopwatches" aria-label="link">&#8203;</a></h2>
@@ -175,12 +175,12 @@ time::date::format: unsupported format spec &#x27;:q&#x27; in &#x27;${day:q}&#x2
 time::date::format: format spec &#x27;:05&#x27; does not apply to string value</code></pre></div>
 <h2 id="the-types-by-their-names">The types by their names<a class="hlink" href="#the-types-by-their-names" aria-label="link">&#8203;</a></h2>
 <p><code>time::date</code> and <code>time::stopwatch</code> are spelled with their namespace wherever a class name goes: declarations, parameters and returns, fields, container element types, <code>cast&lt;time::date&gt;(x)</code>, <code>shared_ptr&lt;time::date&gt;</code>, <code>new time::date()</code>, and <code>time::date()</code> as an expression.</p>
-<p>The strict checker knows the namespace: a call with the wrong number of arguments (<code>'time::now' expects 0 argument(s), got 1</code>), an argument it cannot take (<code>time::date_from_unix("soon")</code>) and a member neither type has (<code>no member 'nope' in class 'time::date'</code>) fail the load.</p>
+<p>The strict checker knows the namespace: a call with the wrong number of arguments (<code>'time::engine_elapsed' expects 0 argument(s), got 1</code>), an argument it cannot take (<code>time::date_from_unix("soon")</code>) and a member neither type has (<code>no member 'nope' in class 'time::date'</code>) fail the load.</p>
 <h2 id="time-and-parallel-loops">Time and parallel loops<a class="hlink" href="#time-and-parallel-loops" aria-label="link">&#8203;</a></h2>
 <p>A clock read would make a parallel loop&#x27;s result depend on scheduling, so a parallel body that calls <code>time::</code> is rejected before any worker starts. Read the clock before the loop and hand the value in.</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;float&gt; stamps = [0.0, 0.0, 0.0];
 try {
-    parallel_for (auto&amp; s : stamps) { s = time::now(); }
+    parallel_for (auto&amp; s : stamps) { s = time::engine_elapsed(); }
 } catch (e) {
     print(e);
 }</code></pre></div>
@@ -189,7 +189,7 @@ try {
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

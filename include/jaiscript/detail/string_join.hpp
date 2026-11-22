@@ -5,7 +5,7 @@
 
 // A string's `+` joins text, as std::string's does: a char beside a string joins as its character, and a number, bool or null
 // beside a string is an error with one text, at load where the checker knows both types and at run time otherwise. A template
-// string's own `+` (token::joins_text) makes its splice text instead. Shared by both backends and the scoped templates.
+// string's own `+` (token::joins_text) makes its splice text instead. Shared by both backends and the untrusted templates.
 
 #include <jaiscript/core/value.hpp>
 #include <jaiscript/core/checked_result.hpp>

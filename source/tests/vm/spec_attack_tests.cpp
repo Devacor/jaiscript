@@ -186,7 +186,7 @@ private:
 					try { for (int i = 0; i < 6; i++) { s += leaf(i); last = i; } } catch (e) { err = e; }
 					int t = 0; var code = null;
 					try { for (int i = 0; i < 6; i++) { t += tleaf(i); } } catch (e) { code = e.value; }
-					return `${s}|${last}|${err}|${t}|${code}${type_of(code)}`;
+					return `${s}|${last}|${err}|${t}|${code}${reflect::type_of(code)}`;
 				}
 				run();
 			)", "6|2|leaf3|6|40int");

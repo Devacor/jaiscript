@@ -36,10 +36,10 @@ namespace jai::detail {
 
 		// The longest NUL scan one binary::reader read runs (engine::binary_scan_limit); only the host sets it
 		size_t binary_scan_limit = size_t(1) << 20;
-		// The bytes one template() render may write (engine::template_output_limit) and one scoped_template render
-		// (engine::scoped_template_output_limit); 0 = no limit
+		// The bytes one template() render may write (engine::template_output_limit) and one untrusted_template render
+		// (engine::untrusted_template_output_limit); 0 = no limit
 		size_t template_output_limit = size_t(10) << 20;
-		size_t scoped_template_output_limit = size_t(1) << 20;
+		size_t untrusted_template_output_limit = size_t(1) << 20;
 		// The engine's clock sample: a real steady_clock reading (ticks) written where the engine reads that clock anyway -
 		// every host entry (the reading the budget deadline starts from), the budget check's periodic samples (every 1024
 		// ticks, budget or not) and a time:: read of the system clock; never by a host engine_time::source. The import window reads
@@ -65,6 +65,9 @@ namespace jai::detail {
 		size_t memory_limit = SIZE_MAX;     // effective limit (SIZE_MAX = unlimited)
 		size_t memory_cap = 0;              // configured cap in bytes (0 = unlimited)
 		uint32_t memory_raises = 0;
+		// Work the engine's builtins have done since the clock was last read for them, in units, below a chunk
+		// (detail/work_budget.hpp); in the padding a 64-bit build leaves here, beside the count a copy also writes
+		uint32_t work_units = 0;
 		uint64_t memory_cap_symbol_id = 0;  // interned decimal cap size for error text
 
 		// Denial-style charge: false = the allocation would exceed the cap and nothing
@@ -89,10 +92,20 @@ namespace jai::detail {
 		uint64_t step_budget = 0;
 		uint64_t steps_taken = 0;
 		bool step_budget_spent() noexcept { return step_budget != 0 && ++steps_taken > step_budget; }
+		bool step_budget_overrun() const noexcept { return step_budget != 0 && steps_taken > step_budget; }
+
+		// The call of a jai::exclude_execution_time binding the thread is in (detail/host_time.hpp): the coarse-clock tick it
+		// began at, 0 outside one. What this entry's such calls were credited, in ticks (a parallel region's join reads its
+		// workers'). And a tick count added to every coarse-clock read: a test's clock runs ahead by it.
+		uint64_t host_since = 0;
+		uint64_t host_ticks_credited = 0;
+		uint64_t host_tick_skew = 0;
 
 		void reset_for_execute() noexcept {
 			terminal_error = false;
 			steps_taken = 0;
+			work_units = 0;
+			host_ticks_credited = 0;
 			vm_depth_gate = 0;
 			vm_frame_bytes = 0;
 			memory_used = 0;
@@ -141,10 +154,31 @@ namespace jai::detail {
 	// The budget that ran out names the knob that raises it: the step budget (engine::execution_step_budget) once its count is
 	// spent, else the wall-clock one (engine::execution_budget). Both backends raise through this.
 	inline error_propagator raise_execution_budget(const execution_limits& limits) noexcept {
-		const bool steps = limits.step_budget != 0 && limits.steps_taken > limits.step_budget;
+		const bool steps = limits.step_budget_overrun();
 		return error_propagator{ make_error_code(runtime_error_code::execution_budget_exceeded),
 			steps ? std::string_view("Script execution budget exceeded - raise engine::execution_step_budget or break up the work")
 			      : std::string_view("Script execution budget exceeded - raise engine::execution_budget or break up the work") };
+	}
+
+	// One read of the clock for a running entry: a clock sample, a step of the step budget, and the terminal latch (no script
+	// catch takes a timeout) once the step budget or the armed deadline is spent. Each backend's periodic check and the
+	// builtins' work polls (detail/work_budget.hpp) end here.
+	inline bool budget_clock_spent(execution_limits& limits, bool armed, std::chrono::steady_clock::time_point deadline) noexcept {
+		const auto now = std::chrono::steady_clock::now();
+		limits.note_clock_sample(now);
+		if (limits.step_budget_spent() || (armed && now >= deadline)) [[unlikely]] {
+			limits.terminal_error = true;
+			return true;
+		}
+		return false;
+	}
+
+	// A host entry about to hand the host a success: whether it outran its budget in work no check sampled (a host function,
+	// the tail of a builtin). It takes no step: an entry that ends within its steps ends well.
+	inline bool budget_overrun_at_return(execution_limits& limits, bool armed, std::chrono::steady_clock::time_point deadline) noexcept {
+		if (!limits.step_budget_overrun() && !(armed && std::chrono::steady_clock::now() >= deadline)) [[likely]] { return false; }
+		limits.terminal_error = true;
+		return true;
 	}
 
 	// Style-matched to the budget error text; {0} resolves to the interned cap size.

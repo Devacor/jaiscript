@@ -15,6 +15,7 @@
 #include <jaiscript/detail/ref_param_writes.hpp>
 #include <jaiscript/detail/ref_lvalue.hpp>
 #include <jaiscript/detail/arg_capture.hpp>
+#include <jaiscript/detail/member_display_name.hpp>
 #include <functional>
 #include <optional>
 #include <string>
@@ -47,6 +48,7 @@ namespace jai::detail {
 		return "cannot assign to '" + spelled + "': '" + std::string(root) + "' is const";
 	}
 	inline std::string const_call_text(const expression* receiver, std::string_view root, std::string_view method, bool builtin, size_t line) {
+		method = member_display_name(method);
 		std::string out = "Cannot call '" + std::string(method) + "' on '" + const_spelled(receiver) + "': '" + std::string(root) + "' is const and '" +
 		                  std::string(method) + (builtin ? "' changes it" : "' writes its receiver");
 		if (line != 0) { out += " (line " + std::to_string(line) + ")"; }
@@ -69,10 +71,6 @@ namespace jai::detail {
 		std::string what = const_names_root(operand) ? "const '" + std::string(root) + "'" : "'" + const_spelled(operand) + "' of const '" + std::string(root) + "'";
 		return "Cannot cast " + what + " to " + std::string(target) + ": cast<" + std::string(target.substr(0, target.size() && target.back() == '&' ? target.size() - 1 : target.size())) +
 		       ">(" + const_spelled(operand) + ") copies it";
-	}
-	inline std::string const_share_text(const expression* source, std::string_view root, std::string_view handle) {
-		std::string what = const_names_root(source) ? "const '" + std::string(root) + "'" : "'" + const_spelled(source) + "' of const '" + std::string(root) + "'";
-		return "Cannot share " + what + " as " + std::string(handle) + "; copy it into a variable first";
 	}
 	inline std::string const_return_text(const expression* value, std::string_view root, std::string_view fn, std::string_view declared) {
 		std::string what = const_names_root(value) ? "const '" + std::string(root) + "'" : "'" + const_spelled(value) + "' of const '" + std::string(root) + "'";
@@ -348,7 +346,7 @@ namespace jai::detail {
 					auto* m = static_cast<const member_expr*>(callee);
 					if (m->is_static && m->object && m->object->get_type() == node_type::identifier_expr) {
 						const std::string_view ns = static_cast<const identifier_expr*>(m->object.get())->name;
-						if (ns == "math" || ns == "string" || ns == "array" || ns == "map") { return; }
+						if (ns == "math" || ns == "string" || ns == "array" || ns == "map" || ref_write_copying_entry(ns, m->member)) { return; }
 					}
 					if (!m->is_static && ref_write_builtin_method(m->member)) { return; }
 				}
@@ -435,7 +433,7 @@ namespace jai::detail {
 					}
 					case node_type::cast_expr: {
 						auto* c = static_cast<const cast_expr*>(e);
-						if ((c->by_reference || const_handle_type(c->target.get())) && !c->implicit_ref) {
+						if (c->by_reference && !c->implicit_ref) {
 							if (const uint8_t p = path(c->operand.get())) { note(c, false); (void)p; }
 						}
 						expr(c->operand.get());
@@ -699,6 +697,11 @@ namespace jai::detail {
 		if (receiver.is_array() || receiver.is_map() || receiver.is_string() || receiver.current_type() == script_value_type::jai_utf8_string_type) {
 			builtin = true;
 			if (ref_write_reading_method(name)) { return std::nullopt; }
+			if (eng && call && call->callee && call->callee->get_type() == node_type::member_expr) {   // a key read with a dot and called: no method runs
+				const uint64_t id = static_cast<const member_expr*>(call->callee.get())->member_id;
+				const int kind = receiver.is_array() ? 0 : receiver.is_map() ? 1 : receiver.is_string() ? 2 : 3;
+				if (id != UINT64_MAX && !engine_access::builtin_method_ids(*eng, kind).count(id)) { return std::nullopt; }
+			}
 			if (!ref_write_element_callback(name)) { return size_t(0); }
 			if (receiver.is_array() && named_callback_writes_element(call, name, caller, env, eng, symbolizer)) { return size_t(0); }
 			return std::nullopt;

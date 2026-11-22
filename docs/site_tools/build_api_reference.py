@@ -154,8 +154,34 @@ def generated_header(entries):
 	lines += ['\t}};', '', '\tconstexpr const BuiltinEffect* findBuiltinEffect(std::string_view a_name) {',
 		'\t\tfor (const auto& entry : BUILTIN_RECEIVER_EFFECTS) {',
 		'\t\t\tif (entry.name == a_name) { return &entry; }',
-		'\t\t}', '\t\treturn nullptr;', '\t}', '}', '']
+		'\t\t}', '\t\treturn nullptr;', '\t}', '']
+	functions, methods = observing_calls(entries)
+	lines += ["\t// The builtins a debugger's watch may call: every catalog entry of the name only reads, copies, builds or converts (a callback it",
+		'\t// takes is the watch\'s own code, or script the watch refuses as it runs). Functions by qualified name, methods by name.',
+		f'\tinline constexpr std::array<std::string_view, {len(functions)}> BUILTIN_OBSERVING_FUNCTIONS{{{{']
+	lines += [f'\t\t"{name}",' for name in functions]
+	lines += ['\t}};', '', f'\tinline constexpr std::array<std::string_view, {len(methods)}> BUILTIN_OBSERVING_METHODS{{{{']
+	lines += [f'\t\t"{name}",' for name in methods]
+	lines += ['\t}};', '', '\tconstexpr bool isObservingBuiltin(std::string_view a_name, bool a_method) {',
+		'\t\tfor (const auto& entry : BUILTIN_OBSERVING_METHODS) {',
+		'\t\t\tif (a_method && entry == a_name) { return true; }',
+		'\t\t}',
+		'\t\tfor (const auto& entry : BUILTIN_OBSERVING_FUNCTIONS) {',
+		'\t\t\tif (!a_method && entry == a_name) { return true; }',
+		'\t\t}', '\t\treturn false;', '\t}', '}', '']
 	return '\n'.join(lines)
+
+def observing_calls(entries):
+	reads = {'observe', 'copy', 'construct', 'convert', 'callback'}
+	functions, methods = {}, {}
+	for entry in entries:
+		words = set(re.split(r'[,;]\s*', entry['effect']))
+		if entry['form'] == 'method':
+			methods[entry['name']] = methods.get(entry['name'], True) and words <= reads
+		elif entry['form'] in ('function', 'namespace'):
+			name = entry['name'] if entry['owner'] == 'global' else entry['owner'] + '::' + entry['name']
+			functions[name] = functions.get(name, True) and words <= reads
+	return sorted(n for n, ok in functions.items() if ok), sorted(n for n, ok in methods.items() if ok)
 
 def receiver_effects(entries):
 	receivers = {'array<T>', 'map<K,V>', 'string', 'utf8_string', 'shared_ptr<T>', 'weak_ptr<T>'}

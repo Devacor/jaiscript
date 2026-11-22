@@ -745,6 +745,23 @@ public:
     JAI_PROPERTY((std::string), derivedTag, "");
 };
 
+// Loaded through its implicit name before anything constructs one
+class LoadedBeforeConstruction : public jai::property_owner<LoadedBeforeConstruction, ImplicitRegBase> {
+public:
+    JAI_PROPERTY((int), loadedValue, 4);
+};
+
+// An abstract level: nothing constructs it, and its derived level names it as a base
+class AbstractRegBase : public jai::property_owner<AbstractRegBase, ImplicitRegBase> {
+public:
+    virtual int weight() const = 0;
+};
+class ConcreteOfAbstract : public jai::property_owner<ConcreteOfAbstract, AbstractRegBase> {
+public:
+    int weight() const override { return 12; }
+    JAI_PROPERTY((int), concreteValue, 2);
+};
+
 // property_owner AND an explicit registrar: the explicit name wins the $type, and binding it throws (a property_owner binds
 // under its own serialization name in every other engine)
 class RenamedRegType : public jai::property_owner<RenamedRegType, ImplicitRegBase> {
@@ -874,6 +891,12 @@ public:
             check(std::dynamic_pointer_cast<AnonImplicitDerived>(loaded) != nullptr, "dynamic type lost for anonymous-namespace type");
         });
 
+        test("an_anonymous_namespace_property_owner_binds_itself", [&]() {
+            auto eng = make_engine();
+            jai::bind_registrar(*eng, jai::only<AnonImplicitDerived>());
+            check_eq((int64_t)5, eng->execute("AnonImplicitDerived().anonValue;").as_int());
+        });
+
         test("property_owner_implicit_type_tag_written", [&]() {
             auto eng = make_engine();
             auto derived = std::make_shared<ImplicitRegDerived>();
@@ -908,6 +931,49 @@ public:
             jai::serialization::json_archive_reader r(json, eng.get());
             std::shared_ptr<ImplicitRegBase> out;
             check_throws([&]() { r(out); }, "unrelated $type must be rejected, not mis-cast");
+        });
+
+        test("an_implicit_identity_and_its_base_relation_exist_before_the_first_construction", [&]() {
+            auto eng = make_engine();
+            const auto* entry = jai::serialization::polymorphic_registry::instance().find(std::string("LoadedBeforeConstruction"));
+            check(entry != nullptr && entry->type == std::type_index(typeid(LoadedBeforeConstruction)), "the implicit identity must be registered at program start");
+            check(jai::serialization::polymorphic_registry::instance().is_assignable(std::type_index(typeid(LoadedBeforeConstruction)), std::type_index(typeid(ImplicitRegBase))),
+                "the Derived->Base relation must be registered at program start");
+
+            auto donor = std::make_shared<ImplicitRegDerived>();
+            donor->baseValue = 9;
+            std::shared_ptr<ImplicitRegBase> original = donor;
+            jai::serialization::json_archive_writer w(0, eng.get());
+            w(original);
+            std::string json = w.str();
+            const std::string concrete = "ImplicitRegDerived";
+            const auto pos = json.find(concrete);
+            check(pos != std::string::npos, "expected the concrete $type in: " + json);
+            json.replace(pos, concrete.size(), "LoadedBeforeConstruction");
+
+            jai::serialization::json_archive_reader r(json, eng.get());
+            std::shared_ptr<ImplicitRegBase> loaded;
+            r(loaded);
+            auto loadedDerived = std::dynamic_pointer_cast<LoadedBeforeConstruction>(loaded);
+            check(loadedDerived != nullptr, "the load must construct the type its $type names");
+            check_eq(9, loaded->baseValue.get());
+            check_eq(4, loadedDerived->loadedValue.get());
+            check_eq(4, std::make_shared<LoadedBeforeConstruction>()->loadedValue.get());
+        });
+
+        test("a_property_owner_over_an_abstract_level_round_trips_through_it", [&]() {
+            auto eng = make_engine();
+            auto concrete = std::make_shared<ConcreteOfAbstract>();
+            concrete->concreteValue = 8;
+            std::shared_ptr<AbstractRegBase> original = concrete;
+            auto loaded = roundtrip_json(*eng, original);
+            check(loaded != nullptr, "json round-trip returned null");
+            check_eq(12, loaded->weight());
+            auto loadedConcrete = std::dynamic_pointer_cast<ConcreteOfAbstract>(loaded);
+            check(loadedConcrete != nullptr, "dynamic type lost through the abstract level");
+            check_eq(8, loadedConcrete->concreteValue.get());
+            std::shared_ptr<ImplicitRegBase> asRoot = concrete;
+            check(std::dynamic_pointer_cast<ConcreteOfAbstract>(roundtrip_binary(*eng, asRoot)) != nullptr, "dynamic type lost two levels up");
         });
 
         test("property_owner_implicit_round_trip", [&]() {
@@ -1062,14 +1128,14 @@ public:
                 function trip(var v, string how) -> var {
                     if (how == "json") { return from_json(to_json(v)); }
                     if (how == "binary") { return from_binary(to_binary(v)); }
-                    return from_base64(to_base64(v));
+                    return from_binary(base64_decode(base64_encode(to_binary(v))));
                 }
                 string out = "";
                 for (string how : ["json", "binary", "base64"]) {
                     shared_ptr<P> p = new P();
                     p.x = 7;
                     var q = trip(p, how);
-                    out += how + ": " + type_of(q) + " " + to_string(q.x) + " " + q.s;
+                    out += how + ": " + reflect::type_of(q) + " " + to_string(q.x) + " " + q.s;
                     var alias = q;
                     alias.x = 9;
                     out += " handle " + to_string(q.x);
@@ -1108,7 +1174,7 @@ public:
             auto r = eng->execute(R"(
                 string out = "";
                 try { from_json("{\"$id\": 4}"); out = "loaded"; } catch (e) { out = e; }
-                out += " | " + type_of(from_json("{\"$ref\": 4}"));
+                out += " | " + reflect::type_of(from_json("{\"$ref\": 4}"));
                 try { from_json("{\"$id\": 1, \"$val\": {\"a\": {\"$id\": 1}}}"); out += " | loaded"; } catch (e) { out += " | " + e; }
                 out;
             )");
@@ -1346,7 +1412,7 @@ public:
     void every_entry_is_the_layer_checked(const std::shared_ptr<engine>& eng, const std::shared_ptr<T>& object, const std::string& kin,
                                           const std::string& order) {
         auto is_kin = [&](const std::string& expr, const std::string& what) {
-            check_eq(kin, eng->execute("type_of(" + expr + ")").as<std::string>(), order + ": " + what);
+            check_eq(kin, eng->execute("reflect::type_of(" + expr + ")").as<std::string>(), order + ": " + what);
             check_eq((script_int)3, eng->execute(expr + ".chomp").as_int(), order + ": " + what + " reaches the script field");
         };
         is_kin("hero", "the global");
@@ -1364,7 +1430,7 @@ public:
             auto ran = f.as_function()({e->make_value(object)});
             return ran ? ran.value().template as<std::string>() : std::string("call failed");
         });
-        check_eq(kin, eng->execute("visit(function(var x) -> string { return type_of(x); })").as<std::string>(), order + ": a callback argument");
+        check_eq(kin, eng->execute("visit(function(var x) -> string { return reflect::type_of(x); })").as<std::string>(), order + ": a callback argument");
         check_eq((script_int)3, eng->execute("hero.health - 97").as_int(), order + ": the C++ property reads through the layer");
     }
 
@@ -1384,7 +1450,7 @@ public:
             eng->add_global("hero", eng->make_object(object));
             eng->add_global("again", object);
             (void)eng->extend(object, kin);
-            check_eq(kin, eng->execute("type_of(again)").template as<std::string>(), kin + " two globals then extend: the second global follows");
+            check_eq(kin, eng->execute("reflect::type_of(again)").template as<std::string>(), kin + " two globals then extend: the second global follows");
         });
     }
     // The observable identity of a layer reached from C++: the boundary return IS the layer
@@ -1786,25 +1852,25 @@ public:
             auto whole = std::make_shared<NestedWhole>();
             eng->add_global("whole", whole);
             eng->add_global("part", std::shared_ptr<NestedPart>(whole, &whole->part));
-            check_eq(std::string("NestedPart"), eng->execute("type_of(part)").as<std::string>());
+            check_eq(std::string("NestedPart"), eng->execute("reflect::type_of(part)").as<std::string>());
             check_eq((script_int)7, eng->execute("part.depth").as_int());
             eng->add_global("whole_again", whole);
-            check_eq(std::string("NestedWhole"), eng->execute("type_of(whole_again)").as<std::string>());
+            check_eq(std::string("NestedWhole"), eng->execute("reflect::type_of(whole_again)").as<std::string>());
             check_true(eng->execute("same_object(whole, whole_again)").as<bool>(), "the whole keeps its one identity");
 
             auto poly = std::make_shared<NestedPolyWhole>();
             eng->add_global("poly", poly);
             eng->add_global("poly_part", std::shared_ptr<NestedPolyPart>(poly, &poly->part));
-            check_eq(std::string("NestedPolyPart"), eng->execute("type_of(poly_part)").as<std::string>());
+            check_eq(std::string("NestedPolyPart"), eng->execute("reflect::type_of(poly_part)").as<std::string>());
             check_eq((script_int)8, eng->execute("poly_part.depth").as_int());
 
             auto extended = std::make_shared<NestedWhole>();
             (void)eng->extend(extended, "WholeKin");
             eng->add_global("kin", extended);
             eng->add_global("kin_part", std::shared_ptr<NestedPart>(extended, &extended->part));
-            check_eq(std::string("NestedPart"), eng->execute("type_of(kin_part)").as<std::string>(), "the part is not the whole's layer");
+            check_eq(std::string("NestedPart"), eng->execute("reflect::type_of(kin_part)").as<std::string>(), "the part is not the whole's layer");
             eng->add_global("kin_again", extended);
-            check_eq(std::string("WholeKin"), eng->execute("type_of(kin_again)").as<std::string>(), "the whole keeps its layer");
+            check_eq(std::string("WholeKin"), eng->execute("reflect::type_of(kin_again)").as<std::string>(), "the whole keeps its layer");
             check_eq((script_int)3, eng->execute("kin_again.chomp").as_int());
         });
 
@@ -1815,7 +1881,7 @@ public:
             (void)eng->extend(as_base, "PolyKin");
             dynamic_binder<OrderElite>(*eng, "OrderElite").constructor<>().base_class<OrderPoly>().property("rank", &OrderElite::rank).build();
             eng->add_global("hero", elite);
-            check_eq(std::string("PolyKin"), eng->execute("type_of(hero)").as<std::string>(), "the global is the layer");
+            check_eq(std::string("PolyKin"), eng->execute("reflect::type_of(hero)").as<std::string>(), "the global is the layer");
             check_eq((script_int)3, eng->execute("hero.chomp").as_int(), "the layer's script field");
             eng->add_global("via_base", as_base);
             check_true(eng->execute("same_object(hero, via_base)").as<bool>(), "the base pointer reaches the same layer");
@@ -2186,6 +2252,67 @@ public:
             check(rows.find("Watchkin.mood:string->kept") != std::string::npos, "the script field's retype is recorded: " + rows);
         });
 
+        // A saved null is a value like any other: a handle, a function or a var field takes it, a bool field converts it as `=`
+        // does, and a field of any other declared type keeps its constructed value, recorded as a retype (JSON and binary)
+        test("a_saved_null_never_lands_in_a_field_declared_with_another_type", [&]() {
+            const char* reader_classes = R"(
+                enum Mode { low, high }
+                class Inner { int v = 1; }
+                class Outer {
+                    int n = 3; float f = 1.5; string s = "d"; bool b = true; char c = 'k'; utf8_string u = "u"; Mode m = Mode::high;
+                    array<int> xs = [7]; map<string, int> ks = {"z": 9}; array<string> ss = ["q"]; array<Inner> inners; map<string, Inner> named;
+                    Inner inner; shared_ptr<Inner> h = new Inner(); weak_ptr<Inner> w; function cb; var any = 4; math::vec2 v2 = math::vec2(1.0, 2.0);
+                    array<float> fs = [0.5]; array<array<int>> grid = [[1]];
+                }
+                string shape(var o) {
+                    string out = "";
+                    for (auto name : ["n", "f", "s", "b", "c", "u", "m", "xs", "ks", "ss", "inners", "named", "inner", "h", "w", "cb", "any", "v2", "fs", "grid"]) {
+                        var value = reflect::get(o, name);
+                        out += name + "=" + (value == null ? "null" : to_json(value)) + " ";
+                    }
+                    return out;
+                }
+            )";
+            // what a class of the same name with untyped fields saved: nulls where the reader declares types
+            const char* writer_classes = "class Outer { var n; var f; var s; var b; var c; var u; var m; var xs; var ks; var ss; var inners; var named; var inner; var h; var w; var any; var v2; var fs; var grid; }";
+            const std::string kept = "n=3 f=1.5 s=\"d\" b=false c={\"$char\":107} u=\"u\" m=1 xs=[7] ks={\"z\":9} ss=[\"q\"] inners=[] named={} "
+                                     "inner={\"$type\":\"Inner\",\"$val\":{\"v\":1}} h=null w=null cb=null any=null v2={\"$type\":\"math::vec2\",\"$val\":{\"x\":1.0,\"y\":2.0}} fs=[0.5] grid=[[1]] ";
+            for (const bool binary : {false, true}) {
+                const std::string format = binary ? "binary" : "JSON";
+                auto writer = jai::foundry::make_engine();
+                jai::stdlib::register_all(*writer);
+                writer->execute(writer_classes);
+                auto eng = jai::foundry::make_engine();
+                jai::stdlib::register_all(*eng);
+                eng->execute(reader_classes);
+                eng->hot_reload_reporting(true);
+                std::string saved = writer->execute(binary ? "to_binary(Outer());" : "to_json(Outer());").as_string();
+                eng->add_function("saved", [&saved]() { return saved; });
+                const std::string load = binary ? "from_binary(saved())" : "from_json(saved())";
+                check_eq(kept, eng->execute("shape(" + load + ");").as_string(), format + ": every field of the save is null");
+                std::string rows;
+                for (const auto& report : eng->hot_reload_reports()) {
+                    if (report.outcome == field_migration_outcome::reset) { rows += report.field_name + " "; }
+                }
+                check_eq(std::string("n f s c u m xs ks ss inners named inner v2 fs grid "), rows, format + ": each field that kept its constructed value is recorded");
+                check_eq((script_int)4, eng->execute("var o = " + load + "; o.n + 1;").as_int(), format + ": the field still holds an int");
+                // a null inside a container the field declares: the container does not fit, and the field keeps its constructed one
+                saved = writer->execute(std::string("Outer o; o.xs = [1, null, 3]; o.ks = {\"a\": null}; o.ss = [null]; o.fs = [null, 2.5]; o.grid = [[1, null], null]; o.inners = [null]; o.named = {\"k\": null}; ") +
+                                        (binary ? "to_binary(o);" : "to_json(o);")).as_string();
+                check_eq(kept, eng->execute("shape(" + load + ");").as_string(), format + ": a null among a typed container's elements");
+                // what a float cannot spell in JSON is written so it loads again: no null stands in for it
+                check_eq(std::string("nan inf -inf nan"), eng->execute(std::string("Outer z; z.f = math::nan; z.fs = [math::inf, -math::inf, math::nan]; var back = ") +
+                                                                     (binary ? "from_binary(to_binary(z))" : "from_json(to_json(z))") +
+                                                                     "; to_string(back.f) + \" \" + to_string(back.fs[0]) + \" \" + to_string(back.fs[1]) + \" \" + to_string(back.fs[2]);").as_string(),
+                         format + ": a NaN and the infinities round-trip");
+            }
+            // hand-written JSON, the same nulls
+            auto eng = jai::foundry::make_engine();
+            jai::stdlib::register_all(*eng);
+            eng->execute(reader_classes);
+            check_eq(kept, eng->execute(R"(shape(from_json("{\"$type\":\"Outer\",\"$val\":{\"n\":null,\"f\":null,\"s\":null,\"b\":null,\"c\":null,\"u\":null,\"m\":null,\"xs\":null,\"ks\":null,\"ss\":null,\"inners\":null,\"named\":null,\"inner\":null,\"h\":null,\"w\":null,\"cb\":null,\"any\":null,\"v2\":null,\"fs\":null,\"grid\":null}}"));)").as_string());
+        });
+
         // The load contract's oracle: whatever the constructors, accessors, setters and observers do, a load restores
         // every saved value, so saving what was loaded writes the same bytes (each class shape, alone and in one archive,
         // JSON and binary, script values and the C++ archive)
@@ -2458,7 +2585,7 @@ public:
             eng->add_global("twin", eng->extend(twin, "Markkin"));
             check(twin->script_layer_from_json(state), "the state hydrates: " + state);
             check_eq(std::string("char q 6 true"), eng->execute(
-                "`${type_of(twin.mark)} ${twin.mark} ${to_string(twin.pal.n)} ${to_string(same_object(twin.seen.lock(), twin.pal))}`").as<std::string>(),
+                "`${reflect::type_of(twin.mark)} ${twin.mark} ${to_string(twin.pal.n)} ${to_string(same_object(twin.seen.lock(), twin.pal))}`").as<std::string>(),
                 "a char field stays a char, a handle field its object, a weak_ptr to it the same object: " + state);
         });
 
@@ -2659,9 +2786,9 @@ public:
     )";
 
     static constexpr const char* k_reload_golden = "fields 61 4 2 reloaded\nsame false false\nalias true true 61 reloaded\ncopy false false 61 5 reloaded\neq true false\nfresh 100 2 false\njson {\"$type\":\"Voidkin\",\"$val\":{\"health\":61,\"label\":\"creature\",\"chomp\":4,\"fangs\":2}}\nbinary 61 4 2 reloaded\n";
-    static constexpr const char* k_report_golden = "h.health 7\nget 7\nset set\ncompound set!\nhas_field true true\nfields []\nmethods [{\"access\":\"public\",\"arity\":0,\"from\":\"HybridCreature\",\"name\":\"speak\",\"params\":[],\"static\":false}]\nspeak grr\nbind grr\ninvoke grr\ntype HybridCreature true\neq true false\ncopy false false 7 set!\ncopy independent 7\njson {\"$type\":\"HybridCreature\",\"$val\":{\"health\":7,\"label\":\"set!\"}}\nfrom_json 7 set!\nfrom_binary 7 set!\nv.health 42 8 voidkin\nv.get 42 8\nv.set 43\nv.fields [{\"access\":\"public\",\"from\":\"Voidkin\",\"kind\":\"field\",\"name\":\"chomp\",\"static\":false,\"type\":\"int\"}]\nv.methods [{\"access\":\"public\",\"arity\":0,\"from\":\"Voidkin\",\"name\":\"speak\",\"params\":[],\"static\":false}]\nv.bind voidkin voidkin\nv.type Voidkin false\nv.eq true false\nv.copy false false 43 8\nv.json {\"$type\":\"Voidkin\",\"$val\":{\"health\":43,\"label\":\"creature\",\"chomp\":8}}\nv.from_json 43 8 voidkin\nv.from_binary 43 8 voidkin\nextend 9 3 voidkin Voidkin\nextend.get 9\nextend.json {\"$type\":\"Voidkin\",\"$val\":{\"health\":9,\"label\":\"creature\",\"chomp\":3}}\ng.charge 5\ng.set 9 9\ng.spark 14 3\ng.fields [{\"access\":\"public\",\"from\":\"NativeGadget\",\"kind\":\"field\",\"name\":\"charge\",\"static\":false,\"type\":\"int\"},{\"access\":\"public\",\"from\":\"NativeGadget\",\"kind\":\"signal\",\"name\":\"on_spark\",\"static\":false,\"type\":\"var\"}]\ng.methods [{\"access\":\"public\",\"arity\":1,\"from\":\"NativeGadget\",\"name\":\"spark\",\"params\":[{\"default\":false,\"name\":\"arg0\",\"type\":\"int\"}],\"static\":false}]\ng.json {\"$type\":\"NativeGadget\",\"$val\":{\"charge\":14,\"on_spark\":{\"$type\":\"Signal\",\"$val\":{}}}}\ng.eq true false\n";
+    static constexpr const char* k_report_golden = "h.health 7\nget 7\nset set\ncompound set!\nhas_field true true\nfields []\nmethods [{\"access\":\"public\",\"arity\":0,\"from\":\"HybridCreature\",\"name\":\"speak\",\"params\":[],\"static\":false}]\nspeak grr\nbind grr\ninvoke grr\ntype HybridCreature true\neq true false\ncopy false false 7 set!\ncopy independent 7\njson {\"$type\":\"HybridCreature\",\"$val\":{\"health\":7,\"label\":\"set!\"}}\nfrom_json 7 set!\nfrom_binary 7 set!\nv.health 42 8 voidkin\nv.get 42 8\nv.set 43\nv.fields [{\"access\":\"public\",\"from\":\"Voidkin\",\"kind\":\"field\",\"name\":\"chomp\",\"static\":false,\"type\":\"int\"}]\nv.methods [{\"access\":\"public\",\"arity\":0,\"from\":\"Voidkin\",\"name\":\"speak\",\"params\":[],\"static\":false}]\nv.bind voidkin voidkin\nv.type Voidkin false\nv.eq true false\nv.copy false false 43 8\nv.json {\"$type\":\"Voidkin\",\"$val\":{\"health\":43,\"label\":\"creature\",\"chomp\":8}}\nv.from_json 43 8 voidkin\nv.from_binary 43 8 voidkin\nextend 9 3 voidkin Voidkin\nextend.get 9\nextend.json {\"$type\":\"Voidkin\",\"$val\":{\"health\":9,\"label\":\"creature\",\"chomp\":3}}\ng.charge 5\ng.set 9 9\ng.spark 14 3\ng.fields [{\"access\":\"public\",\"from\":\"NativeGadget\",\"kind\":\"field\",\"name\":\"charge\",\"static\":false,\"type\":\"int\"},{\"access\":\"public\",\"from\":\"NativeGadget\",\"kind\":\"signal\",\"name\":\"on_spark\",\"static\":false,\"type\":\"var\"}]\ng.methods [{\"access\":\"public\",\"arity\":1,\"from\":\"NativeGadget\",\"name\":\"spark\",\"params\":[{\"default\":false,\"name\":\"arg0\",\"type\":\"int\"}],\"static\":false}]\ng.json {\"$type\":\"NativeGadget\",\"$val\":{\"charge\":14,\"on_spark\":{\"$type\":\"signal\",\"$val\":{}}}}\ng.eq true false\n";
     // hybrid JSON, hybrid binary (hex), host JSON, host binary (hex), gadget JSON: one line each
-    static constexpr const char* k_archives_golden = "{\"$id\": 1,\"$type\": \"Voidkin\",\"$script\": \"{\\\"chomp\\\":7}\",\"$val\": {\"health\": 42,\"label\": \"gnasher\"}}\n01000000000000000004000000030000002469640500000024747970650700000024736372697074040000002476616c040000000b0000000f000000380000000100000007000000566f69646b696e0b0000007b2263686f6d70223a377d01000000000000000002000000060000006865616c7468050000006c6162656c040000000b0000002a00000007000000676e61736865720202\n{\"$id\": 1,\"$val\": {\"health\": 13,\"label\": \"plain\"}}\n0100000000000000000200000003000000246964040000002476616c04000000360000000100000001000000000000000002000000060000006865616c7468050000006c6162656c04000000090000000d00000005000000706c61696e0202\n{\"$id\": 1,\"$val\": {\"charge\": 21,\"on_spark\": {\"parameter_names\": [],\"observers\": [],\"owned_observers\": {\"note\": {\"parameter_names\": [],\"script\": \"mark(arg_0);\"}}}}}";
+    static constexpr const char* k_archives_golden = "{\"$id\": 1,\"$type\": \"Voidkin\",\"$script\": \"{\\\"chomp\\\":7}\",\"$val\": {\"health\": 42,\"label\": \"gnasher\"}}\n01000000000000000004000000030000002469640500000024747970650700000024736372697074040000002476616c040000000b0000000f000000380000000100000007000000566f69646b696e0b0000007b2263686f6d70223a377d01000000000000000002000000060000006865616c7468050000006c6162656c040000000b0000002a00000007000000676e61736865720202\n{\"$id\": 1,\"$val\": {\"health\": 13,\"label\": \"plain\"}}\n0100000000000000000200000003000000246964040000002476616c04000000360000000100000001000000000000000002000000060000006865616c7468050000006c6162656c04000000090000000d00000005000000706c61696e0202\n{\"$id\": 1,\"$val\": {\"charge\": 21,\"on_spark\": {\"receivers\": {\"note\": {\"source\": \"mark(arg_0);\"}}}}}";
     static std::vector<std::string> golden_lines() {
         std::vector<std::string> out;
         std::string text = k_archives_golden;

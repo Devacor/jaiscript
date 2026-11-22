@@ -102,7 +102,7 @@ public:
         test("use_count_reports_script_alias_ladder", [this]() {
             const char* src = R"(
                 class T { int x = 1; }
-                shared_ptr<T> a = T();
+                shared_ptr<T> a = make_shared<T>();
                 var r1 = a.use_count();
                 var u1 = a.unique();
                 var b = a;
@@ -130,7 +130,7 @@ public:
             // follows: while any alias keeps the count >= 1 the weak_ptr stays alive
             const char* src = R"(
                 class T { int x = 1; }
-                shared_ptr<T> a = T();
+                shared_ptr<T> a = make_shared<T>();
                 weak_ptr<T> w = a;
                 var b = a;
                 to_string(a.use_count()) + ":" + to_string(w.expired());
@@ -165,7 +165,7 @@ public:
         test("transient_count_audit_canonical_call", [this]() {
             const char* src = R"(
                 class T { int x = 1; }
-                shared_ptr<T> a = T();
+                shared_ptr<T> a = make_shared<T>();
                 function probe(auto p) -> auto { return p.use_count(); }
                 var inside = probe(a);
                 var top = a.use_count();
@@ -190,7 +190,7 @@ public:
                 stdlib::register_all(*e);
                 e->execute(R"(
                     class T { int x = 1; }
-                    shared_ptr<T> a = T();
+                    shared_ptr<T> a = make_shared<T>();
                     var b = a;
                 )");
                 check_eq((int64_t)2, e->execute("a.cpp_ref_count()").as_int(),
@@ -501,8 +501,8 @@ public:
             check_eq(tracker_value.as<int>(), 200);
         });
 
-        // Test same_as() for weak_ptr
-        test("weak_ptr_same_as", [this]() {
+        // same_object() for weak_ptr
+        test("weak_ptr_same_object", [this]() {
             auto eng = make_engine();
             register_lifetime_tracker(*eng);
 
@@ -516,24 +516,24 @@ public:
                 weak_ptr<LifetimeTracker> weak_c = c;
 
                 // weak_a and weak_b reference the same object
-                auto same_ab = weak_a.same_as(weak_b);
+                auto same_ab = same_object(weak_a, weak_b);
                 // weak_a and weak_c reference different objects
-                auto same_ac = weak_a.same_as(weak_c);
+                auto same_ac = same_object(weak_a, weak_c);
 
                 same_ab && !same_ac
             )");
             check_eq(result.as<bool>(), true);
-            // one identity rule (same_object): a weak handle names its owner's object both ways round, an expired handle is
-            // its own object's still, and the method and same_object agree
-            check_eq(std::string("true true true true | false false false false | true false false"), eng->execute(R"(
+            // one identity rule (same_object): a weak handle names its owner's object both ways round, and an expired handle is
+            // its own object's still
+            check_eq(std::string("true true | false false | true false false"), eng->execute(R"(
                 auto s = shared_ptr<LifetimeTracker>(1);
                 weak_ptr<LifetimeTracker> w = s;
-                string out = `${(s.same_as(w))} ${(w.same_as(s))} ${(same_object(s, w))} ${(same_object(w, s))}`;
+                string out = `${(same_object(s, w))} ${(same_object(w, s))}`;
                 weak_ptr<LifetimeTracker> e1 = shared_ptr<LifetimeTracker>(2);
                 weak_ptr<LifetimeTracker> e2 = shared_ptr<LifetimeTracker>(3);
-                out += ` | ${(e1.same_as(e2))} ${(same_object(e1, e2))} ${(e1.same_as(null))} ${(same_object(e1, null))}`;
+                out += ` | ${(same_object(e1, e2))} ${(same_object(e1, null))}`;
                 auto e1_again = e1;
-                out += ` | ${(e1.same_as(e1_again))} ${(s.same_as(e1))} ${(e1.same_as(s))}`;
+                out += ` | ${(same_object(e1, e1_again))} ${(same_object(s, e1))} ${(same_object(e1, s))}`;
                 out;
             )").to_string());
         });
@@ -612,25 +612,25 @@ public:
             });
         });
 
-        test("same_as_is_object_identity_for_handles_and_values", [this]() {
+        test("same_object_is_object_identity_for_handles_and_values", [this]() {
             check_true_rows({
                 {"", R"(
                     auto a = shared_ptr<LifetimeTracker>(42);
                     auto b = a;
                     auto c = shared_ptr<LifetimeTracker>(42);
-                    a.same_as(b) && !a.same_as(c)
+                    same_object(a, b) && !same_object(a, c)
                 )"},
                 {"", R"(
                     auto shared = shared_ptr<LifetimeTracker>(5);
                     weak_ptr<LifetimeTracker> weak = shared;
-                    shared.same_as(weak.lock())
+                    same_object(shared, weak.lock())
                 )"},
                 {"", R"(
                     class Obj { int x = 0; }
                     auto a = Obj();
                     auto b = a;
                     auto c = a;
-                    !a.same_as(b) && a.same_as(a)
+                    !same_object(a, b) && same_object(a, a)
                 )"},
             });
         });
@@ -672,10 +672,130 @@ public:
                 {"class Accumulator { int total = 0; Accumulator(int t) { total = t; } auto operator=(int v) { total = total + v; return this; } }",
                  "auto a = shared_ptr<Accumulator>(0); auto b = a; auto c = a; a = 10; b = 20; c = 5; a.total == 35 && b.total == 35 && c.total == 35"},
                 {"class Point { int x = 0; int y = 0; Point(int px, int py) { x = px; y = py; } }",
-                 "auto a = shared_ptr<Point>(1, 2); auto b = a; a = Point(10, 20); a.x == 10 && a.y == 20 && b.x == 10 && b.y == 20"},
+                 "auto a = shared_ptr<Point>(1, 2); auto b = a; Point& into = a; into = Point(10, 20); a.x == 10 && a.y == 20 && b.x == 10 && b.y == 20"},
                 {"class Animal { string name = \"\"; Animal(string n) { name = n; } } class Dog : Animal { Dog(string n) : super(n) {} }",
                  "auto dog = shared_ptr<Dog>(\"Rex\"); shared_ptr<Animal> animal = dog; animal.name == \"Rex\""},
             });
+        });
+
+        test("a_weak_ptr_slot_takes_a_weak_pointer_to_its_class_only", [this]() {
+            // a weak pointer is judged as a var's shared handle is, on every route a value takes into a weak_ptr<T> slot: the
+            // object it still reaches is a T or of a class derived from T. An expired pointer reaches none and stores as empty,
+            // as null does, and the refusal is the text the slot gives a shared handle of that class
+            struct route { const char* name; const char* body; const char* refusal; };
+            static const route routes[] = {
+                {"a field", "Outer o; o.w = src; return what(o.w);", "Cannot assign CLASS to field 'w' of Outer (declared weak_ptr<Base>)"},
+                {"a static", "Outer::sw = src; return what(Outer::sw);", "Cannot assign CLASS to static 'sw' of Outer (declared weak_ptr<Base>)"},
+                {"a namespace variable", "space::nw = src; return what(space::nw);", "Cannot assign CLASS to 'nw' (declared weak_ptr<Base>)"},
+                {"a global", "gw = src; return what(gw);", "Cannot assign CLASS to 'gw' (declared weak_ptr<Base>)"},
+                {"a local's declaration", "weak_ptr<Base> lw = src; return what(lw);", "Cannot initialize 'lw' (declared weak_ptr<Base>) with CLASS"},
+                {"a local's assignment", "weak_ptr<Base> lw; lw = src; return what(lw);", "Cannot assign CLASS to 'lw' (declared weak_ptr<Base>)"},
+                {"a parameter", "return taken(src);", "Cannot pass CLASS to parameter 'p' of 'taken' (declared weak_ptr<Base>)"},
+                {"a return", "return what(give(src));", "Cannot return CLASS from 'give' (declared -> weak_ptr<Base>)"},
+                {"a pushed element", "array<weak_ptr<Base>> xs; xs.push(src); return what(xs[0]);", "Cannot push 'POINTER' to array<weak_ptr<Base>>"},
+                {"an assigned element", "array<weak_ptr<Base>> xs; xs.resize(1); xs[0] = src; return what(xs[0]);", "Cannot assign 'POINTER' to element of type 'weak_ptr<Base>'"},
+                {"an array literal", "array<weak_ptr<Base>> xs = [src]; return what(xs[0]);", "Cannot store POINTER in array<weak_ptr<Base>>"},
+                {"a map value", "map<string, weak_ptr<Base>> m; m[\"a\"] = src; return what(m[\"a\"]);", "Cannot assign 'POINTER' to element of type 'weak_ptr<Base>'"},
+                {"an assignment through a reference", "weak_ptr<Base> lw; weak_ptr<Base>& r = lw; r = src; return what(lw);", "Cannot assign CLASS to 'r' (declared weak_ptr<Base>&)"},
+                {"an assignment through a reference parameter", "weak_ptr<Base> lw; set_through(lw, src); return what(lw);", "Cannot assign CLASS to 'r' (declared weak_ptr<Base>&)"},
+                {"a constructor's store", "Keeper k = Keeper(src); return what(k.w);", "Cannot assign CLASS to field 'w' of Keeper (declared weak_ptr<Base>)"},
+            };
+            struct source { const char* name; const char* value; const char* cls; const char* pointer; const char* taken; };
+            static const source sources[] = {
+                {"a weak_ptr to another class", "weak_ptr<Other>(other)", "Other", "weak_ptr<Other>", nullptr},
+                {"a weak_ptr<var> to another class", "weak_ptr<var>(other)", "Other", "weak_ptr<Other>", nullptr},
+                {"a weak_ptr read from a typed slot of another class", "typed_other", "Other", "weak_ptr<Other>", nullptr},
+                {"a weak_ptr to the class", "weak_ptr<Base>(base)", "", "", "Base"},
+                {"a weak_ptr to a derived class", "weak_ptr<Derived>(derived)", "", "", "Derived"},
+                {"a weak_ptr read from a typed slot of the class", "typed_base", "", "", "Base"},
+                {"a weak_ptr read from a typed slot of a derived class", "typed_derived", "", "", "Derived"},
+                {"a weak_ptr<var> to the class", "weak_ptr<var>(base)", "", "", "Base"},
+                {"a weak_ptr<var> to a derived class", "weak_ptr<var>(derived)", "", "", "Derived"},
+                {"an expired weak_ptr to another class", "expired_other", "", "", "empty"},
+                {"an expired weak_ptr read from a typed slot of another class", "typed_expired_other", "", "", "empty"},
+                {"an expired weak_ptr read from a typed slot of the class", "typed_expired_base", "", "", "empty"},
+                {"an expired weak_ptr<var>", "expired_any", "", "", "empty"},
+                {"null", "null", "", "", "empty"},
+            };
+            std::string program = R"JAI(
+                class Base { string tag = "base"; }
+                class Derived : Base { }
+                class Other { string tag = "other"; }
+                class Outer { weak_ptr<Base> w; static weak_ptr<Base> sw; }
+                class Keeper { weak_ptr<Base> w; Keeper(var v) { w = v; } }
+                namespace space { weak_ptr<Base> nw; }
+                weak_ptr<Base> gw;
+                string what(var w) { if (w == null) { return "empty"; } return reflect::type_of(w.lock()); }
+                string taken(weak_ptr<Base> p) { return what(p); }
+                weak_ptr<Base> give(var x) { return x; }
+                void set_through(weak_ptr<Base>& r, var v) { r = v; }
+                var other = new Other();
+                var base = new Base();
+                var derived = new Derived();
+                weak_ptr<Other> typed_other = other;
+                weak_ptr<Base> typed_base = base;
+                weak_ptr<Derived> typed_derived = derived;
+                weak_ptr<Other> typed_expired_other;
+                weak_ptr<Base> typed_expired_base;
+                var expired_other = null;
+                var expired_any = null;
+                class Linked { var any; weak_ptr<Base> w; }
+                string load(string type) {
+                    try {
+                        auto o = from_json<Linked>("{\"any\":{\"$id\":1,\"$type\":\"" + type + "\",\"$val\":{\"tag\":\"x\"}},\"w\":{\"$ref\":1}}");
+                        return what(o.w);
+                    } catch (e) { return e; }
+                }
+                void expire() {
+                    var gone_other = new Other(); expired_other = weak_ptr<Other>(gone_other); typed_expired_other = gone_other;
+                    var gone_base = new Base(); typed_expired_base = gone_base;
+                    var gone_any = new Other(); expired_any = weak_ptr<var>(gone_any);
+                }
+                expire();
+            )JAI";
+            for (size_t i = 0; i < std::size(routes); ++i) {
+                program += "string route" + std::to_string(i) + "(var src) { try { " + routes[i].body + " } catch (e) { return e; } }\n";
+            }
+            std::string wrong;
+            auto eng = make_engine();
+            jai::stdlib::register_all(*eng);
+            eng->execute(program);
+            for (const source& s : sources) {
+                for (size_t i = 0; i < std::size(routes); ++i) {
+                    std::string want = s.taken ? s.taken : routes[i].refusal;
+                    for (const auto& [mark, text] : {std::pair<std::string_view, std::string_view>{"CLASS", s.cls}, {"POINTER", s.pointer}}) {
+                        if (const size_t at = want.find(mark); at != std::string::npos) { want.replace(at, mark.size(), text); }
+                    }
+                    std::string got;
+                    try {
+                        got = eng->execute("route" + std::to_string(i) + "(" + s.value + ");").as_string();
+                    } catch (const std::exception& e) {
+                        got = std::string("threw: ") + e.what();
+                    }
+                    if (got != want) { wrong += std::string(s.name) + " into " + routes[i].name + ": '" + got + "', expected '" + want + "'\n"; }
+                }
+            }
+            // what a base's slot hands back is judged by its object too: a derived object enters a derived class's slot, a base
+            // object does not
+            const std::pair<const char*, const char*> narrowing[] = {
+                {"class Deep { weak_ptr<Derived> d; } Outer wide; wide.w = weak_ptr<Derived>(derived); var back = wide.w; Deep deep; deep.d = back; what(deep.d);", "Derived"},
+                {"wide.w = weak_ptr<Base>(base); var plain = wide.w; string refused = \"took\"; try { deep.d = plain; } catch (e) { refused = e; } refused;",
+                 "Cannot assign Base to field 'd' of Deep (declared weak_ptr<Derived>)"},
+            };
+            for (const auto& [code, want] : narrowing) {
+                std::string got;
+                try { got = eng->execute(code).as_string(); } catch (const std::exception& e) { got = std::string("threw: ") + e.what(); }
+                if (got != want) { wrong += std::string(code) + ": '" + got + "', expected '" + want + "'\n"; }
+            }
+            // a load: a `$ref` to an object of another class is refused naming the field and its type, and one to the class or a
+            // derived one loads
+            const std::string other_load = eng->execute("load(\"Other\");").as_string();
+            if (other_load.find("'w'") == std::string::npos || other_load.find("weak_ptr<Base>") == std::string::npos) { wrong += "a $ref to an Other: '" + other_load + "'\n"; }
+            for (const char* type : {"Base", "Derived"}) {
+                const std::string got = eng->execute(std::string("load(\"") + type + "\");").as_string();
+                if (got != type) { wrong += std::string("a $ref to a ") + type + ": '" + got + "'\n"; }
+            }
+            check_eq(std::string(), wrong, "every route into a weak_ptr<T> slot judges a weak pointer by its class");
         });
 
         test("a_weak_ptr_or_shared_ptr_rejects_what_it_cannot_hold", [this]() {

@@ -4,6 +4,7 @@
 #include <jaiscript/core/execution_backend.hpp>
 #include <jaiscript/core/runtime_errors.hpp>
 #include <jaiscript/detail/execution_limits.hpp>
+#include <jaiscript/detail/host_time.hpp>
 #include <jaiscript/detail/run_record.hpp>
 #include <jaiscript/detail/native_stack.hpp>
 #include <algorithm>
@@ -206,6 +207,8 @@ namespace {
         engine& eng = *run.eng;
         detail::run_registry& runs = detail::engine_access::run_registry(eng);
         execution_backend* backend = detail::engine_access::get_execution_backend(eng);
+        // a call the budget does not count that steps a run: its time so far is credited to the entry it is in, before that entry's state swaps out
+        detail::host_time_pause host_paused(detail::engine_access::execution_limits(eng), *backend);
         run.outer = runs.active;
         runs.active = &run;
         detail::engine_access::active_run_pins(eng, &run.pins);
@@ -313,6 +316,9 @@ checked_result<script_value> engine::sleep_builtin(const script_value& a_seconds
     if (run->cancel) {   // a cancelled run that reaches another sleep ends there too
         execution_limits().terminal_error = true;
         return checked_result<script_value>(make_error_code(runtime_error_code::run_cancelled), detail::k_run_cancelled);
+    }
+    if (execution_backend* backend = get_execution_backend(); backend && backend->budget_overrun_at_return()) [[unlikely]] {   // a slice that outran its budget does not suspend
+        return detail::raise_execution_budget(execution_limits());
     }
     const std::chrono::nanoseconds now = time().monotonic_now();
     run->sleep_started = now;

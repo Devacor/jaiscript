@@ -134,7 +134,7 @@ private:
 		stat_block(c, x_armor, stat_w, "ARMOR", G.player.armor, G.player.armor, 100, blue_digits, rgb_idx(90, 150, 240));
 
 		c.rect(x_face, 2, 12, 10, rgb_idx(18, 16, 22));
-		if (HOST_ASCII) {
+		if (host_ascii) {
 			auto& lines = G.hud.faces[G.hud.face_name()];
 			for (int r = 0; r < 5; ++r) { c.text(x_face + 1, r + 1, lines[r], rgb_idx(226, 180, 140)); }
 		} else {
@@ -149,7 +149,7 @@ private:
 		int arms_w = w - x_arms - 1;
 		if (arms_w >= 11) {
 			c.text(x_arms + 1, 1, "ARMS", dim);
-			if (HOST_DEV && arms_w >= 26) { c.text(x_arms + 7, 1, "DEV: edit tune.jai", rgb_idx(110, 230, 230)); }
+			if (host_dev && arms_w >= 26) { c.text(x_arms + 7, 1, "DEV: edit tune.jai", rgb_idx(110, 230, 230)); }
 			for (int slot = 0; slot < 3; ++slot) {
 				int sx = x_arms + 1 + slot * 4;
 				bool owned = G.player.have[slot] == 1;
@@ -163,7 +163,7 @@ private:
 			key_chip(c, x_arms + 7, 3, "BLUE", G.player.key_b, rgb_idx(44, 90, 210));
 			if (G.autopilot) { c.text(x_arms + 1, 5, "AUTOPILOT", rgb_idx(110, 230, 230)); }
 			else if (fps > 0.0) {
-				string cores = HOST_WORKERS > 0 ? `  ${HOST_WORKERS} cores` : "";
+				string cores = host_workers > 0 ? `  ${host_workers} cores` : "";
 				c.text(x_arms + 1, 5, `${fps:.0f} fps ${ms_sim + ms_draw:.1f} ms${cores}`, dim);
 			}
 		}
@@ -175,7 +175,7 @@ private:
 			int bar_color) {
 		c.text(x + 1, 1, label, rgb_idx(150, 140, 132));
 		string number = `${value}`;
-		if (HOST_ASCII) { c.text_right(x + width - 1, 3, number, digits[1]); }
+		if (host_ascii) { c.text_right(x + width - 1, 3, number, digits[1]); }
 		else { c.lettering(number, x + width - 1 - lettering_width(number, 1), 4, 1, digits, rgb_idx(16, 12, 14)); }
 		int bar_w = width - 2;
 		int filled = iclamp(bar * bar_w / imax(1, bar_max), 0, bar_w);
@@ -269,7 +269,7 @@ private:
 
 	// a heading in the pixel font, centered at pixel row y, at the largest scale that fits
 	int heading(Canvas& c, string s, int y, int max_scale, array<int> top_bottom, int shadow) {
-		if (HOST_ASCII) {
+		if (host_ascii) {
 			c.text_centered(y / 2 + 1, s.split("").join(" "), top_bottom[1]);
 			return 4;
 		}
@@ -284,7 +284,7 @@ private:
 	// outlined, shadowed, lit from above; a bleeding logo gathers drops under its
 	// letters that fall
 	void draw_logo(Canvas& c, int x, int y, math::color top, math::color bottom, bool bleeding) {
-		if (HOST_ASCII) {
+		if (host_ascii) {
 			for (int r = 0; r < G.hud.logo.size(); ++r) {
 				c.text_centered(y / 2 + r, G.hud.logo[r], color_idx(math::mix_rgb(top, bottom, r / 4.0)));
 			}
@@ -330,7 +330,7 @@ private:
 		int glow_at = height * 3 / 5;
 		c.gradient(0, glow_at, rgb(6, 5, 9), rgb(22, 8, 12));
 		c.gradient(glow_at, height, rgb(22, 8, 12), rgb(84, 26, 12));
-		if (!HOST_ASCII) { draw_fire(c, height * 2 / 5); }
+		if (!host_ascii) { draw_fire(c, height * 2 / 5); }
 		draw_embers(c, c.w / 2, rgb(255, 214, 120), rgb(110, 30, 16));
 
 		bool flicker = ember(G.tick / 3, 5) % 9 == 0;

@@ -48,6 +48,28 @@ public:
     const_tests() : suite("Const") {}
 
     void forge_tests() override {
+        // An enum's value read with a dot and called, or a const map's key read so, writes nothing: the text is the call's, not the
+        // const rule's, at load and at run time
+        test("a_call_of_an_enum_value_or_a_map_key_is_no_write", [this]() {
+            CHECK_ERROR("enum Lvl { low, high } print(Lvl.high(1));", "error: cannot call 'high': it is an int, not a function");
+            CHECK_ERROR("namespace ns { enum Lvl { low, high } } print(ns::Lvl.high(1));", "error: cannot call 'high': it is an int, not a function");
+            CHECK_ERROR("const map<string, int> cm = {\"high\": 2}; print(cm.high(1));", "error: map has no member 'high'; read the key as [\"high\"]");
+            const auto lvl = run("enum Lvl { low, high } print(Lvl.high(1));");
+            check_false(contains(lvl.error, "is const"), lvl.error);
+            const auto at_run = run(R"JS(
+                [[warn_mode]];
+                enum Lvl { low, high }
+                const var cm = {"high": 2};
+                try { print(Lvl.high(1)); } catch (e) { print(e); }
+                try { print(Lvl::high(1)); } catch (e) { print(e); }
+                try { print(cm.high(1)); } catch (e) { print(e); }
+                print(Lvl.high, " ", Lvl.size(), " ", cm.size());
+            )JS");
+            check_eq(std::string(""), at_run.error);
+            check_eq(std::string("Cannot call 'high': it is an int, not a function\nCannot call 'high': it is an int, not a function\n"
+                                 "map has no member 'high'; read the key as [\"high\"]\n1 2 1\n"), at_run.output);
+        });
+
         // ------------------------------------------------------------------ declarations
         test("const_reads_like_a_variable", [this]() {
             const auto r = run(R"JS(
@@ -103,7 +125,7 @@ public:
                 print(s.is_valid_utf8(), " ", s.to_bytes().size(), " ", s.find("b"));
                 class C { }
                 const shared_ptr<C> h = new C();
-                print(h.same_as(h), " ", h.cpp_ref_count() > 0);
+                print(same_object(h, h), " ", h.cpp_ref_count() > 0);
                 int sum(array<int>& v) { return v.reduce((a, b) => a + b, 0); }
                 print(sum([5, 6]));
             )JS");
@@ -400,6 +422,71 @@ public:
         test("namespace_constants", [this]() {
             check_eq(std::string("3\n"), run("namespace cfg { const int W = 3; } print(cfg::W);").output);
             CHECK_ERROR("namespace cfg { const int W = 3; } cfg::W = 4;", "cannot assign to const 'cfg::W'");
+        });
+
+        // A write the run time decides (a path through a var, a method on a const var) raises where it stands when the function
+        // holding it is called from another function's body: the VM grafts such a callee, and the graft's copy of the body carried
+        // no guard, so the const was written. Each case's callee is on line 6; the error names that line and the whole stack.
+        test("a_guarded_write_raises_in_a_function_another_function_calls", [this]() {
+            const std::string prelude =
+                "class Box { var items = [1, 2]; int n = 0; void set(int x) { n = x; } int get() { return n; } }\n"
+                "const Box cb;\n"
+                "const var cv = Box();\n"
+                "const var carr = [1, 2, 3];\n"
+                "void report(function body) { try { body(); print(\"ran\"); } catch (e) { print(e, \" @\", e.line, \" #\", e.stack.size()); } }\n";
+            const std::string state = " print(cb.items, \" \", cb.n, \" \", cv.items, \" \", cv.n, \" \", carr);\n";
+            const std::string untouched = "[1, 2] 0 [1, 2] 0 [1, 2, 3]\n";
+            const std::string store = "Cannot assign to 'cv.n': it is read-only ('cv' is const)";
+            struct guarded_case { const char* callee; const char* caller; std::string expected; bool warn_region = false; };
+            const guarded_case cases[] = {
+                {"void w() { cb.items.push(3); }", "void d() { w(); } report([]() { d(); });", "Cannot call 'push' on 'cb.items': 'cb' is const and 'push' writes its receiver @6 #5\n"},
+                {"void w() { cv.items.push(9); }", "void d() { w(); } report([]() { d(); });", "Cannot call 'push' on 'cv.items': 'cv' is const and 'push' writes its receiver @6 #5\n"},
+                {"void w() { cv.n = 5; }", "void d() { w(); } report([]() { d(); });", store + " @6 #5\n"},
+                {"void w() { ++cv.n; }", "void d() { w(); } report([]() { d(); });", store + " @6 #5\n"},
+                {"void w() { cv.n++; }", "void d() { w(); } report([]() { d(); });", store + " @6 #5\n"},
+                {"void w() { cv.n += 4; }", "void d() { w(); } report([]() { d(); });", store + " @6 #5\n"},
+                {"void w() { carr[0] = 9; }", "void d() { w(); } report([]() { d(); });", "Cannot assign to 'carr[0]': it is read-only ('carr' is const) @6 #5\n"},
+                {"void w() { cv.set(6); }", "void d() { w(); } report([]() { d(); });", "Cannot call 'set' on 'cv': 'cv' is const and 'set' writes its receiver @6 #5\n"},
+                {"void w() { cv.n = 5; } void w2() { w(); }", "void d() { w2(); } report([]() { d(); });", store + " @6 #6\n"},
+                {"void w() { cv.n = 5; } void w2() { w(); } void w3() { w2(); }", "void d() { w3(); } report([]() { d(); });", store + " @6 #7\n"},
+                {"void w() { for (int i = 0; i < 2; ++i) { cv.n = i + 1; } }", "void d() { w(); } report([]() { d(); });", store + " @6 #5\n"},
+                {"void w(bool c) { if (c) { cv.n = 3; } }", "void d() { w(true); } report([]() { d(); });", store + " @6 #5\n"},
+                {"void w() { cv.n = 5; }", "void d() { for (int i = 0; i < 3; ++i) { w(); } } report([]() { d(); });", store + " @6 #5\n"},
+                {"int w(int a) { cv.n = a; return a + 1; }", "void d() { int r = w(4); print(r); } report([]() { d(); });", store + " @6 #5\n"},
+                {"int w(int a) { cv.n = a; return a + 1; }", "void d() { int r = 1 + w(4) * 2; print(r); } report([]() { d(); });", store + " @6 #5\n"},
+                {"int w(int a) { cv.n = a; return a + 1; }", "int d() { return w(4); } report([]() { print(d()); });", store + " @6 #5\n"},
+                {"int w(int a) { cv.n = a; return a + 1; }", "void d() { if (w(4) > 0) { print(\"then\"); } } report([]() { d(); });", store + " @6 #5\n"},
+                {"int w(int a) { cv.n = a; return a + 1; }", "void d() { auto l = (int a) => w(a); print(l(2)); } report([]() { d(); });", store + " @6 #6\n"},
+                {"int w() { return cv.get() + 1; }", "void d() { print(w()); } report([]() { d(); });", "1\nran\n"},
+                {"class H { void touch() { cv.n = 11; } void via() { touch(); } static void st() { cv.n = 12; } int calc(int a) { cv.n = a; return a * 2; } }",
+                 "void d() { H h; h.touch(); } report([]() { d(); });", store + " @6 #5\n"},
+                {"class H { void touch() { cv.n = 11; } void via() { touch(); } static void st() { cv.n = 12; } int calc(int a) { cv.n = a; return a * 2; } }",
+                 "void d() { H h; h.via(); } report([]() { d(); });", store + " @6 #6\n"},
+                {"class H { void touch() { cv.n = 11; } void via() { touch(); } static void st() { cv.n = 12; } int calc(int a) { cv.n = a; return a * 2; } }",
+                 "void d() { H::st(); } report([]() { d(); });", store + " @6 #5\n"},
+                {"class H { void touch() { cv.n = 11; } void via() { touch(); } static void st() { cv.n = 12; } int calc(int a) { cv.n = a; return a * 2; } }",
+                 "void d() { H h; int r = h.calc(3); print(r); } report([]() { d(); });", store + " @6 #5\n"},
+                // a warn region (the unit's first statement leads it) lets the load pass and the node raise its text when it is reached
+                {"void w() { cb.n = 6; }", "void d() { w(); } report([]() { d(); });", "Cannot assign to 'cb.n': it is read-only ('cb' is const) @6 #5\n", true},
+                {"int w(int a) { return a + (cb.n = 7); }", "void d() { print(w(1)); } report([]() { d(); });", "Cannot assign to 'cb.n': it is read-only ('cb' is const) @6 #5\n", true},
+                {"void w(bool c) { if (c) { { cb.items.push(4); } } }", "void d() { w(true); } report([]() { d(); });",
+                 "Cannot call 'push' on 'cb.items': 'cb' is const and 'push' writes its receiver @6 #5\n", true},
+                {"void w() { cast<Box&>(cb).n = 4; }", "void d() { w(); } report([]() { d(); });", "Cannot cast const 'cb' to Box&: cast<Box>(cb) copies it @6 #5\n", true},
+                {"void w() { cb.n = 6; } void w2() { w(); } void w3() { w2(); }", "void d() { w3(); } report([]() { d(); });",
+                 "Cannot assign to 'cb.n': it is read-only ('cb' is const) @6 #7\n", true},
+                {"enum Lvl { low, mid, high } void w() { Lvl.clear(); }", "void d() { w(); } report([]() { d(); });",
+                 "Cannot call 'clear' on 'Lvl': 'Lvl' is const and 'clear' changes it @6 #5\n", true},
+            };
+            std::string failures;
+            for (const guarded_case& c : cases) {
+                const std::string source = (c.warn_region ? "[[warn_mode]] " : "") + prelude + c.callee + "\n" + c.caller + state;
+                const auto r = run(source);
+                const std::string want = c.expected + untouched;
+                if (!r.error.empty() || r.output != want) {
+                    failures += std::string(c.callee) + " / " + c.caller + "\n  expected: " + want + "  got:      " + r.output + (r.error.empty() ? "" : "  error: " + r.error + "\n");
+                }
+            }
+            check_true(failures.empty(), failures);
         });
     }
 };

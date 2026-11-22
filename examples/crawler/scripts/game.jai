@@ -246,7 +246,7 @@ function start_new_game(Species species, Profession calling, string hero_name) -
 	NOTICED = {};
 	G.player = Player(species, calling);
 	if (hero_name != "") { G.player.name = hero_name; }
-	G.player.god = HOST_GOD;
+	G.player.god = host_god;
 	if (G.player.god) {
 		G.player.atk = 40;
 		G.player.max_hp = 400;
@@ -513,7 +513,7 @@ function accumulate_hash() -> void {
 	G.hash = h;
 }
 
-// a level's boon: the pilot draws one from the Rng, a player picks on the level-up screen
+// a level's boon: the pilot draws one from the RNG, a player picks on the level-up screen
 function choose_boon() -> void {
 	while (G.level_pending) {
 		string key = G.autopilot ? to_string(1 + RNG.next(4)) : level_up_screen();
@@ -550,8 +550,8 @@ function game_loop() -> void {
 			if (G.smoke) { accumulate_hash(); }
 			fx_prune();
 			fx_animate();
-			if (HOST_RELOAD_EVERY > 0 && G.turn % HOST_RELOAD_EVERY == 0) { pilot_reload(); }
-			if (G.smoke && G.turn >= HOST_TURNS) {
+			if (host_reload_every > 0 && G.turn % host_reload_every == 0) { pilot_reload(); }
+			if (G.smoke && G.turn >= host_turns) {
 				G.over = true;
 				G.quit = true;
 			}
@@ -565,11 +565,11 @@ function game_loop() -> void {
 	if (G.victory) {
 		compute_fov();
 		victory_screen();
-		delete_file(SAVE_PATH);
+		file::remove(save_path);
 	} else if (!G.quit) {
 		compute_fov();
 		death_screen();
-		delete_file(SAVE_PATH);
+		file::remove(save_path);
 	} else if (G.saved) {
 		host_log("Saved. Rest well; the Well keeps your place.");
 	}
@@ -579,7 +579,7 @@ function game_loop() -> void {
 // scripts when one was saved: edit a file mid-run and the Well changes under you.
 function next_key() -> string {
 	if (G.autopilot) { return autopilot_key(); }
-	if (!HOST_INTERACTIVE) { return read_key(); }
+	if (!host_interactive) { return read_key(); }
 	while (true) {
 		string key = poll_key(0.25);
 		if (key != "") { return key; }
@@ -682,14 +682,14 @@ class SaveFile { int version; int seed; int rng; Game game; }
 
 function save_game() -> void {
 	G.boss_co = null;
-	write_file(SAVE_PATH, to_json(SaveFile{SAVE_VERSION, HOST_SEED, RNG.state(), G}));
+	file::write(save_path, to_json(SaveFile{SAVE_VERSION, host_seed, RNG.state(), G}));
 }
 
 function load_game() -> bool {
-	if (!file_exists(SAVE_PATH)) { return false; }
+	if (!file::exists(save_path)) { return false; }
 	SaveFile save;
 	try {
-		save = from_json(read_file(SAVE_PATH));
+		save = from_json(file::read(save_path));
 	} catch (e) {
 		return false;
 	}
@@ -700,8 +700,8 @@ function load_game() -> bool {
 	G.over = false;
 	G.quit = false;
 	G.saved = false;
-	G.smoke = HOST_SMOKE;
-	G.autopilot = HOST_SMOKE;
+	G.smoke = host_smoke;
+	G.autopilot = host_smoke;
 	view_cache_invalidate();
 	FLOOR_START = G.player;
 	FLOOR_START_TURN = G.turn;
@@ -714,7 +714,7 @@ function print_run_summary(string label) -> void {
 	Player p = G.player;
 	host_log("");
 	host_log(`=== ${label} ===`);
-	host_log(`backend: ${HOST_BACKEND}  seed: ${HOST_SEED}`);
+	host_log(`backend: ${host_backend}  seed: ${host_seed}`);
 	host_log(`turns: ${G.turn}  floor: ${G.floor}  level: ${p.level}  facing: ${FACE_NAME[G.facing]}`);
 	host_log(`hp: ${p.hp}/${p.total_max_hp()}  kills: ${p.kills}  gold: ${p.gold}  items: ${p.inventory.size()}`);
 	host_log(`weapon: ${p.weapon == null ? "-" : p.weapon.name}  armor: ${p.armor == null ? "-" : p.armor.name}`);

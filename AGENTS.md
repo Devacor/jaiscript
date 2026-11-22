@@ -86,9 +86,17 @@ rather than throw, so "deep nesting does not crash" is tested as "execute return
   `tools/ci/host_warnings.cpp` under `-Wall -Wextra -Werror` with each g++ and clang++ it finds, and wants each case of
   `tools/ci/must_not_compile.cpp` (a program the headers reject) to fail with its message; targeted.sh picks it for
   any `include/jaiscript` change.
+- `bash tools/ci/gates.sh clang` builds the suites with Clang (Visual Studio's on Windows) and runs them on both backends:
+  Clang names some things unlike MSVC (a function-local class is its bare name). targeted.sh picks it whenever it picks the
+  suites; it skips when no clang++ is found.
 - A compiler change: dump `jaiscript --manifest=<file> <script>` before and after over the affected programs; the
   manifests (every chunk field, exact constant bits) change only where the change intends.
 - A change to what the AST serializer writes bumps `k_jaibite_version` (`include/jaiscript/detail/ast_serializer.hpp`).
+- The checker's revision (`include/jaiscript/detail/jaibite_checker_revision.hpp`, what a `.jaibite`'s checked-clean stamp
+  names) is generated from the code of every C++ file under `include/` and `source/` but the tests, comments and layout
+  aside, since a rule that refuses a program can live in any of them: `python tools/ci/checker_revision.py` writes it,
+  and the `checker-revision` gate fails, before targeted.sh builds anything, when the committed value is not the tree's. A
+  rebase that conflicts on it runs the same command; a landing regenerates it.
 - `tools/ci/targeted.sh --build <base>..HEAD` on a committed tree writes a stamp for each gate it passes, keyed by the
   tree, the gate, its configuration and the toolchain (`tools/ci/ci_lib.sh`). A landing runs `targeted.sh --landing`,
   which skips every gate stamped for the tree it lands and runs the suites on the Release build only;
@@ -112,6 +120,8 @@ rather than throw, so "deep nesting does not crash" is tested as "execute return
 - Never read a `script_value` after moving from it (the move constructor nulls the source).
 - Integer arithmetic goes through `jai::ints::try_add/try_sub/try_mul/try_div/mod`, never raw `a + b` on `script_int`:
   the overflow policy (checked by default, `JAISCRIPT_WRAP_ON_OVERFLOW` wraps) lives there, and arithmetic is never UB.
+- Transcendentals (sin, exp, log, pow, cbrt, hypot and the rest) go through `detail/portable_math.hpp`, never `<cmath>`, so
+  every platform computes the same bits.
 - Error text is built only on the failing path (a cold, non-inlined helper), never eagerly on a hot path, with bytes
   identical to the catalogued text.
 - Code marked `KEEP BYTE-PARALLEL` exists in both the interpreter and the VM: change both sides together. A rule both
@@ -127,7 +137,7 @@ rather than throw, so "deep nesting does not crash" is tested as "execute return
   conversions out of headers that do not need them (schema-driven primitive property binders live out of line in
   `schema_binding.cpp`).
 - A binding pays only for what is particular to it. Work that does not depend on the bound type (class and instance
-  creation, `class_definition` registration, the `Signal` view, the stdlib) is defined in the library, not in a header.
+  creation, `class_definition` registration, the `signal` view, the stdlib) is defined in the library, not in a header.
   A stored callable is one erased type over a static function (`detail::host_method_call`, registry
   `conversion_entry`), never a fresh lambda inside a `std::function`; a bound type's `std::vector`/`std::map` shapes
   register eagerly and compile only where a caller names them. Measure a change by object size per bound item.

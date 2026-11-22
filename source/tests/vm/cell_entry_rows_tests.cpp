@@ -213,7 +213,7 @@ var reads = function(int n) { int acc = 0; for (int i = 0; i < n; ++i) { if (i <
 function nreads(int n) -> int { int acc = 0; for (int i = 0; i < n; ++i) { if (i < G) { acc = acc + 1; } } return acc; }
 to_string(reads(8)) + " " + to_string(reads(8)) + " " + to_string(nreads(8)) + " " + to_string(nreads(8));
 )JAI", "dbg_set(1); to_string(reads(8)) + \" \" + to_string(nreads(8)) + \" \" + to_string(reads(8));",
-				"to_string(dbg_set(2)) + \" \" + to_string(reads(8)) + \" \" + to_string(nreads(8)) + \" \" + type_of(G);",
+				"to_string(dbg_set(2)) + \" \" + to_string(reads(8)) + \" \" + to_string(nreads(8)) + \" \" + reflect::type_of(G);",
 				"dbg_set(3); to_string(reads(8)) + \" \" + to_string(nreads(8));" }, { "3 3 3 3", "5 5 5", "false 5 5 int", "1 1" }, true, "debugger writes",
 				[](engine& e) {
 					engine* raw = &e;
@@ -274,9 +274,9 @@ to_string(total);
 			const std::vector<std::string> steps = { R"JAI(
 int G = 3;
 function reads(int n) -> int { int acc = 0; for (int i = 0; i < n; ++i) { if (i < G) { acc = acc + 1; } } return acc; }
-function retyped(int n, int at) -> string { int acc = 0; for (int i = 0; i < n; ++i) { if (i == at) { host_retype(); } acc = acc + 1; if (G > 2) { acc = acc + 100; } } return to_string(acc) + " " + type_of(G); }
+function retyped(int n, int at) -> string { int acc = 0; for (int i = 0; i < n; ++i) { if (i == at) { host_retype(); } acc = acc + 1; if (G > 2) { acc = acc + 100; } } return to_string(acc) + " " + reflect::type_of(G); }
 to_string(reads(8)) + " " + to_string(reads(8));
-)JAI", "to_string(reads(8));", "host_define(); to_string(reads(8)) + \" \" + to_string(reads(8));", "host_retype(); to_string(reads(8)) + \" \" + type_of(G);",
+)JAI", "to_string(reads(8));", "host_define(); to_string(reads(8)) + \" \" + to_string(reads(8));", "host_retype(); to_string(reads(8)) + \" \" + reflect::type_of(G);",
 				"host_define(); to_string(reads(8));", "retyped(6, 2);" };
 			const setup_fn setup = [](engine& e) {
 				engine* raw = &e;

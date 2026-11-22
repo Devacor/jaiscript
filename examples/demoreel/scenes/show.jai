@@ -163,8 +163,8 @@ class Deck {
 				"s.name = \"ember\";",
 				"var j = to_json(s);",
 				"var t = from_json(j);",
-				"var b = to_base64(s);"
-			], ["to_json / from_json round trip", "binary too: to_binary, to_base64", "shared handles keep sharing"]),
+				"var b = to_binary(s);"
+			], ["to_json / from_json round trip", "binary too: to_binary, from_binary", "shared handles keep sharing"]),
 			Slide("THREE", "REFLECTION", "peek.jai", 2, [
 				"class Spark { int hp = 3; }",
 				"auto s = Spark();",
@@ -625,7 +625,7 @@ class Deck {
 		if (live_at < 0.0 && lt >= 2.88) {
 			live_at = lt;
 			if (!live_was_live) {
-				import(SCENES_DIR + "/live/spin_tweaked.jai");
+				import(scenes_dir + "/live/spin_tweaked.jai");
 				++LIVE_RELOADS;
 			}
 		}

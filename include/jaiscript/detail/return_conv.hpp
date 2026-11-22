@@ -26,7 +26,6 @@ namespace jai::detail {
         prim_char,
         prim_string,
         prim_shared,
-        prim_weak,
         check,
     };
 
@@ -47,8 +46,7 @@ namespace jai::detail {
             case script_value_type::jai_char_type: return return_conv::prim_char;
             case script_value_type::jai_string_type: return return_conv::prim_string;
             case script_value_type::jai_shared_ptr_type: return return_conv::prim_shared;   // a handle binds a handle slot as-is, whatever its pointee
-            case script_value_type::jai_weak_ptr_type: return return_conv::prim_weak;
-            default: return return_conv::check;
+            default: return return_conv::check;   // a weak_ptr<T> among them: the table judges the pointer's class
         }
     }
 
@@ -71,7 +69,6 @@ namespace jai::detail {
             case return_conv::prim_bool: return v.raw_storage_index() == script_value::TYPEID_BOOL;
             case return_conv::prim_char: return v.raw_storage_index() == script_value::TYPEID_CHAR;
             case return_conv::prim_string: return v.raw_storage_index() == script_value::TYPEID_STRING;
-            case return_conv::prim_weak: return v.raw_storage_index() == script_value::TYPEID_WEAK_PTR;
             default: return false;
         }
     }

@@ -41,7 +41,7 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Math: Vectors &amp; Colors</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li class="current"><a href="../guide/15-math.html" aria-current="page">Math: Vectors &amp; Colors</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Math: Vectors &amp; Colors</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li class="current"><a href="../guide/15-math.html" aria-current="page">Math: Vectors &amp; Colors</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li><li><a href="../guide/21-generics.html">Generics</a></li></ol></details></aside>
 <script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
 var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>15</nav>
@@ -58,11 +58,12 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 <li><strong>Nothing mutates in place.</strong> Every function and method returns a new value; a vector changes only by assignment to it or to a component.</li>
 </ul>
 <h2 id="scalar-math">Scalar math<a class="hlink" href="#scalar-math" aria-label="link">&#8203;</a></h2>
-<p><code>math::</code> holds the standard scalar operations on every engine and the constants <code>math::PI</code>, <code>math::E</code>, <code>math::TAU</code>, <code>math::INF</code> and <code>math::NAN_VALUE</code>. They take ints and floats; a bool or an object needs an explicit numeric conversion. A function is a value too (<code>auto root = math::sqrt;</code>). Random numbers come from a <code>random</code> object (<a href="18-random.html">Random Numbers &amp; Crypto</a>).</p>
+<p><code>math::</code> holds the standard scalar operations on every engine and the constants <code>math::pi</code>, <code>math::e</code>, <code>math::tau</code>, <code>math::inf</code> and <code>math::nan</code>; <code>math::pie</code> is the same number as <code>math::pi</code>, for the hungry. They take ints and floats; a bool or an object needs an explicit numeric conversion. A function is a value too (<code>auto root = math::sqrt;</code>). Random numbers come from a <code>random</code> object (<a href="18-random.html">Random Numbers &amp; Crypto</a>).</p>
+<p>Every <code>math::</code> function gives the same bits on every platform, compiler and backend. The arithmetic operators, <code>math::sqrt</code>, <code>math::fmod</code> and the rounding functions give the results IEEE 754 defines exactly. The transcendental functions, <code>sin</code> <code>cos</code> <code>tan</code> <code>asin</code> <code>acos</code> <code>atan</code> <code>atan2</code> <code>sinh</code> <code>cosh</code> <code>tanh</code> <code>exp</code> <code>exp2</code> <code>log</code> <code>log2</code> <code>log10</code> <code>pow</code> <code>cbrt</code> and <code>hypot</code>, are JaiScript&#x27;s own rather than the C runtime&#x27;s: each result is within 1 ulp of the exact value, and signed zeros, infinities and NaN follow C&#x27;s Annex F (<code>math::pow(x, 0)</code> is 1 for any x, <code>math::pow(-2, 3)</code> is -8, <code>math::sin(-0.0)</code> is -0.0, <code>math::log(0)</code> is -inf). The rotations, angles, eased mixes and color blends are built on them, so a simulation that uses them replays the same on every machine.</p>
 <p><code>math::min</code>, <code>math::max</code> and <code>math::clamp</code> return the winning operand unchanged, so with an int and a float the result&#x27;s type depends on the values:</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">var a = math::max(1, 0.5);
 var b = math::max(1, 2.5);
-print(a, " ", type_of(a), " / ", b, " ", type_of(b), " / ", type_of(math::clamp(5, 0.5, 2.5)));</code></pre></div>
+print(a, " ", reflect::type_of(a), " / ", b, " ", reflect::type_of(b), " / ", reflect::type_of(math::clamp(5, 0.5, 2.5)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 int / 2.5 float / float</code></pre></div>
 <h2 id="making-vectors">Making vectors<a class="hlink" href="#making-vectors" aria-label="link">&#8203;</a></h2>
 <ul>
@@ -72,13 +73,13 @@ print(a, " ", type_of(a), " / ", b, " ", type_of(b), " / ", type_of(math::clamp(
 <li>A constructor names its type, so it converts what it is handed: <code>math::ivec2(v)</code> and <code>math::ivec2(2.7, 1.2)</code> truncate as the cast does.</li>
 <li>A color takes <code>(r, g, b)</code> with alpha 1, <code>(r, g, b, a)</code>, nothing or another color.</li>
 <li id="typed-slots">Every declared vector slot (a variable, a parameter, a return, a field, an array element, a store through a reference) widens an ivec and refuses a vec for an ivec: a load error where both types are visible (<code>cannot initialize 'cell' declared 'math::ivec2' with 'math::vec2': cast&lt;math::ivec2&gt;(v) truncates each component toward zero</code>), the typed-slot error through a <code>var</code>. A <code>string</code> slot takes text only, so give it <code>to_string(v)</code>; anything else is rejected with the typed-slot text.</li>
-<li><code>using</code> brings the names into a file (<a href="11-kitchen-sink.html">Namespaces</a>); <code>type_of</code> still reports the full name.</li>
+<li><code>using</code> brings the names into a file (<a href="11-kitchen-sink.html">Namespaces</a>); <code>reflect::type_of</code> still reports the full name.</li>
 </ul>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">using math::vec3, math::ivec2;
 
 vec3 b = vec3(1, 2.5);                        // missing components are 0
 math::vec4 q{1, 2, 3, 4};
-print(b, " ", q, " ", type_of(b), " ", vec3(math::vec2(1, 2), 3), " ", math::color(1, 0, 0));
+print(b, " ", q, " ", reflect::type_of(b), " ", vec3(math::vec2(1, 2), 3), " ", math::color(1, 0, 0));
 
 ivec2 cell = cast&lt;ivec2&gt;(math::vec2(3.9, -4.2));   // a vec enters an ivec slot through the cast
 math::vec2 center(math::vec2 at) { return at + 0.5; }
@@ -99,7 +100,7 @@ v.depth *= 2;                                 // depth is z
 math::ivec2 p;
 p.x++;
 math::vec2 tiny = math::vec2(0.1, 1e300);
-print(v, " ", p, " ", type_of(v.x), " ", tiny, " ", tiny.x == 0.1);
+print(v, " ", p, " ", reflect::type_of(v.x), " ", tiny, " ", tiny.x == 0.1);
 try { p.x = 3000000000; } catch (e) { print(e); }
 try { var w = math::vec2(); w.z = 1; } catch (e) { print(e); }
 try { var s = "a"; v.x = s; } catch (e) { print(e); }</code></pre></div>
@@ -193,11 +194,11 @@ math::sqrt expects a numeric argument</code></pre></div>
 
 vec3 v = vec3(3, 4, 0);
 vec3 x = vec3(1, 0, 0);
-print(v.dot(x), " ", x.cross(vec3(0, 1, 0)), " ", math::cross(vec2(1, 2), vec2(3, 4)), " ", type_of(math::dot(ivec2(2, 3), ivec2(4, 5))));
+print(v.dot(x), " ", x.cross(vec3(0, 1, 0)), " ", math::cross(vec2(1, 2), vec2(3, 4)), " ", reflect::type_of(math::dot(ivec2(2, 3), ivec2(4, 5))));
 print(math::normalize(v), " ", v.normalized(), " ", v);            // v is unchanged
 print(math::distance(vec2(0, 0), vec2(3, 4)), " ", vec2(0, 0).distance_to(vec2(3, 4)));
-print(math::round(math::rotate(vec2(2, 0), math::PI / 2)), " ", math::round(x.rotated(vec3(0, 0, 1), math::PI / 2)));
-print(math::radians(90), " ", math::degrees(math::PI), " ", math::degrees(vec2(0, 2).angle()));
+print(math::round(math::rotate(vec2(2, 0), math::pi / 2)), " ", math::round(x.rotated(vec3(0, 0, 1), math::pi / 2)));
+print(math::radians(90), " ", math::degrees(math::pi), " ", math::degrees(vec2(0, 2).angle()));
 print(math::round(vec2(2, 1).rotated_around(vec2(1, 1), math::radians(90))), " ", math::from_angle(0.0, 3));
 try { var w = vec2(3, 4); w.normalize(); } catch (e) { print(e); }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">3.0 (0.0, 0.0, 1.0) -2.0 int
@@ -219,7 +220,7 @@ try { print(red + math::vec4(1, 1, 1, 1)); } catch (e) { print(e); }</code></pre
 Invalid operands for + operator</code></pre></div>
 <h2 id="arrays-and-maps-of-vectors">Arrays, maps, text and JSON<a class="hlink" href="#arrays-and-maps-of-vectors" aria-label="link">&#8203;</a></h2>
 <p><code>array&lt;math::vec3&gt;</code> (and the same for every math type) is a packed typed buffer. An element reads as a copy, element components store in place, and the element boundary widens an ivec as a slot does; an <code>array&lt;math::ivec3&gt;</code> into an <code>array&lt;math::vec3&gt;</code> copies element by element. An ivec makes a natural map key.</p>
-<p id="text-and-json">Text is the components in parentheses, floats in the shortest form that reads back the same 32-bit value. <code>to_json</code> writes the type and the named components and <code>from_json</code> rebuilds the same type; the binary archive (<code>to_base64</code> / <code>from_base64</code>) keeps the exact bits.</p>
+<p id="text-and-json">Text is the components in parentheses, floats in the shortest form that reads back the same 32-bit value. <code>to_json</code> writes the type and the named components and <code>from_json</code> rebuilds the same type; the binary archive (<code>to_binary</code> / <code>from_binary</code>) keeps the exact bits.</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;math::vec3&gt; pts = [math::vec3(4, 5, 6), math::vec3(1, 2, 3)];
 pts.push(math::ivec3(1, 0, 9));                 // the element boundary widens
 pts[0].x += 10;
@@ -231,7 +232,7 @@ tiles[math::ivec2(1, 2)] = "door";
 print(pts, " ", cells[0], " ", tiles[math::ivec2(1, 2)]);
 
 string j = to_json(math::vec2(0.1, 1e30));
-print(j, " ", type_of(from_json(j)), " ", from_base64(to_base64(math::color(1, 0.5, 0))));</code></pre></div>
+print(j, " ", reflect::type_of(from_json(j)), " ", from_binary(to_binary(math::color(1, 0.5, 0))));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Cannot push &#x27;math::vec2&#x27; to array&lt;math::vec3&gt;
 [(1.0, 0.0, 9.0), (1.0, 2.0, 3.0), (14.0, 5.0, 6.0)] (1, 0, 9) door
 {&quot;$type&quot;:&quot;math::vec2&quot;,&quot;$val&quot;:{&quot;x&quot;:0.1,&quot;y&quot;:1e+30}} math::vec2 (1.0, 0.5, 0.0, 1.0)</code></pre></div>
@@ -241,7 +242,7 @@ print(j, " ", type_of(from_json(j)), " ", from_base64(to_base64(math::color(1, 0
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

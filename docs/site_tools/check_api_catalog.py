@@ -39,8 +39,8 @@ def main():
 		('source/implementation/stdlib/crypto.cpp','crypto',r'\{"([a-z0-9_]+)", "crypto::'),
 		('source/implementation/stdlib/crypto.cpp','crypto',r'define\("([a-z0-9_]+)"'),
 		('source/implementation/stdlib/random.cpp','random',r'(?:\.method|add_method)\("([a-z][a-z_]*)"'),
-		('tools/jaiscript/fetch.hpp','Download',r'\.method\("([^"\n]+)"'),
-		('tools/jaiscript/sound.hpp','Sound',r'\.method\("([^"\n]+)"'),
+		('tools/jaiscript/fetch.hpp','download',r'\.method\("([^"\n]+)"'),
+		('tools/jaiscript/sound.hpp','sound',r'\.method\("([^"\n]+)"'),
 		('tools/jaiscript/sound.hpp','global',r'add_function\("([^"\n]+)"'),
 	]:
 		registered=set(re.findall(pattern,(PROJECT/relative).read_text(encoding='utf-8')))

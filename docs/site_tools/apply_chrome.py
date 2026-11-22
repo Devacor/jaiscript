@@ -17,7 +17,7 @@ import sys
 
 SITE = pathlib.Path(__file__).resolve().parent.parent / "site"
 
-VERSION = "0.5 beta"
+VERSION = "0.6 beta"
 REPO = "https://github.com/Devacor/jaiscript"
 SITE_URL = "https://jaiscript.com/"
 NOT_FOUND = "404.html"   # Apache serves it for any missing path, so its chrome links from the site root
@@ -75,9 +75,11 @@ GUIDE = [
     ("18-random.html", "Random Numbers &amp; Crypto",
      "The random type: a generator you own, seeded streams that replay bit for bit on every platform, copies and save files for rollback, draws in parallel loops; and crypto:: for secrets: secure random bytes, SHA-2, HMAC and PHP-compatible bcrypt passwords."),
     ("19-templates.html", "HTML Templates",
-     "template(path, names...) renders an HTML file with escaped ${...} splices, seeing the names it is given by reference and the program, checked at load and reloaded on edit; scoped_template renders untrusted templates over a copy of a map."),
+     "template(path, names...) renders an HTML file with escaped ${...} splices, seeing the names it is given by reference and the program, checked at load and reloaded on edit; untrusted_template renders untrusted templates over a copy of a map."),
     ("20-terminal-games.html", "A Terminal Game in One File",
      "A real-time game run by the standalone runner: read_key and key_down polling, frame pacing with a stopwatch and sleep, frames drawn with ANSI escape codes, the terminal's size, sound, and saves."),
+    ("21-generics.html", "Generics",
+     "Classes, functions and methods with type parameters, instantiated at load and checked as if written by hand: deduction, bounds, generic methods, where the errors of an instance are reported, and how instances travel across modules, hot reload and jaibite."),
 ]
 
 EMBEDDING = [
@@ -118,7 +120,7 @@ EMBEDDING = [
     ("18-build-integration.html", "Building JaiScript into a Host",
      "Every way into a project in full: CMake, Visual Studio and MSBuild, Xcode and an installed package, with the sources, flags and defines each needs, one file or per file, and Debug and Release notes."),
     ("19-jai-spider.html", "jai_spider: a Web Application Host",
-     "jai_spider serves a JaiScript program over HTTP/1.1: the handler the app hands to spider::spin, Request and a Router in script, spider::Response shared with the spider:: client, SQLite bound as a class, cookie sessions, static files, and modules that reload on the request after they are saved."),
+     "jai_spider serves a JaiScript program over HTTP/1.1: the handler the app hands to spider::spin, run on a pool of workers in a fresh engine for every request, spider::request and spider::router in script, spider::response shared with the spider:: client, SQLite bound as a class, cookie sessions, background tasks, static files, and edits that apply on the next request."),
     ("20-foundry.html", "Foundry: Testing a Host",
      "Foundry is the test framework JaiScript's own suite is written in, one header and one runner source file: suites, checks, the runner's flags, and a test executable for a project of your own."),
     ("21-visual-studio.html", "Visual Studio, Step by Step",

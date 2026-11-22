@@ -2,8 +2,8 @@
 // saved to the program's file. The sandbox runs this for such a program, saving the editor to program.jai as you type.
 // In a terminal: jaiscript live.jai -- cakewalk.jai [frames to play]
 extern function frame;
-string PROGRAM = ARGS.size() > 0 ? ARGS[0] : "program.jai";
-int FRAMES_TO_PLAY = ARGS.size() > 1 ? ARGS[1].to_int() : 0;
+string PROGRAM = args.size() > 0 ? args[0] : "program.jai";
+int FRAMES_TO_PLAY = args.size() > 1 ? args[1].to_int() : 0;
 string NOTICE_ROW = `\x1b[${term_rows()};1H\x1b[0m`;
 
 // A rejected edit's listing names the mistake on its first line that says "error"

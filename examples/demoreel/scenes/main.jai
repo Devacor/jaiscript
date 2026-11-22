@@ -2,7 +2,7 @@
 // hot-reloaded: it owns the persistent globals (RESET, gfx, the reel instance),
 // so pressing 'r' can re-execute every other file without wiping state.
 
-var RESET = ESC + "[0m";
+var RESET = esc + "[0m";
 var gfx = Gfx();
 var reel = null;
 // the cell shape: "half" blocks, "sext"ants, or "" for sextants while the grid stays within PIX_BUDGET pixels

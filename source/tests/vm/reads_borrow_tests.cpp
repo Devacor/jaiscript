@@ -46,7 +46,7 @@ public:
 class Leaf { int v = 3; }
 class Node { var left = null; var right = null; int v = 1; }
 class World { var items = []; var grid = []; }
-shared_ptr<Leaf> L = Leaf();
+shared_ptr<Leaf> L = make_shared<Leaf>();
 var n = Node(); n.left = L; var m = Node(); m.left = L; n.right = m;
 var w = World(); w.items.push(L); var row = []; row.push(L); w.grid.push(row);
 function reads(var n, var w) -> int {
@@ -67,7 +67,7 @@ class Box {
 	function _get_peek() { seen = seen + 1; return inner; }
 }
 class Holder { var box = null; }
-shared_ptr<Box> B = Box(); B.inner = Leaf();
+shared_ptr<Box> B = make_shared<Box>(); B.inner = Leaf();
 var h = Holder(); h.box = B;
 var counts = [];
 class Probe { function _get_count() { counts.push(B.use_count()); return 7; } }
@@ -118,8 +118,8 @@ class Mid {
 	~Mid() { log.push("~Mid"); }
 }
 class Top { shared_ptr<Mid> mid; }
-shared_ptr<Top> HOLD = Top();
-function setup() { shared_ptr<Mid> m = Mid(); HOLD.mid = m; }
+shared_ptr<Top> HOLD = make_shared<Top>();
+function setup() { shared_ptr<Mid> m = make_shared<Mid>(); HOLD.mid = m; }
 setup();
 function reads(shared_ptr<Top> t) -> int { int s = t.mid.drop.v; log.push("read"); return s; }
 0;)JAI", "to_string(reads(HOLD)) + \":\" + to_string(log);" },
@@ -136,8 +136,8 @@ class Mid {
 	~Mid() { log.push("~Mid"); }
 }
 class Top { shared_ptr<Mid> mid; }
-shared_ptr<Top> HOLD = Top();
-function setup() { shared_ptr<Mid> m = Mid(); HOLD.mid = m; }
+shared_ptr<Top> HOLD = make_shared<Top>();
+function setup() { shared_ptr<Mid> m = make_shared<Mid>(); HOLD.mid = m; }
 function f() { log.push("f"); }
 function r1(shared_ptr<Top> t) -> int { int s = t.mid.drop; log.push("r1"); return s; }
 function r2(shared_ptr<Top> t) -> int { int s = t.mid.dropm(); log.push("r2"); return s; }

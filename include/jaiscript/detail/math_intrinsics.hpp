@@ -9,6 +9,7 @@
 #include <jaiscript/detail/ast.hpp>
 #include <jaiscript/detail/numeric_conversion.hpp>
 #include <jaiscript/detail/math_values.hpp>
+#include <jaiscript/detail/portable_math.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -229,10 +230,10 @@ namespace jai::detail {
             out = pick_a ? a : b;
             return true;
         }
-        case math_fn::pow_: out.is_int = false; out.f = std::pow(a.d(), b.d()); return true;
-        case math_fn::atan2_: out.is_int = false; out.f = std::atan2(a.d(), b.d()); return true;
+        case math_fn::pow_: out.is_int = false; out.f = portable_math::pow(a.d(), b.d()); return true;
+        case math_fn::atan2_: out.is_int = false; out.f = portable_math::atan2(a.d(), b.d()); return true;
         case math_fn::fmod_: out.is_int = false; out.f = std::fmod(a.d(), b.d()); return true;
-        case math_fn::hypot_: out.is_int = false; out.f = std::hypot(a.d(), b.d()); return true;
+        case math_fn::hypot_: out.is_int = false; out.f = portable_math::hypot(a.d(), b.d()); return true;
         case math_fn::wrap_add_: case math_fn::wrap_sub_: case math_fn::wrap_mul_: {
             if (!a.is_int || !b.is_int) return false;
             const uint64_t ua = static_cast<uint64_t>(a.i), ub = static_cast<uint64_t>(b.i);
@@ -263,24 +264,24 @@ namespace jai::detail {
         case math_fn::floor_: r.f = std::floor(x); break;
         case math_fn::ceil_: r.f = std::ceil(x); break;
         case math_fn::sqrt_: r.f = std::sqrt(x); break;
-        case math_fn::sin_: r.f = std::sin(x); break;
-        case math_fn::cos_: r.f = std::cos(x); break;
-        case math_fn::tan_: r.f = std::tan(x); break;
+        case math_fn::sin_: r.f = portable_math::sin(x); break;
+        case math_fn::cos_: r.f = portable_math::cos(x); break;
+        case math_fn::tan_: r.f = portable_math::tan(x); break;
         case math_fn::radians_to_degrees: r.f = x * (180.0 / 3.14159265358979323846); break;
         case math_fn::degrees_to_radians: r.f = x * (3.14159265358979323846 / 180.0); break;
         case math_fn::trunc_: r.f = std::trunc(x); break;
-        case math_fn::cbrt_: r.f = std::cbrt(x); break;
-        case math_fn::exp_: r.f = std::exp(x); break;
-        case math_fn::exp2_: r.f = std::exp2(x); break;
-        case math_fn::log_: r.f = std::log(x); break;
-        case math_fn::log2_: r.f = std::log2(x); break;
-        case math_fn::log10_: r.f = std::log10(x); break;
-        case math_fn::asin_: r.f = std::asin(x); break;
-        case math_fn::acos_public_: r.f = std::acos(x); break;
-        case math_fn::atan_: r.f = std::atan(x); break;
-        case math_fn::sinh_: r.f = std::sinh(x); break;
-        case math_fn::cosh_: r.f = std::cosh(x); break;
-        case math_fn::tanh_: r.f = std::tanh(x); break;
+        case math_fn::cbrt_: r.f = portable_math::cbrt(x); break;
+        case math_fn::exp_: r.f = portable_math::exp(x); break;
+        case math_fn::exp2_: r.f = portable_math::exp2(x); break;
+        case math_fn::log_: r.f = portable_math::log(x); break;
+        case math_fn::log2_: r.f = portable_math::log2(x); break;
+        case math_fn::log10_: r.f = portable_math::log10(x); break;
+        case math_fn::asin_: r.f = portable_math::asin(x); break;
+        case math_fn::acos_public_: r.f = portable_math::acos(x); break;
+        case math_fn::atan_: r.f = portable_math::atan(x); break;
+        case math_fn::sinh_: r.f = portable_math::sinh(x); break;
+        case math_fn::cosh_: r.f = portable_math::cosh(x); break;
+        case math_fn::tanh_: r.f = portable_math::tanh(x); break;
         case math_fn::saturate_: r.f = std::fmax(0.0, std::fmin(x, 1.0)); break;
         case math_fn::sign_: r.is_int = true; r.i = static_cast<script_int>((x > 0.0) - (x < 0.0)); break;
         default: r.is_int = true; r.i = fn == math_fn::is_nan_ ? std::isnan(x) : fn == math_fn::is_inf_ ? std::isinf(x) : 0; break;
@@ -314,36 +315,36 @@ namespace jai::detail {
     inline script_float eased_value(math_fn fn, script_float start, script_float end, script_float percent, script_float strength) noexcept {
         switch (fn) {
             case math_fn::mix_in_:
-                return std::pow(percent, strength) * (end - start) + start;
+                return portable_math::pow(percent, strength) * (end - start) + start;
             case math_fn::mix_out_:
-                return (1.0 - std::pow(1.0 - percent, strength)) * (end - start) + start;
+                return (1.0 - portable_math::pow(1.0 - percent, strength)) * (end - start) + start;
             case math_fn::mix_in_out_: {
                 const script_float half_range = (end - start) / 2.0 + start;
                 return percent < 0.5
-                    ? std::pow(percent * 2.0, strength) * (half_range - start) + start
-                    : (1.0 - std::pow(1.0 - (percent - 0.5) * 2.0, strength)) * (end - half_range) + half_range;
+                    ? portable_math::pow(percent * 2.0, strength) * (half_range - start) + start
+                    : (1.0 - portable_math::pow(1.0 - (percent - 0.5) * 2.0, strength)) * (end - half_range) + half_range;
             }
             case math_fn::mix_out_in_: {
                 const script_float half_range = (end - start) / 2.0 + start;
                 return percent < 0.5
-                    ? (1.0 - std::pow(1.0 - percent * 2.0, strength)) * (half_range - start) + start
-                    : std::pow((percent - 0.5) * 2.0, strength) * (end - half_range) + half_range;
+                    ? (1.0 - portable_math::pow(1.0 - percent * 2.0, strength)) * (half_range - start) + start
+                    : portable_math::pow((percent - 0.5) * 2.0, strength) * (end - half_range) + half_range;
             }
             case math_fn::unmix_in_:
-                return (end == start) ? end : std::pow((percent - start) / (end - start), 1.0 / strength);
+                return (end == start) ? end : portable_math::pow((percent - start) / (end - start), 1.0 / strength);
             case math_fn::unmix_out_:
-                return 1.0 - std::pow(1.0 - ((percent - start) / (end - start)), 1.0 / strength);
+                return 1.0 - portable_math::pow(1.0 - ((percent - start) / (end - start)), 1.0 / strength);
             case math_fn::unmix_in_out_: {
                 const script_float half_range = (end - start) / 2.0 + start;
                 return percent < half_range
-                    ? std::pow((percent - start) / (half_range - start), 1.0 / strength) / 2.0
-                    : (1.0 - std::pow(1.0 - ((percent - half_range) / (end - half_range)), 1.0 / strength)) / 2.0 + 0.5;
+                    ? portable_math::pow((percent - start) / (half_range - start), 1.0 / strength) / 2.0
+                    : (1.0 - portable_math::pow(1.0 - ((percent - half_range) / (end - half_range)), 1.0 / strength)) / 2.0 + 0.5;
             }
             default: {   // unmix_out_in_
                 const script_float half_range = (end - start) / 2.0 + start;
                 return percent < half_range
-                    ? (1.0 - std::pow(1.0 - ((percent - start) / (half_range - start)), 1.0 / strength)) / 2.0
-                    : std::pow((percent - half_range) / (end - half_range), 1.0 / strength) / 2.0 + 0.5;
+                    ? (1.0 - portable_math::pow(1.0 - ((percent - start) / (half_range - start)), 1.0 / strength)) / 2.0
+                    : portable_math::pow((percent - half_range) / (end - half_range), 1.0 / strength) / 2.0 + 0.5;
             }
         }
     }
@@ -374,14 +375,14 @@ namespace jai::detail {
     // Everything in binary64, landing binary32. OKLab is Bjorn Ottosson's published transform: gamma-encoded sRGB to linear
     // sRGB to LMS (cube root) to Lab and back; the result clamps to the sRGB gamut per channel. Alpha is straight.
     namespace color_math {
-        inline double to_linear(double c) noexcept { return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4); }
-        inline double to_gamma(double c) noexcept { return c <= 0.0031308 ? 12.92 * c : 1.055 * std::pow(c, 1.0 / 2.4) - 0.055; }
+        inline double to_linear(double c) noexcept { return c <= 0.04045 ? c / 12.92 : portable_math::pow((c + 0.055) / 1.055, 2.4); }
+        inline double to_gamma(double c) noexcept { return c <= 0.0031308 ? 12.92 * c : 1.055 * portable_math::pow(c, 1.0 / 2.4) - 0.055; }
         inline double unit(double c) noexcept { return c < 0.0 ? 0.0 : (c > 1.0 ? 1.0 : c); }
         inline void to_oklab(const double rgb[3], double lab[3]) noexcept {
             const double r = to_linear(rgb[0]), g = to_linear(rgb[1]), b = to_linear(rgb[2]);
-            const double l = std::cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
-            const double m = std::cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
-            const double s = std::cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+            const double l = portable_math::cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+            const double m = portable_math::cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+            const double s = portable_math::cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
             lab[0] = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
             lab[1] = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
             lab[2] = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
@@ -681,9 +682,9 @@ namespace jai::detail {
             return checked_result<script_value>(make_error_code(runtime_error_code::invalid_numeric_operand), math::overflow_text(op));
         }
         // angle_between's last step: the cosine clamped to [-1, 1], then acos
-        inline double clamped_acos(double c) noexcept { return std::acos(c < -1.0 ? -1.0 : (c > 1.0 ? 1.0 : c)); }
+        inline double clamped_acos(double c) noexcept { return portable_math::acos(c < -1.0 ? -1.0 : (c > 1.0 ? 1.0 : c)); }
         // angle: atan2(y, x) in (-pi, pi], so a negative zero y reads as zero; the zero vector gives 0
-        inline double direction(double x, double y) noexcept { return (x == 0.0 && y == 0.0) ? 0.0 : std::atan2(y == 0.0 ? 0.0 : y, x); }
+        inline double direction(double x, double y) noexcept { return (x == 0.0 && y == 0.0) ? 0.0 : portable_math::atan2(y == 0.0 ? 0.0 : y, x); }
         // a step that overflowed: the error in a checked build, the wrapped value otherwise
         inline bool fails(bool ok) noexcept { return !ok && math::k_checked_overflow; }
 
@@ -839,7 +840,8 @@ namespace jai::detail {
             const math::scalar l = argc == 2 ? math::read_scalar(*args[1]) : t;
             if (!t.ok || !l.ok) { return bad_type(); }
             const double angle = t.is_int ? static_cast<double>(t.i) : t.f;
-            const double cs = std::cos(angle), sn = std::sin(angle);
+            double sn = 0.0, cs = 0.0;
+            portable_math::sincos(angle, sn, cs);
             if (argc == 1) { const double out[2] = {cs, sn}; return geometry::vec_of(2, out, eng); }
             const double length = l.is_int ? static_cast<double>(l.i) : l.f;
             const double out[2] = {cs * length, sn * length};
@@ -960,7 +962,8 @@ namespace jai::detail {
                 const math::scalar t = math::read_scalar(*args[2]);
                 if (n != 2 || !t.ok) { return bad_type(); }
                 const double angle = t.is_int ? static_cast<double>(t.i) : t.f;
-                const double cs = std::cos(angle), sn = std::sin(angle);
+                double sn = 0.0, cs = 0.0;
+                portable_math::sincos(angle, sn, cs);
                 const double dx = a.f[0] - b.f[0], dy = a.f[1] - b.f[1];
                 const double out[2] = {b.f[0] + (dx * cs - dy * sn), b.f[1] + (dx * sn + dy * cs)};
                 return geometry::vec_of(2, out, eng);
@@ -969,7 +972,8 @@ namespace jai::detail {
                 const math::scalar t = math::read_scalar(*args[argc - 1]);
                 if (!t.ok) { return bad_type(); }
                 const double angle = t.is_int ? static_cast<double>(t.i) : t.f;
-                const double cs = std::cos(angle), sn = std::sin(angle);
+                double sn = 0.0, cs = 0.0;
+                portable_math::sincos(angle, sn, cs);
                 if (argc == 2) {
                     if (n != 2) { return bad_type(); }
                     const double out[2] = {a.f[0] * cs - a.f[1] * sn, a.f[0] * sn + a.f[1] * cs};
@@ -1343,19 +1347,19 @@ namespace jai::detail {
                 if (!math_arity_ok<math_fn::sin_>(argc)) return bad_arity(math_arity_of(math_fn::sin_).text);
                 const num a = read(*args[0]);
                 if (!a.ok) return bad_type("math::sin expects a numeric argument");
-                return checked_result<script_value>(script_value(std::sin(a.d()), eng));
+                return checked_result<script_value>(script_value(portable_math::sin(a.d()), eng));
             }
             case math_fn::cos_: {
                 if (!math_arity_ok<math_fn::cos_>(argc)) return bad_arity(math_arity_of(math_fn::cos_).text);
                 const num a = read(*args[0]);
                 if (!a.ok) return bad_type("math::cos expects a numeric argument");
-                return checked_result<script_value>(script_value(std::cos(a.d()), eng));
+                return checked_result<script_value>(script_value(portable_math::cos(a.d()), eng));
             }
             case math_fn::tan_: {
                 if (!math_arity_ok<math_fn::tan_>(argc)) return bad_arity(math_arity_of(math_fn::tan_).text);
                 const num a = read(*args[0]);
                 if (!a.ok) return bad_type("math::tan expects a numeric argument");
-                return checked_result<script_value>(script_value(std::tan(a.d()), eng));
+                return checked_result<script_value>(script_value(portable_math::tan(a.d()), eng));
             }
             case math_fn::atan2_: {
                 if (!math_arity_ok<math_fn::atan2_>(argc)) return bad_arity(math_arity_of(math_fn::atan2_).text);

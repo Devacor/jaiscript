@@ -44,6 +44,7 @@ namespace jai::vm {
         // Env-resolved plain identifier: chunk::nodes index of its identifier_expr, read live
         // for field proofs; invalid = slotted / literal / subscript
         uint32_t ident_node = k_invalid_u32;
+        uint32_t namespace_cell = k_invalid_u32;   // load_flag_namespace_cell: the chunk::namespace_cells row
         // a bare name the body's class resolves to a plain field (chunk::member_class): its slot + 1 there, 0 for none
         uint32_t this_slot = 0;
         // a bare name the body's class resolves past its members: read from the environment while the frame's layout holds (chunk::this_global_uses)
@@ -73,13 +74,16 @@ namespace jai::vm {
     // op_push_fused: `recv.push(v);` with an identifier receiver and a slotted-identifier or
     // literal value; site is the call_site the unfused sequence would have used (the replay
     // path and its argument metadata)
-    // `base.member = value;` in statement position (op_set_member_value): the member node, the base's frame slot and the value as an
-    // operand (an identifier, a literal, or the temp a computed value lands in)
+    // `base.member = value;` or `base.member op= value;` in statement position (op_set_member_value): the member node, the base's frame
+    // slot (k_typed_env_bit | n: the frame's bare field n - 1, or `this` for n = 0) and the value as an operand (an identifier, a literal,
+    // or the temp a computed value lands in)
     struct member_store_proto {
         uint32_t node = k_invalid_u32;
         uint32_t base = k_invalid_u32;
         fused_operand value;
         bool release = false;   // the value is a compiler temp the store gives up (an instance never takes the scalar rows)
+        bool compound = false;
+        uint32_t kind = 0;      // a compound's kind and its incdec and old_result flags
     };
     // `a[i].x` (op_velem_load) and `a[i].x op= v;` (op_velem_store) where the checker proved `a` a math vector buffer, `a` a frame
     // slot and `i` a frame slot or an int literal: the subscript as a one-level fused operand, the member node, the component each
@@ -492,8 +496,9 @@ namespace jai::vm {
         struct debug_span { uint32_t start; uint32_t end; const ast_node* node; uint32_t parent; };
         mutable std::vector<debug_span> debug_spans;
         mutable std::vector<uint32_t> debug_innermost;   // per instruction: 1 + the innermost span holding it, 0 for none
-        // The debugger's locals, outermost declaration first: the name `symbol` lives in `slot` while the frame's ip is in [first_ip, end_ip)
-        struct debug_local { uint32_t slot; uint32_t first_ip; uint32_t end_ip; uint64_t symbol; };
+        // The debugger's locals, outermost declaration first: the name `symbol` lives in `slot` while the frame's ip is in [first_ip, end_ip);
+        // graft is 1 + the inline site whose grafted callee declares it (its frame's local), 0 for the chunk's own
+        struct debug_local { uint32_t slot; uint32_t first_ip; uint32_t end_ip; uint64_t symbol; uint32_t graft = 0; };
         std::vector<debug_local> debug_locals;
 
         std::vector<script_value> constants;               // engine-less AST-literal templates
@@ -501,6 +506,20 @@ namespace jai::vm {
         // texts the call passes should `regex` bind something else
         struct regex_constant { std::shared_ptr<const detail::regex::compiled> re; uint32_t argc = 1; };
         std::vector<regex_constant> regex_constants;
+        // A reserved namespace's variable (it lives as long as the engine) read by op_namespace_entry or a call's callee operand, and the
+        // member_expr a parallel worker reads it through instead
+        struct namespace_cell { const script_value* cell = nullptr; uint32_t node = k_invalid_u32; };
+        std::vector<namespace_cell> namespace_cells;
+        // reflect::is_instance_of(x, "T") sites with a literal class name (op_instance_test): the reflect namespace's cell for the name
+        // and the library's function it held when the site compiled (the pin keeps that identity from being recycled); registered once
+        // a class stands under the text, from where the test is detail::instance_of_class over it
+        struct instance_test {
+            std::string class_name;
+            const script_value* entry_cell = nullptr;
+            strong_ptr<script_function_node> entry;
+            mutable bool registered = false;
+        };
+        std::vector<instance_test> instance_tests;
         // Instruction ranges [begin, end) evaluating call arguments; consulted only on the
         // C++-exception path (interpreter parity: visit_call converts arg-eval throws into
         // script unwinding at the frame making the call, so its own try/catch can fire)
@@ -665,6 +684,7 @@ namespace jai::vm {
             struct cell_call {
                 uint32_t probe_ip, call_ip, consumer_ip; uint8_t consumer = 0; uint32_t dst = k_invalid_u32; std::vector<call_arg> args; uint8_t raw = 0;
                 uint8_t raw_proven = 0; uint32_t raw_kinds = 0;
+                uint32_t callee_cell = k_invalid_u32;   // the callee is a slot the block holds in this cell: the probe reads the slot, so the cell goes back first
                 // what the landing re-checks (narrowed): the land_sites entries and the inlined leaves the block can reach from it before
                 // another landing, which checks the rest; not narrowed: every one
                 bool narrowed = false;
@@ -729,7 +749,7 @@ namespace jai::vm {
             case opcode::op_cfor_prep: case opcode::op_cfor_back: case opcode::op_cfor_pop: case opcode::op_loop_back: case opcode::op_cells_back:
             case opcode::op_cells_cfor_back: case opcode::op_fused_cmp_jump: case opcode::op_cast: case opcode::op_index_store_fused: case opcode::op_index_compound_operand:
                 return cell_refusal_translation;
-            case opcode::op_get_member: case opcode::op_get_member_path: case opcode::op_set_member: case opcode::op_member_compound: case opcode::op_get_static: case opcode::op_set_static:
+            case opcode::op_get_member: case opcode::op_get_member_path: case opcode::op_set_member: case opcode::op_member_compound: case opcode::op_get_static: case opcode::op_namespace_entry: case opcode::op_set_static:
             case opcode::op_this: case opcode::op_super: case opcode::op_from_this: case opcode::op_null_guard: case opcode::op_probe_member:
             case opcode::op_array: case opcode::op_map: case opcode::op_new: case opcode::op_decl_ref_ident: case opcode::op_decl_ref_value: case opcode::op_destructure:
                 return cell_refusal_representation;
@@ -833,6 +853,25 @@ namespace jai::vm {
         std::vector<fused_operand> typed_env_operands;
         std::vector<counted_for_proto> counted_for_protos;
 
+        // A coroutine body's yields (compile_yield), by their number in detail::coroutine_sites: the op_yield and what the
+        // constructs around it keep on the frame's stacks while their bodies run, outermost first, so a coroutine can be paused
+        // at one from data (vm_backend::pause_coroutine_at). A chunk with no yield has none.
+        struct resume_step {
+            enum class kind : uint8_t { scope, try_block, range_for, counted_for, switch_pair, switch_branches };
+            kind what = kind::scope;
+            uint32_t ip = 0;   // the op_try_push / op_iter_init / op_cfor_prep that opens it
+        };
+        struct yield_site {
+            uint32_t site = 0;
+            uint32_t ip = 0;
+            std::vector<resume_step> steps;
+        };
+        std::vector<yield_site> yield_sites;
+        const yield_site* yield_site_of(uint32_t a_site) const noexcept {
+            for (const yield_site& entry : yield_sites) { if (entry.site == a_site) { return &entry; } }
+            return nullptr;
+        }
+
         // Default-argument expressions compiled per parameter (function-body chunks only)
         std::vector<std::shared_ptr<chunk>> param_default_chunks;
 
@@ -854,7 +893,7 @@ namespace jai::vm {
         bool builtin_indexed = false;
         // GET_MEMBER field-read site cache (flat classes tier-1 stage B): per-ip
         // {receiver class, method_epoch, field slot}; slot UINT32_MAX = negative
-        // (same_as / nonpublic chain / sp-builtin name / getter shadow / no slot —
+        // (nonpublic chain / sp-builtin name / getter shadow / no slot —
         // the resolve ladder speaks). Lazily sized to code.size(); main-engine only
         // (same cached_global_env_ gate as the caches above).
         struct member_ic_entry {

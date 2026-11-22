@@ -129,8 +129,8 @@ bool MUSIC_ON;
 bool SFX_ON;
 int MUSIC_CUR;                 // the theme playing (-1 title, -2 death, else a world), -99 none
 
-// ---- networking: the host side (one NetServer, clients by id)
-shared_ptr<NetServer> NET_SRV;
+// ---- networking: the host side (one net_server, clients by id)
+shared_ptr<net_server> NET_SRV;
 int NET_PORT;
 map<int, int> NET_SLOT_OF;     // client id -> player slot (after HELLO)
 map<int, int> NET_CID_OF;      // player slot -> client id
@@ -147,7 +147,7 @@ array<int> SNAP_WORLD;
 bool SNAP_DELTAS;
 
 // ---- networking: client sessions (the game uses one; the net test drives several)
-array<shared_ptr<NetChannel>> NCS_CH;
+array<shared_ptr<net_channel>> NCS_CH;
 array<array<string>> NCS_INBOX;
 array<shared_ptr<ClientView>> NCS_VIEW;
 array<string> NCS_STATUS;      // connecting, hello, joined, refused: why, closed: why

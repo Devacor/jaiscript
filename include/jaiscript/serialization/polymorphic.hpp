@@ -72,6 +72,9 @@ public:
 
     const type_entry* find(const std::string& name) const;
 
+    // The registered name whose detail::type_name_key is a_key (the least of several), or empty
+    std::string name_of_key(std::string_view a_key) const;
+
     // ---- Multiple-inheritance base-pointer adjustment --------------------------------
     // A shared_ptr<Base> whose dynamic type is Derived must, on load, point at the Base
     // *subobject* — which under multiple inheritance is at a non-zero offset within

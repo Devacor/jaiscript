@@ -93,6 +93,11 @@ namespace {
 					    << esc(rc.re ? detail::regex::flags_of(*rc.re) : std::string()) << " argc=" << rc.argc << "\n";
 				}
 			}
+			if (!ch.namespace_cells.empty()) { out << pre << "namespace_cells " << ch.namespace_cells.size() << "\n"; }
+			if (!ch.instance_tests.empty()) {
+				out << pre << "instance_tests " << ch.instance_tests.size() << "\n";
+				for (size_t i = 0; i < ch.instance_tests.size(); ++i) { out << pre << " " << i << " class=" << esc(ch.instance_tests[i].class_name) << "\n"; }
+			}
 			out << pre << "symbols " << ch.symbols.size() << "\n";
 			for (size_t i = 0; i < ch.symbols.size(); ++i) { out << pre << " " << i << " " << id(ch.symbols[i]) << "\n"; }
 			out << pre << "messages " << ch.messages.size() << "\n";
@@ -105,7 +110,10 @@ namespace {
 			for (uint32_t s : ch.reference_slots) { out << " " << s; }
 			if (!ch.debug_locals.empty()) {
 				out << "\n" << pre << "debug_locals";
-				for (const auto& l : ch.debug_locals) { out << " " << id(l.symbol) << "/" << l.slot << "/" << l.first_ip << "-" << u(l.end_ip); }
+				for (const auto& l : ch.debug_locals) {
+					out << " " << id(l.symbol) << "/" << l.slot << "/" << l.first_ip << "-" << u(l.end_ip);
+					if (l.graft) { out << "@" << (l.graft - 1); }
+				}
 			}
 			out << "\n" << pre << "call_sites " << ch.call_sites.size() << "\n";
 			for (size_t i = 0; i < ch.call_sites.size(); ++i) {
@@ -208,7 +216,9 @@ namespace {
 			out << pre << "member_store_protos " << ch.member_store_protos.size() << "\n";
 			for (size_t i = 0; i < ch.member_store_protos.size(); ++i) {
 				const member_store_proto& p = ch.member_store_protos[i];
-				out << pre << " " << i << " node=" << u(p.node) << " base=" << u(p.base) << " value=" << operand(ch, p.value) << " release=" << b(p.release) << "\n";
+				out << pre << " " << i << " node=" << u(p.node) << " base=" << u(p.base) << " value=" << operand(ch, p.value) << " release=" << b(p.release);
+				if (p.compound) { out << " compound=" << p.kind; }
+				out << "\n";
 			}
 			if (!ch.member_folds.empty()) {
 				out << pre << "member_folds " << ch.member_folds.size() << "\n";
@@ -243,6 +253,14 @@ namespace {
 				const counted_for_proto& p = ch.counted_for_protos[i];
 				out << pre << " " << i << " var=" << operand(ch, p.var) << " end=" << operand(ch, p.end) << " step=" << operand(ch, p.step) << " cmp=" << static_cast<int>(p.cmp)
 				    << " sub=" << b(p.step_subtract) << " incdec=" << b(p.step_incdec) << " body=" << u(p.body_ip) << " exit=" << u(p.exit_ip) << " cond=" << u(p.generic_cond_ip) << " update=" << u(p.generic_update_ip) << "\n";
+			}
+			if (!ch.yield_sites.empty()) {
+				out << pre << "yield_sites " << ch.yield_sites.size() << "\n";
+				for (const chunk::yield_site& s : ch.yield_sites) {
+					out << pre << " " << u(s.site) << " ip=" << u(s.ip) << " steps=";
+					for (const chunk::resume_step& step : s.steps) { out << static_cast<int>(step.what) << "@" << u(step.ip) << " "; }
+					out << "\n";
+				}
 			}
 			out << pre << "typed_sites " << ch.typed_sites.size() << "\n";
 			for (size_t i = 0; i < ch.typed_sites.size(); ++i) {
@@ -300,7 +318,9 @@ namespace {
 				for (const auto& e : l.env_operands) { out << " " << operand(ch, e.operand) << "@" << e.cache_slot; }
 				out << "\n" << pre << "  calls";
 				for (const auto& c : l.calls) {
-					out << " (" << c.probe_ip << " " << c.call_ip << " " << c.consumer_ip << " c" << static_cast<int>(c.consumer) << " dst=" << u(c.dst) << " raw=" << static_cast<int>(c.raw) << " proven=" << static_cast<int>(c.raw_proven) << " kinds=" << std::hex << c.raw_kinds << std::dec << " args=[";
+					out << " (" << c.probe_ip << " " << c.call_ip << " " << c.consumer_ip << " c" << static_cast<int>(c.consumer) << " dst=" << u(c.dst) << " raw=" << static_cast<int>(c.raw) << " proven=" << static_cast<int>(c.raw_proven) << " kinds=" << std::hex << c.raw_kinds << std::dec;
+					if (c.callee_cell != k_invalid_u32) { out << " callee_cell=" << c.callee_cell; }
+					out << " args=[";
 					for (const auto& a : c.args) { out << "(" << static_cast<int>(a.kind) << " " << a.v << " " << a.ip << ")"; }
 					out << "])";
 				}

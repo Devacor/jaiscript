@@ -28,7 +28,7 @@ bool save_roundtrip(string dir) {
 	string back = load_world_and_chars();
 	int load_ms = cast<int>(lap.delta() * 1000);
 	int after = state_hash();
-	print(`  save: ${msg} (${save_ms} ms, ${read_file(world_path()).size()} bytes)  load: ${back} (${load_ms} ms)  hash ${before} -> ${after}`);
+	print(`  save: ${msg} (${save_ms} ms, ${file::read(world_path()).size()} bytes)  load: ${back} (${load_ms} ms)  hash ${before} -> ${after}`);
 	return before == after;
 }
 
@@ -42,11 +42,11 @@ string corrupt(string text) {
 int run_savetest(string base_dir) {
 	string dir = base_dir + "/savetest";
 	SAVE_DIR = dir;
-	make_dirs(dir + "/chars");
-	array<string> old = list_dir(dir);
-	for (int i = 0; i < old.size(); ++i) { delete_file(dir + "/" + old[i]); }
-	array<string> oldc = list_dir(dir + "/chars");
-	for (int i = 0; i < oldc.size(); ++i) { delete_file(dir + "/chars/" + oldc[i]); }
+	file::make_directories(dir + "/chars");
+	array<string> old = file::list_directory(dir);
+	for (int i = 0; i < old.size(); ++i) { file::remove(dir + "/" + old[i]); }
+	array<string> oldc = file::list_directory(dir + "/chars");
+	for (int i = 0; i < oldc.size(); ++i) { file::remove(dir + "/chars/" + oldc[i]); }
 	print("save robustness:");
 	// missing
 	check(load_sealed(world_path(), WORLD_MAGIC) == "" && SAVE_NOTE == "missing", "a missing world file is reported as missing");
@@ -59,37 +59,37 @@ int run_savetest(string base_dir) {
 	for (int t = 0; t < 400; ++t) { bots_tick(); sim_tick(); }
 	int gold0 = CHARS[0].gold;
 	check(save_roundtrip(dir), "round trip keeps the exact state hash");
-	string first = read_file(world_path());
+	string first = file::read(world_path());
 	string crlf = first;
 	crlf.replace("\n", "\r\n");
-	write_file(world_path(), crlf);
+	file::write(world_path(), crlf);
 	check(load_sealed(world_path(), WORLD_MAGIC) != "" && SAVE_NOTE == "", "a save whose line endings a tool converted to CRLF still verifies");
-	write_file(world_path(), first);
+	file::write(world_path(), first);
 	for (int t = 0; t < 200; ++t) { bots_tick(); sim_tick(); }
 	int hash2 = state_hash();
 	int tick2 = TICK;
 	save_world_and_chars();
-	check(file_exists(world_path() + ".bak") && read_file(world_path() + ".bak") == first, "the second save keeps the first as .bak");
-	check(!file_exists(world_path() + ".tmp"), "no .tmp left behind after a good save");
+	check(file::exists(world_path() + ".bak") && file::read(world_path() + ".bak") == first, "the second save keeps the first as .bak");
+	check(!file::exists(world_path() + ".tmp"), "no .tmp left behind after a good save");
 	// corrupt the main file: the loader falls back to the backup
-	write_file(world_path(), corrupt(read_file(world_path())));
+	file::write(world_path(), corrupt(file::read(world_path())));
 	string msg = load_world_and_chars();
 	check(TICK == 400 && msg.contains("restored from world.gqw.bak"), `corrupt world file falls back to the backup (${msg})`);
 	// truncated file
 	string good = seal(unseal(first, WORLD_MAGIC));
-	write_file(world_path(), good.substr(0, good.size() / 3));
+	file::write(world_path(), good.substr(0, good.size() / 3));
 	check(load_sealed(world_path(), WORLD_MAGIC) != "" && SAVE_NOTE.contains("truncated"), `truncated world file is detected (${SAVE_NOTE})`);
 	// a newer format is refused, the backup is used
 	string body = unseal(good, WORLD_MAGIC);
 	string future = WORLD_MAGIC + " 99" + body.substr(body.find("\n"), body.size() - body.find("\n"));
-	write_file(world_path(), seal(future));
+	file::write(world_path(), seal(future));
 	string fb = load_sealed(world_path(), WORLD_MAGIC);
 	check(fb != "" && SAVE_NOTE.contains("newer Gator Quest"), `a newer save format is refused (${SAVE_NOTE})`);
-	delete_file(world_path() + ".bak");
+	file::remove(world_path() + ".bak");
 	check(load_sealed(world_path(), WORLD_MAGIC) == "" && SAVE_NOTE.contains("newer"), "with no backup the newer file is not loaded");
 	// an old, sparse character file: every missing field keeps its default
 	string sparse = seal(CHAR_MAGIC + " 1\nname Old Timer\ngold 77\nskills 500,400\n");
-	write_file(char_path("Old Timer"), sparse);
+	file::write(char_path("Old Timer"), sparse);
 	sim_init(3);
 	string welcome = join_character(0, "Old Timer", 0);
 	Character& c = CHARS[0];
@@ -112,7 +112,7 @@ int run_savetest(string base_dir) {
 	check(r.gold == 1234 && r.skill[Sk.fishing] == 777 && pack_has(0, I_RUBBERDUCK, 1), "gold, skills and backpack survive a restart");
 	check(MOB_WORLD[rm] == 1 && MOB_HP[rm] == 20, `position and health survive a restart (${WORLDS[MOB_WORLD[rm]].name}, hp ${MOB_HP[rm]})`);
 	// a character file that is corrupt, with no backup: a new gator starts
-	write_file(char_path("Broken"), corrupt(char_text(0)));
+	file::write(char_path("Broken"), corrupt(char_text(0)));
 	sim_init(3);
 	string nb = join_character(0, "Broken", 1);
 	check(nb.starts_with("Welcome to Swampton") && CHARS[0].gold == 50, "a corrupt character file with no backup starts a new gator");
@@ -257,7 +257,7 @@ int run_thieftest(string base_dir) {
 	check(poisoned, "a raccoon's bite poisons");
 	MOB_POISON[me] = 0;
 	// the purse survives a save and load, and holds every victim's gold
-	make_dirs(base_dir + "/thieftest/chars");
+	file::make_directories(base_dir + "/thieftest/chars");
 	check(save_roundtrip(base_dir + "/thieftest") && MOB_KIND[r] == kind && MOB_AUX[r] == stolen, `the purse survives a save and load (${MOB_AUX[r]})`);
 	me = CHARS[0].mob;
 	player_create(1, "Second", 3);
@@ -357,9 +357,9 @@ int nt_mob(int s) { return CHARS[NCS_SLOT[s]].mob; }
 
 int run_nettest(string base_dir, int port) {
 	SAVE_DIR = base_dir + "/nettest";
-	make_dirs(SAVE_DIR + "/chars");
-	array<string> old = list_dir(SAVE_DIR + "/chars");
-	for (int i = 0; i < old.size(); ++i) { delete_file(SAVE_DIR + "/chars/" + old[i]); }
+	file::make_directories(SAVE_DIR + "/chars");
+	array<string> old = file::list_directory(SAVE_DIR + "/chars");
+	for (int i = 0; i < old.size(); ++i) { file::remove(SAVE_DIR + "/chars/" + old[i]); }
 	print("netplay:");
 	sim_init(11);
 	BOTS = [];
@@ -431,7 +431,7 @@ int run_nettest(string base_dir, int port) {
 	net_session_bye(c);
 	nt_rounds(4);
 	check(!CHARS[2].active && log_has(a, "chuck has left the swamp (logged out)"), "chuck logged out and the others were told");
-	string cfile = read_file(char_path("chuck"));
+	string cfile = file::read(char_path("chuck"));
 	check(cfile.contains("gold 4321"), "the host wrote chuck's character file on logout");
 	int c2 = nt_join("chuck", 3, port);
 	nt_rounds(2);
@@ -440,7 +440,7 @@ int run_nettest(string base_dir, int port) {
 	NCS_CH[b].close();
 	NCS_STATUS[b] = "closed: test drop";
 	nt_rounds(6);
-	check(!CHARS[1].active && log_has(a, "bravo has left the swamp (connection closed)") && file_exists(char_path("bravo")), "bravo's dropped connection freed the slot and saved the character");
+	check(!CHARS[1].active && log_has(a, "bravo has left the swamp (connection closed)") && file::exists(char_path("bravo")), "bravo's dropped connection freed the slot and saved the character");
 	check(CHARS[NCS_SLOT[a]].party < 0, "alpha's party dissolved with bravo gone");
 	// ---- refusals
 	int dup = nt_join("Alpha", 5, port);
@@ -486,7 +486,7 @@ int run_nettest(string base_dir, int port) {
 		if (NCS_STATUS[crowd[k]] == "closed: test over") { told = told + 1; }
 	}
 	check(told == 14 && NCS_STATUS[a] == "closed: test over", `the host's goodbye reached every client (${told + (NCS_STATUS[a] == "closed: test over" ? 1 : 0)} of 15)`);
-	check(file_exists(char_path("gator7")) && file_exists(char_path("alpha")), "the host saved every character on the way out");
+	check(file::exists(char_path("gator7")) && file::exists(char_path("alpha")), "the host saved every character on the way out");
 	print(`netplay: ${TEST_PASSES} passed, ${TEST_FAILS} failed`);
 	return TEST_FAILS;
 }
@@ -530,7 +530,7 @@ int spawn_frogs_around(int player_mob, int count) {
 // the test edits the scripts it runs from, so it runs only from a scratch copy (hotreload.ps1 makes one)
 int run_hotreload() {
 	string src = current_script_dir();
-	if (!file_exists(src + "/HOTRELOAD_SCRATCH")) {
+	if (!file::exists(src + "/HOTRELOAD_SCRATCH")) {
 		print("hotreload edits the scripts it runs from: run hotreload.ps1, which runs it from a scratch copy");
 		return 1;
 	}
@@ -542,10 +542,10 @@ int run_hotreload() {
 	dev_start();
 	// whatever the checkout did, two files get \r\n and three get \n: both paths always run
 	for (int i = 0; i < copies.size(); ++i) {
-		string text = read_file(copies[i]);
+		string text = file::read(copies[i]);
 		text.replace("\r\n", "\n");
 		if (i == 0 || i == 2) { text.replace("\n", "\r\n"); }
-		write_file(copies[i], text);
+		file::write(copies[i], text);
 	}
 	array<string> first = dev_poll();
 	check(first.size() == 5 && !first.join(" ").contains("FAILED"), `the five rewritten files reload without errors (${first.join("; ")})`);
@@ -569,17 +569,17 @@ int run_hotreload() {
 	int hash0 = state_hash();
 	// edit 1: a class gains a field and a method, a constant changes, a function in one file
 	// changes for callers in another, monster behavior and monster data change
-	string types = read_file(copies[0]);
+	string types = file::read(copies[0]);
 	types = replace_once(types, "class Character {\n", "class Character {\n\tint reload_marks = 7;\n\tint power() { return str * 2; }\n");
 	types = replace_once(types, "class Item {\n", "class Item {\n\tint shine = 3;\n");
-	write_file(copies[0], types);
-	write_file(copies[1], replace_once(read_file(copies[1]), "int PACK_MAX = 40;", "int PACK_MAX = 60;"));
-	string ai = read_file(copies[2]);
+	file::write(copies[0], types);
+	file::write(copies[1], replace_once(file::read(copies[1]), "int PACK_MAX = 40;", "int PACK_MAX = 60;"));
+	string ai = file::read(copies[2]);
 	ai = replace_once(ai, "int AGGRO = 7;", "int AGGRO = 9;");
 	ai = replace_once(ai, "void ai_critter(int m) {\n", "void ai_critter(int m) {\n\tai_melee(m);\n\treturn;\n");
-	write_file(copies[2], ai);
-	write_file(copies[3], replace_once(read_file(copies[3]), "int buy_price(int item) { return imax(1, ITEMS[item].value * 11 / 10); }", "int buy_price(int item) { return imax(1, ITEMS[item].value * 2); }"));
-	write_file(copies[4], replace_once(read_file(copies[4]), "\"Swamp Rat|hp=10|", "\"Swamp Rat|hp=77|"));
+	file::write(copies[2], ai);
+	file::write(copies[3], replace_once(file::read(copies[3]), "int buy_price(int item) { return imax(1, ITEMS[item].value * 11 / 10); }", "int buy_price(int item) { return imax(1, ITEMS[item].value * 2); }"));
+	file::write(copies[4], replace_once(file::read(copies[4]), "\"Swamp Rat|hp=10|", "\"Swamp Rat|hp=77|"));
 	array<string> msgs = dev_poll();
 	for (int i = 0; i < msgs.size(); ++i) { print("    " + msgs[i]); }
 	int failed = 0;
@@ -626,7 +626,7 @@ int run_hotreload() {
 	check(count_frog_targets(me) > 0, `after: frogs attack the gator (${count_frog_targets(me)} targeting)`);
 	// edit 2: change the method again; the field keeps the value we give it now
 	live.reload_marks = 42;
-	write_file(copies[0], replace_once(read_file(copies[0]), "int power() { return str * 2; }", "int power() { return str * 3; }"));
+	file::write(copies[0], replace_once(file::read(copies[0]), "int power() { return str * 2; }", "int power() { return str * 3; }"));
 	msgs = dev_poll();
 	check(msgs.size() == 1 && !msgs[0].contains("FAILED"), "the second edit reloads");
 	var& live2 = CHARS[0];
@@ -634,31 +634,31 @@ int run_hotreload() {
 	// edit 3: the state files reload too, and keep the world: all they declare is state
 	int hash1 = state_hash();
 	string ui0 = UI_MODE;
-	write_file(src + "/gq_state.jai", read_file(src + "/gq_state.jai") + "// touched by the hot-reload test\n");
-	write_file(src + "/gq_cstate.jai", read_file(src + "/gq_cstate.jai") + "// touched by the hot-reload test\n");
+	file::write(src + "/gq_state.jai", file::read(src + "/gq_state.jai") + "// touched by the hot-reload test\n");
+	file::write(src + "/gq_cstate.jai", file::read(src + "/gq_cstate.jai") + "// touched by the hot-reload test\n");
 	msgs = dev_poll();
 	check(msgs.size() == 2 && !msgs.join(" ").contains("FAILED"), `gq_state.jai and gq_cstate.jai reload (${msgs.join("; ")})`);
 	check(state_hash() == hash1 && CHARS[0].mob == me && TICK == tick0 + 40 && UI_MODE == ui0 && PRED_ON, "every mobile, player, tick and client setting survived the state files' reload");
 	// edit 4: broken edits are rejected at the import and the running code stays
 	// (a) a constant of the wrong type: the checker rejects the module before it runs
-	write_file(copies[1], replace_once(read_file(copies[1]), "int PACK_MAX = 60;", "int PACK_MAX = \"lots\";"));
+	file::write(copies[1], replace_once(file::read(copies[1]), "int PACK_MAX = 60;", "int PACK_MAX = \"lots\";"));
 	msgs = dev_poll();
 	check(msgs.size() == 1 && msgs[0].contains("FAILED") && PACK_MAX == 60, `a bad constant is rejected, PACK_MAX stays 60 (${msgs.join("; ")})`);
-	write_file(copies[1], replace_once(read_file(copies[1]), "int PACK_MAX = \"lots\";", "int PACK_MAX = 60;"));
+	file::write(copies[1], replace_once(file::read(copies[1]), "int PACK_MAX = \"lots\";", "int PACK_MAX = 60;"));
 	msgs = dev_poll();
 	check(msgs.size() == 1 && !msgs[0].contains("FAILED"), "fixing the constant reloads cleanly");
 	// (b) a type error inside a function: rejected by the checker, the old body keeps running
-	write_file(copies[3], replace_once(read_file(copies[3]), "int buy_price(int item) { return imax(1, ITEMS[item].value * 2); }", "int buy_price(int item) { return \"free\"; }"));
+	file::write(copies[3], replace_once(file::read(copies[3]), "int buy_price(int item) { return imax(1, ITEMS[item].value * 2); }", "int buy_price(int item) { return \"free\"; }"));
 	msgs = dev_poll();
 	check(msgs.size() == 1 && msgs[0].contains("FAILED") && buy_price(I_BREAD) == price, `a static type error is rejected, buy_price unchanged (${msgs.join("; ")})`);
-	write_file(copies[3], replace_once(read_file(copies[3]), "int buy_price(int item) { return \"free\"; }", "int buy_price(int item) { return imax(1, ITEMS[item].value * 2); }"));
+	file::write(copies[3], replace_once(file::read(copies[3]), "int buy_price(int item) { return \"free\"; }", "int buy_price(int item) { return imax(1, ITEMS[item].value * 2); }"));
 	msgs = dev_poll();
 	check(msgs.size() == 1 && !msgs[0].contains("FAILED"), "fixing the function reloads cleanly");
 	// (c) a run-time error while the module runs: caught at the import, the constant keeps its value
-	write_file(copies[1], replace_once(read_file(copies[1]), "int PACK_MAX = 60;", "int PACK_MAX = [60][3];"));
+	file::write(copies[1], replace_once(file::read(copies[1]), "int PACK_MAX = 60;", "int PACK_MAX = [60][3];"));
 	msgs = dev_poll();
 	check(msgs.size() == 1 && msgs[0].contains("FAILED") && PACK_MAX == 60, `a run-time error in a reloading module is caught, PACK_MAX stays 60 (${msgs.join("; ")})`);
-	write_file(copies[1], replace_once(read_file(copies[1]), "int PACK_MAX = [60][3];", "int PACK_MAX = 60;"));
+	file::write(copies[1], replace_once(file::read(copies[1]), "int PACK_MAX = [60][3];", "int PACK_MAX = 60;"));
 	msgs = dev_poll();
 	check(msgs.size() == 1 && !msgs[0].contains("FAILED") && PACK_MAX == 60, "and the fixed file reloads");
 	// keep playing on the new code

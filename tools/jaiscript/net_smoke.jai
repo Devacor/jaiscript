@@ -1,4 +1,4 @@
-// NetChannel loopback smoke — two channels in one process prove the runner's
+// net_channel loopback smoke — two channels in one process prove the runner's
 // generic networking end to end: listen/connect handshake signals, framed
 // binary-safe packets, reentrant echo from inside on_packet, and disconnect.
 // Run: jaiscript net_smoke.jai   (exit 0 = green)
@@ -15,8 +15,8 @@ var SRV_GOT = [];
 var CLI_GOT = [];
 var SRV_DOWN = "";
 
-var srv = new NetChannel();
-var cli = new NetChannel();
+var srv = new net_channel();
+var cli = new net_channel();
 
 srv.on_connect.connect("up", []() { SRV_UP = SRV_UP + 1; });
 cli.on_connect.connect("up", []() { CLI_UP = CLI_UP + 1; });
@@ -67,7 +67,7 @@ function main() -> int {
 	check(!srv.connected(), `server no longer connected (${srv.status()})`);
 
 	// connecting to a dead port reports failure via signal or status
-	var lost = new NetChannel();
+	var lost = new net_channel();
 	var LOSTMSG = "";
 	lost.on_disconnect.connect("down", [&](var reason) { LOSTMSG = reason; });
 	lost.connect("127.0.0.1", 28667);
@@ -82,7 +82,7 @@ function main() -> int {
 	return FAILS;
 }
 
-// ------------------------------------------------------------- NetServer ---
+// ------------------------------------------------------------- net_server ---
 // N clients on one port: stable ids, targeted send, broadcast, kick, and the
 // held-reason contract (a goodbye's frames deliver before its disconnect).
 
@@ -96,7 +96,7 @@ var PEER_D = [];
 var PEER_NEST = [[], [], [], []];
 
 function net_server_section() -> void {
-	var host = new NetServer();
+	var host = new net_server();
 	host.on_client_connect.connect("j", [](var id) { SRV2_JOINS.push(id); });
 	host.on_client_packet.connect("p", [](var id, var bytes) { SRV2_GOT.push(`${id}:${bytes}`); });
 	host.on_client_disconnect.connect("d", [](var id, var reason) { SRV2_DROPS.push(`${id}:${reason}`); });
@@ -104,7 +104,7 @@ function net_server_section() -> void {
 
 	var peers = [];
 	for (int p2 = 0; p2 < 4; ++p2) {
-		var c = new NetChannel();
+		var c = new net_channel();
 		c.connect("127.0.0.1", 28766);
 		peers.push(c);
 	}

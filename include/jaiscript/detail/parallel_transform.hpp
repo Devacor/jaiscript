@@ -172,7 +172,12 @@ namespace jai::detail {
             const ast_node* member_use = nullptr;   // a member chain rooted at it: only a captured object has members
             const ast_node* qualified_use = nullptr;   // a ::name use: the program's variable, never the enclosing function's local
             bool unqualified_use = false;
+            // a class's static field (C::s): the class name as written and the field, read from the class at the barrier
+            uint64_t static_class_id = 0;
+            uint64_t static_member_id = 0;
         };
+        // The names a static field read is captured under ("C::s"), one per site: the chain walks root there
+        std::vector<std::shared_ptr<identifier_expr>> static_roots;
         // A method called on a chain rooted at a captured name (cam.len(), cam.inner.len()): the barrier refuses one that writes
         // its object, and a container's mutating builtin
         struct captured_method_call {
@@ -282,6 +287,8 @@ namespace jai::detail {
             uint64_t class_name_id = 0;
             uint64_t name_id = 0;
             script_value value{std::monostate{}, nullptr};
+            bool captured = false;   // a static field's captured read: provisioned per region, nulled at the join
+            const void* owner = nullptr;   // captured: the class that declares the field (a bare read in a method finds it by it)
         };
         std::vector<static_entry> statics;
         // The operators (and the implicit to_string/to_bool calls) of every class the region's objects can belong to, admitted at the
@@ -320,6 +327,12 @@ namespace jai::detail {
             }
             return nullptr;
         }
+        const script_value* find_captured_static(const void* owner, uint64_t name_id) const noexcept {
+            for (const auto& e : statics) {
+                if (e.captured && e.owner == owner && e.name_id == name_id) { return &e.value; }
+            }
+            return nullptr;
+        }
     };
 
     inline constexpr const char* parallel_operator_verdict_text =
@@ -350,7 +363,7 @@ namespace jai::detail {
     // An instance's script field a worker reads and stores in place (a C++ property goes through its pinned accessor)
     script_value* parallel_script_field(class_instance& inst, uint64_t member_id);
     // A worker's call of a method no region pin admits, on any receiver shape
-    checked_result<void> parallel_method_not_admitted(uint64_t name_id);
+    checked_result<void> parallel_method_not_admitted(uint64_t name_id, const string_symbolizer* symbols = nullptr);
     // What the calling chunk's method sandbox binds name_id to (the worker's own constructor of a class the region admitted), null
     // when it binds none; nullopt off a parallel chunk
     std::optional<script_value> parallel_chunk_binding(engine& eng, uint64_t name_id);

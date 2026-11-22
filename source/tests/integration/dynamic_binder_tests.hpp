@@ -57,6 +57,24 @@ struct PlainCopy {
 
 namespace jai::foundry::tests {
 
+// Classes a typed slot tells apart: Metres converts from a Feet and from a number, Square derives Shape, Label is alone,
+// Crate takes any value
+struct slot_feet { double value = 0; };
+struct slot_metres {
+    double value = 0;
+    slot_metres() = default;
+    slot_metres(const slot_feet& a_feet) : value(a_feet.value * 0.5) {}
+    slot_metres(double a_value) : value(a_value) {}
+};
+struct slot_shape { virtual ~slot_shape() = default; int64_t sides = 0; };
+struct slot_square : slot_shape { slot_square() { sides = 4; } };
+struct slot_label { std::string text = "label"; };
+struct slot_crate {
+    std::string held = "empty";
+    slot_crate() = default;
+    slot_crate(const script_value& a_value) : held(a_value.is_object() ? "object" : "value") {}
+};
+
 struct binder_plane;
 struct binder_hangar {
     std::shared_ptr<binder_plane> plane;
@@ -87,6 +105,8 @@ inline registrar<binder_listed_plane, binder_registrar_context> binder_listed_pl
 struct binder_chain_root { int64_t depth = 0; };
 struct binder_chain_middle : binder_chain_root {};
 struct binder_chain_leaf : binder_chain_middle {};
+struct binder_chain_other : binder_chain_root {};
+struct binder_chain_join : binder_chain_middle, binder_chain_other {};
 
 // Test classes for binding
 class DynamicBinderPoint {
@@ -239,6 +259,7 @@ public:
     JAI_METHOD((std::map<std::string, int64_t>), tally, () const) { return {{"count", count.get()}}; }
     JAI_METHOD(int64_t, checked, (), jai::nodiscard) { return count.get(); }
     JAI_METHOD(void, reset, (), jai::serial) { count = 0; }
+    JAI_METHOD(int64_t, waited, () const, jai::exclude_execution_time) { return count.get(); }
     JAI_METHOD(int64_t, stored, () const, jai::permissions::filesystem) { return count.get(); }
     JAI_METHOD(MethodTally, operator+, (const MethodTally& a_other) const) {
         MethodTally result;
@@ -277,7 +298,7 @@ struct MethodMeterChild : MethodMeter {
     JAI_METHOD(int64_t, twice, () const) { return level * 2; }
 };
 struct MethodMeterBare : MethodMeter {};
-static_assert(detail::method_access::slot_count<MethodTally>() == 15 &&detail::method_access::slot_count<MethodTallyPlus>() == 1);
+static_assert(detail::method_access::slot_count<MethodTally>() == 16 &&detail::method_access::slot_count<MethodTallyPlus>() == 1);
 static_assert(detail::method_access::slot_count<MethodlessTally>() == 0 && detail::method_access::slot_count<MethodMeterChild>() == 3);
 static_assert(!detail::method_access::owns_slot<MethodMeterBare, 1>() && detail::method_access::owns_slot<MethodMeterChild, 2>());
 inline registrar<MethodMeter, method_registrar_context> method_meter_registrar("MethodMeter");
@@ -618,7 +639,7 @@ public:
                     m.big = m.big + 1; m.small = m.small - 1; m.tiny = 201 + i; m.wide = 10 + i;
                     m.speed = m.speed * 2.0; m.ratio = 0.5; m.flag = !m.flag; m.name = m.name + "x";
                 }
-                s += type_of(m.big) + type_of(m.speed) + type_of(m.ratio) + type_of(m.flag) + type_of(m.name);
+                s += reflect::type_of(m.big) + reflect::type_of(m.speed) + reflect::type_of(m.ratio) + reflect::type_of(m.flag) + reflect::type_of(m.name);
                 s;
             )").as_string();
             check_eq(std::string("7,-3,200,9,1.5,0.25,true,lane,5|8,-4,201,10,3.0,0.5,false,lanex,5|9,-5,202,11,6.0,0.5,true,lanexx,5|intfloatfloatboolstring"), out);
@@ -738,7 +759,7 @@ public:
             auto watched = eng->execute(R"(
                 shared_ptr<LaneSchemaOwner> o = new LaneSchemaOwner();
                 var r = [];
-                for (int i = 0; i < 2; ++i) { r.push(type_of(o.watched)); o.watched = 9 + i; }
+                for (int i = 0; i < 2; ++i) { r.push(reflect::type_of(o.watched)); o.watched = 9 + i; }
                 r;
             )");
             check_true(watched.as_array()[0].as_string() == watched.as_array()[1].as_string(), "an observable property keeps its getter's value kind");
@@ -2799,6 +2820,7 @@ public:
             check_eq((int64_t)22 + 11 + 11 + 11 + 33 + 22 + 84, eng->execute(
                 "t.doubled() + t.peek() + t.tally()[\"count\"] + t.checked() + t * 3 + (t + t).total() + t.scaled(2);").as_int());
             check_eq((int64_t)42 + 13 + 9, eng->execute("t.secret() + t[2] + t(2);").as_int());
+            check_eq((int64_t)11, eng->execute("t.waited();").as_int(), "a method declared with jai::exclude_execution_time binds and calls");
 
             check_true(eng->is_nodiscard_function("MethodTally.checked") && !eng->is_nodiscard_function("MethodTally.total"));
             const auto dropped = eng->check("MethodTally kept = MethodTally();\nkept.checked();\nkept.total();\n");
@@ -2920,6 +2942,79 @@ public:
             scripted->execute("class DeclaredBeacon { int seats = 2; }");
             check_eq(std::string("bind_registrar: the script name 'DeclaredBeacon' already names a script class, so the C++ type 'jai::foundry::tests::DeclaredBeacon' cannot bind under it"),
                 failure_of([&] { bind_registrar(*scripted, declared_binding_context{}); }));
+            check_eq(std::string("the script name 'DeclaredBeacon' already names a script class, so a C++ type cannot bind under it"),
+                failure_of([&] { dynamic_binder<declared_name_rival>(*scripted, "DeclaredBeacon").property("seats", &declared_name_rival::seats).build(); }));
+            check_eq((int64_t)2, scripted->execute("DeclaredBeacon().seats;").as_int(), "the script class stands");
+        });
+        test("a_script_class_cannot_take_a_host_class_name", [this]() {
+            const auto failure_of = [](auto&& a_run) {
+                try { a_run(); } catch (const std::exception& e) { return std::string(e.what()); }
+                return std::string("no error");
+            };
+            const std::string refusal = "cannot declare class 'NamedThing': the host binds a C++ class of that name; give the script class another name, or derive from it (class Other : NamedThing)";
+            auto eng = make_engine();
+            jai::stdlib::register_all(*eng);
+            dynamic_binder<NamedThing>(*eng, "NamedThing").constructor<>().property("name", &NamedThing::name).build();
+            const std::string at_load = failure_of([&] { eng->execute("class NamedThing { int mine = 1; }"); });
+            check_true(at_load.find("1:7: error: " + refusal) != std::string::npos, at_load);
+            // a warn region leaves it to the declaration
+            const std::string at_run = failure_of([&] { eng->execute("[[warn_mode]]; class NamedThing { int mine = 1; } NamedThing().mine;"); });
+            check_true(at_run.find(refusal) != std::string::npos && at_run.find("error: ") == std::string::npos, at_run);
+            check_eq(std::string("named"), eng->execute("NamedThing().name;").as_string(), "the host class stands");
+            check_eq(std::string("named 1 NamedHeir"), eng->execute("class NamedHeir : NamedThing { int mine = 1; } NamedHeir h; h.name + \" \" + to_string(h.mine) + \" \" + reflect::type_of(h);").as_string());
+            check_eq((int64_t)3, eng->execute("namespace kept { class NamedThing { int mine = 3; } } kept::NamedThing().mine;").as_int(), "a namespace's class is its own name");
+            // an enum of the name could name none of its values (E::value reads the class): refused in a warn region too
+            for (const char* source : {"enum NamedThing { first, second }", "[[warn_mode]]; enum NamedThing { first, second }"}) {
+                const std::string failure = failure_of([&] { eng->execute(source); });
+                check_true(failure.find("error: cannot declare enum 'NamedThing': the host binds a C++ class of that name; give the enum another name") != std::string::npos,
+                           std::string(source) + " -> " + failure);
+            }
+            check_eq((int64_t)2, eng->execute("enum Named { NamedThing = 2 } Named::NamedThing;").as_int(), "an enum's value is another name");
+        });
+        test("a_typed_slot_tells_bound_classes_apart", [this]() {
+            const auto bound = [this]() {
+                auto eng = make_engine();
+                jai::stdlib::register_all(*eng);
+                dynamic_binder<slot_feet>(*eng, "Feet").constructor<>().property("value", &slot_feet::value).build();
+                dynamic_binder<slot_metres>(*eng, "Metres").constructor<>().constructor<const slot_feet&>().constructor<double>().property("value", &slot_metres::value).build();
+                dynamic_binder<slot_shape>(*eng, "Shape").constructor<>().property("sides", &slot_shape::sides).build();
+                dynamic_binder<slot_square>(*eng, "Square").constructor<>().base_class<slot_shape>().build();
+                dynamic_binder<slot_label>(*eng, "Label").constructor<>().property("text", &slot_label::text).build();
+                dynamic_binder<slot_crate>(*eng, "Crate").constructor<>().constructor<const script_value&>().property("held", &slot_crate::held).build();
+                return eng;
+            };
+            const auto message = [&](const std::string& source) {
+                auto eng = bound();
+                try { return eng->execute(source).to_string(); } catch (const std::exception& e) { return std::string(e.what()); }
+            };
+            const auto refused = [&](const std::string& source, const std::string& text) {
+                const std::string got = message(source);
+                check_true(got.find("error: " + text) != std::string::npos, source + " -> " + got);
+            };
+            // unrelated classes, at each typed site
+            refused("void take(Shape s) { } Label l; take(l);", "argument 1 of 'take': cannot pass 'Label' to 's' declared 'Shape'");
+            refused("Label l; Shape s = l;", "cannot initialize 's' declared 'Shape' with 'Label'");
+            refused("Label l; Shape s; s = l;", "cannot assign 'Label' to 's' declared 'Shape'");
+            refused("Shape make() { Label l; return l; }", "cannot return 'Label' from 'make' declared to return 'Shape'");
+            refused("array<Shape> shapes; Label l; shapes.push(l);", "cannot push into 'array<Shape>': expected 'Shape', got 'Label'");
+            refused("class Holder { Shape s; } Holder h; Label l; h.s = l;", "cannot assign 'Label' to field 's' declared 'Shape'");
+            refused("Metres m; Feet f = m;", "cannot initialize 'f' declared 'Feet' with 'Metres'");
+            refused("Label l = 3;", "cannot initialize 'l' declared 'Label' with 'int'");
+            refused("class Plain { int n = 1; } Plain p; Shape s = p;", "cannot initialize 's' declared 'Shape' with 'Plain'");
+            // a converting constructor converts
+            check_eq(std::string("5.0 2.5 5.0"), message("Feet f; f.value = 10.0; Metres m = f; Metres n = 2.5; float taken(Metres x) { return x.value; } `${m.value} ${n.value} ${taken(f)}`"));
+            check_eq(std::string("object value"), message("Label l; Crate c = l; Crate d = 3; `${c.held} ${d.held}`"));
+            // a derived class is its base, and the base's declared type is not the derived class (cast<Square&> or a dynamic_cast condition narrows)
+            check_eq(std::string("4 4 Square Square"), message("Square q; Shape s = q; int sides(Shape x) { return x.sides; } Square back = cast<Square&>(s); "
+                                                               "string narrowed(Shape x) { if (dynamic_cast<Square>(x)) { Square y = x; return reflect::type_of(y); } return \"\"; } "
+                                                               "`${s.sides} ${sides(q)} ${reflect::type_of(back)} ${narrowed(s)}`"));
+            refused("Shape s = Square(); Square back = s;", "cannot initialize 'back' declared 'Square' with 'Shape'");
+            // a script class deriving a bound class, and one deriving two
+            check_eq(std::string("3 Tri"), message("class Tri : Shape { Tri() { sides = 3; } } Tri t; Shape s = t; `${s.sides} ${reflect::type_of(s)}`"));
+            check_eq(std::string("Both 0"), message("class Both : Shape, Label { } Both b; string named(Label l) { return reflect::type_of(l); } int sides(Shape s) { return s.sides; } `${named(b)} ${sides(b)}`"));
+            // what the checker does not know stays the run time's
+            check_eq(std::string("4"), message("var v = Square(); Shape s = v; auto a = Square(); Shape t = a; `${t.sides}`"));
+            check_eq(std::string("No overload of 'Shape' takes (Label)"), message("var v = Label(); var c = \"\"; try { Shape s = v; } catch (e) { c = e; } c"));
         });
         test("mutual_references_register_in_either_order", [this]() {
             const char* script = "var h = Hangar(); var p = Plane(); p.home = h; h.plane = p; p.home.bays + h.plane.seats;";
@@ -2991,6 +3086,15 @@ public:
             try { eng->execute("1;"); } catch (const jai::runtime_error& e) { failure = e.what(); }
             check_eq(std::string("Bindings are incomplete:\n  class 'Root' failed to register: Diamond inheritance detected while resolving a deferred base-class link"), failure);
             check_eq((int64_t)2, eng->execute("1 + 1;").as_int());
+            // two deferred links that each look sound complete a diamond in a class derived from both
+            auto joined = make_engine();
+            dynamic_binder<binder_chain_middle>(*joined, "Middle").base_class<binder_chain_root>();
+            dynamic_binder<binder_chain_other>(*joined, "Other").base_class<binder_chain_root>();
+            dynamic_binder<binder_chain_join>(*joined, "Join").base_class<binder_chain_middle>().base_class<binder_chain_other>();
+            dynamic_binder<binder_chain_root>(*joined, "Root").property("depth", &binder_chain_root::depth);
+            failure.clear();
+            try { joined->execute("1;"); } catch (const jai::runtime_error& e) { failure = e.what(); }
+            check_eq(std::string("Bindings are incomplete:\n  class 'Root' failed to register: Diamond inheritance detected while resolving a deferred base-class link: class 'Join'"), failure);
         });
 
         test("live_binder_commits_at_first_load_and_keeps_binding", [this]() {

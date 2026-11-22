@@ -151,6 +151,7 @@ namespace jai::fuzz {
 		} catch (...) {
 			result.unexpected_error = "non-standard exception";
 		}
+		host->execution_budget(0);   // whether the engine still runs code, not how fast
 		try {
 			result.alive = host->execute("int mutation_recovery_value = 2; mutation_recovery_value;").as_int() == 2;
 		} catch (...) {

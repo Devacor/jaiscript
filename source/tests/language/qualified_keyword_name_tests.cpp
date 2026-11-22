@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 using namespace jai;
 using namespace jai::foundry;
@@ -201,6 +202,52 @@ public:
 			check_eq(std::string("ERROR: parse failed:\n<script>:1:19: error: 'this' is the receiver and cannot be used as a member name"), first_diagnostic(run(eng, "namespace n { int this = 1; }")));
 			check_eq(std::string("ERROR: parse failed:\n<script>:1:10: error: expected enum value name"), first_diagnostic(run(eng, "enum E { this }")));
 			check_eq(std::string("ERROR: parse failed:\n<script>:1:21: error: expected member name"), first_diagnostic(run(eng, "class C { const int = 1; }")));
+		});
+
+		// a literal's text dies with the lexer, so a node may not take one as its name: each is refused where it stands
+		test("only_a_name_follows_a_scope_qualifier", [this]() {
+			const std::string prelude =
+				"enum Color { red, green }\n"
+				"class Base { static int count = 1; static int tally() { return 2; } }\n"
+				"namespace shop { int price() { return 5; } int stock = 6; class Item { static int sold = 0; } enum Kind { small } "
+				"namespace deep { int low() { return 8; } } class Shelf<T> { static int made = 0; } }\n";
+			const std::vector<std::string> not_names{
+				"\" \"", "\"a string literal long enough to live on the heap\"", "\"tab\\there\"", "R\"x(raw text)x\"", "'c'", "'\\n'",
+				"7", "12345678901234", "0x1F2E3D4C", "0b1010", "0755", "1234.5678", "2e30",
+				"+", "<<=", "=>", "::", "[", "]", "{", "}", ",", ".", "*", "!", "?.", "<=>", "`text ${1} more`", "`plain text`"};
+			const std::vector<std::string> roles{
+				"print(Color::@);", "print(Base::@);", "Base::@ = 2;", "Base::@ += 2;", "print(Base::@());", "print(shop::@);", "shop::@ = 2;",
+				"print(shop::@());", "print(shop::deep::@());", "print(shop::@::low());", "print(shop::Kind::@);", "print(shop::Item::@);",
+				"print(shop::Shelf<int>::@);", "print(math::@(4.0));", "print(string::@(\"x\"));", "auto item = shop::@{};", "shop::@ item;",
+				"int pick() { return Color::@; }", "auto pick = () => Color::@;", "class Holder { int v = Color::@; }",
+				"T pick<T>(T x) { return Color::@; } print(pick<int>(1));", "print(`${Color::@}`);"};
+			auto eng = fresh();
+			std::string failures;
+			for (const std::string& role : roles) {
+				const size_t at = role.find('@');
+				for (const std::string& token : not_names) {
+					if (role.find("<T>") != std::string::npos && (token == "{" || token == "}")) { continue; }   // a brace there cuts the generic's own text
+					const std::string source = prelude + role.substr(0, at) + token + role.substr(at + 1) + "\n";
+					const std::string got = first_diagnostic(run(eng, source));   // a refused parse declares nothing: one engine reads them all
+					if (got.find("error: expected member name after '::'") == std::string::npos || got.rfind("ERROR: parse failed:\n<script>:4:", 0) != 0) {
+						failures += role + " with " + token + "\n  " + got + "\n";
+					}
+				}
+			}
+			check_true(failures.empty(), failures);
+			check_eq(std::string("ERROR: parse failed:\n<script>:1:14: error: expected member name after '::'"), first_diagnostic(run(fresh(), "print(Color::);")));
+		});
+
+		test("a_literal_names_no_namespace", [this]() {
+			auto eng = fresh();
+			check_eq(std::string("ERROR: parse failed:\n<script>:1:11: error: expected namespace name"), first_diagnostic(run(eng, "namespace \"a b\" { int f() { return 1; } }")));
+			check_eq(std::string("ERROR: parse failed:\n<script>:1:11: error: expected namespace name"), first_diagnostic(run(eng, "namespace + { int f() { return 1; } }")));
+			check_eq(std::string("ERROR: parse failed:\n<script>:1:11: error: expected namespace name"), first_diagnostic(run(eng, "namespace 7 { int f() { return 1; } }")));
+			check_eq(std::string("ERROR: parse failed:\n<script>:1:11: error: expected namespace name"), first_diagnostic(run(eng, "namespace { int f() { return 1; } }")));
+			check_eq(std::string("ERROR: parse failed:\n<script>:1:18: error: expected namespace name after '::'"), first_diagnostic(run(eng, "namespace outer::'c' { int f() { return 1; } }")));
+			check_eq(std::string("ERROR: parse failed:\n<script>:1:18: error: expected namespace name after '::'"), first_diagnostic(run(eng, "namespace outer::1.5 { int f() { return 1; } }")));
+			check_eq(std::string("ERROR: parse failed:\n<script>:1:7: error: expected expression"), first_diagnostic(run(eng, "print(]::red);")));
+			check_eq(std::string("7"), run(fresh(), "namespace default::for { int new() { return 7; } }\nto_string(default::for::new())"));
 		});
 	}
 };

@@ -9,6 +9,7 @@
 
 #include <jaiscript/core/script_class.hpp>
 #include <jaiscript/detail/environment.hpp>
+#include <jaiscript/detail/uniquely_held.hpp>
 #include <string>
 #include <utility>
 #include <vector>
@@ -16,7 +17,7 @@
 namespace jai::detail {
 
 struct aggregate_plan {
-    enum class verdict : uint8_t { none, values, copy, not_aggregate, too_many };
+    enum class verdict : uint8_t { none, values, copy, prvalue, not_aggregate, too_many };
     verdict kind = verdict::none;
     size_t field_count = 0;
     std::vector<std::pair<uint64_t, const script_value*>> elements;   // field id -> its initializer, chain order
@@ -49,26 +50,70 @@ inline bool collect_aggregate_fields(const script_class_definition& cls, std::ve
     return true;
 }
 
-inline bool is_instance_of_class(const script_value& value_in, const class_definition& cls) {
+inline bool held_through_handle(const script_value& value) {
+    const auto tag = value.get_type_info();
+    return tag && tag->base_type == script_value_type::jai_shared_ptr_type;
+}
+
+// The value is an object of the class or of a class derived from it; through_handle admits a shared_ptr to one too
+inline bool is_instance_of_class(const script_value& value_in, const class_definition& cls, bool through_handle = false) {
     const script_value& value = value_in.deref();
     if (value.raw_storage_index() != script_value::TYPEID_OBJECT) { return false; }
-    if (auto tag = value.get_type_info(); tag && tag->base_type == script_value_type::jai_shared_ptr_type) { return false; }
+    if (!through_handle && held_through_handle(value)) { return false; }
     auto holder = const_cast<script_value&>(value).get_object_holder();
-    if (!holder || !holder->is_instance()) { return false; }
+    if (!holder || !holder->is_instance() || !holder->holds_object()) { return false; }
     const class_definition* def = holder->unchecked_instance()->get_class_definition();
     return def && (def == &cls || def->derives_from(&cls));
+}
+
+// C++17 [dcl.init]: an initializer that is a prvalue of the class itself initializes the object directly, ahead of any constructor:
+// a temporary of exactly the class, no other slot holding it, is the constructed object
+inline bool prvalue_of_class(const script_value& arg, const class_definition& cls) {
+    if (arg.is_reference() || held_through_handle(arg) || !uniquely_held(arg)) { return false; }
+    return arg.unchecked_object_handle()->unchecked_instance()->get_class_definition() == &cls;
+}
+
+// The copy a copy construction from the object makes (C++: T(const T&)): a value's is its store copy, a handle's is a copy of the
+// object it shares, a value of that object's class
+inline script_value copy_of_instance(const script_value& source_in) {
+    const script_value& source = source_in.deref();
+    if (!held_through_handle(source)) { return clone_for_assignment(source); }
+    script_value result = source.clone();
+    result.set_type_info(const_cast<script_value&>(source).get_object_holder()->unchecked_instance()->get_class_definition()->get_type_info());
+    return result;
+}
+
+// The first field an aggregate fills is declared a shared_ptr or a weak_ptr of the handle's class or a base of it: the handle
+// initializes it as it is, as a declared T(shared_ptr<T>) would take it ahead of the implicit copy constructor
+inline bool first_field_takes_handle(const script_class_definition& cls, const std::vector<uint64_t>& fields, const script_value& handle) {
+    if (fields.empty()) { return false; }
+    const type_info_ptr declared = cls.get_field_declared_type(fields[0]);
+    if (!declared || (declared->base_type != script_value_type::jai_shared_ptr_type && declared->base_type != script_value_type::jai_weak_ptr_type)) { return false; }
+    const type_info_ptr pointee = declared->element_type();
+    auto holder = const_cast<script_value&>(handle.deref()).get_object_holder();
+    const class_definition* def = holder && holder->is_instance() && holder->holds_object() ? holder->unchecked_instance()->get_class_definition() : nullptr;
+    return pointee && def && (def->get_name() == pointee->type_name || def->is_subtype_of(pointee->type_name));
 }
 
 // A construction of a constructor-less class with arguments (args non-empty)
 inline aggregate_plan plan_aggregate(const script_class_definition& cls, const std::vector<script_value>& args) {
     aggregate_plan plan;
+    if (args.size() == 1 && prvalue_of_class(args[0], cls)) {
+        plan.kind = aggregate_plan::verdict::prvalue;
+        return plan;
+    }
     if (args.size() == 1 && is_instance_of_class(args[0], cls)) {
         plan.kind = aggregate_plan::verdict::copy;
         return plan;
     }
+    const bool handle_of_class = args.size() == 1 && is_instance_of_class(args[0], cls, true);
     std::vector<uint64_t> fields;
     if (!collect_aggregate_fields(cls, fields)) {
-        plan.kind = aggregate_plan::verdict::not_aggregate;
+        plan.kind = handle_of_class ? aggregate_plan::verdict::copy : aggregate_plan::verdict::not_aggregate;
+        return plan;
+    }
+    if (handle_of_class && !first_field_takes_handle(cls, fields, args[0])) {
+        plan.kind = aggregate_plan::verdict::copy;
         return plan;
     }
     plan.field_count = fields.size();
@@ -98,7 +143,10 @@ inline error_propagator too_many_initializers(uint64_t class_id, size_t field_co
 inline checked_result<script_value> aggregate_answer(const aggregate_plan& plan, const script_class_definition& cls,
                                                      const std::vector<script_value>& args, engine* eng) {
     if (plan.kind == aggregate_plan::verdict::copy) {
-        return clone_for_assignment(args[0]);
+        return copy_of_instance(args[0]);
+    }
+    if (plan.kind == aggregate_plan::verdict::prvalue) {
+        return args[0];
     }
     if (plan.kind == aggregate_plan::verdict::too_many) {
         return too_many_initializers(cls.get_type_id(), plan.field_count, args.size(), eng);

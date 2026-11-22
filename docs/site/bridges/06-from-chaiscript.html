@@ -98,9 +98,9 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 </tbody></table></div>
 
 <h2 id="a-host-converted">A host converted<a class="hlink" href="#a-host-converted" aria-label="link">&#8203;</a></h2>
-<p><a href="../examples/index.html#gloom">GLOOM</a>, the raycast shooter, runs on one shared C++ host with an adapter per language: the JaiScript original and comparison ports, one of them in ChaiScript. Each adapter binds the same host API: a seeded random generator class (<code>Rng</code>), host services such as <code>host_log</code>, and flags such as <code>HOST_SEED</code>. Three things change beyond the spellings in the tables:</p>
+<p><a href="../examples/index.html#gloom">GLOOM</a>, the raycast shooter, runs on one shared C++ host with an adapter per language: the JaiScript original and comparison ports, one of them in ChaiScript. Each adapter binds the same host API: a seeded random generator class (<code>seeded_rng</code> in JaiScript, <code>Rng</code> in ChaiScript), host services such as <code>host_log</code>, and flags such as <code>host_seed</code> (<code>HOST_SEED</code> in ChaiScript). Three things change beyond the spellings in the tables:</p>
 <ul>
-<li><strong>The class is one statement.</strong> ChaiScript registers the type, its constructor and each method as separate engine entries; a method is a free function that dot syntax reaches through its first argument. The binder makes them members of <code>Rng</code>, and <code>build()</code> registers the class (<a href="#classes-in-full">below</a>).</li>
+<li><strong>The class is one statement.</strong> ChaiScript registers the type, its constructor and each method as separate engine entries; a method is a free function that dot syntax reaches through its first argument. The binder makes them members of <code>seeded_rng</code>, and <code>build()</code> registers the class (<a href="#classes-in-full">below</a>).</li>
 <li><strong>The math whitelist goes.</strong> ChaiScript's core has no math library, so its adapter binds <code>sqrt</code>, <code>cos</code>, <code>sin</code>, <code>atan2</code> and <code>floor</code> itself. The JaiScript standard library has them as <code>math::sqrt</code> and the rest.</li>
 <li><strong>The constants are globals.</strong> <code>add_global</code> has no const form; a script that must not reassign a value declares it <code>const</code>, or the host runs that declaration.</li>
 </ul>
@@ -173,7 +173,7 @@ caught: Cannot assign to 'maxHp': it is read-only</code></pre></div>
     .property("right", &amp;CppTreeNode::right);</code></pre></div>
 <p>A ChaiScript host that registers an <code>=</code> for <code>std::shared_ptr&lt;CppTreeNode&gt;</code> so script can reassign a node handle drops it: JaiScript assigns <code>shared_ptr</code> values without help.</p>
 <h3 id="modules-and-registrars">Modules and registrars<a class="hlink" href="#modules-and-registrars" aria-label="link">&#8203;</a></h3>
-<p>A <code>ModulePtr</code> collects registrations once so several engines can take them. A <code>jai::registrar</code> does the same at program start, from the translation unit that defines the class: <code>static jai::registrar&lt;gloom_rng, void&gt; rngRegistrar("Rng", [](jai::dynamic_binder&lt;gloom_rng&gt;&amp; binder) { binder.constructor&lt;int64_t&gt;().method("next", &amp;gloom_rng::next); });</code>, and <code>jai::bind_registrar(eng)</code> applies every registrar to an engine. The registrar's name is also the class's serialization identity (<a href="04-from-cereal.html#versions-and-polymorphism">From Cereal</a>).</p>
+<p>A <code>ModulePtr</code> collects registrations once so several engines can take them. A <code>jai::registrar</code> does the same at program start, from the translation unit that defines the class: <code>static jai::registrar&lt;gloom_rng, void&gt; rngRegistrar("seeded_rng", [](jai::dynamic_binder&lt;gloom_rng&gt;&amp; binder) { binder.constructor&lt;int64_t&gt;().method("next", &amp;gloom_rng::next); });</code>, and <code>jai::bind_registrar(eng)</code> applies every registrar to an engine. The registrar's name is also the class's serialization identity (<a href="04-from-cereal.html#versions-and-polymorphism">From Cereal</a>).</p>
 
 <h2 id="errors">Errors<a class="hlink" href="#errors" aria-label="link">&#8203;</a></h2>
 <p>The ChaiScript adapter wraps every call in a guard that turns ChaiScript's two failure shapes into one:</p>
@@ -225,7 +225,7 @@ print(a[0], " ", a.size());</code></pre></div>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

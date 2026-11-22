@@ -15,25 +15,28 @@ namespace jai {
 // Ids are the host's to keep unique across its enums; two enums that share an id name one permission.
 enum class permission : std::int32_t {
     filesystem,
-    scoped_template,
+    untrusted_template,
     network,
     debug,
     trusted,
     untrusted,
+    source_receivers,
 };
 
 namespace permissions {
     // enforced by the engine: files and paths, untrusted templates under their own root (detail/template_library.hpp), and
-    // jai_spider's requests and the runner's Download.start
+    // jai_spider's requests and the runner's download.start
     inline constexpr permission filesystem = permission::filesystem;
-    inline constexpr permission scoped_template = permission::scoped_template;
+    inline constexpr permission untrusted_template = permission::untrusted_template;
     inline constexpr permission network = permission::network;
+    // saved signal receivers that are source text: a script's text connect and connect_source, and a load that arms one
+    inline constexpr permission source_receivers = permission::source_receivers;
     // conventions the engine enforces nothing with: what each one guards is the host's to decide
     inline constexpr permission debug = permission::debug;
     inline constexpr permission trusted = permission::trusted;
     inline constexpr permission untrusted = permission::untrusted;
     // the first id of a host's own
-    inline constexpr std::int32_t count = 6;
+    inline constexpr std::int32_t count = 7;
 }
 
 namespace detail {
@@ -91,11 +94,59 @@ private:
 };
 
 // Trailing options beside the permissions: a script statement may not drop the result (as a script declares [[nodiscard]]),
-// and the call touches state other objects share, so a parallel body may not make it
+// the call touches state other objects share, so a parallel body may not make it, and the time the call takes is the host's
+// (a load, a wait on a service), which the execution budget does not count (detail/host_time.hpp)
 struct nodiscard_option {};
 struct serial_option {};
+struct exclude_execution_time_option {};
 inline constexpr nodiscard_option nodiscard{};
 inline constexpr serial_option serial{};
+inline constexpr exclude_execution_time_option exclude_execution_time{};
+
+// What a call with type arguments answers, in terms of its type arguments (docs/site/embedding/17-host-api.html "Type
+// arguments"): jai::returns<jai::type_arg> is the first type argument itself, jai::returns<jai::array_of<jai::type_arg>> an array of it,
+// jai::returns<jai::shared_ptr_of<jai::type_arg>> a shared_ptr to it. The checker types the call so (auto rows = db.query<User>(...)
+// is an array<User>); the host returns a value of that type.
+struct type_arg {};   // the call's first type argument
+template<typename Element>
+struct array_of {};
+template<typename Pointee>
+struct shared_ptr_of {};
+
+struct type_result_option {
+    std::uint8_t shape = 0;
+};
+
+namespace detail {
+    // A result shape the checker knows how to build: a new shape (a map_of, a second placeholder) is one more specialization
+    // and its case in the checker's type_argument_result
+    template<typename Shape>
+    struct type_result_shape {
+        static constexpr std::uint8_t value = 0;
+    };
+    template<>
+    struct type_result_shape<type_arg> {
+        static constexpr std::uint8_t value = 1;
+    };
+    template<>
+    struct type_result_shape<array_of<type_arg>> {
+        static constexpr std::uint8_t value = 2;
+    };
+    template<>
+    struct type_result_shape<shared_ptr_of<type_arg>> {
+        static constexpr std::uint8_t value = 3;
+    };
+
+    template<typename Shape>
+    constexpr type_result_option make_type_result() {
+        static_assert(type_result_shape<Shape>::value != 0,
+            "jai::returns<Shape>: Shape is jai::type_arg, jai::array_of<jai::type_arg> or jai::shared_ptr_of<jai::type_arg>");
+        return type_result_option{type_result_shape<Shape>::value};
+    }
+}
+
+template<typename Shape>
+inline constexpr type_result_option returns = detail::make_type_result<Shape>();
 
 // What the trailing options of add_function, add_variadic_function and a binder's method, static_method and constructor add up
 // to: any number, in any order, as in add_function("save", fn, jai::nodiscard, jai::serial, GamePermission::cheats)
@@ -103,12 +154,19 @@ struct function_options {
     permission_set required;
     bool nodiscard = false;
     bool serial = false;
+    std::uint8_t type_result = 0;   // type_result_option::shape
 };
 
 namespace detail {
     template<typename O>
     concept function_option = permission_enum<std::remove_cvref_t<O>> || std::is_same_v<std::remove_cvref_t<O>, nodiscard_option> ||
-                              std::is_same_v<std::remove_cvref_t<O>, serial_option>;
+                              std::is_same_v<std::remove_cvref_t<O>, serial_option> || std::is_same_v<std::remove_cvref_t<O>, exclude_execution_time_option> ||
+                              std::is_same_v<std::remove_cvref_t<O>, type_result_option>;
+
+    // Whether a binding's options carry jai::exclude_execution_time: read where the binding is made, so an unmarked binding
+    // compiles what it always did and a marked one stores the timed callable (engine::time_excluded_function)
+    template<typename... Options>
+    inline constexpr bool excludes_execution_time = (std::is_same_v<std::remove_cvref_t<Options>, exclude_execution_time_option> || ...);
 
     template<typename O>
     void add_function_option(function_options& a_options, const O& a_option) {
@@ -116,6 +174,9 @@ namespace detail {
             a_options.nodiscard = true;
         } else if constexpr (std::is_same_v<O, serial_option>) {
             a_options.serial = true;
+        } else if constexpr (std::is_same_v<O, type_result_option>) {
+            a_options.type_result = a_option.shape;
+        } else if constexpr (std::is_same_v<O, exclude_execution_time_option>) {
         } else {
             a_options.required.add(permission_id(a_option));
         }

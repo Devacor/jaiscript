@@ -8,9 +8,11 @@
 #include <jaiscript/detail/numeric_conversion.hpp>
 #include <jaiscript/detail/math_values.hpp>
 #include <jaiscript/detail/container_enforce.hpp>
+#include <jaiscript/detail/copy_rebind.hpp>
 #include <jaiscript/detail/builtin_methods.hpp>
 #include <jaiscript/detail/slot_site.hpp>
 #include <jaiscript/detail/arity_diagnostic.hpp>
+#include <jaiscript/detail/member_display_name.hpp>
 #include <jaiscript/detail/host_member.hpp>
 #include <jaiscript/detail/object_borrow.hpp>
 #include <jaiscript/detail/uniquely_held.hpp>
@@ -104,6 +106,17 @@ inline std::shared_ptr<class_definition>* object_block::definition_pin(control_b
     return cb->dealloc_fn == &release_pinned
         ? reinterpret_cast<std::shared_ptr<class_definition>*>(reinterpret_cast<std::byte*>(cb) - pin_bytes) : nullptr;
 }
+
+inline uint64_t* object_block::birth(control_block_base* cb) noexcept {
+    return cb->dealloc_fn == &release_pinned ? reinterpret_cast<uint64_t*>(reinterpret_cast<std::byte*>(cb) - sizeof(uint64_t)) : nullptr;
+}
+
+// A destructor instance a parallel region made takes its birth when the join registers it, in element order
+inline void note_birth_after_region(class_instance& instance, engine& eng) noexcept {
+    if (uint64_t* birth = object_block::birth(cb_from_object(&instance)); birth && *birth == 0) {
+        *birth = engine_access::next_destructor_instance_birth_after_region(eng);
+    }
+}
 }
 
 inline strong_ptr<class_instance> class_instance::make(std::string_view class_name, engine* eng) {
@@ -113,9 +126,14 @@ inline strong_ptr<class_instance> class_instance::make(std::string_view class_na
 inline strong_ptr<class_instance> class_instance::make(uint64_t type_id, engine* eng, uint32_t slots, class_definition* destructor_owner) {
     using block_cb = detail::control_block<class_instance>;
     static_assert(sizeof(block_cb) == detail::k_instance_cb_offset + sizeof(class_instance), "the cells follow the instance");
+    static_assert(detail::object_block::pin_bytes % alignof(block_cb) == 0 && sizeof(std::shared_ptr<class_definition>) % alignof(uint64_t) == 0,
+                  "the pin and the birth leave the control block aligned");
     const size_t prefix = destructor_owner ? detail::object_block::pin_bytes : 0;
     auto* memory = static_cast<std::byte*>(::operator new(prefix + sizeof(block_cb) + trailing_bytes(slots)));
-    if (destructor_owner) { new (memory) std::shared_ptr<class_definition>(destructor_owner->shared_from_this()); }
+    if (destructor_owner) {
+        new (memory) std::shared_ptr<class_definition>(destructor_owner->shared_from_this());
+        new (memory + sizeof(std::shared_ptr<class_definition>)) uint64_t(eng ? detail::engine_access::next_destructor_instance_birth(*eng) : 0);
+    }
     auto* cb = new (memory + prefix) block_cb();
     cb->dealloc_fn = destructor_owner ? &detail::object_block::release_pinned : &detail::object_block::release;
     const trailing_cells trailing{memory + prefix + sizeof(block_cb), slots};
@@ -448,6 +466,12 @@ inline void class_definition::clear_instance_method_overloads() {
 
 inline void class_definition::clear_static_method_overloads() {
     static_method_overloads_.clear();
+}
+
+inline void class_definition::drop_method_overloads(uint64_t name_id, bool is_static) {
+    (is_static ? static_method_overloads_ : method_overloads_).erase(name_id);
+    overload_resolution_cache_.clear();
+    bump_method_epoch();
 }
 
 inline void class_definition::retain_static_fields(const std::set<uint64_t>& keep) {
@@ -1205,6 +1229,13 @@ inline void class_definition::set_nonpublic_members(std::unordered_map<uint64_t,
     bump_method_epoch();   // inline caches stamp a needs-access-check flag at fill
 }
 
+inline void class_definition::set_nonpublic_member(uint64_t member_id, access_level level) {
+    nonpublic_members_[member_id] = level;
+    bump_field_shape_epoch();
+    refresh_access_chain_flag();
+    bump_method_epoch();
+}
+
 inline const class_definition* class_definition::find_nonpublic_declarer(uint64_t member_id, access_level& level_out) const {
     auto it = nonpublic_members_.find(member_id);
     if (it != nonpublic_members_.end()) {
@@ -1847,13 +1878,6 @@ inline void class_instance::relayout_fields(const class_definition& from, const 
     for (size_t slot = 0; slot < result.size(); ++slot) { flat_fields_[slot] = std::move(result[slot]); }
 }
 
-inline void class_instance::copy_fields_from(const class_instance& other) {
-    other.for_each_field([&](uint64_t id, const script_value& value) {
-        materialize_field(id, value.clone_element());
-    });
-    if (const script_value* held = other.native()) { extras().native = held->clone_element(); }
-}
-
 namespace detail {
 
 // class_instance::dispatch_as for a scope: the object answers as `level` until the scope ends. Code compiled against the level reads
@@ -2004,6 +2028,37 @@ inline bool member_reads_back(const script_value& v, uint64_t member_id, uint64_
     return false;
 }
 
+// A callable stored into a function<R(A...)> slot: the identity, or what its own declaration rules out (its parameter count, a
+// parameter no argument of the signature's type converts to, a declared result that is not the signature's). A host function, an
+// overload set and an undeclared result declare nothing the store can judge, and pass. Out of line: the table's callers pay one
+// call for a signature slot and nothing for any other (environment.cpp)
+checked_result<slot_conversion> signature_slot_conversion(const script_value& value, const type_info_ptr& signature, engine* eng);
+// A coroutine<Y> slot takes null and the handle of a coroutine declared to yield Y (any handle when Y is var) (environment.cpp)
+checked_result<slot_conversion> coroutine_slot_conversion(const script_value& value, const type_info_ptr& target, engine* eng);
+bool coroutine_slot_admits(const script_value& value, const type_info& target);
+// coroutine<Y> as reflect::type_of and the slot texts name a handle: Y is its coroutine's declared type, var when it declares none
+std::string coroutine_type_name(const script_value& value);
+
+// The object a weak pointer still reaches, as a value its class can be read from; null once the pointer has expired
+inline script_value weak_handle_target(const script_value& v, engine* eng) {
+    script_value target(std::monostate{}, eng);
+    if (auto reached = v.get_weak_ptr().lock()) { target.set_object_holder(std::move(reached)); }
+    return target;
+}
+
+// Does a weak_ptr<T> slot take this weak pointer: the object it reaches is a T or of a class derived from T, the rule a
+// shared_ptr<T> slot holds a var's handle to (the load already held a typed source to its declared class). A pointer under the
+// slot's own tag was judged when it took the tag; a var-declared slot takes any; an expired pointer reaches no object and
+// stores as the empty pointer it is; an object whose class the engine cannot resolve stays lenient
+inline bool weak_handle_admits(const script_value& v, const type_info_ptr& declared, engine* eng) {
+    if (v.get_type_info().get() == declared.get() || declared->dynamic_pointee) { return true; }
+    const type_info* expected = declared->element_type().get();
+    if (!expected || expected->type_name.empty() || expected->base_type == script_value_type::jai_any_type) { return true; }
+    const script_value target = weak_handle_target(v, eng);
+    const auto view = resolve_slot_class(target, eng);
+    return !view.def || view.def->get_name() == expected->type_name || view.def->is_subtype_of(expected->type_name);
+}
+
 // weak_ptr<T> slot taking a shared_ptr handle (C++: weak = shared): the pointee class must be
 // T or derive from it, then the handle downgrades to a weak one. false = not this row.
 inline bool weak_slot_takes_shared(const script_value& value, const type_info_ptr& target_type, engine* eng) {
@@ -2145,22 +2200,30 @@ inline checked_result<slot_conversion> convert_for_typed_slot_core(const script_
                 if (tag && !tag->type_name.empty() && !target_type->type_name.empty() && tag->type_name == target_type->type_name) {
                     return slot_conversion::of(verdict::identity_exact);
                 }
+                if (target_type->is_coroutine) [[unlikely]] { return coroutine_slot_conversion(v, target_type, eng); }
                 auto view = resolve_slot_class(v, eng);
                 if (class_slot_admits(view, v, *target_type, eng)) {
                     return slot_conversion::of(verdict::identity);
                 }
                 return slot_conversion::of(v.get_object_holder() ? verdict::needs_ctor : verdict::reject_class);
             }
+            if (target_type->is_coroutine) [[unlikely]] { return coroutine_slot_conversion(v, target_type, eng); }
             if (primitive_src && !target_type->type_name.empty()) return slot_conversion::of(verdict::needs_ctor);
             return slot_conversion::of(verdict::reject);
         }
         case script_value_type::jai_shared_ptr_type:
         case script_value_type::jai_weak_ptr_type:
             if (ri == script_value::TYPEID_NULL) return typed_null();
+            // a weak pointer to another class is no weak_ptr<T>: every site's rejection takes it, as it takes the shared
+            // handle its own rows refuse
+            if (ri == script_value::TYPEID_WEAK_PTR && target == script_value_type::jai_weak_ptr_type && !weak_handle_admits(v, target_type, eng)) [[unlikely]] {
+                return slot_conversion::of(verdict::reject);
+            }
             return slot_conversion::of(verdict::handle_target);
         case script_value_type::jai_function_type:
             // a callable slot resets to null and takes a callable again (a std::function's rule)
             if (ri == script_value::TYPEID_NULL) return typed_null();
+            if (!target_type->type_params.empty()) [[unlikely]] { return signature_slot_conversion(v, target_type, eng); }
             return slot_conversion::of(v.type() == target ? verdict::identity : verdict::reject);
         case script_value_type::jai_vec2_type:
         case script_value_type::jai_vec3_type:
@@ -2242,6 +2305,13 @@ inline bool shared_handle_admits(const script_value& v, const type_info_ptr& dec
     return !judged_def || judged_def->is_subtype_of(expected->type_name);
 }
 
+// A store that enforces only on a change of kind still sends a handle to the table when its tag is not the slot's own: the
+// handle's class may not be the slot's (a shared handle's rows, a weak pointer's admission), and the slot's tag is what it keeps
+inline bool handle_store_is_judged(const type_info& slot_type, const script_value& value) noexcept {
+    return (slot_type.base_type == script_value_type::jai_shared_ptr_type || slot_type.base_type == script_value_type::jai_weak_ptr_type) &&
+           value.get_type_info().get() != &slot_type;
+}
+
 // A typed shared_ptr<T> variable keeps its own static type whatever handle it takes (a var-declared holder keeps the source's)
 inline void keep_handle_slot_type(script_value& value, const type_info_ptr& slot_type) {
     if (slot_type && slot_type->base_type == script_value_type::jai_shared_ptr_type && !slot_type->dynamic_pointee &&
@@ -2306,6 +2376,7 @@ inline std::optional<script_value> field_handle_rows(const script_value& v, cons
     if (ri != script_value::TYPEID_OBJECT && ri != script_value::TYPEID_CPP_BOUND) {
         return std::nullopt;
     }
+    if (const std::string held = value_for_handle_slot(v); !held.empty()) { refuse_value_into_handle(held); }   // as in C++
     if (v.get_object_holder() == nullptr || declared->type_name.empty()) {
         return v;
     }
@@ -2387,6 +2458,7 @@ inline std::string slot_source_type_name(const script_value& value_in, engine* e
             if (named_tag) return tag->type_name;
             auto view = resolve_slot_class(v, eng);
             if (view.def) return view.def->get_name();
+            if (auto holder = v.get_object_holder(); holder && holder->is_coroutine_handle()) return coroutine_type_name(v);
             if (auto holder = v.get_object_holder(); holder && !holder->type_name().empty()) return std::string(holder->type_name());
             return "object";
         }
@@ -2414,6 +2486,17 @@ inline std::string argument_type_list(const script_value* args, size_t argc, eng
     }
     if (argc > shown) { out += ", ..."; }
     return out + ")";
+}
+
+// The id of a member's name as its class lists it (detail::member_display_name): its own unless it is a generic method's
+// instance, whose bare name its class interned when it took the instance. A frozen symbolizer that never saw the bare name
+// keeps the declared one
+inline uint64_t listed_member_id(const string_symbolizer& symbols, uint64_t member_id) {
+    const std::string_view name = symbols.get_string(member_id);
+    const std::string_view bare = member_display_name(name);
+    if (bare.size() == name.size()) { return member_id; }
+    if (const auto known = symbols.find(bare)) { return *known; }
+    return symbols.frozen() ? member_id : symbols.intern(std::string(bare));
 }
 
 // No overload / constructor takes these arguments: {0} = the callee, {1} = the argument list,
@@ -2494,7 +2577,17 @@ inline std::string_view slot_rejection_message_unnamed(slot_kind kind, std::stri
 }
 
 inline bool slot_site_named(const slot_site& site) {
-    return site.kind == slot_kind::return_value || site.kind == slot_kind::yield_value ? !site.owner.empty() : !site.name.empty();
+    return site.kind == slot_kind::return_value || site.kind == slot_kind::yield_value ? !site.owner.empty() : !site.name.empty() && !unspellable_name(site.name);
+}
+
+// The source a rejection names: a weak pointer a weak_ptr<T> slot refuses is the class it points at, as the shared handle the
+// slot refuses is
+inline std::string slot_rejection_source_name(const script_value& source, const type_info& target, engine* eng) {
+    const script_value& v = source.is_reference() ? source.deref() : source;
+    if (target.base_type == script_value_type::jai_weak_ptr_type && v.raw_storage_index() == script_value::TYPEID_WEAK_PTR) {
+        if (const auto view = resolve_slot_class(weak_handle_target(v, eng), eng); view.def) { return view.def->get_name(); }
+    }
+    return slot_source_type_name(source, eng);
 }
 
 inline error_propagator typed_slot_rejection(const script_value& source, const type_info& target, const slot_site& site, engine* eng) {
@@ -2503,7 +2596,7 @@ inline error_propagator typed_slot_rejection(const script_value& source, const t
     if (!symbols) {
         return {ec, slot_rejection_message_unnamed(site.kind, target.canonical_name()), 0, target.id};
     }
-    const uint64_t source_id = symbols->intern(slot_source_type_name(source, eng));
+    const uint64_t source_id = symbols->intern(slot_rejection_source_name(source, target, eng));
     if (slot_site_named(site) && !symbols->frozen()) {
         return {ec, slot_rejection_message(site.kind), source_id, symbols->intern(slot_description(site, target))};
     }
@@ -2527,6 +2620,7 @@ inline checked_result<script_value> weak_declaration_value(const type_info_ptr& 
         return script_value::make_empty_weak_ptr(declared, eng);
     }
     if (value.is_weak_ptr()) {
+        if (!weak_handle_admits(value.is_reference() ? value.deref() : value, declared, eng)) { return typed_slot_rejection(value, *declared, site, eng); }
         value.set_type_info(declared);
         return value;
     }
@@ -2577,7 +2671,7 @@ inline error_propagator incdec_mismatch(bool increment, const script_value& targ
 
 // The same text as one string (host-side throws)
 inline std::string typed_slot_rejection_text(const script_value& source, const type_info& target, const slot_site& site, engine* eng) {
-    const std::string src = slot_source_type_name(source, eng);
+    const std::string src = slot_rejection_source_name(source, target, eng);
     if (slot_site_named(site)) {
         return format_error_message(slot_rejection_message(site.kind), src, slot_description(site, target));
     }
@@ -2741,15 +2835,19 @@ inline bool member_access_allowed(const class_definition* cls, uint64_t member_i
     return !declarer || declarer == ctx || (ctx && ctx->derives_from(declarer));
 }
 
+JAI_NOINLINE inline checked_result<void> member_access_denied(const class_definition* declarer, uint64_t member_id) {
+    engine* eng = declarer->get_engine();
+    return checked_result<void>(make_error_code(runtime_error_code::access_violation),
+        "Cannot access private member '{0}' of class '{1}'", eng ? listed_member_id(*engine_access::get_symbolizer(*eng), member_id) : member_id, declarer->get_type_id());
+}
+
 inline checked_result<void> enforce_member_access(const class_definition* cls, uint64_t member_id,
                                                   const class_definition* ctx) {
     if (member_access_allowed(cls, member_id, ctx)) {
         return {};
     }
     access_level level = access_level::public_access;
-    const class_definition* declarer = cls->find_nonpublic_declarer(member_id, level);
-    return checked_result<void>(make_error_code(runtime_error_code::access_violation),
-        "Cannot access private member '{0}' of class '{1}'", member_id, declarer->get_type_id());
+    return member_access_denied(cls->find_nonpublic_declarer(member_id, level), member_id);
 }
 
 // operator= on a plain store (docs/site/embedding/06-static-checking.html "One conversion table"; C++ assignment; no slicing).
@@ -2799,10 +2897,16 @@ inline std::optional<checked_result<void>> var_slot_assign_in_place(const script
 // A field lane writing slot directly steps aside when the field holds an object a store asks first (var_slot_assign_in_place)
 inline bool field_slot_holds_object(class_instance* inst, uint32_t slot);
 
-// The members `layout` declares (its whole chain, base first) copied from source into dest
+// The members `layout` declares (its whole chain, base first) copied from source into dest; the members' copies are one copy
+// of the object, so what they hold bound to source or a part of it is bound to dest (detail/copy_rebind.hpp)
 inline checked_result<void> implicit_copy_assign(class_instance* dest, const class_definition* layout, class_instance* source, engine* eng) {
     const uint32_t n = layout->field_slot_count();
     const class_definition* dest_layout = dest->get_class_definition();
+    // the members of a class that can hold a callable are copied under one watch (class_instance::deep_copy_with_care)
+    detail::deep_copy_work work;
+    const bool watched = layout->value_tree_holds_callable();
+    bool assigned_member = false;
+    work.watched = watched;
     for (uint32_t slot = 0; slot < n; ++slot) {
         if (layout->slot_is_cpp_property(slot)) { continue; }
         const uint64_t id = layout->slot_field(slot);
@@ -2814,13 +2918,15 @@ inline checked_result<void> implicit_copy_assign(class_instance* dest, const cla
         if (to && declared && declared->base_type == script_value_type::jai_object_type && !declared->type_name.empty()) {
             if (auto nested = user_assign_operator(*to, member, eng, declared.get())) {
                 if (!*nested) { return *nested; }
+                assigned_member = true;
                 continue;
             }
         }
         const uint32_t dest_slot = dest_layout ? dest_layout->field_slot(id) : class_definition::k_no_field_slot;
         if (dest_slot == class_definition::k_no_field_slot) { continue; }
-        dest->field_slot_write(dest_slot, member.clone_element());
+        dest->field_slot_write(dest_slot, watched && !member.element_copies_shallow() ? member.clone_level(work, 1) : member.clone_element());
     }
+    if (watched && (work.met_bound_callable != 0 || assigned_member)) [[unlikely]] { rebind_copied_callables(*source, *dest); }
     return {};
 }
 
@@ -3392,11 +3498,6 @@ inline const script_value& class_instance::native_or_throw() const {
     return *held;
 }
 
-inline strong_ptr<class_instance> class_instance::deep_copy() const {
-    detail::deep_copy_work work;
-    return deep_copy_level(work, 0);
-}
-
 inline void class_instance::finish_deep_copy_level(class_instance& copy, bool overflow) const {
     if (overflow) {
         // the copies landed in overflow (no definition yet, matching the old no-enforcement order); adopt it, then slot them
@@ -3427,12 +3528,59 @@ inline void class_instance::finish_deep_copy_level(class_instance& copy, bool ov
     }
 }
 
-inline strong_ptr<class_instance> class_instance::deep_copy_level(detail::deep_copy_work& work, unsigned depth) const {
+JAI_FORCEINLINE strong_ptr<class_instance> class_instance::deep_copy_level(detail::deep_copy_work& work, unsigned depth) const {
+    if (class_def_) {
+        if (const uint8_t care = class_def_->copy_care()) [[unlikely]] {
+            if (care != class_definition::copy_care_watch || depth > detail::k_inline_copy_depth) { return deep_copy_with_care(work, depth, care); }
+            // a class that can hold a callable: its members' copies, watched for a closure or a coroutine bound to an instance
+            ++work.watched;
+            strong_ptr<class_instance> copy = copy_members_level(work, depth);
+            if (--work.watched == 0 && work.met_bound_callable != 0) [[unlikely]] { end_watched_copy(*copy, work); }
+            return copy;
+        }
+    }
+    return copy_members_level(work, depth);
+}
+
+// The outermost watched copy met a closure or a coroutine bound to an instance: the copy's own are bound to the copy
+JAI_NOINLINE inline void class_instance::end_watched_copy(class_instance& copy, detail::deep_copy_work& work) const {
+    work.met_bound_callable = 0;
+    detail::rebind_copied_callables(*this, copy);
+}
+
+JAI_NOINLINE inline strong_ptr<class_instance> class_instance::deep_copy_with_care(detail::deep_copy_work& work, unsigned depth, uint8_t care) const {
+    const bool watch = (care & class_definition::copy_care_watch) != 0;
+    if ((care & class_definition::copy_care_constructor) != 0 && dispatch_phase_ == cdtor_phase::none && !class_def_->nocopy()) {
+        if (const class_definition* level = class_def_->copy_constructor_level()) {
+            strong_ptr<class_instance> built = detail::copy_construct_instance(*this, level);
+            if (watch) {   // the constructor may have stored what its source holds
+                if (work.watched != 0) {
+                    work.met_bound_callable = 1;
+                } else {
+                    detail::rebind_copied_callables(*this, *built);
+                }
+            }
+            return built;
+        }
+    }
+    if (!watch) { return copy_members_level(work, depth); }
+    ++work.watched;
+    if (depth > detail::k_inline_copy_depth) {
+        // the members are steps on the list: the end of the watch is the step after them
+        const size_t end = work.size();
+        work.push_back({detail::deep_copy_item::step::watched_end, this, nullptr});
+        strong_ptr<class_instance> copy = copy_members_level(work, depth);
+        work[end].dest = copy.get();
+        return copy;
+    }
+    strong_ptr<class_instance> copy = copy_members_level(work, depth);
+    if (--work.watched == 0 && work.met_bound_callable != 0) { end_watched_copy(*copy, work); }
+    return copy;
+}
+
+JAI_NOINLINE inline strong_ptr<class_instance> class_instance::copy_members_level(detail::deep_copy_work& work, unsigned depth) const {
     if (class_def_ && class_def_->nocopy()) {
         throw runtime_error("Cannot copy an instance of nocopy class '" + std::string(get_class_name()) + "': hold it by reference (auto&/var&) or share it (shared_ptr)");
-    }
-    if (class_def_ && dispatch_phase_ == cdtor_phase::none) {
-        if (const class_definition* level = class_def_->copy_constructor_level()) { return detail::copy_construct_instance(*this, level); }
     }
     auto new_instance = class_def_ ? class_def_->allocate_instance() : class_instance::make(type_id_, owner_);
 #ifdef JAISCRIPT_VM_COVERAGE

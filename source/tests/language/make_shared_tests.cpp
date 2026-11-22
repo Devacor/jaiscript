@@ -39,6 +39,24 @@ public:
 	}
 
 	void forge_tests() override {
+		// U& r = p over a handle p names p's object, as C++'s U& r = *p does: a later store to p neither reseats nor nulls r, a
+		// store through r assigns into the object, and a U& parameter given a handle binds the same way. A null handle names nothing.
+		// var& and shared_ptr<U>& still name the handle variable
+		test("a_class_reference_over_a_handle_names_its_object", [this]() {
+			const std::string u = "class U { int hp = 10; }\nshared_ptr<U> p = new U();\n";
+			check_eq(std::string("10"), outcome(u + "U& r = p;\nshared_ptr<U> keep = p;\np = new U();\np.hp = 5;\nr.hp;"));
+			check_eq(std::string("error: Reference to a destroyed object"), outcome(u + "U& r = p;\np = new U();\nr.hp;"));
+			check_eq(std::string("error: Reference to a destroyed object"), outcome(u + "U& r = p;\np = null;\nr.hp = 3;\nr.hp;"));
+			check_eq(std::string("3"), outcome(u + "U& r = p;\nshared_ptr<U> keep = p;\np = null;\nr.hp = 3;\nkeep.hp;"));
+			check_eq(std::string("7"), outcome(u + "U& r = p;\nU t;\nt.hp = 7;\nr = t;\np.hp;"));
+			check_eq(std::string("11"), outcome(u + "void heal(U& a) { p = new U(); a.hp += 1; }\nshared_ptr<U> keep = p;\nheal(p);\nkeep.hp;"));
+			check_eq(std::string("11"), outcome(u + "array<shared_ptr<U>> ps = [p];\nvoid heal(U& a) { ps.clear(); a.hp += 1; }\nheal(ps[0]);\np.hp;"));
+			check_eq(std::string("error: Reference target is null"), outcome("class U { int hp = 10; }\nshared_ptr<U> n = null;\nU& r = n;\nr.hp;"));
+			check_eq(std::string("error: Reference target is null"), outcome("class U { int hp = 10; }\nshared_ptr<U> n = null;\nvoid f(U& a) {}\nf(n);\n0;"));
+			check_eq(std::string("true"), outcome(u + "var& v = p;\np = null;\nv == null;"));
+			check_eq(std::string("true"), outcome(u + "shared_ptr<U>& h = p;\np = null;\nh == null;"));
+		});
+
 		test("make_shared_answers_as_new_spells_it", [this]() {
 			struct spelling_case { const char* code; const char* spelled_new; const char* expected; };
 			const spelling_case cases[] = {

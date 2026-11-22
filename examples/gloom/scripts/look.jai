@@ -6,7 +6,7 @@
 // reproduce. Colors are math::color values mixed per channel (mix_rgb): plain
 // arithmetic, so the tables come out bit-identical on every platform.
 
-bool SHOWCASE;   // gloom_boot: HOST_LOOK == "showcase"; no initializer, so a --dev reload keeps it
+bool SHOWCASE;   // gloom_boot: host_look == "showcase"; no initializer, so a --dev reload keeps it
 
 function rgb(int r, int g, int b) -> math::color {
 	return math::color(r / 255.0, g / 255.0, b / 255.0);

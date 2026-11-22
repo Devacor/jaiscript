@@ -8,6 +8,7 @@
 #include <jaiscript/core/value.hpp>
 #include <jaiscript/core/checked_result.hpp>
 #include "lexer.hpp"
+#include "generics.hpp"
 #include <initializer_list>
 #include <memory>
 #include <vector>
@@ -94,6 +95,8 @@ namespace jai {
         enum_decl,
         destructuring_decl,
         extern_decl,      // extern [type | function] name; - a name defined outside the program
+        generic_decl,           // class Name<T> / T name<T>(...): a generic's declaration, kept as its tokens
+        generic_instance_decl,  // the instance a unit asks for: its declarations follow it
     };
 
     // The checker's const verdict at a write or a binding, stamped by every walk: const_raises makes the node
@@ -125,6 +128,10 @@ namespace jai {
         bool declared_ref_escapes = false;
         // A converted closure's captured name (never parsed): its slot binds the closure's cell when the frame enters
         bool binds_capture = false;
+        // written as a bare name (`x`, where `var x` spells the dynamic parameter out): a lambda's takes the type the signature
+        // it is checked against declares for it (contextual, the checker's stamp; the serializer writes the name as parsed)
+        bool untyped = false;
+        bool contextual = false;
         mutable uint64_t symbol_id = UINT64_MAX;  // Cached symbol ID for optimization
         mutable size_t slot_index = SIZE_MAX;     // Slot index for fast local access (SIZE_MAX = not assigned)
         // A reference parameter the body never writes through takes a temporary
@@ -197,6 +204,7 @@ namespace jai {
         // the member scope are all skipped (the escape hatch for deliberately shadowed
         // globals). Parser never assigns a slot when set.
         bool global_qualified = false;
+        bool less_compared = false;   // the head of a '<' site that compares (detail/less_than.hpp): a diagnostic at it says no generic has the name
         // Parser resolution: false when this name statically resolves to a REFERENCE
         // declaration (ref param / auto& decl / auto& loop var). Simple stores consult it
         // when the storage holds a cell: value-decl names write the cell like the variable
@@ -216,10 +224,23 @@ namespace jai {
         mutable bool this_field = false;   // a bare name in a method the checker resolved to a field of the class chain (declared, no user accessor): the method graft's `recv.name`
         mutable bool program_name = false;   // a bare name in a method the checker resolved past every member of the class chain: the method graft's program-scope read
         type_info* declared_ref = nullptr;
+        // a clone the VM's graft compiles where the program wrote another expression (a call's result temp, a spilled operand's temp,
+        // a reference parameter's variable): that expression, which a text naming this operand reads (detail::written_operand)
+        const expression* stands_for = nullptr;
 
         identifier_expr(const source_location& loc, std::string_view n, uint64_t sym_id)
             : expression(loc, node_type::identifier_expr), name(n), symbol_id(sym_id), slot_index(SIZE_MAX) {}
     };
+
+    namespace detail {
+        // The operand as the program wrote it: what an error text names, whatever a compiler put in its place
+        inline const expression* written_operand(const expression* e) {
+            while (e && e->get_type() == node_type::identifier_expr && static_cast<const identifier_expr*>(e)->stands_for) {
+                e = static_cast<const identifier_expr*>(e)->stands_for;
+            }
+            return e;
+        }
+    }
     
     // Binary expression
     class binary_expr : public expression {
@@ -343,6 +364,11 @@ namespace jai {
         // regex(pattern[, flags]) with literal texts while `regex` names the engine's constructor: the pattern compiled at load
         // (the checker's stamp, never serialized); both backends make the value from it while the name still binds the constructor
         mutable std::shared_ptr<const detail::regex::compiled> regex_constant;
+        // callee<T, ...>(args): the leading arguments that are type values (cast_expr::type_value), which only a host takes
+        uint8_t type_argument_count = 0;
+        // the call stands where its result is discarded (mark_result_discarded): a callee that returns nothing is called here and
+        // used nowhere else
+        bool result_discarded = false;
 
         call_expr(const source_location& loc, expression_ptr c, std::vector<expression_ptr> args)
             : expression(loc, node_type::call_expr), callee(c), arguments(std::move(args)) {}
@@ -369,15 +395,15 @@ namespace jai {
         bool is_arrow;  // true for ->, false for .
         bool is_static; // true for ::, false for . or ->
         bool null_safe = false;  // true for ?. null-safe member access
+        bool less_compared = false;   // as identifier_expr::less_compared
 
         // math:: intrinsic resolution cache (static access `math::<fn>`): 255 = not yet
         // resolved, 254 = resolved-not-an-intrinsic, else detail::math_fn. Name-based,
         // engine-independent - safe to share across engines like the other AST caches.
         mutable uint8_t math_intrinsic_cache = 255;
         // A member a reference binds over an evaluated base (`f(a[i+1].x)`, `return m[k + s].hp`): when the base evaluates to a
-        // reference the read hands back a reference, a math component's COMPONENT reference, and with place_read_field a field's
-        // (transient_read_marker stamps it; detail/math_component_store.hpp, detail/ref_lvalue.hpp evaluated_member_reference)
-        static constexpr uint8_t place_read_component = 1;
+        // reference the read hands back a reference, a math component's COMPONENT reference, else a field's (transient_read_marker
+        // stamps it; detail/math_component_store.hpp, detail/ref_lvalue.hpp evaluated_member_reference)
         static constexpr uint8_t place_read_field = 2;
         mutable uint8_t place_read = 0;
         // the checker proved an enum's value read by name (the name holds a map<string,int>, whose member read runs no user code): a
@@ -434,6 +460,10 @@ namespace jai {
         std::vector<capture> captures;
         std::vector<parameter> parameters;
         type_info_ptr return_type;
+        // return_type is the signature's the lambda is checked against, not one it spells (the checker's stamp, as parameter::contextual)
+        bool contextual_return = false;
+        // the parser's rewrite of a `?.` chain over a base that runs code (parser::null_chain_rest): no frame of it in a trace
+        bool null_chain = false;
         statement_ptr body;
         size_t local_count = 0;  // Total slots needed (params + locals) for stack allocation
 
@@ -469,6 +499,9 @@ namespace jai {
         // mints one per includer).
         mutable std::shared_ptr<const std::vector<parameter>> shared_params_cache;
         mutable std::shared_ptr<script_defined_function> mint_cache;
+        // A [value captures](parameters) { body } lambda's body block as written (symbolizer storage): what connect_source saves.
+        // Empty for every other lambda.
+        std::string_view saved_source;
 
         lambda_expr(const source_location& loc) : expression(loc, node_type::lambda_expr), local_count(0) {}
     };
@@ -538,6 +571,10 @@ namespace jai {
         expression_ptr condition;
         expression_ptr then_expression;
         expression_ptr else_expression;
+        // the parser's rewrite of a `?.` chain (parser::null_chain_rest), whose texts name the chain: chain_test, or chain_lambda_test
+        // as the one statement of the lambda an impure base binds through
+        static constexpr uint8_t chain_test = 1, chain_lambda_test = 2;
+        uint8_t null_chain = 0;
 
         ternary_expr(const source_location& loc, expression_ptr c, expression_ptr t, expression_ptr e)
             : expression(loc, node_type::ternary_expr), condition(c), then_expression(t), else_expression(e) {}    };
@@ -561,6 +598,8 @@ namespace jai {
     // This expression
     class this_expr : public expression {
     public:
+        // the checker saw it stored into a handle slot: on a class value the run raises (a handle never aliases a value slot)
+        bool into_handle = false;
         this_expr(const source_location& loc) : expression(loc, node_type::this_expr) {}    };
 
     // Super expression
@@ -597,8 +636,13 @@ namespace jai {
         bool binding_ref = false;
         // a parallel body's rewritten `return e;` (parallel_transform.cpp): e converts as that function's return does, with its text
         std::string_view return_of;
-        // `e instanceof T`: no conversion, the bool answer to whether e holds an object of class T or of a class derived from it
-        bool instance_test = false;
+        // dynamic_cast: the handle form (dynamic_cast<T>(e), its target the shared_ptr<T>) answers null where
+        // cast<shared_ptr<T>>(e) raises for an operand that holds no T; the reference form is cast<T&>(e) with a checked operand
+        bool dynamic = false;
+        // a type argument (db.query<User>(...)): no operand read, the reflect::type value naming target (detail/type_value.hpp)
+        bool type_value = false;
+        // read only for its truth (a condition, !, && and ||, == null and != null): a handle form is the test and makes no handle
+        bool truth_read = false;
         expression_ptr operand;
         mutable const_site const_check;   // cast<T&>(c) / cast<shared_ptr<T>>(c) of a const
 
@@ -761,6 +805,9 @@ namespace jai {
         // value binds as a reference instead of evaluating to a copy. Stamped by the
         // parser's ref_escape_marker pass (innermost function, coroutines excluded).
         bool binds_reference = false;
+        // The enclosing function or lambda declares no value to return (void, auto, or no type spelled; an arrow's expression
+        // is such a return): a call here that returns nothing is a return of nothing, never a use of its result (mark_result_discarded)
+        bool value_discarded = false;
         // the VM's graft: a return that jumps to the inlined body's join (synthesized by the compiler, never parsed or serialized)
         bool inline_exit = false;
         mutable uint8_t static_return_proof = proof_none;
@@ -881,6 +928,10 @@ namespace jai {
         // or unknown static type makes `type` the var marker; the spelling stays auto for re-checks and .jaibite
         bool auto_spelled = false;
         bool auto_typed = false;
+        // Declared `auto` over an initializer whose static type is certainly int, float, bool, char or string: that type, set with
+        // auto_typed and never serialized. The runtime locks the slot to its value; a paused coroutine's load holds the slot
+        // to this (detail/coroutine_snapshot.hpp)
+        type_info_ptr inferred_type;
         // Parser escape analysis: the variable may be bound by reference, so its
         // declaration boxes the value into a cell (storage IS the cell from birth)
         bool ref_escaping = false;
@@ -967,14 +1018,24 @@ namespace jai {
             : declaration(loc, node_type::variable_decl), type(t), name(n), name_id(nid), initializer(init), is_static(false), slot_index(SIZE_MAX), decl_fast_flags(classify_decl_fast(t)) {}
     };
     
-    // Constructor initialization entry (for : super(args), : this(args))
+    // One entry of a constructor's initializer list (C++ [class.base.init]): a base, a delegation or one of the class's own fields
     struct constructor_initializer {
-        std::string target; // "super", "this" or the name of the base it constructs
-        std::vector<expression_ptr> arguments;
+        // unresolved: a name the list wrote that is neither (the load reports it)
+        enum class kind_t : uint8_t { base, delegation, field, unresolved };
+
+        std::string target; // "super", "this" (a delegation, the class's own name included), a base's name or a field's
+        std::vector<expression_ptr> arguments;   // a base's or a delegation target's; a field's ride in `value`
         std::vector<uint8_t> arg_captures;
+        kind_t kind = kind_t::base;
+        // a field's initializer: what the declaration `T name(arguments);` would initialize it with (the parser builds it once the
+        // class's fields are known)
+        expression_ptr value;
+        source_location location;   // the name as written
 
         constructor_initializer(const std::string& t, std::vector<expression_ptr> args)
             : target(t), arguments(std::move(args)) {}
+        constructor_initializer(const std::string& t, std::vector<expression_ptr> args, kind_t k, const source_location& at)
+            : target(t), arguments(std::move(args)), kind(k), location(at) {}
     };
 
     // Function declaration
@@ -991,6 +1052,15 @@ namespace jai {
         bool is_coroutine = false;
         bool is_nodiscard = false;   // [[nodiscard]]: a call whose result an expression statement drops fails the load
         size_t local_count = 0;   // Total slots needed (params + locals) for stack allocation
+        // A generic's instance (detail/generics.hpp): the stamp of the definition it was made from and the instance's qualified
+        // name ("wire::decode<Cart>", "Request::json<Cart>"); 0 for a function written by hand. Defining an instance that is
+        // already defined under the same stamp does nothing.
+        uint64_t instance_stamp = 0;
+        std::string_view instance_name;
+        bool method_instance = false;   // the instance of a generic method: a member its class takes after its own declaration
+        // The name a text about a call gives the function: a generic method's instance as its class lists it
+        std::string_view shown_name() const { return method_instance ? detail::member_display_name(name) : std::string_view(name); }
+        bool instance_remade = false;   // class_decl::instance_remade
 
         // Enclosing-frame slot locals a nested COROUTINE body references, as
         // (symbol_id, outer slot). Interpreter-owned: built on the first declaration
@@ -1050,6 +1120,21 @@ namespace jai {
         std::vector<std::string_view> base_classes;  // Points to symbolizer storage (permanent)
         std::vector<member> members;
         bool nocopy = false;  // 'nocopy class': by-value copies of instances are errors (a deleted C++ copy constructor)
+        uint64_t instance_stamp = 0;   // a generic's instance (function_decl::instance_stamp); its name is the class's
+        // the instances of generic methods a unit adds to a class another declaration defines: this node declares no class, its
+        // members join the class named
+        bool method_instances = false;
+        // An instance is declared the moment everything it is built on is declared (class_registry's linker): the generic it
+        // was made from (empty for a method's instance) and the classes its type arguments name, its bases and, for a
+        // method's instance, the class it joins. The checker's order rule reads the same names from the request.
+        std::string_view instance_generic;
+        std::vector<std::string_view> instance_needs;
+        // An instance its unit makes again because the unit declares its generic again (generic_instance_decl::remade): it is
+        // declared as that declaration runs, not at an earlier declaration of the name. Never serialized.
+        bool instance_remade = false;
+        bool generic_marker = false;   // no class: a generic class's declaration ran (generic_decl::marker), `name` its qualified name
+        uint64_t marker_stamp = 0;     // a marker's: the stamp of the definition whose declaration it is
+        std::shared_ptr<const detail::generic_definition> marker_definition;   // a marker's: that definition. Never serialized.
 
         class_decl(const source_location& loc, std::string_view n, uint64_t nid = UINT64_MAX)
             : declaration(loc, node_type::class_decl), name(n), name_id(nid) {}    };
@@ -1157,6 +1242,70 @@ namespace jai {
             : declaration(loc, node_type::extern_decl), type(std::move(t)), is_function(fn), name(n), name_id(nid) {}
     };
 
+    // A generic's declaration (docs/site/guide/21-generics.html): nothing runs here but the engine learning the definition, which
+    // every unit that names the generic instantiates from
+    class generic_decl : public declaration {
+    public:
+        std::shared_ptr<const detail::generic_definition> definition;
+        // What a generic class's declaration runs, in both backends, by the path a class declaration takes: a class_decl
+        // flagged generic_marker, which tells the linker the generic is declared (detail::generic_marker makes it; null for
+        // a function's or a method's)
+        mutable std::shared_ptr<class_decl> marker;
+        mutable bool marker_made = false;
+
+        generic_decl(const source_location& loc, std::shared_ptr<const detail::generic_definition> d)
+            : declaration(loc, node_type::generic_decl), definition(std::move(d)) {}
+    };
+
+    // An instance a unit asks for; `location` is where its text first names it. The unit's requests stand ahead of its own
+    // declarations, each followed by the instance's declarations once made (they carry instance_stamp), so a unit offers its
+    // instances as it starts; a request that could not be made keeps why.
+    class generic_instance_decl : public declaration {
+    public:
+        struct failure {
+            source_location at;
+            std::string message;
+        };
+        struct bound {
+            std::string parameter;   // T
+            std::string argument;    // the argument's canonical spelling
+            std::string requires_;   // the bound, with the arguments in place
+        };
+
+        std::string_view name;      // the instance's qualified name: Stack<int>, shop::Stack<shop::Product>, wire::decode<Cart>
+        uint64_t name_id = UINT64_MAX;
+        std::string_view generic;   // the generic's qualified name
+        // What identifies the instance beside its name (detail::generic_instance_id): the stamp of the definition a function's
+        // or a method's is made from, two overloads that take the same type arguments being two instances of one name; 0 for a class's
+        uint64_t stamp = 0;
+        std::vector<type_info_ptr> arguments;
+        std::string_view within;    // the instance whose text asked for this one; empty for the unit's own text
+        uint64_t within_stamp = 0;  // and its stamp
+        std::vector<std::string_view> needs;   // the classes the instance waits for (class_decl::instance_needs)
+        bool expanded = false;
+        bool unresolved = false;    // no generic of that name was declared when it was asked for: asked again at the next check
+        bool as_value = false;      // the text names it where a value stands (extend(obj, More<int>)), as a class's name can stand
+        std::vector<bound> bounds;
+        std::vector<failure> failures;
+        std::string file;           // the generic's file (the unit's own text when empty or equal to it)
+        // the definition a checker's request resolved (a function's overload, a method): never serialized, read once
+        std::shared_ptr<const detail::generic_definition> definition;
+        // The unit did not name this instance: it lived in the engine when the unit declared its generic again, and is made
+        // again from that declaration (engine.cpp note_remade_instances). One the declaration cannot make is dropped with a
+        // warning; one the unit's own text comes to name is the unit's from then on. Never serialized.
+        bool remade = false;
+        // What a request of the unit's own text has set off (engine.cpp instantiate_generic): the instances made for it, those
+        // its instances' text names counted, and that one of them passed a limit (detail::k_generic_depth_limit, its name's,
+        // this count's), after which nothing more is made for it. Never serialized.
+        uint32_t set_off = 0;
+        bool overgrown = false;
+
+        generic_instance_decl(const source_location& loc, std::string_view n, uint64_t nid)
+            : declaration(loc, node_type::generic_instance_decl), name(n), name_id(nid) {}
+        detail::generic_instance_id id() const { return {name, stamp}; }
+        detail::generic_instance_id asker() const { return {within, within_stamp}; }
+    };
+
     inline void mark_result_discarded(expression* e) {
         while (e) {
             if (e->get_type() == node_type::ternary_expr) {
@@ -1166,6 +1315,7 @@ namespace jai {
                 continue;
             }
             if (e->get_type() != node_type::call_expr) { return; }
+            static_cast<call_expr*>(e)->result_discarded = true;
             expression* callee = static_cast<call_expr*>(e)->callee.get();
             if (callee && callee->get_type() == node_type::member_expr) {
                 static_cast<member_expr*>(callee)->call_result_discarded = true;
@@ -1194,6 +1344,24 @@ namespace jai {
                 return static_cast<const literal_expr*>(expr)->value.is_bool();
             default:
                 return false;
+        }
+    }
+
+    namespace detail {
+        // A frame of a `?.` chain's lambda (parser::null_chain_rest), standing at its one statement: a trace names no frame of it
+        // (KEEP the one test for both backends' traces)
+        inline bool null_chain_frame(const ast_node* statement) noexcept {
+            if (statement && statement->get_type() == node_type::statement_decl) { statement = static_cast<const statement_decl*>(statement)->statement.get(); }
+            if (!statement || statement->get_type() != node_type::return_stmt) { return false; }
+            const expression* value = static_cast<const return_stmt*>(statement)->value.get();
+            return value && value->get_type() == node_type::ternary_expr && static_cast<const ternary_expr*>(value)->null_chain == ternary_expr::chain_lambda_test;
+        }
+
+        // Where a frame standing ahead of every statement (a constructor's prologue, a binding that raised there) is placed: at its
+        // body's first statement, as a function's frame stands there from its entry
+        inline const source_location* body_entry_location(const block_stmt* body) noexcept {
+            if (!body) { return nullptr; }
+            return body->declarations.empty() || !body->declarations.front() ? &body->location : &body->declarations.front()->location;
         }
     }
 

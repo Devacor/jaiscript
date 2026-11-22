@@ -76,6 +76,7 @@ namespace jai::detail {
         if (!holder || holder->container_map.get() != map.get()) { return false; }
         *holder->cell() = key;
         holder->container_element_type = value_type;
+        holder->revive_view();
         return true;
     }
 

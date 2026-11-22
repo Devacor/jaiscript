@@ -70,11 +70,18 @@ public:
         test("exp_log_sin_and_the_constants_match_to_a_ten_thousandth", [this]() {
             check_near_results(0.0001, {
                 {"math::exp(1.0);", 2.71828182845904523536},
-                {"math::log(math::E);", 1.0},
-                {"math::sin(math::PI / 2.0);", 1.0},
-                {"math::PI;", 3.14159265358979323846},
-                {"math::E;", 2.71828182845904523536},
-                {"math::TAU;", 6.28318530717958647692},
+                {"math::log(math::e);", 1.0},
+                {"math::sin(math::pi / 2.0);", 1.0},
+                {"math::pi;", 3.14159265358979323846},
+                {"math::e;", 2.71828182845904523536},
+                {"math::tau;", 6.28318530717958647692},
+            });
+        });
+
+        test("pie_is_exactly_pi", [this]() {
+            check_stdlib_results<double>({
+                {"math::pi;", 3.14159265358979323846},
+                {"math::pie;", 3.14159265358979323846},
             });
         });
 

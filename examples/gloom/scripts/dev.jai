@@ -10,7 +10,7 @@ map<string, string> DEV_STAMP;
 int DEV_RELOADS;
 
 function dev_stamp(string module) -> string {
-	var fd = file_data(resolve_path(module));
+	var fd = file::data(resolve_path(module));
 	return fd == null ? "" : to_string(fd["modified"]) + ":" + to_string(fd["size"]);
 }
 
@@ -60,26 +60,26 @@ function dev_reload_test() -> int {
 	import_recheck_interval(0.0);
 	dev_start();
 	string path = resolve_path("tune.jai");
-	string original = read_file(path);
+	string original = file::read(path);
 	for (int i = 0; i < 90; ++i) { gloom_frame(TICK, "", 0.0, 0.0, 0.0); }
 	string before = gloom_frame(0.0, "", 0.0, 0.0, 0.0);
 	int hash_before = G.hash;
 	int fails = 0;
 
-	write_file(path, string::replace(original, "float AMBIENT = 0.34;", "float AMBIENT = 0.9;"));
+	file::write(path, string::replace(original, "float AMBIENT = 0.34;", "float AMBIENT = 0.9;"));
 	string said = dev_wait();
 	string brighter = gloom_frame(0.0, "", 0.0, 0.0, 0.0);
 	fails += dev_check(said.substr(0, 8) == "reloaded", `an edit reloads (said: ${said})`);
 	fails += dev_check(brighter != before, "the edited light changes the frame");
 	fails += dev_check(AMBIENT > 0.8, "the new value is live");
 
-	write_file(path, string::replace(original, "float AMBIENT = 0.34;", "float AMBIENT = ;"));
+	file::write(path, string::replace(original, "float AMBIENT = 0.34;", "float AMBIENT = ;"));
 	said = dev_wait();
 	string kept = gloom_frame(0.0, "", 0.0, 0.0, 0.0);
 	fails += dev_check(said.substr(0, 15) == "reload rejected", `a broken edit is rejected (said: ${said})`);
 	fails += dev_check(kept == brighter, "a rejected edit leaves the look as it was");
 
-	write_file(path, original);
+	file::write(path, original);
 	said = dev_wait();
 	string restored = gloom_frame(0.0, "", 0.0, 0.0, 0.0);
 	fails += dev_check(said.substr(0, 8) == "reloaded", `restoring reloads (said: ${said})`);

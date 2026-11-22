@@ -20,7 +20,7 @@ class class_definition;
 class class_instance;
 class coroutine_handle;
 namespace debug { class controller; }
-namespace detail { class engine_operator_table; struct execution_limits; }
+namespace detail { class engine_operator_table; struct execution_limits; struct coroutine_site; struct coroutine_frame; struct coroutine_frame_view; }
 
 struct script_callable;
 
@@ -234,16 +234,27 @@ public:
     // The call stack a parked debugger shows: innermost first, each frame named and located as an error trace has it,
     // the top level ("<script>") last while a top-level run is in flight
     virtual std::vector<stack_frame> debug_frames() const = 0;
-    // Named slot-based locals of debug_frames()[frame] — params + reached body locals, which the environment's flat map
-    // does not hold. Empty for the top level and an inlined call (its slots belong to its caller's frame).
+    // Every name in scope at debug_frames()[frame]'s statement but the program's: its parameters and reached locals (an inner
+    // declaration hiding an outer one), a closure's captures, `this`, and the block scopes of the top level; an inlined call's
+    // own. A plain function never shows its caller's scopes.
     virtual std::vector<std::pair<std::string, script_value>> get_frame_locals(size_t frame) const = 0;
-    // The innermost frame's storage `name` resolves to at the stop: an in-scope slot local (the innermost declaration of the
-    // name), or a converted closure's captured name; null leaves the environment chain to the caller
-    virtual script_value* debug_local_storage(const std::string& name) = 0;
+    // The storage `name` resolves to among debug_frames()[frame]'s own names (get_frame_locals' names but `this`): the innermost
+    // declaration of a slot local, a closure's captured name, a block scope's variable; null for the program's names
+    virtual script_value* debug_local_storage(const std::string& name, size_t frame) = 0;
     // The call depth the statement hook reports for a stop here (the step-over/out base)
     virtual int debug_depth() const = 0;
     // A debug sync point (script thread only): pull the controller's transport state into the statement gate
     virtual void sync_debug_hook() = 0;
+    // A stop taken inside a statement rather than at its start (a sleep): the innermost frame's statement counts as entered, so a
+    // step from it goes on to the next one
+    virtual void debug_settle_statement() {}
+    // Before frames are read while no session is armed (debug::locals, an uncaught error's dump): every value a frame holds
+    // outside its slots (the VM's cells) goes back to them, and it keeps running as it was
+    virtual void debug_settle_frames() {}
+    // The debugger evaluates on the parked thread through a nested execute, which resets the run's exception in flight: begin saves
+    // it and the budget (the evaluation's own deadline holds while a session is armed), end restores both, whatever the evaluation did
+    virtual void begin_debug_evaluation(std::chrono::nanoseconds budget) = 0;
+    virtual void end_debug_evaluation() = 0;
 
     // Core execution
     virtual script_value execute(const std::vector<declaration_ptr>& declarations) = 0;
@@ -311,6 +322,11 @@ public:
     virtual void extend_execution_deadline(std::chrono::nanoseconds) = 0;
     // The running execute's deadline (a default time point when no budget is armed): what the extension moved, read as is
     virtual std::chrono::steady_clock::time_point execution_deadline() const = 0;
+    // One read of the clock for the running entry, between the backend's own samples (detail::budget_clock_spent): a builtin's
+    // work poll asks it (detail/work_budget.hpp). True once the budget is spent, the terminal latch set.
+    virtual bool budget_spent_now() = 0;
+    // A host entry about to hand the host a success: true when it outran its budget (detail::budget_overrun_at_return)
+    virtual bool budget_overrun_at_return() = 0;
     virtual void set_has_custom_numeric_ops(bool value) = 0;
     // ANY user binary-operator / "[]" override registered: transient subscript reads fall
     // back to the reference mint (see detail/transient_read.hpp).
@@ -375,6 +391,13 @@ public:
 
     // Coroutine resume
     virtual checked_result<script_value> resume_coroutine(coroutine_handle& handle) = 0;
+    // A paused coroutine as data (detail/coroutine_snapshot.hpp). The site a suspended coroutine is paused at, by its number in
+    // a_sites, and its frame there; false when the frame is not one a site describes
+    virtual bool paused_coroutine_frame(coroutine_handle& a_handle, const std::vector<detail::coroutine_site>& a_sites, uint32_t& a_site,
+                                        detail::coroutine_frame_view& a_frame) = 0;
+    // A created coroutine paused at a site with the frame given, as if it had run to that yield; false leaves it created
+    virtual bool pause_coroutine_at(coroutine_handle& a_handle, const std::vector<detail::coroutine_site>& a_sites, uint32_t a_site,
+                                    detail::coroutine_frame&& a_frame) = 0;
 
     // Suspendable runs (engine::start): a fresh state, the O(1) exchange of the live state with a run's at every switch, a
     // finished run's state made fresh again for reuse, and a failed run's stack trace taken into the live state

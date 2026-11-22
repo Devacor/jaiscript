@@ -364,7 +364,7 @@ namespace jai::detail {
         return holder ? holder_identity(holder.get()) : nullptr;
     }
 
-    // same_object(x, y), and every same_as: identity. References resolve to their referents and handles (shared or weak) to
+    // same_object(x, y): identity. References resolve to their referents and handles (shared or weak) to
     // the object they name; arrays, maps, class instances, host objects and functions are the same object when they are one
     // allocation. Values without identity (numbers, chars, bools, strings, which share buffers copy-on-write, math values)
     // are "the same" when they are equal values of one kind. A typed null is the same as null.

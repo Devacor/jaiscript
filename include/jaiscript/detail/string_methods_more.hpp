@@ -25,8 +25,10 @@ namespace jai::detail {
             script_value out = string_array(ctx);
             script_array& a = *out.unchecked_get_array_storage();
             auto& limits = engine_access::execution_limits(*ctx.get_engine());
+            work_meter work(ctx.get_engine());
             for (size_t at = 0; at < s.size();) {
                 const utf8::step st = utf8::decode(s, at);
+                if (work.spend(1)) [[unlikely]] { return work.spent(); }
                 if (!limits.memory_charge(sizeof(script_value) + st.length)) [[unlikely]] { return raise_memory_cap(limits); }
                 a.push(ctx.make_value(s.substr(at, st.length)));   // an invalid byte is its own one-byte element: no text is lost
                 at += st.length;
@@ -66,9 +68,11 @@ namespace jai::detail {
             script_array& a = *out.unchecked_get_array_storage();
             auto& limits = engine_access::execution_limits(*ctx.get_engine());
             size_t start = 0;
-            while (start < s.size()) {   // "\n" and "\r\n" end a line; a final line needs no terminator; no empty last element
+            work_meter work(ctx.get_engine());
+            while (start < s.size()) {   //"\n" and "\r\n" end a line; a final line needs no terminator; no empty last element
                 size_t end = s.find('\n', start);
                 if (end == std::string::npos) end = s.size();
+                if (work.spend(1 + (end - start) / k_work_unit_bytes)) [[unlikely]] { return work.spent(); }
                 size_t stop = end > start && s[end - 1] == '\r' ? end - 1 : end;
                 if (!limits.memory_charge(sizeof(script_value) + (stop - start))) [[unlikely]] { return raise_memory_cap(limits); }
                 a.push(ctx.make_value(s.substr(start, stop - start)));

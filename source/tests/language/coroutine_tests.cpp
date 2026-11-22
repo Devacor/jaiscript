@@ -324,7 +324,7 @@ public:
                 var d = g.next();
                 var e = g.next();
                 to_string(a) + "|" + to_string(b) + "|" + to_string(d) + "|" +
-                    type_of(e) + ":" + to_string(e) + "|" + to_string(g.done()) + "|" + to_string(c.x)
+                    reflect::type_of(e) + ":" + to_string(e) + "|" + to_string(g.done()) + "|" + to_string(c.x)
             )", "1|10|15|int:1|true|15", "this-field reads/writes across suspensions + typed final return + done()"},
                 {R"(
                 class Gen {
@@ -474,9 +474,15 @@ public:
             };
             const char* heads[] = { "coroutine gen() -> int", "coroutine function gen() -> int", "coroutine int gen()", "coroutine int gen() -> int" };
             const char* bodies[] = {
-                " { yield 1; return \"x\"; }\nauto h = gen();\nvar first = h.next();\nh.next();",
                 " { yield 1; var s = \"x\"; return s; }\nauto h = gen();\nvar first = h.next();\nh.next();",
+                " { var one = 1; yield one; var s = \"x\"; return s; }\nauto h = gen();\nvar first = h.next();\nh.next();",
             };
+            for (const char* head : heads) {   // a return of a known type the declared one never takes fails the load
+                for (bool use_vm : {false, true}) {
+                    const std::string out = run(use_vm, std::string(head) + " { yield 1; return \"x\"; }");
+                    check_true(out.find("cannot return 'string' from 'gen' declared to return 'int'") != std::string::npos, std::string(head) + ": " + out);
+                }
+            }
             for (const char* body : bodies) {
                 std::string reference;
                 for (const char* head : heads) {
@@ -492,7 +498,7 @@ public:
             }
             for (const char* head : heads) {
                 for (bool use_vm : {false, true}) {
-                    check_eq(std::string("int:1"), run(use_vm, std::string(head) + " { yield 1; return true; }\nauto h = gen(); h.next(); var r = h.next(); type_of(r) + \":\" + to_string(r)"),
+                    check_eq(std::string("int:1"), run(use_vm, std::string(head) + " { yield 1; return true; }\nauto h = gen(); h.next(); var r = h.next(); reflect::type_of(r) + \":\" + to_string(r)"),
                         std::string(head) + (use_vm ? " vm" : " interp") + ": the completion value converts to int");
                 }
             }
@@ -590,7 +596,7 @@ public:
                 `${to_string(a)}|${to_string(b)}|${w.extra}`
             )", "40|41|e", "field added mid-suspension: old body continues on stable storage");
             check_both(R"(
-                class W { int v = 1; coroutine var gen() { yield v; yield type_of(v); return 0; } }
+                class W { int v = 1; coroutine var gen() { yield v; yield reflect::type_of(v); return 0; } }
                 var w = W();
                 w.v = 40;
                 var h = w.gen();
@@ -706,6 +712,138 @@ public:
                 auto fresh = jai::foundry::make_engine();
                 check_eq(static_cast<script_int>(4), fresh->execute("2 + 2").as<script_int>());
             }
+        });
+
+        // A handle C++ owns through its shared_ptr (embedding/09-coroutine-hosting.html) can outlive its engine: the engine's
+        // destruction ends the coroutine while it still runs script, and the handle afterwards refuses a resume and drops safely.
+        // One test per shape, so a crash names the shape
+        struct outliving_shape { const char* name; const char* declarations; const char* make; int steps; const char* dies_at_teardown; };
+        static const outliving_shape outliving_shapes[] = {
+            {"never_started", "coroutine int count(Tracked held) { yield 1; return 2; }", "auto co = count(Tracked(\"argument\"));", 0, "argument;"},
+            {"suspended", "coroutine int count(int n) { Tracked t = Tracked(\"local\"); yield n; yield n; return n; }", "auto co = count(3);", 1, "local;"},
+            {"finished", "coroutine int count(int n) { Tracked t = Tracked(\"local\"); yield n; return n; }", "auto co = count(3);", 2, ""},
+            {"failed", "coroutine int count(int n) { Tracked t = Tracked(\"local\"); yield n; throw \"stop\"; }", "auto co = count(3); co.next(); try { co.next(); } catch (e) {}", 0, ""},
+            {"suspended_generic", "coroutine T count<T>(T n) { Tracked t = Tracked(\"local\"); yield n; yield n; return n; }", "auto co = count<int>(3);", 1, "local;"},
+            {"suspended_holding_generic_instances",
+             "class Box<T> { T v; } coroutine T count<T>(T n) { Box<T> held; held.v = n; Box<array<Tracked>> more; more.v.push(Tracked(\"first\")); more.v.push(Tracked(\"second\")); yield held.v; return n; }",
+             "auto co = count<string>(\"s\");", 1, "second;first;"},
+            {"suspended_method", "class Owner { string name = \"owner\"; ~Owner() { note_end(name); } coroutine int drain() { Tracked t = Tracked(\"local\"); yield 1; yield 2; return 3; } }",
+             "Owner owner; auto co = owner.drain();", 1, "local;owner;"},
+            {"suspended_in_a_loop_over_instances",
+             "coroutine int count(int n) { array<Tracked> items = [Tracked(\"a\"), Tracked(\"b\")]; for (auto& item : items) { Tracked body = Tracked(\"body\"); yield n; } return n; }",
+             "auto co = count(3);", 1, "body;b;a;"},
+            {"suspended_in_a_catch", "coroutine int count(int n) { try { throw \"thrown\"; } catch (e) { Tracked t = Tracked(\"handler\"); yield n; } return n; }", "auto co = count(3);", 1, "handler;"},
+            {"suspended_sharing_a_local_with_a_lambda",
+             "coroutine int count(int n) { Tracked t = Tracked(\"shared\"); auto read = [&]() { return t.name; }; yield read().size(); return n; }", "auto co = count(3);", 1, "shared;"},
+            {"suspended_holding_a_suspended_coroutine",
+             "coroutine int inner() { Tracked t = Tracked(\"inner\"); yield 1; return 2; } coroutine int count(int n) { Tracked t = Tracked(\"outer\"); auto held = inner(); held.next(); yield n; return n; }",
+             "auto co = count(3);", 1, "inner;outer;"},
+        };
+        for (const outliving_shape& shape : outliving_shapes) {
+            test(std::string("a_native_handle_dropped_after_its_engine__") + shape.name, [this, shape]() {
+                std::string log;
+                std::shared_ptr<coroutine_handle> handle;
+                {
+                    auto e = make_engine();
+                    stdlib::register_all(*e);
+                    e->add_function("note_end", [&log](const std::string& text) { log += text + ";"; });
+                    e->execute("class Tracked { string name; Tracked(string n) { name = n; } ~Tracked() { note_end(name); } }");
+                    e->execute(shape.declarations);
+                    e->execute(shape.make);
+                    handle = std::static_pointer_cast<coroutine_handle>(e->get_variable("co").get_object_holder()->host_object());
+                    for (int i = 0; i < shape.steps; ++i) { check_true(static_cast<bool>(handle->next(e.get())), "a step before the engine goes"); }
+                    log.clear();
+                }
+                check_eq(std::string(shape.dies_at_teardown), log, "what the coroutine held died with the engine, once");
+                check_true(handle->done(), "the coroutine ended with its engine");
+                check_true(handle->get_status() == (std::string_view(shape.name) == "finished" ? coroutine_handle::status::completed : coroutine_handle::status::failed));
+                for (const script_int count : {script_int(1), script_int(3)}) {
+                    const checked_result<script_value> resumed = handle->next(nullptr, count);
+                    check_false(static_cast<bool>(resumed), "a resume after the engine is refused");
+                    check_eq(std::string("Value outlived its engine."), std::string(resumed.message()));
+                }
+                handle.reset();
+                check_eq(std::string(shape.dies_at_teardown), log, "the drop destroys nothing more");
+            });
+        }
+
+        test("a_handle_the_host_owns_is_retired_after_the_programs_variables", [this]() {
+            // the program's own variables die first, last constructed first; a coroutine C++ still owns ends after them, the last made first
+            std::string log;
+            std::vector<std::shared_ptr<coroutine_handle>> handles;
+            {
+                auto e = make_engine();
+                stdlib::register_all(*e);
+                e->add_function("note_end", [&log](const std::string& text) { log += text + ";"; });
+                e->execute(R"(
+                    class Tracked { string name; Tracked(string n) { name = n; } ~Tracked() { note_end(name); } }
+                    coroutine int count(string name) { Tracked t = Tracked(name); yield 1; return 2; }
+                    Tracked before = Tracked("before");
+                    auto first = count("first");
+                    auto second = count("second");
+                    auto unowned = count("unowned");
+                    Tracked after = Tracked("after");
+                    first.next(); second.next(); unowned.next();
+                )");
+                for (const char* name : {"first", "second"}) {
+                    handles.push_back(std::static_pointer_cast<coroutine_handle>(e->get_variable(name).get_object_holder()->host_object()));
+                }
+            }
+            check_eq(std::string("after;unowned;before;second;first;"), log);
+            handles.clear();
+            check_eq(std::string("after;unowned;before;second;first;"), log);
+        });
+
+        test("a_destructor_at_teardown_that_resumes_a_retired_coroutine_is_refused", [this]() {
+            // a coroutine's local, dying as the engine retires the coroutine, resumes one the engine retired before it
+            std::string log;
+            std::string reported;
+            std::shared_ptr<coroutine_handle> early;
+            std::shared_ptr<coroutine_handle> late;
+            {
+                auto e = make_engine();
+                stdlib::register_all(*e);
+                e->add_function("note_end", [&log](const std::string& text) { log += text + ";"; });
+                e->set_script_error_handler([&reported](const std::string& message) { reported += message; });
+                e->execute(R"(
+                    coroutine int steps() { yield 1; yield 2; return 3; }
+                    class Slot { var target = null; }
+                    class Resumer { var slot = null; ~Resumer() { note_end("resumer"); slot.target.next(); note_end("resumed"); } }
+                    coroutine int holder(var slot) { Resumer r; r.slot = slot; yield 1; return 2; }
+                    auto slot = new Slot();
+                    auto late = holder(slot);
+                    late.next();
+                    auto early = steps();
+                    early.next();
+                    slot.target = early;
+                )");
+                early = std::static_pointer_cast<coroutine_handle>(e->get_variable("early").get_object_holder()->host_object());
+                late = std::static_pointer_cast<coroutine_handle>(e->get_variable("late").get_object_holder()->host_object());
+            }
+            check_eq(std::string("resumer;"), log, "the destructor ran as far as the resume");
+            check_true(reported.find("Value outlived its engine.") != std::string::npos, "the refusal reaches the script error handler: " + reported);
+            early.reset();
+            late.reset();
+        });
+
+        test("a_suspended_coroutine_in_a_field_of_its_receiver_dies_at_teardown", [this]() {
+            // the handle keeps its receiver and the receiver's field keeps the handle: the engine's destruction ends the coroutine,
+            // so the receiver's destructor runs then
+            std::string log;
+            {
+                auto e = make_engine();
+                stdlib::register_all(*e);
+                e->add_function("note_end", [&log](const std::string& text) { log += text + ";"; });
+                e->execute(R"(
+                    class Tracked { string name; Tracked(string n) { name = n; } ~Tracked() { note_end(name); } }
+                    class Game { var co = null; ~Game() { note_end("game"); } coroutine int brain() { Tracked t = Tracked("local"); yield 1; yield 2; return 3; } }
+                    Game g;
+                    g.co = g.brain();
+                    g.co.next();
+                )");
+                log.clear();
+            }
+            check_eq(std::string("local;game;"), log);
         });
 
         test("method_coroutine_hot_reload_matches_free_precedent", [this]() {
@@ -870,7 +1008,7 @@ public:
         });
 
         test("typed_completion_values", [this, both_drained]() {
-            both_drained("coroutine float g() { yield 1; return 2; }\nauto h = g(); var a = h.next(); var b = h.next(); type_of(a) + \":\" + to_string(a) + \"|\" + type_of(b) + \":\" + to_string(b)",
+            both_drained("coroutine float g() { yield 1; return 2; }\nauto h = g(); var a = h.next(); var b = h.next(); reflect::type_of(a) + \":\" + to_string(a) + \"|\" + reflect::type_of(b) + \":\" + to_string(b)",
                 "float:1.0|float:2.0", "the yields and the completion value convert to the declared type");
             both_drained("coroutine int g() { yield 1; var f = 2.7; return f; }\nauto h = g(); h.next(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t + \"|\" + to_string(h.done())",
                 "Cannot return float from 'g' (declared -> int)|true", "a float never completes an int coroutine");
@@ -882,19 +1020,21 @@ public:
                 "Cannot return array from 'g' (declared -> int)", "method coroutine completion mismatch text");
         });
 
-        test("yields_take_the_declared_type", [this, both_drained]() {
+        test("yields_take_the_declared_type", [this, both_drained, check_parity]() {
             // a yield hands out the declared type like a return: the slot table converts, a mismatch raises the yield's text
-            both_drained("coroutine int g() { yield true; var f = 2.9; yield f; return 0; }\nauto h = g(); var a = h.next(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } type_of(a) + \":\" + to_string(a) + \"|\" + t",
+            both_drained("coroutine int g() { yield true; var f = 2.9; yield f; return 0; }\nauto h = g(); var a = h.next(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } reflect::type_of(a) + \":\" + to_string(a) + \"|\" + t",
                 "int:1|Cannot yield float from 'g' (declared -> int)", "a bool converts into int, a float never does");
-            both_drained("coroutine string g() { yield 1; return \"x\"; }\nauto h = g(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t",
+            both_drained("coroutine string g() { var n = 1; yield n; return \"x\"; }\nauto h = g(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t",
                 "Cannot yield int from 'g' (declared -> string)", "an int never converts into string");
-            both_drained("coroutine float g() { yield 1; yield 2; return 0.0; }\nstring s = \"\"; for (auto v : g()) { s += type_of(v); } s",
+            check_true(check_parity("coroutine string g() { yield 1; return \"x\"; }", "a known yield").find("cannot yield 'int' from 'g' declared to return 'string'") != std::string::npos,
+                "a yield of a known type the declared one never takes fails the load");
+            both_drained("coroutine float g() { yield 1; yield 2; return 0.0; }\nstring s = \"\"; for (auto v : g()) { s += reflect::type_of(v); } s",
                 "floatfloat", "a range-for drive sees the converted values");
-            both_drained("coroutine int g() { yield \"s\"; yield 2; return 0; }\nauto h = g(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t + \"|\" + to_string(h.done())",
+            both_drained("coroutine int g() { var s = \"s\"; yield s; yield 2; return 0; }\nauto h = g(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t + \"|\" + to_string(h.done())",
                 "Cannot yield string from 'g' (declared -> int)|true", "a mismatch raises at the resume; the handle is done");
             both_drained("coroutine int g() { var s = \"s\"; try { yield s; } catch (e) { yield 7; } return 0; }\nauto h = g(); drain(h)",
                 "7|0", "a catch around the yield sees its failure");
-            both_drained("class C { coroutine int g() { yield [1]; return 0; } }\nauto h = C().g(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t",
+            both_drained("class C { coroutine int g() { var a = [1]; yield a; return 0; } }\nauto h = C().g(); string t = \"\"; try { h.next(); } catch (e) { t = to_string(e); } t",
                 "Cannot yield array from 'g' (declared -> int)", "a method coroutine's mismatch text");
             both_drained("coroutine var g() { yield \"s\"; yield 2.9; return 0; }\nauto h = g(); drain(h)",
                 "s|2.9|0", "a var coroutine yields as is");
@@ -1179,9 +1319,10 @@ public:
         });
 
         test("handle_type_of_and_to_string_parity", [this, check_parity]() {
-            std::string r = check_parity("coroutine int g() { yield 1; }\nauto h = g(); auto h2 = h;\ntype_of(h) + \"|\" + to_string(to_string(h) != \"\") + \"|\" + to_string(h == null) + \"|\" + to_string(h == h2)",
-                "type_of / to_string / equality of a coroutine handle");
-            check_eq(std::string("coroutine_handle|true|false|true"), r, "a handle's type_of is the name its error texts use");
+            std::string r = check_parity("coroutine int g() { yield 1; }\nauto h = g(); auto h2 = h;\nreflect::type_of(h) + \"|\" + to_string(to_string(h) != \"\") + \"|\" + to_string(h == null) + \"|\" + to_string(h == h2)",
+                "reflect::type_of / to_string / equality of a coroutine handle");
+            check_eq(std::string("coroutine<int>|true|false|true"), r, "a handle's reflect::type_of is its coroutine<Y>, the name its error texts use");
+            check_eq(std::string("coroutine<var>"), check_parity("coroutine g() { yield 1; }\nreflect::type_of(g())", "an undeclared coroutine"), "an undeclared yield is var");
         });
 
         // A brace-less body that completes AT the yield leaves no inner frame: the enclosing
@@ -1496,7 +1637,7 @@ public:
             load_error("coroutine int g() { yield 1; }\nauto h = g(); h.advance(5);", "2:25: error: advance() writes the yielded value through its argument; pass a variable", "a literal fails the load");
             load_error("coroutine string g() { yield \"a\"; }\nauto h = g(); int v = 0; h.advance(v);", "advance() cannot store the yielded 'string' into 'int'", "the yielded type against v's");
             load_error("coroutine int g() { yield 1; }\nconst int c = 0; auto h = g(); h.advance(c);", "cannot pass const 'c' to parameter 'v' of 'advance': 'advance' writes through it", "a const fails the load");
-            load_error("coroutine int g() { yield 1; }\nauto h = g(); h.advanse(c);", "no member 'advanse' on 'coroutine_handle' (did you mean 'advance'?)", "the suggestion knows advance");
+            load_error("coroutine int g() { yield 1; }\nauto h = g(); h.advanse(c);", "no member 'advanse' on 'coroutine<int>' (did you mean 'advance'?)", "the suggestion knows advance");
         });
 
         test("result_reads_the_return_value_once_done", [this, check_both, check_executes, both_backends]() {
@@ -1531,7 +1672,7 @@ public:
             };
             load_error("coroutine int g() { return 1; }\nauto h = g(); h.result(1);", "error: result() takes no arguments", "the checker knows the arity");
             load_error("coroutine string g() { return \"a\"; }\nauto h = g(); h.next(); array<int> a = h.result();", "cannot initialize 'a'", "the checker knows the declared return type");
-            load_error("coroutine int g() { return 1; }\nauto h = g(); h.resul();", "no member 'resul' on 'coroutine_handle' (did you mean 'result'?)", "the suggestion knows result");
+            load_error("coroutine int g() { return 1; }\nauto h = g(); h.resul();", "no member 'resul' on 'coroutine<int>' (did you mean 'result'?)", "the suggestion knows result");
         });
 
         test("next_and_next_count", [this, check_both, check_executes]() {

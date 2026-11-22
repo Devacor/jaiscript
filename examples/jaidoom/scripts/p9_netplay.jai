@@ -1,5 +1,5 @@
 // P9 gate: N-player netplay, headless in one process — the REAL HostSession on
-// its NetServer vs THREE fake clients speaking raw protocol JSON over real
+// its net_server vs THREE fake clients speaking raw protocol JSON over real
 // loopback sockets. Proves: slot assignment + roster, GO start, relay fan-out
 // (A's STATE reaches B and C, never A), DAMAGE victim-routing, frag table +
 // scoreboard, JOINED/LEFT puppet lifecycle, suicide scoring, the DM client
@@ -36,7 +36,7 @@ var GA = [];
 var GB = [];
 var GC = [];
 
-// the client-side section's fake HOST (a raw NetServer speaking protocol JSON)
+// the client-side section's fake HOST (a raw net_server speaking protocol JSON)
 var FH = null;
 var FH_CID = -1;
 var HSIG = 0;                 // the host's map-placed walk signature (index alignment)
@@ -60,7 +60,7 @@ function map_sig() -> int {
 }
 
 function fake(int which) -> var {
-	var c = new NetChannel();
+	var c = new net_channel();
 	if (which == 0) { c.on_packet.connect("g", [](var b) { GA.push(b); }); }
 	else if (which == 1) { c.on_packet.connect("g", [](var b) { GB.push(b); }); }
 	else { c.on_packet.connect("g", [](var b) { GC.push(b); }); }
@@ -276,7 +276,7 @@ function main() -> int {
 	float vez = MO_Z[victim] + 32.0;
 	bool parked = false;
 	for (int pa2 = 0; pa2 < 8 && !parked; ++pa2) {
-		float aang2 = pa2 * math::PI / 4.0;
+		float aang2 = pa2 * math::pi / 4.0;
 		float gx2 = vex + math::cos(aang2) * 80.0;
 		float gy2 = vey + math::sin(aang2) * 80.0;
 		if (!sight_clear(gx2, gy2, vex, vey, vez)) { continue; }
@@ -551,9 +551,9 @@ function main() -> int {
 	check(np_host_can_start(), "fresh recount agrees");
 	NP_READY_SET = {};                                   // the 10s grace path, isolated
 	NP_ALL_READY = false;
-	NP_WI_T0 = time::now();
+	NP_WI_T0 = time::engine_elapsed();
 	check(!np_host_can_start(), "cleared votes hold the start again");
-	NP_WI_T0 = time::now() - 11.0;
+	NP_WI_T0 = time::engine_elapsed() - 11.0;
 	check(np_host_can_start(), "the 10s grace unlocks the start");
 	NP_WI_T0 = null;
 	FA.send(to_json({"t": "READY", "s": 1}));
@@ -595,7 +595,7 @@ function main() -> int {
 	// deliveries land late, the client keeps simulating, and it never travels
 	// until the host's START says so.
 	GA = [];
-	FH = new NetServer();
+	FH = new net_server();
 	FH.on_client_connect.connect("g", [](var cid) { FH_CID = cid + 0; });
 	FH.on_client_packet.connect("g", [](var cid, var b) { GA.push(b); });
 	check(FH.listen(28958), "fake host listens");
@@ -626,11 +626,11 @@ function main() -> int {
 	check(GAME_MAP == "E1M1" && !NP_WI_PEND, "no self-advance: the host owns NEXT");
 
 	// NEXT arrives ~150ms late; the client keeps ticking E1M1 until it lands
-	float due = time::now() + 0.15;
+	float due = time::engine_elapsed() + 0.15;
 	bool nsent = false;
 	int spin = 0;
 	while (spin < 400 && !NP_WI_PEND) {
-		if (!nsent && time::now() >= due) {
+		if (!nsent && time::engine_elapsed() >= due) {
 			FH.send(FH_CID, to_json({"t": "NEXT", "s": 0, "mapname": "E1M1", "next": "E1M2",
 				"k": 80, "i": 60, "s2": 33, "secs": 90}));
 			nsent = true;

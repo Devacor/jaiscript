@@ -38,8 +38,13 @@ namespace jai {
         // Related source point (e.g. the declaration a bad assignment violates); 0 = none.
         size_t related_line = 0;
         size_t related_column = 0;
-        // A diagnostic in a template a call expanded (template(...)): that file's path, its line and column; empty = the unit's
+        // A diagnostic in a template a call expanded (template(...)) or in a generic another file declares: that file's path,
+        // its line and column; empty = the unit's
         std::string file;
+        // A diagnostic inside a generic's instance: "in Stack<int>, instantiated at app.jai:12:5", outermost instance last
+        std::vector<std::string> notes;
+        // The related point's file when it is not the diagnostic's own (an instance of a generic another file declares)
+        std::string related_file;
     };
 
     struct check_report {
@@ -97,6 +102,7 @@ namespace jai {
         std::string_view cls{};            // object_k / class_ref_k / enum_ref_k
         const type_info* ti = nullptr;     // the declared type it came from, when there is one
         bool tentative = false;
+        bool narrowed = false;             // a flow test narrowed the name read here (its declaration says less)
         std::string name;
     };
 
@@ -108,6 +114,10 @@ namespace jai {
 
     namespace detail {
 
+        struct generic_request;      // detail/generics.hpp
+        struct generic_kept_instance;
+        struct generic_definition;
+
         inline constexpr size_t k_check_diagnostic_cap = 100;
         // the outside name a walk records when it reads the program's constant texts (never an identifier)
         inline constexpr std::string_view k_outside_constants = "#constants";
@@ -118,13 +128,15 @@ namespace jai {
         // replaces an entry (newest declaration wins); a unit's own declaration always wins
         // over the table.
         using program_class_map = std::unordered_map<std::string, std::shared_ptr<class_decl>>;
-        // Program closure functions: name -> unit path -> the unit's declarations of it (a re-gather of a unit replaces its own; the
-        // declarations stay alive with the table, so a stamped decl never dangles and no address is reused). A call whose name the
+        // Program closure functions: name -> unit path -> the unit's declarations of it, a namespace's function under its qualified
+        // name ("shop::tax": what a call of it checks against in another unit). A re-gather of a unit replaces its own; the
+        // declarations stay alive with the table, so a stamped decl never dangles and no address is reused. A call whose name the
         // unit does not declare, and exactly one other unit declares once, resolves to that decl for the inliner and the argument
         // proofs, and the diagnostics check the call against it (its count, its arguments, the use of its result).
         using program_function_map = std::unordered_map<std::string, std::unordered_map<std::string, std::vector<std::shared_ptr<const function_decl>>>>;
-        // Program closure globals: name -> unit path -> the unit's top-level variable declarations of it (kept alive like the
-        // functions). A name the unit does not declare, and exactly one other unit declares once with a spelled non-reference type,
+        // Program closure globals: name -> unit path -> the unit's top-level variable declarations of it, a namespace's variable
+        // under its qualified name (kept alive like the functions). A name the unit does not declare, and exactly one other unit
+        // declares once with a spelled non-reference type,
         // is typed by that declaration in the proof pass; a class-typed one is typed once its class is defined, and a unit whose
         // proofs waited re-stamps after each import completes (proof_stats::deferred). The diagnostics read a scalar, text, container
         // or math one by it (tentative), and check a store against it.
@@ -142,7 +154,12 @@ namespace jai {
         std::string namespace_answers;
         std::vector<std::string> outside;
         uint64_t outside_key = 0;
-        bool empty() const { return namespace_queries.empty() && outside.empty(); }
+        // '<' after a name (detail/less_than.hpp): each query the parse's sites asked, what answered it, and whether the parse
+        // was settled (made with the files the unit names pooled, or naming none)
+        std::vector<std::string> less_queries;
+        std::string less_answers;
+        bool less_settled = true;
+        bool empty() const { return namespace_queries.empty() && outside.empty() && less_queries.empty(); }
     };
         // One checker walk does two independent jobs: diagnostics (off -> the report stays
         // empty) and the proof pass (stamp = derive and write proofs onto the AST, clear =
@@ -172,6 +189,14 @@ namespace jai {
             // rests on (engine.cpp keys a checked-clean stamp by what they resolve to)
             std::vector<std::string>* outside = nullptr;
             check_observer* observer = nullptr;
+            // out: the generic instances the walk needs that the unit does not declare yet (a call's, by its given or deduced type
+            // arguments). The engine declares them and checks again; null leaves such a call untyped.
+            std::vector<generic_request>* generic_requests = nullptr;
+            // A unit that declares a generic again makes the instances the engine holds again (generic_instance_decl::remade).
+            // out: each one an error of the walk lies in, with that error. in: those the engine gave up on, which keep their
+            // earlier declaration: the walk warns of each.
+            std::vector<generic_kept_instance>* remade_failures = nullptr;
+            const std::vector<generic_kept_instance>* kept_instances = nullptr;
         };
 
         // Every top-level name `decls` declares (functions, variables, externs, destructured
@@ -180,7 +205,8 @@ namespace jai {
         void collect_unit_names(const std::vector<declaration_ptr>& decls, std::unordered_set<std::string>& out);
         // Every top-level class `decls` declares (namespace members flattened), newest wins; true when an entry changed.
         bool collect_unit_classes(const std::vector<declaration_ptr>& decls, program_class_map& out);
-        // Every top-level free function `decls` declares, under the unit's path (its earlier entry replaced).
+        // Every free function `decls` declares at the top level or in a namespace (qualified), under the unit's path (its earlier
+        // entry replaced); collect_unit_globals does the same for variables.
         void collect_unit_functions(const std::vector<declaration_ptr>& decls, const std::string& unit_path, program_function_map& out);
         void collect_unit_globals(const std::vector<declaration_ptr>& decls, const std::string& unit_path, program_global_map& out);
         void collect_unit_enums(const std::vector<declaration_ptr>& decls, const std::string& unit_path, program_enum_map& out);
@@ -194,6 +220,9 @@ namespace jai {
         check_report run_static_check(engine& eng, const std::vector<declaration_ptr>& decls,
                                       const std::vector<std::string>* extra_globals = nullptr,
                                       check_options opts = {});
+        // What each '<' query's head names by the checker's own lookup over `decls`, the program's pools in `opts` and the engine:
+        // one answer per query (detail/less_than.hpp)
+        std::string less_than_answers(engine& eng, const std::vector<declaration_ptr>& decls, const std::vector<std::string>& queries, check_options opts);
 
     } // namespace detail
 

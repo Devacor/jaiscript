@@ -11,6 +11,7 @@
 #include <jaiscript/detail/value_text.hpp>
 #include <jaiscript/detail/builtin_methods.hpp>
 #include <jaiscript/detail/execution_limits.hpp>
+#include <jaiscript/detail/host_time.hpp>
 #include <jaiscript/detail/member_scope.hpp>
 #include <jaiscript/detail/return_conv.hpp>
 #include <jaiscript/detail/parallel_schedule.hpp>
@@ -124,6 +125,8 @@ namespace jai::vm {
         void set_execution_budget(std::chrono::nanoseconds budget) override;
         void extend_execution_deadline(std::chrono::nanoseconds by) override { if (budget_active_) { execution_deadline_ += by; } }
         std::chrono::steady_clock::time_point execution_deadline() const override { return budget_active_ ? execution_deadline_ : std::chrono::steady_clock::time_point{}; }
+        bool budget_spent_now() override;
+        bool budget_overrun_at_return() override;
         void set_has_custom_numeric_ops(bool value) override { has_custom_numeric_ops_ = value; }
         void set_has_custom_binary_ops(bool value) override { has_custom_binary_ops_ = value; }
         void set_operator_table(const detail::engine_operator_table* table) override { operator_table_ = table; }
@@ -147,8 +150,12 @@ namespace jai::vm {
         // Named slot locals of a parked frame, reconstructed lazily from the chunk's
         // decl/load/store operands (no name table baked into release chunks).
         std::vector<std::pair<std::string, script_value>> get_frame_locals(size_t frame) const override;
-        script_value* debug_local_storage(const std::string& name) override;
-        int debug_depth() const override { return static_cast<int>(call_records_top_ + static_cast<size_t>(current_call_depth_)); }
+        script_value* debug_local_storage(const std::string& name, size_t frame) override;
+        void begin_debug_evaluation(std::chrono::nanoseconds budget) override;
+        void end_debug_evaluation() override;
+        void debug_settle_statement() override;
+        void debug_settle_frames() override;
+        int debug_depth() const override { return frames_.empty() ? 0 : static_cast<int>(statement_depth(*frames_.back())); }
         // Debug sync point (prepare_for_execution, every 1024 budget ticks, a sleep, an armed
         // session's pending change, park exit via the controller): mirrors
         // debug_controller_ into the plain per-op gate and hands a session-end a fresh budget
@@ -169,6 +176,10 @@ namespace jai::vm {
 
 
         checked_result<script_value> resume_coroutine(coroutine_handle& handle) override;
+        bool paused_coroutine_frame(coroutine_handle& a_handle, const std::vector<detail::coroutine_site>& a_sites, uint32_t& a_site,
+                                    detail::coroutine_frame_view& a_frame) override;
+        bool pause_coroutine_at(coroutine_handle& a_handle, const std::vector<detail::coroutine_site>& a_sites, uint32_t a_site,
+                                detail::coroutine_frame&& a_frame) override;
 
         std::unique_ptr<backend_run_state> make_run_state() override;
         void swap_run_state(backend_run_state& state) noexcept override;
@@ -435,6 +446,8 @@ namespace jai::vm {
         void set_parallel_method_pins(const detail::parallel_method_pin_table* pins) override {
             parallel_method_pins_ = pins;
         }
+        // A worker's copy of a class static its region captured, else null
+        const script_value* parallel_static_copy(class_definition* a_owner, uint64_t a_sym) const;
 
     private:
         struct cell_state;
@@ -466,6 +479,10 @@ namespace jai::vm {
             const chunk* debug_prev_code = nullptr;
             uint32_t debug_prev_ip = 0;
             uint32_t debug_epoch = 0;
+            // the environment this frame stood in at its last statement under the session debug_env_epoch names: its block scopes
+            // while a frame above it runs
+            const environment* debug_env = nullptr;
+            uint32_t debug_env_epoch = 0;
             struct cell_state* cells = nullptr;        // the record's raw area (null: a frame that never runs cells)
             // a worker's private lookup rows for the chunk env_table_code names (worker_env_cache_slot's), found once by the frame's first
             // lookup; any other chunk (a reused record, a frame that never looked one up) reads through worker_env_cache_slot
@@ -927,6 +944,13 @@ namespace jai::vm {
         // Bumped at every arming: a frame's edge state from an earlier session is stale. The last dispatch's frame
         // tells a new frame at ip 0 from a jump back to ip 0.
         uint32_t debug_epoch_ = 1;
+        // per running coroutine resume, innermost last: frames_.size() when it began, and the parked stack the frames below it keep their windows in
+        struct try_record;
+        struct fiber_activation { size_t frames_at; const value_stack* stack; const std::vector<try_record>* tries; };
+        std::vector<fiber_activation> fiber_stacks_;
+        // An error noticed where it was raised (its trace not taken yet): an armed session's exception breakpoints see it, caught
+        // when a try is running anywhere on the stack. KEEP BYTE-PARALLEL with interpreter::debug_raised
+        void debug_raised(const std::string& text);
         const frame* debug_last_frame_ = nullptr;
         const chunk* debug_last_code_ = nullptr;
         size_t debug_last_depth_ = SIZE_MAX;
@@ -1008,6 +1032,7 @@ namespace jai::vm {
         bool is_unwinding_ = false;
         bool trace_captured_ = false;
         std::vector<stack_frame> captured_trace_;
+        const ast_node* namespace_member_ = nullptr;   // the member the running namespace block declares: its frame's statement in a trace
         std::optional<error_propagator> run_error_;   // the runtime error that ended this run's top level
         detail::nested_failure nested_failure_;
         // "Inside a catch block" marker of the rethrow protocol (the catch symbol, or the
@@ -1108,6 +1133,22 @@ namespace jai::vm {
         std::chrono::steady_clock::time_point execution_deadline_{};
         uint32_t budget_tick_ = 0;
         bool budget_active_ = false;
+        // the run state a debugger's evaluation saved (begin_debug_evaluation), innermost last: while one runs its deadline holds
+        struct debug_evaluation_save {
+            std::optional<script_exception> exception;
+            std::optional<script_value> exception_value;
+            std::vector<stack_frame> trace;
+            std::optional<error_propagator> run_error;
+            detail::nested_failure nested;
+            uint64_t catch_var = 0;
+            bool unwinding = false;
+            bool trace_captured = false;
+            bool terminal = false;
+            bool budget_active = false;
+            std::chrono::nanoseconds budget{};
+            std::chrono::steady_clock::time_point deadline{};
+        };
+        std::vector<debug_evaluation_save> debug_evaluations_;
         int current_call_depth_ = 0;
 
         // Execution-limit state (terminal-error latch). Engine-less fallback storage;
@@ -1147,7 +1188,6 @@ namespace jai::vm {
         uint64_t to_string_id_ = 0;
         uint64_t to_bool_id_ = 0;
         uint64_t eq_method_id_ = 0;
-        uint64_t same_as_id_ = 0;
         uint64_t builtin_push_id_ = 0;   // "push" (the array-push inline fast path)
         uint64_t builtin_has_id_ = 0;    // "has" (the map-has inline)
         uint64_t coroutine_handle_type_id_ = 0;
@@ -1187,10 +1227,11 @@ namespace jai::vm {
         error_propagator execution_limit_failure();
         // Statement-boundary edge detection + hook fire; out of line so run_dispatch's
         // Debug frame stays flat (JAI_MAX_CALL_DEPTH path). Called only when armed.
-        void debug_statement_boundary(frame& f);
+        bool debug_statement_boundary(frame& f);   // false: a watch evaluation reached script code (op_status failed, pending_error_ set)
         void debug_stop_at(const ast_node* node);   // a statement the backend runs outside any chunk (a namespace's class)
 
         // the compiled body of a function object, cached per (body, unit): the unit is the function's own
+        std::shared_ptr<chunk> compile_unit(const std::vector<declaration_ptr>& declarations);   // a program's top level
         std::shared_ptr<chunk> chunk_for_body(std::string_view name,
                                               const std::vector<parameter>& params,
                                               const std::shared_ptr<block_stmt>& body,
@@ -1373,6 +1414,13 @@ namespace jai::vm {
                                              unit_stamp caller_unit,   // a by-reference argument resolves under the caller's unit
                                              size_t first_param = 0, bool later_taken = false,   // a resumed bind (the arguments after a user-code conversion taken)
                                              const statement* callee_body = nullptr);   // a method's body (a function's is alias_fn's): a temporary may bind a reference parameter it never writes through
+        // A default argument or a conversion threw while a frame's parameters were binding: nothing more binds, and the frame is entered
+        // at its closing op_halt, where it leaves as a throw out of its body does with no instruction of the body run. The stack is
+        // taken here, while the frame stands at its start
+        JAI_NOINLINE void binding_threw(frame& callee);
+        // A default argument or a conversion raised while a frame's parameters were binding: the stack is taken while the frame stands,
+        // as for a throw there (KEEP BYTE-PARALLEL with the interpreter's call_function)
+        JAI_NOINLINE void binding_failed();
         // Ref-param bind against the caller's variable storage: shares an existing
         // reference holder (cells alias), or boxes the value on demand (cell) when the
         // variable predates its escape mark
@@ -1395,8 +1443,6 @@ namespace jai::vm {
         // returns); boxing demotes active counted-for fast states
         script_value share_env_ref(script_value& storage);
         void clear_this_on_frame_exit(const std::shared_ptr<environment>& entry_env);
-        script_value implicit_this_result(call_frame& locals);
-        script_value implicit_result_for_record(call_record& rec);
         checked_result<script_value> convert_return_value(script_value result, const type_info_ptr& return_type,
                                                           std::string_view callee = {});
         checked_result<script_value> convert_return_at_site(script_value result, const type_info_ptr& return_type,
@@ -1404,11 +1450,28 @@ namespace jai::vm {
 
         void capture_stack_trace();
         size_t trace_grafts_through(size_t cut);
-        static size_t graft_frames_at(const chunk& code, size_t ip, const ast_node** node, std::vector<stack_frame>& out);
+        size_t null_chain_frames_through(size_t cut, size_t first) const;
+        bool null_chain_closures_ = false;   // a `?.` chain's lambda was made: a capped trace counts its frames out
+        static size_t graft_frames_at(const chunk& code, size_t ip, const ast_node** node, std::vector<stack_frame>& out,
+                                      std::vector<const chunk::inline_site*>* sites = nullptr);
         static const ast_node* frame_statement(const frame& fr);
+        static const source_location* frame_place(const frame& fr, const ast_node* node);
         static std::string frame_function_name(const frame& fr);
-        std::vector<stack_frame> debug_frame_walk(std::vector<const frame*>* slot_frames) const;
-        std::vector<std::pair<std::string, script_value>> frame_slot_locals(const frame* f) const;
+        // one entry of debug_frames(): the frame that runs it, and the inline site of a grafted callee's entry (null for the frame's own)
+        struct debug_frame_ref { const frame* fr = nullptr; const chunk::inline_site* graft = nullptr; };
+        std::vector<stack_frame> debug_frame_walk(std::vector<debug_frame_ref>* refs) const;
+        std::vector<std::pair<std::string, script_value>> frame_slot_locals(const frame* f, const chunk::inline_site* graft = nullptr) const;
+        const script_value* frame_capture(const frame& f, size_t k) const;
+        // A slot of any live frame as a parked debugger reads it: a frame below a running coroutine keeps its window in the stack the
+        // coroutine's resume parked (fiber_stacks_)
+        const script_value* debug_frame_slot(const frame& f, size_t slot) const noexcept;
+        // f's ip as the general form numbers it: a block's copy instruction stands for the one it copies
+        static size_t debug_ip(const frame& f) noexcept;
+        // The environment a live frame stands in: the innermost one's current, a caller's the one its callee's push saved (the
+        // callee's own when the push left it untouched), else what the session saw at its last statement
+        const environment* debug_frame_environment(const frame& f) const;
+        // The call depth a statement of f stands at, a grafted callee's body one level below its caller as its own frame would be
+        size_t statement_depth(const frame& f) const;
         void absorb_nested_trace();
         op_status raise_nested_failure(const std::exception& e);
         op_status raise_nested_failure_statement(const std::exception& e);
@@ -2248,6 +2311,11 @@ namespace jai::vm {
         // regex(literal pattern[, flags]): the value over the pattern compiled at load while the callee is the engine's
         // constructor, else the call with the literal texts (the interpreter's visit_call_expr_t takes the same branch)
         op_status exec_regex_constant(frame& f, const vm_instruction& ins);
+        // reflect::is_instance_of(x, "T") with a literal class name: the instance test in place, else the call through the site
+        op_status exec_instance_test(frame& f, const vm_instruction& ins);
+        op_status instance_test_call(frame& f, const vm_instruction& ins);
+        op_status exec_namespace_entry(frame& f, const vm_instruction& ins);
+        const script_value* namespace_cell_value(frame& f, const fused_operand& operand, std::optional<script_value>& scratch);
         op_status exec_format_call(frame& f, const vm_instruction& ins);
         op_status exec_cells_enter(frame& f, const vm_instruction& ins);
         int math_alias_verdict(frame& f, const call_site& site, uint8_t fn, size_t cache_slot);   // 1 builtin, 0 parked, -1 raised
@@ -2413,6 +2481,7 @@ namespace jai::vm {
         op_status exec_cells_back(frame& f, const vm_instruction& ins);
         op_status exec_c_mload(frame& f, const vm_instruction& ins);   // a member read site: the field's kind and payload into the cell
         op_status exec_c_mstore(frame& f, const vm_instruction& ins);   // a member store site: the field's payload written in place when the kinds agree
+        op_status exec_c_mcompound(frame& f, const vm_instruction& ins);   // a compound member store site: the field read, the operation and the store in place
         // fused cell pairs: the first instruction's executor on its own word, then the second's on the next word when the block is
         // still live and the ip fell through; out of line, so the block switch keeps its shape
         struct cell_regs;   // the block loop's registers (defined with cells_run below)
@@ -2427,7 +2496,10 @@ namespace jai::vm {
         script_array* velem_site(frame& f, const velem_proto& p, size_t& at, int& comp);   // a vector buffer's element and component for a velem site, else null
         op_status exec_velem_load(frame& f, const vm_instruction& ins);
         op_status exec_velem_store(frame& f, const vm_instruction& ins);
-        op_status exec_set_member_value(frame& f, const vm_instruction& ins);   // `base.member = operand;` in statement position: the store kernel, no result
+        op_status exec_set_member_value(frame& f, const vm_instruction& ins);   // `base.member = operand;` or `base.member op= operand;` in statement position: the store or compound kernel, no result
+        bool member_compound_row(class_instance* inst, const chunk::member_ic_entry& entry, uint32_t kind, const script_value& v);
+        op_status member_compound_general(frame& f, const vm_instruction& ins, const member_store_proto& p);
+        op_status member_store_receiver(frame& f, const member_store_proto& p, script_value& out);
         op_status store_member(frame& f, size_t ins_index, uint32_t node, script_value&& object_value, script_value&& value, bool want_result);   // SET_MEMBER's kernel: the fast lane, the ladder, the result when asked
         op_status assign_math_component(frame& f, uint32_t node, script_value& base, member_expr* member, const script_value& value, script_value& out);   // `base.x = v` on a math value
         op_status exec_cells_cfor_back(frame& f, const vm_instruction& ins);   // a counted loop's back edge: the general step and compare, then the block entry
@@ -2721,7 +2793,7 @@ namespace jai::vm {
         script_value& map_lane_slot(script_map& map, const script_value& key) const;
         void commit_string_scratch(script_value& recv, uint16_t bi_string, uint64_t member_id);
         // The getter-shadow/field-slot probe behind every GET_MEMBER-family site cache
-        // fill (slot UINT32_MAX = negative: same_as / nonpublic chain / sp-builtin name /
+        // fill (slot UINT32_MAX = negative: nonpublic chain / sp-builtin name /
         // custom-getter shadow / no field slot)
         uint32_t member_read_slot_probe(class_definition* cd, member_expr* expr);
         const script_value* site_field(const chunk& code, const script_value& objd, member_expr* expr, size_t site, script_value& host_value);
@@ -2752,6 +2824,14 @@ namespace jai::vm {
         op_status dyn_string_add(frame& f, const vm_instruction& ins, bool& landed);
         script_value* env_store_cell(frame& f, size_t cache_slot, uint64_t symbol_id);
         bool store_slot_raw(frame& f, const vm_instruction& ins, size_t kind, script_int iv, script_float fv);
+        // A reference's referent as a typed row may compute on it: an int or a float where a store of that kind converts nothing (a plain
+        // cell, a field or an untyped element holding it under the canonical stamp, or an int or float buffer's element; the storage's
+        // constraint and the reference's declared type name that kind too). kind 0 = the general form, which converts, runs accessors and
+        // raises (a removed element, field or key included)
+        struct scalar_place { size_t kind = 0; void* payload = nullptr; };
+        scalar_place lane_ref_place(const frame& f, uint32_t slot, const script_value& ref) const;
+        bool store_ref_raw(frame& f, uint32_t slot, const script_value& ref, size_t kind, script_int iv, script_float fv);
+        bool compound_through_ref(frame& f, const compound_fused_proto& cp, const script_value& ref);
         bool store_this_field_raw(frame& f, const vm_instruction& ins, size_t kind, script_int iv, script_float fv);
         op_status exec_math_kernel(size_t base, size_t argc, detail::math_fn fn);
         op_status fused_string_add(const script_value& l, const script_value& r, std::optional<script_value>& out);
@@ -2913,6 +2993,10 @@ namespace jai::vm {
         op_status exec_cast(frame& f, const vm_instruction& ins);
 
         vm_coroutine_state& coroutine_fiber_state(coroutine_handle& handle);
+        // The fiber a coroutine's first resume opens: its body's chunk, its entry scope and its frame over its own stack
+        void open_fiber(coroutine_handle& handle, vm_coroutine_state& state, const std::shared_ptr<function_decl>& function);
+        // The state a counted loop's prep makes for its variable, limit and step as they stand
+        counted_for_state counted_for_entry_state(frame& f, const counted_for_proto& p);
         // Runs (or continues) the fiber; returns the yield value, the final return value on the
         // completing resume, or an error (handle marked failed) — never a stale prior yield.
         checked_result<script_value> run_fiber(coroutine_handle& handle, vm_coroutine_state& state);

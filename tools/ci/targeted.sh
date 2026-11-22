@@ -33,6 +33,12 @@
 # A library change also takes the wasm gate: the WebAssembly build is the one 32-bit libc++ target the gates run, so it catches
 # layout assumptions the 64-bit builds hide (a field placed in tail padding, a tag in a 4-aligned pointer's low bits).
 #
+# A change to the library's code (include/ and source/, the tests excepted: all of it is hashed) or to the generator takes the
+# checker-revision gate: the committed revision is the one tools/ci/checker_revision.py computes. It is
+# checked before anything is built, since the command that fixes it changes the tree every other check ran on.
+#
+# Whatever takes the suites takes the clang gate too: the suites built with Clang (gates.sh clang), whose names differ from MSVC's.
+#
 # --lanes declares a change confined to the VM's optimized lanes (fused, typed, cell, graft and cache code) inside the
 # general files: the general-path reason is dropped and the VM against VM-reference fuzz is the change's oracle. --interp
 # picks the interpreter tier whatever the paths.
@@ -86,12 +92,22 @@ vm_tier() {
 
 classify() {
 	local p="$1"
+	# a number generated from sources that take their own checks
+	if [ "$p" = include/jaiscript/detail/jaibite_checker_revision.hpp ]; then
+		pick checker-revision "the generated checker revision ($p)"
+		return
+	fi
 	case "$p" in
 		include/jaiscript/* | tools/ci/host_warnings.cpp | tools/ci/must_not_compile.cpp | docs/site_tools/check_sample_includes.py | source/tests/integration/doc_samples_tests.cpp | docs/site/embedding/01-embedding-quickstart.html | docs/site/embedding/02-dynamic-binder.html | docs/site/embedding/21-visual-studio.html)
 			pick headers "the public headers compile alone and warning-free, and the whole-program samples show their includes ($p)" ;;
 	esac
 	case "$p" in
 		docs/site/install.*) pick ci-scripts "the installers ($p)" ;;
+	esac
+	case "$p" in
+		source/tests/*) ;;
+		include/* | source/* | tools/ci/checker_revision.py)
+			pick checker-revision "the committed checker revision is the one the library's code gives ($p)" ;;
 	esac
 	case "$p" in
 		docs/site/* | docs/site_tools/*) pick site "the documentation site ($p)" ;;
@@ -123,12 +139,15 @@ classify() {
 		include/jaiscript/detail/* | source/implementation/parser.cpp | source/implementation/lexer.cpp | source/implementation/type_checker.cpp | \
 		source/implementation/builtin_methods.cpp)
 			vm_tier "a kernel both backends share ($p)"; interp_tier "a kernel both backends share ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)"
-			pick selftest "the runner's REPL retries on the parser's missing-';' text ($p)" ;;
+			pick selftest "the runner's REPL retries on the parser's missing-';' text ($p)"
+			pick spider "jai_spider rebuilds an app after a failed load, the one gate that does ($p)" ;;
 		include/jaiscript/properties/* | include/jaiscript/properties.hpp | include/jaiscript/serialization/* | source/implementation/serialization/* | \
 		source/implementation/properties.cpp | source/implementation/schema_binding.cpp)
 			vm_tier "the property system or the archives ($p)"; HOST_ARCHIVES=1; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		source/implementation/stdlib/spider.cpp | include/jaiscript/stdlib/spider.hpp | include/jaiscript/core/http_transport.hpp | include/jaiscript/net/*)
 			vm_tier "the spider:: client ($p)"; pick spider "the spider:: client against a live server ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
+		source/implementation/engine.cpp | source/implementation/generics.cpp | source/implementation/templates.cpp)
+			vm_tier "the library's loading ($p)"; pick spider "jai_spider rebuilds an app after a failed load, the one gate that does ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		include/* | source/implementation/*) vm_tier "the library ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
 		CMakeLists.txt | */CMakeLists.txt | cmake/* | source/jaiscript.cpp | CMakePresets.json)
 			vm_tier "the build ($p)"; pick amalgamation "the build's file lists ($p)"; pick wasm "a 32-bit libc++ build runs the examples ($p)" ;;
@@ -140,6 +159,7 @@ NOTES=""
 HOST_ARCHIVES=0
 for f in "${FILES[@]}"; do classify "$f"; done
 [ "$FORCE_INTERP" = 1 ] && interp_tier "--interp"
+case " $CHECKS " in *" suites "*) pick clang "the suites built with Clang, which names some things unlike MSVC" ;; esac
 INTERP=0
 if [ -n "$INTERP_REASONS" ]; then
 	INTERP=1
@@ -205,6 +225,9 @@ if [ "$LANDING" = 1 ]; then
 	fi
 fi
 [ "$PLAN" = 1 ] && exit 0
+case " $CHECKS " in
+	*" checker-revision "*) "$(jai_python)" "$JAI_ROOT/tools/ci/checker_revision.py" --check || { echo "TARGETED RED: checker-revision"; exit 1; } ;;
+esac
 [ "$LANDING" = 1 ] && lockq_wait
 # binaries a run did not build may predate the tree, so only a --build run stamps what it passes
 [ "$BUILD" = 1 ] && jai_stamp_begin .

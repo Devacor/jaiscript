@@ -13,10 +13,10 @@ function main() -> int {
 	var mapname = "E1M1";
 	int cw = 110;
 	int frames = 420;
-	if (ARGS.size() > 0) { path = ARGS[0]; }
-	if (ARGS.size() > 1) { mapname = ARGS[1]; }
-	if (ARGS.size() > 2) { cw = ARGS[2].to_int(110); }
-	if (ARGS.size() > 3) { frames = ARGS[3].to_int(420); }
+	if (args.size() > 0) { path = args[0]; }
+	if (args.size() > 1) { mapname = args[1]; }
+	if (args.size() > 2) { cw = args[2].to_int(110); }
+	if (args.size() > 3) { frames = args[3].to_int(420); }
 
 	if (!wad_load(path)) { print("wad_load failed"); return 1; }
 	if (!map_load(mapname)) { print(`no map ${mapname}`); return 1; }

@@ -2,7 +2,7 @@
 # The CI gates, one per argument, so the workflow can give each its own step and a
 # local run can reproduce any of them:
 #
-#   BIN=build/bin tools/ci/gates.sh tests-interp tests-vm tests-vm-reference fuzz fuzz-vm-reference fuzz-order gloom demoreel crawler gatorquest embed-quickstart lsp lsp-latency spider selftest site
+#   BIN=build/bin tools/ci/gates.sh tests-interp tests-vm tests-vm-reference fuzz fuzz-vm-reference fuzz-order gloom demoreel crawler gatorquest embed-quickstart lsp lsp-latency spider selftest site checker-revision
 #   tools/ci/gates.sh all
 #
 # BIN is the directory holding the built executables (default: build/bin under the
@@ -20,9 +20,9 @@
 # libc++ target that runs, on WebAssembly threads (JAISCRIPT_WASM_THREADS), and plays GLOOM's (serial and on four workers),
 # the crawler's and the demoreel's shims headless under Node
 # (tools/jaiscript_web/run_node.mjs) to the hashes the native gates expect, then runs tools/jaiscript_web/catches.jai, which
-# needs the library's own catches and the browser's entropy and sleeps its way past its execution budget. It skips with a
-# message when no Emscripten SDK (EMSDK, else em++ on PATH) or no node is found. WASM_BUILD_DIR names the tree (default
-# build-wasm).
+# needs the library's own catches and the browser's entropy and sleeps its way past its execution budget, and
+# tools/ci/math_determinism.jai, whose hash of the math functions' results every platform prints. It skips with a message
+# when no Emscripten SDK (EMSDK, else em++ on PATH) or no node is found. WASM_BUILD_DIR names the tree (default build-wasm).
 #
 # The two differentials: `fuzz` runs each program on the interpreter and the optimized VM, `fuzz-vm-reference` on the
 # optimized VM and the VM in reference mode (engine::vm_reference_mode: every optimization off), so a divergence there is a
@@ -34,6 +34,13 @@
 # report no crash. ASAN_BUILD_DIR names the tree (default build-asan, relative to the repository root) and FUZZ_ITERATIONS
 # the fuzz count (default 100). With cl on PATH and no CXX set it builds with MSVC and copies the ASan runtime DLL beside the
 # binaries. The interpreter's Debug suite runs for hours under it, so neither `all` nor the battery includes it.
+#
+# The clang gate builds the suites with Clang and runs them on the VM and the interpreter: Clang spells some names unlike MSVC
+# (a function-local class is its bare name), so a suite green on MSVC can fail there. CLANG_CXX names clang++ (else clang++ on
+# PATH, else Visual Studio's), CLANG_BUILD_DIR the tree (default build-clang); it skips with a message when no clang++ is found.
+#
+# The checker-revision gate runs no binary: the committed include/jaiscript/detail/jaibite_checker_revision.hpp is the value
+# tools/ci/checker_revision.py computes from the library's code in this checkout, after the generator's own checks.
 #
 # HASH_BACKENDS names the backends the runner's hash gates (gatorquest, timedemo) run (default "vm interp"; the per-change
 # tier passes "vm" unless its interpreter tier is picked, tools/ci/targeted.sh). GLOOM, the demoreel, the crawler and the
@@ -445,6 +452,9 @@ gate_wasm() {
 	cd "$ROOT/tools/jaiscript_web"
 	run_logged node "$runner" --budget 1 "$engine" catches.jai
 	want "wasm catches: expected the library's own catches, an entropy-seeded random and sleeps that outlast the budget" "^-1 42 caught true\$"
+	cd "$ROOT/tools/ci"
+	run_logged node "$runner" "$engine" math_determinism.jai
+	want "wasm math: expected the math functions' committed hash (tools/ci/math_determinism.jai)" "^portable math: PASS\$"
 }
 
 # The public headers (include/jaiscript less detail/, vm/, testing/ and net/openssl_tls.hpp, which needs OpenSSL's) each
@@ -489,6 +499,43 @@ must_not_compile() {
 		fi
 	done
 	return "$failed"
+}
+
+# clang_compiler: clang++ from CLANG_CXX, else PATH, else Visual Studio's; nothing when none is found
+clang_compiler() {
+	local vswhere install
+	if [ -n "${CLANG_CXX:-}" ]; then echo "$CLANG_CXX"; return; fi
+	command -v clang++ 2> /dev/null && return
+	vswhere="$(printenv 'ProgramFiles(x86)' 2>/dev/null)/Microsoft Visual Studio/Installer/vswhere.exe"
+	[ -f "$vswhere" ] || return 0
+	install="$("$vswhere" -latest -products '*' -property installationPath 2>/dev/null | tr -d '' | head -n 1)"
+	[ -n "$install" ] && [ -f "$install/VC/Tools/Llvm/x64/bin/clang++.exe" ] && echo "$install/VC/Tools/Llvm/x64/bin/clang++.exe"
+	return 0
+}
+
+gate_clang() {
+	local cxx build log
+	cxx="$(clang_compiler)"
+	[ -n "$cxx" ] || { echo "clang: no clang++ found (set CLANG_CXX), skipped"; return 0; }
+	# CMake hands a compiler path with spaces over as an 8.3 name, which no longer selects clang++'s C++ driver: name it from PATH
+	PATH="$(dirname "$cxx"):$PATH"
+	build="${CLANG_BUILD_DIR:-build-clang}"
+	case "$build" in /* | [A-Za-z]:*) ;; *) build="$ROOT/$build" ;; esac
+	log="$(mktemp)"
+	# on Windows the Visual Studio environment gives clang++ the MSVC headers and libraries
+	. "$ROOT/tools/ci/ci_lib.sh"
+	echo "clang: $("$cxx" --version | head -n 1 | tr -d '')"
+	if ! jai_cmake "$log" -Wno-deprecated -S "$ROOT" -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang 		-DCMAKE_CXX_COMPILER=clang++ -DJAISCRIPT_INSTALL=OFF || 		! jai_cmake "$log" --build "$build" --target jaiscript_tests jai_home_intrusive jai_home_external; then
+		grep -aE "error:|ninja: error|CMake Error" "$log" | head -12 | cut -c1-240
+		rm -f "$log"
+		echo "::error::clang: the suites do not build with $cxx"
+		exit 1
+	fi
+	rm -f "$log"
+	BIN="$build/bin"
+	suite_run vm
+	suite_run interpreter
+	echo "clang: the suites build with Clang and pass on the VM and the interpreter"
 }
 
 gate_headers() {
@@ -565,6 +612,15 @@ gate_site() {
 	run "$(jai_python)" docs/site_tools/verify_site.py --runner "$BIN/jaiscript"
 }
 
+# A .jaibite's checked-clean stamp is trusted under the checker revision that gave it; the revision is generated from the
+# library's code, and a stale one is fixed by the command the failure names
+gate_checker_revision() {
+	local py
+	py="$(jai_python)"
+	run "$py" "$ROOT/tools/ci/checker_revision.py" --selftest
+	run "$py" "$ROOT/tools/ci/checker_revision.py" --check
+}
+
 gate_asan() {
 	local build msvc=0 dll
 	build="${ASAN_BUILD_DIR:-build-asan}"
@@ -613,6 +669,10 @@ toolchain_of() {
 				[ -n "$cxx" ] && printf 'cxx=%s:%s ' "$cxx" "$("$cxx" --version 2> /dev/null | head -n 1 | tr -d '\r')"
 			done < <(header_compilers)
 			;;
+		clang)
+			cxx="$(clang_compiler)"
+			printf 'clang=%s' "${cxx:+$("$cxx" --version 2> /dev/null | head -n 1 | tr -d '')}"
+			;;
 		wasm)
 			if ! wasm_setup; then printf 'emscripten=none'
 			elif [ -f "$EMSCRIPTEN/emscripten-version.txt" ]; then printf 'emscripten=%s node=%s' "$(tr -d '\r\n"' < "$EMSCRIPTEN/emscripten-version.txt")" "$(node --version | tr -d '\r')"
@@ -623,9 +683,9 @@ toolchain_of() {
 }
 if [ "${1:-}" = --toolchain ]; then toolchain_of "${2:?usage: gates.sh --toolchain <gate>}"; exit 0; fi
 
-ALL=(tests-interp tests-vm tests-vm-reference fuzz fuzz-vm-reference fuzz-order gloom demoreel crawler gatorquest embed-quickstart lsp lsp-latency spider selftest site)
+ALL=(tests-interp tests-vm tests-vm-reference fuzz fuzz-vm-reference fuzz-order gloom demoreel crawler gatorquest embed-quickstart lsp lsp-latency spider selftest site checker-revision)
 MILESTONE=(gloom-workers gloom-long timedemo amalgamation)
-CROSS=(android headers wasm)
+CROSS=(android clang headers wasm)
 SANITIZER=(asan)
 
 [ "$#" -gt 0 ] || { echo "usage: $0 <gate>... (${ALL[*]} all; milestone: ${MILESTONE[*]}; cross: ${CROSS[*]}; sanitizer: ${SANITIZER[*]})" >&2; exit 2; }
@@ -633,8 +693,8 @@ SANITIZER=(asan)
 
 for gate in "$@"; do
 	case "$gate" in
-		tests-interp | tests-vm | tests-vm-reference | fuzz | fuzz-vm-reference | fuzz-order | gloom | demoreel | crawler | gatorquest | embed-quickstart | lsp | lsp-latency | spider | selftest | site) ;;
-		gloom-workers | gloom-long | timedemo | amalgamation | android | asan | headers | wasm) ;;
+		tests-interp | tests-vm | tests-vm-reference | fuzz | fuzz-vm-reference | fuzz-order | gloom | demoreel | crawler | gatorquest | embed-quickstart | lsp | lsp-latency | spider | selftest | site | checker-revision) ;;
+		gloom-workers | gloom-long | timedemo | amalgamation | android | asan | clang | headers | wasm) ;;
 		*) echo "unknown gate: $gate (${ALL[*]} all; milestone: ${MILESTONE[*]}; cross: ${CROSS[*]}; sanitizer: ${SANITIZER[*]})" >&2; exit 2 ;;
 	esac
 	echo "== gate: $gate"

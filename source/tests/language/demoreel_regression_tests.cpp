@@ -204,7 +204,7 @@ public:
 					var yes = true;
 					f.a = yes;
 					f.w = 4;
-					to_string(f.a) + " " + to_string(f.w) + " " + type_of(f.a)
+					to_string(f.a) + " " + to_string(f.w) + " " + reflect::type_of(f.a)
 				)", std::string("1 4.0 int")},
 			};
 			check_both_backends(cases);

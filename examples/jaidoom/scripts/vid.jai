@@ -243,7 +243,7 @@ function bmp_write(string path) -> void {
 		out.bytes(row);
 		for (int p = 0; p < pad; ++p) { out.uint8(0); }
 	}
-	write_file(path, out.to_string());
+	file::write(path, out.to_string());
 }
 
 function pix_clear(int color) -> void {

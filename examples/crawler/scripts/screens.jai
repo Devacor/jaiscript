@@ -201,7 +201,7 @@ function shaft_build() -> void {
 			float dy = (y + 0.5 - cy) * 1.1;
 			float r = math::sqrt(dx * dx + dy * dy) + 0.01;
 			SHAFT_DEPTH.push(rim / r);
-			SHAFT_ANGLE.push(math::atan2(dy, dx) / (2.0 * math::PI) + 0.5);
+			SHAFT_ANGLE.push(math::atan2(dy, dx) / (2.0 * math::pi) + 0.5);
 		}
 	}
 	SHAFT_RAMP = [];
@@ -260,7 +260,7 @@ function title_screen(bool can_continue) -> string {
 		shaft_life(frame);
 		title_overlay(can_continue, frame);
 		page_present();
-		string key = HOST_INTERACTIVE ? poll_key(0.05) : read_key();
+		string key = host_interactive ? poll_key(0.05) : read_key();
 		descent += 0.06;
 		frame += 1;
 		if (key == "") { continue; }
@@ -273,7 +273,7 @@ function title_screen(bool can_continue) -> string {
 }
 
 // What lives in the Well: embers rising out of the glow toward you, and pairs of eyes in the
-// brickwork that open, watch and blink. Placed by the presentation hash, never the game's Rng.
+// brickwork that open, watch and blink. Placed by the presentation hash, never the game's RNG.
 function shaft_life(int frame) -> void {
 	float cx = PAGE_W / 2.0;
 	float cy = PAGE_H * 1.2;
@@ -351,7 +351,7 @@ function title_overlay(bool can_continue, int frame) -> void {
 	page_box((PAGE_W - w) / 2, PAGE_H - menu.size() - 5, w, "", menu, 0x4A5A36, INK_TITLE);
 	string live = "R reloads the scripts mid-run, and so does saving one: edit them while you play";
 	if (live.size() + 4 <= PAGE_W) { page_text((PAGE_W - live.size()) / 2, PAGE_H - 2, back_line(INK_MAGIC, live)); }
-	page_text(1, PAGE_H - 1, back_line(INK_FAINT, `seed ${HOST_SEED}`));
+	page_text(1, PAGE_H - 1, back_line(INK_FAINT, `seed ${host_seed}`));
 	string credit = "written in JaiScript";
 	page_text(PAGE_W - credit.size() - 1, PAGE_H - 1, back_line(INK_FAINT, credit));
 }
@@ -545,7 +545,7 @@ function run_summary_lines() -> array<Line> {
 }
 
 function death_screen() -> void {
-	if (G.smoke && VIEW_PROBE == null && !HOST_ANIM) { return; }   // a dump or an --anim run draws the ending too
+	if (G.smoke && VIEW_PROBE == null && !host_anim) { return; }   // a dump or an --anim run draws the ending too
 	page_from_view();
 	array<int> base = PAGE_PIX;
 	for (int frame = 0; frame <= 6; ++frame) {
@@ -554,9 +554,9 @@ function death_screen() -> void {
 		OVERLAYS = [];
 		if (frame == 6) { death_overlay(); }
 		page_present();
-		if (HOST_INTERACTIVE) { sleep(0.06); }
+		if (host_interactive) { sleep(0.06); }
 	}
-	if (HOST_INTERACTIVE) { read_key(); }
+	if (host_interactive) { read_key(); }
 }
 
 // The one that killed you, large, in full colour over the washed-out view, when it was a monster.
@@ -609,7 +609,7 @@ function death_overlay() -> void {
 	for (auto l : run_summary_lines()) { lines.push(l); }
 	lines.push(Line());
 	int w = imin(PAGE_W - 4, 64);
-	for (auto row : wrap_text(paint(INK_DIM, DEATH_QUIPS[lat(G.turn, G.floor, HOST_SEED) % DEATH_QUIPS.size()]), w - 4)) { lines.push(painted_line(row)); }
+	for (auto row : wrap_text(paint(INK_DIM, DEATH_QUIPS[lat(G.turn, G.floor, host_seed) % DEATH_QUIPS.size()]), w - 4)) { lines.push(painted_line(row)); }
 	lines.push(Line());
 	lines.push(line_of(INK_FAINT, "any key to leave the Well"));
 	page_box((PAGE_W - w) / 2, imin(PAGE_H - lines.size() - 3, (y + 7 * sy) / 2 + 3), w, "HERE LIES", lines, 0x6A2020, INK_BAD);
@@ -618,9 +618,9 @@ function death_overlay() -> void {
 array<int> RAINBOW = [0xFF3030, 0xFF9020, 0xFFE040, 0x50E060, 0x40C8FF, 0x6060FF, 0xD050FF];
 
 // The stolen fire comes home: flames climb the screen in rainbow bands rising like the colour
-// climbing the Well. The flames run on their own little LCG, never the game's Rng.
+// climbing the Well. The flames run on their own little LCG, never the game's RNG.
 function victory_screen() -> void {
-	if (G.smoke && VIEW_PROBE == null && !HOST_ANIM) { return; }   // a dump or an --anim run draws the ending too
+	if (G.smoke && VIEW_PROBE == null && !host_anim) { return; }   // a dump or an --anim run draws the ending too
 	page_open(page_size_cols(), page_size_rows());
 	int w = PAGE_W;
 	int h = PAGE_H * 2;
@@ -633,7 +633,7 @@ function victory_screen() -> void {
 	int seed = 1;
 	for (int warm = 0; warm < h; ++warm) { seed = fire_step(heat, w, h, seed); }
 	bool big = PAGE_W >= 110;
-	int frames = HOST_INTERACTIVE ? 80 : 1;
+	int frames = host_interactive ? 80 : 1;
 	for (int frame = 0; frame < frames; ++frame) {
 		seed = fire_step(heat, w, h, seed);
 		for (int y = 0; y < h; ++y) {
@@ -644,9 +644,9 @@ function victory_screen() -> void {
 		font_text("VICTORY", -1, imax(2, PAGE_H / 5), big ? 2 : 1, big ? 3 : 2, 0xFFFFFF, 0xFFD45E, true);
 		if (frame >= frames / 3) { victory_overlay(big ? 3 : 2); }
 		page_present();
-		if (HOST_INTERACTIVE) { sleep(0.05); }
+		if (host_interactive) { sleep(0.05); }
 	}
-	if (HOST_INTERACTIVE) { read_key(); }
+	if (host_interactive) { read_key(); }
 }
 
 // one step of the flames: a white-hot bottom row, and each pixel takes the one below it,

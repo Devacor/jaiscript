@@ -17,6 +17,9 @@ public:
     explicit binary_archive_writer(engine* eng);
     binary_archive_writer(std::vector<uint8_t>& buffer, engine* eng);
     ~binary_archive_writer();
+    // A script's to_binary: write_value's walk counts against the engine's execution budget (detail/work_budget.hpp), and a
+    // walk that finds it spent throws the budget's error
+    void count_work() { counts_work_ = true; }
 
     static constexpr bool needs_property_keys = true;
     static constexpr bool is_text_format = false;
@@ -88,7 +91,11 @@ private:
         bool value_next = false;          // a map entry's key went out: its value is next
         script_map::const_iterator next{};
         std::vector<script_value> values; // a handle's payload, or an instance's property values in order
+        bool instance = false;            // the members of an instance written in place
+        bool coroutine = false;           // a coroutine's record
     };
+    bool payload_next_ = false;           // the next value is a handle's object, not an instance written in place
+    bool begin_coroutine(coroutine_handle& a_coroutine, std::vector<value_frame>& frames);
 
     // The frame's next child, in its container (whose storage stays put while frames move) or in scratch when it had to be
     // made; null when the frame has none left
@@ -99,6 +106,7 @@ private:
     bool begin_value(const script_value& given, std::vector<value_frame>& frames);
 
     std::vector<uint8_t>* buffer_ = nullptr;
+    bool counts_work_ = false;
     std::vector<uint8_t> owned_buffer_;
 
     struct buffered_property { std::string name; std::vector<uint8_t> data; };
@@ -133,6 +141,8 @@ public:
     explicit binary_archive_reader(const void* data, size_t size, engine* eng);
 
     ~binary_archive_reader();
+    // A script's from_binary: read_value's walk counts against the engine's execution budget, as the writer's does
+    void count_work() { counts_work_ = true; }
 
 private:
     // Object state for pre-read property access with offset-based seeking
@@ -221,6 +231,7 @@ public:
 private:
     std::vector<uint8_t> data_;
     size_t pos_;
+    bool counts_work_ = false;
     std::unordered_set<uint32_t> handle_ids_read_;
 
     void read_raw(void* dest, size_t size);

@@ -147,7 +147,7 @@ namespace detail {
 	static constexpr int JAI_DETAIL_METHOD_SLOT = decltype(jai_method_counter(::jai::detail::method_rank<::jai::detail::method_slot_limit>{}))::value; \
 	static_assert(JAI_DETAIL_METHOD_SLOT < ::jai::detail::method_slot_limit, "JAI_METHOD: a class level declares at most 128"); \
 	static_assert(decltype(::jai::detail::method_options_check(0, ##__VA_ARGS__))::value, \
-		"JAI_METHOD: an option is jai::nodiscard, jai::serial or a permission enum"); \
+		"JAI_METHOD: an option is jai::nodiscard, jai::serial, a typed result (jai::returns<jai::type_arg>) or a permission enum"); \
 	friend struct ::jai::detail::method_access; \
 	template<typename jai_self_type> \
 	static constexpr auto jai_method_entry(::jai::detail::method_index<JAI_DETAIL_METHOD_SLOT>) { \

@@ -5,7 +5,7 @@
 # hashes (GLOOM with and without workers and at 600 ticks, the demoreel and the crawler on the VM, their hosts' one backend,
 # and the two through the runner on both; Gator Quest and JaiDOOM's timedemo, where the checkout has it, on both through the
 # runner), the embedding quickstart, the language server, the one-file build's include list, the runner's selftest and the
-# documentation site.
+# documentation site, and the committed checker revision against the checker's sources.
 #
 #   tools/ci/battery.sh [--build]
 #
@@ -32,7 +32,7 @@ else
 	{ jai_suites debug interp vm vm-reference || echo "DEBUG-SUITES-RED"; } > "$JAI_CI_LOG_DIR/battery_debug.out" 2>&1 &
 	debug_pid=$!
 fi
-jai_gates_side_by_side release tests-interp tests-vm tests-vm-reference fuzz fuzz-vm-reference fuzz-order gloom gloom-workers gloom-long demoreel crawler gatorquest timedemo embed-quickstart lsp amalgamation selftest site
+jai_gates_side_by_side release tests-interp tests-vm tests-vm-reference fuzz fuzz-vm-reference fuzz-order gloom gloom-workers gloom-long demoreel crawler gatorquest timedemo embed-quickstart lsp amalgamation selftest site checker-revision
 FAILED="$FAILED$JAI_RED"
 if [ -n "${debug_pid:-}" ]; then
 	wait "$debug_pid" || true

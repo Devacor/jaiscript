@@ -7,7 +7,7 @@
 // macOS install carries. Registered by register_fetch() next to the console and net bindings.
 //
 // Script surface (docs/site/reference/host.html#runner-host-api lists the runner's host API):
-//   auto d = Download();  d.start(url, path);  d.pump();  d.done()  d.success()  d.error()
+//   auto d = download();  d.start(url, path);  d.pump();  d.done()  d.success()  d.error()
 //   d.received()  d.total()  d.fraction()  d.cancel()
 //   zip_entries(zip) -> array<string>;  zip_extract(zip, entry, dest) -> bool (CRC checked)
 #include <jaiscript/jaiscript.hpp>
@@ -532,7 +532,7 @@ private:
 
 // A download reaches the network and writes a file: start needs both permissions
 inline void register_fetch(jai::engine& eng) {
-	jai::dynamic_binder<download>(eng, "Download")
+	jai::dynamic_binder<download>(eng, "download")
 		.constructor<>()
 		.method("start", &download::start, jai::permissions::filesystem, jai::permissions::network)
 		.method("pump", &download::pump)

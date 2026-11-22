@@ -1,6 +1,9 @@
 #include <jaiscript/serialization/binary_archive.hpp>
 #include <jaiscript/detail/class_runtime.hpp>
 #include <jaiscript/detail/math_values.hpp>
+#include <jaiscript/detail/work_budget.hpp>
+#include <jaiscript/detail/coroutine_snapshot.hpp>
+#include <jaiscript/detail/type_name_key.hpp>
 
 namespace jai::serialization {
 
@@ -171,9 +174,13 @@ void binary_archive_writer::write_value(const script_value& root) {
     std::vector<value_frame> frames;
     if (!begin_value(root, frames)) { return; }
     script_value scratch(std::monostate{}, engine_ref_);
+    detail::work_meter work(counts_work_ ? engine_ref_ : nullptr);
     while (!frames.empty()) {
+        if (work.spend(2)) [[unlikely]] { work.throw_spent(); }
         const script_value* child = next_child(frames.back(), scratch);
         if (!child) {
+            if (frames.back().instance) { close_written_instance(); }
+            if (frames.back().coroutine) { close_coroutine_record(); }
             frames.pop_back();
             continue;
         }
@@ -209,8 +216,28 @@ const script_value* binary_archive_writer::next_child(value_frame& f, script_val
     return nullptr;
 }
 
+// A coroutine is a shared handle whose object is its record: the record once under the id, every later handle the id alone
+bool binary_archive_writer::begin_coroutine(coroutine_handle& a_coroutine, std::vector<value_frame>& frames) {
+    auto [id, is_new] = track_shared_ptr(&a_coroutine);
+    write_uint8(static_cast<uint8_t>(script_value_type::jai_shared_ptr_type));
+    write_uint32(id);
+    if (!is_new) { return true; }
+    std::vector<std::pair<std::string, script_value>> record = coroutine_fields(a_coroutine);
+    write_uint8(static_cast<uint8_t>(script_value_type::jai_object_type));
+    write_string("coroutine");
+    write_uint32(1);
+    write_uint32(static_cast<uint32_t>(record.size()));
+    for (const auto& member : record) { write_string(member.first); }
+    value_frame& f = frames.emplace_back(frame_shape::values, script_value(std::monostate{}, engine_ref_));
+    for (auto& member : record) { f.values.push_back(std::move(member.second)); }
+    f.coroutine = true;
+    open_coroutine_record(a_coroutine);
+    return true;
+}
+
 bool binary_archive_writer::begin_value(const script_value& given, std::vector<value_frame>& frames) {
     const script_value& value = given.is_reference() ? given.deref() : given;
+    const bool payload = std::exchange(payload_next_, false);
 
     // a handle to no object is null, as in JSON
     script_value_type tag = value.type();
@@ -223,6 +250,7 @@ bool binary_archive_writer::begin_value(const script_value& given, std::vector<v
     std::shared_ptr<class_definition> bound;
     class_definition* class_def = nullptr;
     if (tag == script_value_type::jai_object_type) {
+        if (const auto coroutine = detail::coroutine_of(value)) { return begin_coroutine(*coroutine, frames); }
         try {
             instance = value.as<strong_ptr<class_instance>>();
         } catch (...) {
@@ -315,6 +343,7 @@ bool binary_archive_writer::begin_value(const script_value& given, std::vector<v
             write_uint32(id);
             if (is_new) {
                 frames.emplace_back(frame_shape::values, script_value(std::monostate{}, engine_ref_)).values.push_back(weak_target_value(shared));
+                payload_next_ = true;
             }
             break;
         }
@@ -326,6 +355,7 @@ bool binary_archive_writer::begin_value(const script_value& given, std::vector<v
             write_uint32(id);
             if (is_new) {
                 frames.emplace_back(frame_shape::values, script_value(std::monostate{}, engine_ref_)).values.push_back(weak_target_value(holder));
+                payload_next_ = true;
             }
             break;
         }
@@ -381,12 +411,18 @@ bool binary_archive_writer::begin_value(const script_value& given, std::vector<v
 
             // The values follow in the same order
             if (!property_values.empty()) {
-                frames.emplace_back(frame_shape::values, script_value(std::monostate{}, engine_ref_)).values = std::move(property_values);
+                value_frame& f = frames.emplace_back(frame_shape::values, script_value(std::monostate{}, engine_ref_));
+                f.values = std::move(property_values);
+                if (instance && !payload) {
+                    open_written_instance(instance.get());
+                    f.instance = true;
+                }
             }
             break;
         }
 
         default:
+            refuse_function_in_coroutine(value);
             throw serialization_error("Unsupported type for binary serialization: " + std::to_string(static_cast<int>(value.type())));
     }
     return true;
@@ -737,7 +773,11 @@ script_value binary_archive_reader::read_value_internal() {
         throw serialization_error("Engine reference expired during deserialization");
     }
     std::vector<value_frame> frames;
+    detail::work_meter work(counts_work_ ? eng : nullptr);
+    size_t counted = pos_;
     for (;;) {
+        if (work.spend(1 + (pos_ - counted) / detail::k_work_unit_bytes)) [[unlikely]] { work.throw_spent(); }
+        counted = pos_;
         script_value value(std::monostate{}, eng);
         if (!read_or_open(eng, frames, value)) { continue; }
         for (;;) {
@@ -915,6 +955,10 @@ void binary_archive_reader::take_child(engine* eng, value_frame& f, script_value
 
 script_value binary_archive_reader::finish_frame(engine* eng, value_frame& f) {
     if (f.shape != frame_shape::object) { return std::move(f.built); }
+    // the name in the data is text: the class it names is known by its registered spelling from here on
+    if (f.type_name.find_first_of("<, \t\r\n") != std::string::npos && !detail::engine_access::get_class_definition(*eng, f.type_name)) {
+        if (std::string spelled = detail::registered_type_spelling(eng, f.type_name); !spelled.empty()) { f.type_name = std::move(spelled); }
+    }
     const uint32_t property_count = static_cast<uint32_t>(f.names.size());
     const auto* metadata = detail::engine_access::get_serialization_registry(*eng).get_class_metadata(f.type_name);
     if (metadata && metadata->custom_construct) {

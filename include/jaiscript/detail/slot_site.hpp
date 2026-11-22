@@ -22,6 +22,10 @@ namespace jai::detail {
         bool by_reference = false;   // a T& slot: the description spells the declared type T&
     };
 
+    // A name no source can spell (operator++(int)'s marker parameter, a compiler's own value): it starts with \x01, and a text or a
+    // listing that names a slot treats it as no name
+    inline bool unspellable_name(std::string_view name) { return !name.empty() && name.front() == '\x01'; }
+
 } // namespace jai::detail
 
 #endif // __JAISCRIPT_DETAIL_SLOT_SITE_HPP__

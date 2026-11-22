@@ -1125,7 +1125,7 @@ public:
 				auto& x = arr[1];
 				var msg = "";
 				try { x = "s"; } catch (e) { msg = e; }
-				msg + "|" + type_of(arr[1]) + "|" + to_string(arr[1]);
+				msg + "|" + reflect::type_of(arr[1]) + "|" + to_string(arr[1]);
 			)", "Cannot assign 'string' to element of type 'int'|int|2"},
 				// A ref decl aliasing another constrained element ref decl shares the holder
 				// AND its constraint (the alias writes through and enforces identically)
@@ -1138,11 +1138,11 @@ public:
 				local = 6;
 				msg + "|" + to_string(arr[0]);
 			)", "Cannot assign 'string' to element of type 'int'|6"},
-				// Wrapper-tag canary: sharing keeps the origin's reference tag; type_of must
+				// Wrapper-tag canary: sharing keeps the origin's reference tag; reflect::type_of must
 				// keep reporting the referent type at every hop
 				{"ref_param_type_of_stable_through_hops", R"(
-				function leaf(int& x) -> string { return type_of(x); }
-				function mid(int& y) -> string { return type_of(y) + ":" + leaf(y); }
+				function leaf(int& x) -> string { return reflect::type_of(x); }
+				function mid(int& y) -> string { return reflect::type_of(y) + ":" + leaf(y); }
 				var v = 5;
 				mid(v);
 			)", "int:int"},
@@ -1158,10 +1158,10 @@ public:
 				try { got = f(); } catch (e) { msg = e; }
 				to_string(got) + "|" + msg;
 			)", "6|"},
-				// Reads through the bound ref see live field state; type_of reports the referent
+				// Reads through the bound ref see live field state; reflect::type_of reports the referent
 				{"tier1_type_of_and_read_back_through_bound_field_ref", R"(
 				class Box { int v = 7; }
-				function probe(int& x) -> string { var t = type_of(x); x = x + 1; return t + ":" + to_string(x); }
+				function probe(int& x) -> string { var t = reflect::type_of(x); x = x + 1; return t + ":" + to_string(x); }
 				var b = Box();
 				probe(b.v) + ":" + to_string(b.v);
 			)", "int:8:8"},
@@ -1412,7 +1412,7 @@ public:
 				{"tier1_bst_insert_by_ref", R"(
 				class TreeNode { int value = 0; shared_ptr<TreeNode> left = null; shared_ptr<TreeNode> right = null; TreeNode(int val) { value = val; } }
 				function insertNode(var& node, int val) {
-					if (node == null) { node = TreeNode(val); return; }
+					if (node == null) { node = make_shared<TreeNode>(val); return; }
 					if (val < node.value) { insertNode(node.left, val); } else { insertNode(node.right, val); }
 				}
 				function inorderSum(var node) -> int {
@@ -1478,16 +1478,16 @@ public:
 			)", 6},
 				// The holder pins the instance/vector: dropping the caller's last handle
 				// mid-call must leave the ref writable (Debug 0xDD canary covers dangling)
-				{"tier1_owner_pinned_past_caller_handle_drop", R"(
+				{"tier1_reference_raises_once_its_owner_lets_go", R"(
 				class Box { int v = 5; }
 				var g = Box();
 				var arr = [1, 2, 3];
-				function fldWrite(int& x) { g = null; x = x + 1; return x; }
-				function elemWrite(int& x) { arr = null; x = x + 1; return x; }
+				function fldWrite(int& x) { g = null; try { x = x + 1; } catch (e) { return 9; } return x; }
+				function elemWrite(int& x) { arr = null; try { x = x + 1; } catch (e) { return 7; } return x; }
 				var a = fldWrite(g.v);
 				var b = elemWrite(arr[1]);
 				a * 10 + b;
-			)", 63},
+			)", 97},
 				// Chain resolution happens at bind time, after ALL args evaluate: a later
 				// arg that swaps the chain spine changes what binds (identifier precedent)
 				{"tier1_bind_time_ordering_pinned", R"(
@@ -2476,7 +2476,7 @@ public:
 				{"deep_tier1_bst_sequential", R"(
 				class TreeNode { int value = 0; shared_ptr<TreeNode> left = null; shared_ptr<TreeNode> right = null; TreeNode(int v) { value = v; } }
 				function insertNode(var& node, int val) {
-					if (node == null) { node = TreeNode(val); return; }
+					if (node == null) { node = make_shared<TreeNode>(val); return; }
 					if (val < node.value) { insertNode(node.left, val); } else { insertNode(node.right, val); }
 				}
 				var root = null;
@@ -2497,7 +2497,7 @@ public:
 				var h = Holder();
 				var d = Dog();
 				d.id = 4;
-				shared_ptr<Animal> kept = h.pet;
+				Animal& kept = h.pet;
 				put(h.pet, d);
 				same_object(kept, h.pet) ? h.pet.id * 10 + h.pet.extra : -1;
 			)", "41"},
@@ -2701,21 +2701,19 @@ public:
 			check_eq(std::string("1"), i_plain, "interp: local dtor at frame pop");
 			check_eq(i_plain, v_plain, "plain dtor-at-pop parity");
 
-			// Ref-pinned owner dropped mid-call: the holder keeps the instance alive, so
-			// the dtor fires at callee-frame pop, after the write and before the caller
-			// resumes - same ordering on both backends
+			// The owner dropped mid-call: a reference parameter names the field without owning the instance, so the dtor fires at
+			// the drop and the write through the reference raises - same ordering on both backends
 			const char* pinned = R"(
 				var log = "";
 				class Box { int v = 5; ~Box() { log = log + "D"; } }
 				var g = Box();
-				function f(int& x) { g = null; log = log + "a"; x = 7; log = log + "b"; return x; }
+				function f(int& x) { g = null; log = log + "a"; try { x = 7; } catch (e) { log = log + "!"; } log = log + "b"; return 1; }
 				var r = f(g.v);
 				log = log + "c";
-				if (r == 7) { log = log + "!"; }
 				log;
 			)";
 			auto [i_pin, v_pin] = run_both_backends(pinned);
-			check_eq(std::string("abDc!"), i_pin, "interp: dtor fires at frame pop, ref write lands");
+			check_eq(std::string("Da!bc"), i_pin, "interp: dtor fires at the drop, the write raises");
 			check_eq(i_pin, v_pin, "pinned dtor ordering parity");
 		});
 
@@ -2871,9 +2869,9 @@ public:
 		test("tier3_var_param_bind_semantics", [this, run_both_backends_stdlib]() {
 			const char* src = R"(
 				function probe(var x) -> string {
-					var before = type_of(x);
+					var before = reflect::type_of(x);
 					x = [1, 2];
-					return `${before}>${type_of(x)}`;
+					return `${before}>${reflect::type_of(x)}`;
 				}
 				function clobber(var x) { x = 999; }
 				var i = 7; var f = 1.5; var b = true; var c = 'q'; var s = "str";
@@ -2890,7 +2888,7 @@ public:
 		test("tier3_int_param_bind_semantics", [this, run_both_backends_stdlib]() {
 			const char* src = R"(
 				function take(int x) -> string {
-					var t = type_of(x);
+					var t = reflect::type_of(x);
 					x = x + 1;
 					return `${t}:${x}`;
 				}
@@ -2910,7 +2908,7 @@ public:
 		// Tier 3(b): the exact-class-match conversion skip must keep value semantics -
 		// exact match still deep-clones; subclass args keep the full path.
 		// `new` sugar: a 'var' decl keeps a shared_ptr-tagged
-		// initializer's marker (var sp = shared_ptr<P>() ≡ shared_ptr<P> sp = P()), so
+		// initializer's marker (var sp = shared_ptr<P>() ≡ shared_ptr<P> sp = make_shared<P>()), so
 		// sp's arg tag forces sharing through the exact-class param (14,14) — matching
 		// what the decl-typed spelling does.
 		test("tier3_exact_class_param_still_clones", [this, run_both_backends]() {
@@ -3194,7 +3192,7 @@ public:
 				// Comprehensive Scope Tests::mixed_scopes_comprehensive).
 				{"stage1_closure_callee_capture_dies_with_scope", R"(
 				class T { int x = 1; }
-				shared_ptr<T> a = T();
+				shared_ptr<T> a = make_shared<T>();
 				var w = weak_ptr<T>(a);
 				function run(auto p) -> auto {
 					var l = [p]() { return p.x; };
@@ -3211,7 +3209,7 @@ public:
 				// releases it.
 				{"stage1_live_lambda_capture_keeps_object_alive", R"(
 				class T { int x = 1; }
-				shared_ptr<T> a = T();
+				shared_ptr<T> a = make_shared<T>();
 				var w = weak_ptr<T>(a);
 				function mk(auto p) -> auto { return [p]() { return p.x; }; }
 				var l = mk(a);
@@ -3228,7 +3226,7 @@ public:
 				class T { int x = 1; }
 				var w = null;
 				function make() -> auto {
-					shared_ptr<T> p = T();
+					shared_ptr<T> p = make_shared<T>();
 					w = weak_ptr<T>(p);
 					return 7;
 				}
@@ -3241,7 +3239,7 @@ public:
 				{"stage1_arg_copies_do_not_outlive_call", R"(
 				class T { int x = 5; }
 				function take(auto p) -> auto { return p.x; }
-				shared_ptr<T> a = T();
+				shared_ptr<T> a = make_shared<T>();
 				var w = weak_ptr<T>(a);
 				var r = 0;
 				for (var i = 0; i < 3; i += 1) { r += take(a); }
@@ -3659,6 +3657,37 @@ public:
 			check_eq(i1, v1, "opaque callee parity");
 		});
 
+		// A member a reference binds (an argument, a cast<T&> operand) over a computed base reads as its place, and a conditional's arm
+		// where a reference may bind reads as a value whose storage replaces it: a grafted body's copy of the read lost both, so the
+		// callee's reference parameter was refused, wrote a temporary, or raised over an arm that names no storage
+		test("a_grafted_body_keeps_the_place_a_reference_binds", [this]() {
+			const std::string prelude =
+				"var gpts = [math::vec2(1.0, 2.0), math::vec2(3.0, 4.0)];\n"
+				"class P { int raw = 4; int _get_twice() { return raw * 2; } }\n"
+				"P gp;\nint ga = 1;\nint gb = 2;\n"
+				"void bumpf(float& f) { f += 10.0; }\n"
+				"void seti(int& r) { r = 77; }\n"
+				"int readi(const int& r) { return r + 1; }\n";
+			const std::pair<const char*, const char*> cases[] = {
+				{"void leaf(int i) { bumpf(gpts[i + 1].x); }\nstring run() { leaf(0); return `${gpts[0].x} ${gpts[1].x}`; }\nrun();", "1.0 13.0"},
+				{"void leaf(int i) { bumpf(cast<float&>(gpts[i + 1].y)); }\nstring run() { leaf(0); return `${gpts[0].y} ${gpts[1].y}`; }\nrun();", "2.0 14.0"},
+				{"void leaf(bool c) { seti(c ? ga : gb); }\nstring run() { leaf(false); return `${ga} ${gb}`; }\nrun();", "1 77"},
+				{"int leaf(bool c) { return readi(c ? ga : gp.twice); }\nstring run() { return `${leaf(false)} ${leaf(true)}`; }\nrun();", "9 2"},
+			};
+			std::string failures;
+			for (const auto& c : cases) {
+				for (int mode = 0; mode < 3; ++mode) {
+					auto e = mode == 0 ? interp_engine() : vm_engine();
+					if (mode == 2) { e->vm_reference_mode(true); }
+					jai::stdlib::register_all(*e);
+					std::string got;
+					try { got = e->execute(prelude + c.first).as_string(); } catch (const std::exception& error) { got = error.what(); }
+					if (got != c.second) { failures += std::string(c.first) + (mode == 0 ? " (interpreter)" : mode == 1 ? " (vm)" : " (vm-reference)") + "\n  expected: " + c.second + "\n  got:      " + got + "\n"; }
+				}
+			}
+			check_true(failures.empty(), failures);
+		});
+
 		test("an_inlined_untyped_result_outlives_the_graft_block", [this]() {
 			// fuzz seeds 1564 and 1848: an inlined call of a function without a declared result keeps its result in a var slot; a
 			// program with a class makes var slots candidates for scope-exit kills, and the graft's block exit killed the result
@@ -3667,12 +3696,12 @@ public:
 				{ "class C0 { var m1 = [0, 4, 5]; }\n1;",
 				  "function fn4(int p5) {\n\treturn 568;\n}\n"
 				  "function zbreload() {\n\tif (\"hello\" < \"a\") { }\n\treturn fn4(7 | -3) * 0.0;\n}\n"
-				  "to_string(zbreload()) + \" \" + to_string(fn4(1)) + \" \" + type_of(fn4(2) + 1);" },
+				  "to_string(zbreload()) + \" \" + to_string(fn4(1)) + \" \" + reflect::type_of(fn4(2) + 1);" },
 				{ "class C0 { var m1 = [0, 4, 5]; }\n"
 				  "function fn4(int p5) -> int {\n\tfor (int i6 = 0; i6 < 3; i6++) { }\n\tif ((p5 % (11 + 5)) != ((p5 + p5) <=> 0)) { }\n}\n",
 				  "function fn4(int p5) {\n\treturn 568;\n}\n"
 				  "function zbreload() {\n\tif (\"hello\" < \"a\") { }\n\treturn fn4(7 | -3) * 0.0;\n}\n"
-				  "to_string(zbreload()) + \" \" + to_string(fn4(1)) + \" \" + type_of(fn4(2) + 1);" },
+				  "to_string(zbreload()) + \" \" + to_string(fn4(1)) + \" \" + reflect::type_of(fn4(2) + 1);" },
 				{ "class D { int id = 0; ~D() { } }\nvar made = [];\n1;",
 				  "function mk(int n) { return D(); }\n"
 				  "function use() { if (made.size() > 5) { } var d = mk(3); return d.id + 1; }\n"
@@ -3882,7 +3911,7 @@ public:
 				"array<string> a = [\"1.5\", \"abc\"]; int n = 0;\n"
 				"for (auto& s : a) { n = n + s.size(); a = [\"xxxxxx\"]; n = n + s.size(); }\n"
 				"array<var> mixed = [\"ab\", [1, 2, 3], 7]; int m = 0;\n"
-				"for (auto& x : mixed) { if (type_of(x) != \"int\") { m = m + x.size(); } }\n"
+				"for (auto& x : mixed) { if (reflect::type_of(x) != \"int\") { m = m + x.size(); } }\n"
 				"array<string> b = [\"q\"]; string caught = \"none\";\n"
 				"for (var& s : b) { try { s = [1]; } catch (e) { caught = \"raised\"; } n = n + s.size(); }\n"
 				"to_string(n) + \" \" + to_string(m) + \" \" + caught + \" \" + b[0];";
@@ -3915,7 +3944,7 @@ public:
 				link(root, root.left, kid); link(root, root.right, new N()); link(kid, kid.left, null);
 				log = log + "|" + to_string(root.v) + to_string(root.count) + to_string(root.left.v) + to_string(root.right != null) + to_string(kid.left == null);
 				set_both(root.left.v, root.right.v, 7); set_both(root.count, root.w, 3);
-				log = log + "|" + to_string(kid.v) + to_string(root.right.v) + to_string(root.count) + "," + to_string(root.w) + "," + type_of(root.w);
+				log = log + "|" + to_string(kid.v) + to_string(root.right.v) + to_string(root.count) + "," + to_string(root.w) + "," + reflect::type_of(root.w);
 				try { set_both(root.count, root.v, "s"); } catch (e) { log = log + "|" + e; }
 				log = log + "|" + to_string(keep(root)) + to_string(root != null);
 				var p = P(); bump(p); var sp = new P(); bump(sp);
@@ -3928,10 +3957,10 @@ public:
 				shared_ptr<T> t = new T();
 				shared_ptr<T> c = new T(); c.x = 5;
 				put(t.left, c); put(t.right, t.left); clear(t.left);
-				log = log + "|" + to_string(t.left == null) + to_string(t.right.x) + type_of(t.right);
+				log = log + "|" + to_string(t.left == null) + to_string(t.right.x) + reflect::type_of(t.right);
 				shared_ptr<U> u = new U(); u.x = 9;
 				put(t.left, u); put_any(t.right, null);
-				log = log + "|" + to_string(t.left.x) + type_of(t.left) + to_string(t.right == null);
+				log = log + "|" + to_string(t.left.x) + reflect::type_of(t.left) + to_string(t.right == null);
 				try { put_any(t.left, P()); } catch (e) { log = log + "|" + e; }
 				try { put_any(t.left, new P()); } catch (e) { log = log + "|" + e; }
 				class B2 { int a = 0; }
@@ -3942,7 +3971,7 @@ public:
 					return out; }
 				log = log + "|" + rc();
 				class Pinned { var v = 1; int id = 0; ~Pinned() { log = log + "~" + to_string(id); } }
-				function pin_outlives() { var n = new Pinned(); n.id = 1; var& r = n.v; n = null; log = log + "a"; r = 5; log = log + to_string(r); return 0; }
+				function pin_outlives() { var n = new Pinned(); n.id = 1; var& r = n.v; n = null; log = log + "a"; try { r = 5; log = log + to_string(r); } catch (e) { log = log + "!"; } return 0; }
 				void set_v(var& slot, var x) { slot = x; }
 				function pin_param() { var n = new Pinned(); n.id = 2; var m = n; n = null; set_v(m.v, 9); var k = m.v; m = null; log = log + "b" + to_string(k); return 0; }
 				pin_outlives(); log = log + "|"; pin_param(); log = log + "|";
@@ -4106,7 +4135,7 @@ public:
 						array<string> one = ["solo"];
 						array<var> mixed = ["p", 1, 2.5, true];
 						string r = a.join("-") + "|" + a.join() + "|" + none.join(",") + "|" + one.join(",") + "|" + mixed.join("/");
-						r += "|" + string::join(a, "+") + "|" + string::join(one) + "|" + type_of(string::join(a, utf8_string("~")));
+						r += "|" + string::join(a, "+") + "|" + string::join(one) + "|" + reflect::type_of(string::join(a, utf8_string("~")));
 						a[1] = "mid";
 						r += "|" + a.join(", ");
 						r
@@ -4522,9 +4551,9 @@ public:
 				"int helper(int v, string s) { return v + 1; }\n"
 				"P p = P(); int r = p.tick(3); r = r + p.viaCall(2); string t = p.label(\"L\");\n"
 				"int k = helper(r, t); p.hp = k; p.x = 0.5;\n"
-				"to_string(r) + \":\" + to_string(k) + \":\" + to_string(p.hp) + \":\" + type_of(p.x) + \":\" + p.tag + \":\" + to_string(p.alive) + \":\" + to_string(p.c)";
-			const char* use = "r = p.tick(1); p.hp = r; to_string(p.hp) + \":\" + type_of(p.hp) + \":\" + t + \":\" + to_string(p.viaCall(1))";
-			const char* mismatch = "p.hp = 2.5; r = 7.5; to_string(p.hp) + \":\" + type_of(r) + \":\" + to_string(r)";
+				"to_string(r) + \":\" + to_string(k) + \":\" + to_string(p.hp) + \":\" + reflect::type_of(p.x) + \":\" + p.tag + \":\" + to_string(p.alive) + \":\" + to_string(p.c)";
+			const char* use = "r = p.tick(1); p.hp = r; to_string(p.hp) + \":\" + reflect::type_of(p.hp) + \":\" + t + \":\" + to_string(p.viaCall(1))";
+			const char* mismatch = "p.hp = 2.5; r = 7.5; to_string(p.hp) + \":\" + reflect::type_of(r) + \":\" + to_string(r)";
 			std::string first;
 			for (int pass = 0; pass < 3; ++pass) {
 				const std::string got = outcome(*on, unit);
@@ -4584,7 +4613,7 @@ public:
 			ref_off->type_proofs(false);
 			auto ref_on = vm_engine();
 			const char* defs = "int f(int n) { int m = n * 2; return m; }\nint g(int a, int b) { return a + b; }\nint x = 0; float y = 1.5;";
-			const char* use = "x = f(3); x = g(x, 4); x = x + 1; y = y * 2.0; x = true; to_string(x) + \":\" + type_of(x) + \":\" + to_string(y)";
+			const char* use = "x = f(3); x = g(x, 4); x = x + 1; y = y * 2.0; x = true; to_string(x) + \":\" + reflect::type_of(x) + \":\" + to_string(y)";
 			const char* retype = "string f(int n) { return \"s\"; }";
 			for (auto* e : {off_then_on.get(), on_then_off.get(), ref_off.get(), ref_on.get()}) {
 				jai::stdlib::register_all(*e);
@@ -4773,15 +4802,15 @@ public:
 				"string run() { int x = 5; int n = 70; int k = -1; string m = \"ok\"; try { int y = x << n; } catch (e) { m = e; } try { int q = x >> k; } catch (e) { m += e; } return m; } run();",
 				"string run() { float x = 1.5; float z = 0.0; string m = \"ok\"; try { float y = x / z; } catch (e) { m = e; } try { float q = x % z; } catch (e) { m += e; } return m; } run();",
 				"string run() { int x = 1; int& r = x; int a = 2; int b = 3; x = a + b; int c = x * a; r = c - 1; return to_string(x) + to_string(r) + to_string(c); } run();",
-				"string run() { int x = 4; var v = x + 1; var w = v; var f = 2.5; var g = f * 2.0; return type_of(v) + to_string(v) + type_of(w) + type_of(g) + to_string(g); } run();",
-				"string run() { int k = 3; float f = k; float g = 7; auto a = k; auto b = f; return type_of(f) + to_string(f) + to_string(g) + type_of(a) + type_of(b); } run();",
+				"string run() { int x = 4; var v = x + 1; var w = v; var f = 2.5; var g = f * 2.0; return reflect::type_of(v) + to_string(v) + reflect::type_of(w) + reflect::type_of(g) + to_string(g); } run();",
+				"string run() { int k = 3; float f = k; float g = 7; auto a = k; auto b = f; return reflect::type_of(f) + to_string(f) + to_string(g) + reflect::type_of(a) + reflect::type_of(b); } run();",
 				"string run() { string s = \"a\"; string t = s; t += \"b\"; string u = \"lit\"; string w = u; s = t; u = \"x\"; return s + t + u + w; } run();",
 				"string run() { bool b = true; bool c = b; char ch = 'q'; char d = ch; int i = 7; int j = i; j = 9; i = j; return to_string(b) + to_string(c) + ch + d + to_string(i) + to_string(j); } run();",
 				"string run() { int n = 0; int acc = 0; while (n < 10) { acc = acc + n; n = n + 1; } int m = 10; while (m > 0) { m = m - 3; acc = acc + m; } return to_string(acc); } run();",
 				"string run() { float x = 0.0; int hits = 0; while (x < 5.0) { x = x + 0.75; if (x >= 2.0) { hits = hits + 1; } if (x <= 1.0) { hits = hits + 10; } if (x == 3.0) { hits = hits + 100; } if (x != 3.75) { hits = hits + 1000; } } return to_string(hits) + to_string(x); } run();",
 				"string run() { int a = 3; int b = 3; int r = 0; if (a == b) { r = r + 1; } if (a != b) { r = r + 2; } if (a >= b) { r = r + 4; } if (a <= b) { r = r + 8; } if (2 < a) { r = r + 16; } if (5 > a) { r = r + 32; } int c = 2 * a; int d = 10 - a; return to_string(r) + to_string(c) + to_string(d); } run();",
 				"string run() { int x = 5; int y = 0; y = x; y = 7; int z = y; float f = 1.5; float g = 0.0; g = f; g = 2.5; return to_string(x) + to_string(y) + to_string(z) + to_string(f) + to_string(g); } run();",
-				"class P { int n = 0; } string run() { P p = P(); var h = p; int k = 2; var q = k; q = k + 1; return to_string(q) + type_of(h); } run();",
+				"class P { int n = 0; } string run() { P p = P(); var h = p; int k = 2; var q = k; q = k + 1; return to_string(q) + reflect::type_of(h); } run();",
 				"string run() { int total = 0; for (int i = 0; i < 3; ++i) { int s = 0; for (int j = 0; j < 4; ++j) { int t = i * j; s = s + t; } total = total + s; } return to_string(total); } run();",
 				"int g = 10; string run() { int x = g; int y = x + g; g = y; return to_string(g) + to_string(x); } run();",
 				"string run() { int x = 1; var f = [&]() { x = x + 5; }; f(); int y = x * 2; return to_string(x) + to_string(y); } run();",
@@ -4789,7 +4818,7 @@ public:
 				// compound rows: in-place int updates, overflow, zero divisor, %= and floats stay general, ++/-- desugar, a boxed target
 				"string run() { int acc = 0; int k = 3; for (int i = 0; i < 10; ++i) { acc += k; acc -= 1; acc *= 2; acc /= 3; ++acc; acc++; --acc; } return to_string(acc); } run();",
 				"string run() { int x = 0x7fffffffffffffff; int one = 1; string m = \"ok\"; try { x += one; } catch (e) { m = e; } int y = 5; int z = 0; try { y /= z; } catch (e) { m += \"|\" + e; } return m + to_string(x) + to_string(y); } run();",
-				"string run() { int x = 17; int m3 = 3; x %= m3; float f = 1.5; f += 2.5; f *= 2.0; var v = 4; v += 3; v *= 2; return to_string(x) + to_string(f) + to_string(v) + type_of(v); } run();",
+				"string run() { int x = 17; int m3 = 3; x %= m3; float f = 1.5; f += 2.5; f *= 2.0; var v = 4; v += 3; v *= 2; return to_string(x) + to_string(f) + to_string(v) + reflect::type_of(v); } run();",
 				"string run() { int x = 1; int& r = x; int d = 4; x += d; r += 1; x *= 2; return to_string(x) + to_string(r); } run();",
 				"string run() { int x = 2; var s = \"a\"; string m = \"ok\"; try { x += s; } catch (e) { m = e; } var w = \"b\"; w += \"c\"; return m + to_string(x) + w; } run();",
 				// typed push rows: slot receiver with literal and slot values, every buffer kind, a declined payload, a null receiver
@@ -4897,7 +4926,7 @@ public:
 			// site-IC landing op_set_member uses; accessors, non-public chains, statics,
 			// mismatches and overflow keep the general ladder and its texts
 			const char* cases[] = {
-				"class P { int x = 1; float f = 0.5; string s = \"a\"; var v = 2; } string run() { P p = P(); int k = 3; p.x += k; p.x -= 1; p.x *= 4; p.f += k; p.f /= 2; p.s += \"b\"; p.v += 1.5; p.v *= 2; return to_string(p.x) + \",\" + to_string(p.f) + \",\" + p.s + \",\" + to_string(p.v) + type_of(p.v); } run();",
+				"class P { int x = 1; float f = 0.5; string s = \"a\"; var v = 2; } string run() { P p = P(); int k = 3; p.x += k; p.x -= 1; p.x *= 4; p.f += k; p.f /= 2; p.s += \"b\"; p.v += 1.5; p.v *= 2; return to_string(p.x) + \",\" + to_string(p.f) + \",\" + p.s + \",\" + to_string(p.v) + reflect::type_of(p.v); } run();",
 				"class P { int x = 1; void bump(int d) { this.x += d; x += d; this.x *= 2; } } string run() { P p = P(); for (int i = 0; i < 4; ++i) { p.bump(i); } return to_string(p.x); } run();",
 				"class P { int x = 7; } string run() { P p = P(); int a = (p.x += 3); int b = p.x++; int c = ++p.x; int d = (p.x %= 4); return to_string(a) + to_string(b) + to_string(c) + to_string(d) + to_string(p.x); } run();",
 				"class P { int x = 1; string m = \"ok\"; } string run() { P p = P(); try { p.x += \"s\"; } catch (e) { p.m = e; } return p.m + to_string(p.x); } run();",
@@ -4906,7 +4935,7 @@ public:
 				"class A { int x = 1; int _set_x(int v) { x = v * 10; return v; } int _get_x() { return x; } } string run() { A a = A(); a.x += 2; return to_string(a.x); } run();",
 				"class S { static int n = 5; } string run() { S::n += 3; S s = S(); return to_string(S::n); } run();",
 				"class P { int x = 1; } string run() { P p = P(); var& r = p; r.x += 5; shared_ptr<P> h = new P(); h.x += 6; return to_string(p.x) + to_string(h.x); } run();",
-				"class P { float f = 1.0; } string run() { P p = P(); int k = 2; p.f += k; p.f *= 0.5; return to_string(p.f) + type_of(p.f); } run();",
+				"class P { float f = 1.0; } string run() { P p = P(); int k = 2; p.f += k; p.f *= 0.5; return to_string(p.f) + reflect::type_of(p.f); } run();",
 				"class Q { int n = 0; } string run() { var q = Q(); q.n += 1; var w; string m = \"ok\"; try { w.n += 1; } catch (e) { m = e; } return to_string(q.n) + m; } run();",
 			};
 			for (bool proofs : {true, false}) {
@@ -4932,17 +4961,17 @@ public:
 			// same post-state and texts as the interpreter with proofs on and off
 			const char* cases[] = {
 				"array<int> PIX = [0, 0, 0, 0, 0, 0, 0, 0]; string run() { int vw = 2; for (int ry = 0; ry < 2; ++ry) { int itop = ry * 2 * vw; for (int cx = 0; cx < 1; ++cx) { int xx = cx * 2; int c = ry * 10 + cx; PIX[itop + xx] = c; PIX[itop + xx + 1] = c + 1; PIX[itop + vw + xx] = 2.9; PIX[itop + vw + xx + 1] = -0.5; } } var s = \"\"; for (auto v : PIX) { s += to_string(v) + \",\"; } return s; } run();",
-				"array<float> F = [0.0, 0.0, 0.0]; string run() { int i = 1; F[i] = 3; F[i + 1] = 2.5; F[0] = -1; return to_string(F[0]) + \",\" + to_string(F[1]) + \",\" + to_string(F[2]) + type_of(F[1]); } run();",
+				"array<float> F = [0.0, 0.0, 0.0]; string run() { int i = 1; F[i] = 3; F[i + 1] = 2.5; F[0] = -1; return to_string(F[0]) + \",\" + to_string(F[1]) + \",\" + to_string(F[2]) + reflect::type_of(F[1]); } run();",
 				"array<int> A = [1, 2, 3]; string run() { int i = 1; float big = 1e100; string m = \"ok\"; try { A[i] = big; } catch (e) { m = e; } return m + to_string(A[1]); } run();",
 				"array<int> A = [1, 2, 3]; string run() { int i = 1; string m = \"ok\"; try { A[i] = \"x\"; } catch (e) { m = e; } return m + to_string(A[1]); } run();",
 				"array<int> A = [1, 2, 3]; string run() { int i = 7; string m = \"ok\"; try { A[i] = 5; } catch (e) { m = e; } return m; } run();",
 				"array<int> A = [1, 2, 3]; string run() { int i = -1; string m = \"ok\"; try { A[i + 0] = 5; } catch (e) { m = e; } return m; } run();",
 				"array<int> A = [1, 2, 3]; string run() { int big = 0x7fffffffffffffff; string m = \"ok\"; try { A[big + 1] = 5; } catch (e) { m = e; } return m; } run();",
-				"var H = [1, 2.5, \"s\"]; string run() { int i = 0; H[i] = 7; H[i + 1] = 1.5; H[2] = 9; H[0] = 2.25; return type_of(H[0]) + to_string(H[0]) + type_of(H[1]) + to_string(H[1]) + type_of(H[2]) + to_string(H[2]); } run();",
+				"var H = [1, 2.5, \"s\"]; string run() { int i = 0; H[i] = 7; H[i + 1] = 1.5; H[2] = 9; H[0] = 2.25; return reflect::type_of(H[0]) + to_string(H[0]) + reflect::type_of(H[1]) + to_string(H[1]) + reflect::type_of(H[2]) + to_string(H[2]); } run();",
 				"var H = [1, 2]; string run() { int i = 0; int x = 5; float y = 0.5; H[i] = x; H[i + 1] = y; x = 6; y = 0.25; return to_string(H[0]) + \",\" + to_string(H[1]); } run();",
 				"array<int> A = [0, 0, 0]; string run(var& pix) { int i = 1; int c = 4; pix[i] = c; pix[i + 1] = c * 2; return to_string(pix[1] + pix[2]); } run(A) + to_string(A[2]);",
 				"array<int> A = [0, 0, 0]; string run() { int i = 1; int x = 2; A[i] = x + 3; A[i + 1] = x * x; return to_string(A[1]) + to_string(A[2]); } run();",
-				"array<int> A = [0, 0, 0]; string run() { int i = 1; int r = (A[i] = 5); var q = (A[i + 1] = 2.9); return to_string(r) + to_string(A[1]) + type_of(q) + to_string(q) + to_string(A[2]); } run();",
+				"array<int> A = [0, 0, 0]; string run() { int i = 1; int r = (A[i] = 5); var q = (A[i + 1] = 2.9); return to_string(r) + to_string(A[1]) + reflect::type_of(q) + to_string(q) + to_string(A[2]); } run();",
 				"array<int> A = [0, 0, 0]; string run() { int i = 1; int one = 1; int n = 70; string m = \"ok\"; try { A[one << n] = 1; } catch (e) { m = e; } return m + to_string(A[1]); } run();",
 				"array<int> A = [0, 0, 0, 0]; string run() { int i = 3; A[i & 1] = 1; A[i >> 1] = 2; A[(i ^ 1) | 0] = 3; return to_string(A[0]) + to_string(A[1]) + to_string(A[2]) + to_string(A[3]); } run();",
 				"class G { array<int> pix = [0, 0, 0]; int w = 1; string f() { int i = 1; pix[i] = 4; pix[i + w] = 5; return to_string(pix[1] * 10 + pix[2]); } } string run() { G g = G(); return g.f(); } run();",
@@ -4975,9 +5004,9 @@ public:
 			// texts as the interpreter with proofs on and off
 			const char* cases[] = {
 				"array<int> PIX = [1, 2, 3, 4, 5, 6, 7, 8]; string run() { int vw = 2; int acc = 0; for (int ry = 0; ry < 2; ++ry) { int itop = ry * 2 * vw; for (int cx = 0; cx < 1; ++cx) { int xx = cx * 2; int p0 = PIX[itop + xx]; int p1 = PIX[itop + xx + 1]; int p2 = PIX[itop + vw + xx]; int p3 = PIX[itop + vw + xx + 1]; acc = acc * 10 + p0 + p1 + p2 + p3; } } return to_string(acc); } run();",
-				"array<float> F = [0.5, 1.5, 2.5]; string run() { int i = 1; float a = F[i]; float b = F[i + 1]; var c = F[0]; return to_string(a + b) + type_of(c); } run();",
-				"array<int> A = [10, 20, 30]; string run() { int i = 1; float f = A[i]; var v = A[i + 1]; auto a = A[0]; return to_string(f) + type_of(f) + to_string(v) + type_of(a); } run();",
-				"var H = [1, 2.5, \"s\", true, 'c']; string run() { int i = 0; var a = H[i]; var b = H[i + 1]; var c = H[i + 2]; var d = H[3]; var e = H[i + 4]; auto f = H[0]; return type_of(a) + type_of(b) + type_of(c) + type_of(d) + type_of(e) + type_of(f) + to_string(a) + c; } run();",
+				"array<float> F = [0.5, 1.5, 2.5]; string run() { int i = 1; float a = F[i]; float b = F[i + 1]; var c = F[0]; return to_string(a + b) + reflect::type_of(c); } run();",
+				"array<int> A = [10, 20, 30]; string run() { int i = 1; float f = A[i]; var v = A[i + 1]; auto a = A[0]; return to_string(f) + reflect::type_of(f) + to_string(v) + reflect::type_of(a); } run();",
+				"var H = [1, 2.5, \"s\", true, 'c']; string run() { int i = 0; var a = H[i]; var b = H[i + 1]; var c = H[i + 2]; var d = H[3]; var e = H[i + 4]; auto f = H[0]; return reflect::type_of(a) + reflect::type_of(b) + reflect::type_of(c) + reflect::type_of(d) + reflect::type_of(e) + reflect::type_of(f) + to_string(a) + c; } run();",
 				"var H = [1, \"s\"]; string run() { int i = 1; string m = \"ok\"; try { int x = H[i]; } catch (e) { m = e; } return m; } run();",
 				"array<int> A = [1, 2, 3]; string run() { int i = 5; string m = \"ok\"; try { int x = A[i]; } catch (e) { m = e; } return m; } run();",
 				"array<int> A = [1, 2, 3]; string run() { int i = -1; string m = \"ok\"; try { int x = A[i + 0]; } catch (e) { m = e; } return m; } run();",
@@ -4993,13 +5022,13 @@ public:
 				"array<int> A = [1, 2, 3]; string run() { int i = 1; { int i = 2; int x = A[i]; if (x != 3) { return \"bad\"; } } int y = A[i]; return to_string(y); } run();",
 				"var A = [1, 2, 3]; string run() { int i = 0; int s = 0; for (int k = 0; k < 3; ++k) { int x = A[i + k]; s += x; } return to_string(s); } run();",
 				"array<string> S = [\"a\", \"bb\"]; string run() { int i = 1; string x = S[i]; var y = S[i - 1]; x += \"!\"; return x + y + S[i]; } run();",
-				"array<bool> B = [true, false]; array<char> C = ['x', 'y']; string run() { int i = 1; bool b = B[i]; char c = C[i]; var d = C[0]; return to_string(b) + c + d + type_of(d); } run();",
+				"array<bool> B = [true, false]; array<char> C = ['x', 'y']; string run() { int i = 1; bool b = B[i]; char c = C[i]; var d = C[0]; return to_string(b) + c + d + reflect::type_of(d); } run();",
 				"string run() { var m = {\"k\": 4}; int i = 0; string s = \"ok\"; try { int x = m[i]; } catch (e) { s = e; } var y = m[\"k\"]; return s + to_string(y); } run();",
 				"string run() { int n = 3; int i = 1; string s = \"ok\"; try { int x = n[i]; } catch (e) { s = e; } return s; } run();",
 				// int -> float widening on every decl landing: LOAD, CONST, fused binary, member, element
-				"class Q { int n = 7; } array<int> A = [3, 4]; string run() { int i = 1; int k = 9007199254740993; Q q = Q(); float a = k; float b = 5; float c = i + k; float d = q.n; float e = A[i]; float g = A[i - 1] * 2; return type_of(a) + type_of(b) + type_of(c) + type_of(d) + type_of(e) + type_of(g) + to_string(a) + \",\" + to_string(b) + \",\" + to_string(c) + \",\" + to_string(d) + \",\" + to_string(e) + \",\" + to_string(g); } run();",
-				"string run() { int i = 2; float f = i; f += 0.5; int j = i; return to_string(f) + to_string(j) + type_of(f) + type_of(j); } run();",
-				"string run() { bool t = true; float f = t; int i = t; return to_string(f) + type_of(f) + to_string(i); } run();",
+				"class Q { int n = 7; } array<int> A = [3, 4]; string run() { int i = 1; int k = 9007199254740993; Q q = Q(); float a = k; float b = 5; float c = i + k; float d = q.n; float e = A[i]; float g = A[i - 1] * 2; return reflect::type_of(a) + reflect::type_of(b) + reflect::type_of(c) + reflect::type_of(d) + reflect::type_of(e) + reflect::type_of(g) + to_string(a) + \",\" + to_string(b) + \",\" + to_string(c) + \",\" + to_string(d) + \",\" + to_string(e) + \",\" + to_string(g); } run();",
+				"string run() { int i = 2; float f = i; f += 0.5; int j = i; return to_string(f) + to_string(j) + reflect::type_of(f) + reflect::type_of(j); } run();",
+				"string run() { bool t = true; float f = t; int i = t; return to_string(f) + reflect::type_of(f) + to_string(i); } run();",
 			};
 			for (bool proofs : {true, false}) {
 				for (const char* program : cases) {
@@ -5084,7 +5113,7 @@ public:
 				"array<int> a = []; string m = \"ok\"; a.push(1); try { a.push(2.9); } catch (e) { m = e; } int v = 7; a.push(v); return m + \"|\" + to_string(a[0]) + \",\" + to_string(a[1]) + \",\" + to_string(a.size());",
 				"array<int> a = []; string m = \"ok\"; try { a.push(\"x\"); } catch (e) { m = e; } return m + \"|\" + to_string(a.size());",
 				"array<int> a = []; var big = 1e100; string m = \"ok\"; try { a.push(big); } catch (e) { m = e; } return m;",
-				"var a = []; a.push(1); a.push(\"s\"); a.push(2.5); return to_string(a.size()) + \":\" + to_string(a[1]) + type_of(a[2]);",
+				"var a = []; a.push(1); a.push(\"s\"); a.push(2.5); return to_string(a.size()) + \":\" + to_string(a[1]) + reflect::type_of(a[2]);",
 				"var a; string m = \"ok\"; try { a.push(1); } catch (e) { m = e; } return m;",
 				"var m = {}; string r = \"ok\"; try { m.push(1); } catch (e) { r = e; } return r;",
 				"var s = \"x\"; string r = \"ok\"; try { s.push(1); } catch (e) { r = e; } return r;",
@@ -5107,12 +5136,12 @@ public:
 				"var m = {\"k\": 3}; var a = []; a.push(m[\"k\"]); return to_string(a[0]);",
 				"var src = [1]; var a = []; string r = \"ok\"; try { a.push(src[nope]); } catch (e) { r = e; } return r;",
 				// append lane rows: payloads the buffer takes as-is, and the ones that must not
-				"var a = []; a.push(null); a.push(true); a.push('c'); a.push(-3); a.push(0.5); a.push(\"s\"); return type_of(a[0]) + type_of(a[1]) + type_of(a[2]) + type_of(a[3]) + type_of(a[4]) + type_of(a[5]) + to_string(a.size());",
+				"var a = []; a.push(null); a.push(true); a.push('c'); a.push(-3); a.push(0.5); a.push(\"s\"); return reflect::type_of(a[0]) + reflect::type_of(a[1]) + reflect::type_of(a[2]) + reflect::type_of(a[3]) + reflect::type_of(a[4]) + reflect::type_of(a[5]) + to_string(a.size());",
 				"var a = []; string s = \"lit\"; a.push(s); s += \"!\"; a[0] += \"?\"; return s + a[0];",
 				"var a = []; a.push(\"k\"); a[0] += \"1\"; a.push(\"k\"); return a[0] + a[1] + \"k\";",
-				"array<float> fs = []; int i = 3; fs.push(i); fs.push(2.5); float x = 1.25; fs.push(x); return type_of(fs[0]) + to_string(fs[0] + fs[1] + fs[2]);",
+				"array<float> fs = []; int i = 3; fs.push(i); fs.push(2.5); float x = 1.25; fs.push(x); return reflect::type_of(fs[0]) + to_string(fs[0] + fs[1] + fs[2]);",
 				"array<int> a = []; float f = 2.9; string m = \"\"; try { a.push(f); } catch (e) { m = e; } try { a.push(-0.5); } catch (e) { m = m + \"/\" + e; } a.push(cast<int>(f)); return m + \"|\" + to_string(a[0]) + \",\" + to_string(a.size());",
-				"array<int> a = []; bool b = true; a.push(b); return to_string(a[0]) + type_of(a[0]);",
+				"array<int> a = []; bool b = true; a.push(b); return to_string(a[0]) + reflect::type_of(a[0]);",
 				"array<string> ss = []; string k = \"x\"; ss.push(k); k += \"y\"; ss[0] += \"z\"; return k + ss[0] + to_string(ss.size());",
 				"array<string> ss = []; string m = \"ok\"; try { ss.push(5); } catch (e) { m = e; } return m + to_string(ss.size());",
 				"array<bool> bs = []; bs.push(true); bs.push(1); return to_string(bs.size()) + to_string(bs[1]);",

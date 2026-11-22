@@ -20,6 +20,16 @@ namespace jai {
 	// Forward declarations
 	class engine;
 
+	namespace serialization {
+		class any_archive_writer;
+		class any_archive_reader;
+		// Defined in serialization/polymorphic.hpp, included at the bottom of this header
+		// (same pattern as registrar.hpp): implicit polymorphic registration for
+		// property_owner types, and the base-pointer adjuster registration for MI.
+		template<typename T> void try_auto_register_implicit();
+		template<typename Derived, typename... Bases> struct register_relation;
+	}
+
 	namespace detail {
 		// A property_owner class with a portable name queues its binding at program start; every bind_registrar runs the
 		// queue beside its context's registrars. bind_declared_class is defined with dynamic_binder: the file that
@@ -29,8 +39,19 @@ namespace jai {
 		void queue_declared_binding(std::type_index a_type, std::string_view a_name, std::type_index a_context, declared_binding_fn a_bind);
 		template<typename T> void bind_declared_class(engine& a_engine, const void* a_context);
 
+		template<typename Derived, typename... Reals>
+		void register_serialization_bases(std::tuple<Reals...>*) {
+			if constexpr (sizeof...(Reals) > 0) { serialization::register_relation<Derived, Reals...>{}; }
+		}
+
+		// A property_owner's program-start registrations: its serialization identity (the $type name and load factory, which
+		// a load needs before the first construction), its Derived->Base relations (MI pointer adjustment, assignability)
+		// and its binding. An explicit jai::registrar name takes precedence over the implicit identity.
 		template<typename T>
-		bool queue_declared_binding_of() {
+		bool register_property_owner() {
+			serialization::try_auto_register_implicit<T>();
+			// qualified: an unqualified call completes std::tuple of the bases for its lookup, which an abstract base refuses
+			detail::register_serialization_bases<T>(static_cast<typename T::_jai_base_types*>(nullptr));
 			constexpr auto name = declared_or_derived_type_name<T>();
 			if constexpr (!name.empty()) {
 				queue_declared_binding(std::type_index(typeid(T)), name, std::type_index(typeid(typename T::_jai_context_type)), &bind_declared_class<T>);
@@ -41,17 +62,7 @@ namespace jai {
 		// A variable template, not a static member: MSVC instantiates a class template's inline static members wherever the
 		// class is complete, and this one instantiates the class's whole binding
 		template<typename T>
-		inline const bool declared_binding_queued = queue_declared_binding_of<T>();
-	}
-
-	namespace serialization {
-		class any_archive_writer;
-		class any_archive_reader;
-		// Defined in serialization/polymorphic.hpp, included at the bottom of this header
-		// (same pattern as registrar.hpp): implicit polymorphic registration for
-		// property_owner types, and the base-pointer adjuster registration for MI.
-		template<typename T> void try_auto_register_implicit();
-		template<typename Derived, typename... Bases> struct register_relation;
+		inline const bool property_owner_registered = register_property_owner<T>();
 	}
 
 	class property_manager {
@@ -199,10 +210,6 @@ namespace jai {
 		static void add_base_edges(std::tuple<Reals...>*) {
 			(type_registry::instance().add_base(std::type_index(typeid(Derived)), std::type_index(typeid(Reals))), ...);
 		}
-		template<typename... Reals>
-		static void register_base_relations(std::tuple<Reals...>*) {
-			if constexpr (sizeof...(Reals) > 0) { serialization::register_relation<Derived, Reals...>{}; }
-		}
 
 	public:
 		using _jai_owner_type = Derived;
@@ -262,32 +269,15 @@ namespace jai {
 			register_inheritance();
 		}
 
-	private:
-		// Serialization identity, implicitly: every property_owner type registers its
-		// class name with the polymorphic registry at program start (odr-used below, so
-		// the entry exists before main — load factories must be ready before the first
-		// construction). An explicit jai::registrar<T, Ctx>("Name") always takes
-		// precedence; use it for custom names, template types, or a binary that loads a
-		// type it never constructs (only construction odr-uses this member).
-		static inline const bool _jai_poly_registered = [] {
-			serialization::try_auto_register_implicit<Derived>();
-			// Record Derived->Base pointer adjusters so a shared_ptr<Base> whose dynamic
-			// type is Derived reconstructs the correct Base subobject under multiple
-			// inheritance (each base is also a property_owner and records its own bases,
-			// so adjust_to_base composes them transitively).
-			register_base_relations(static_cast<detail::real_bases_t<Bases...>*>(nullptr));
-			return true;
-		}();
-
-	public:
 		// The schema's base chain is compile-time knowledge (the CRTP Bases pack), so it
 		// must not wait for first construction: every dynamic_binder of the class calls this at
 		// REGISTRATION time so schema-driven binding sees inherited properties before any
 		// instance exists; constructors keep calling it too (idempotent magic static).
-		// The class's own binding queues from here, at the same points.
+		// Reading property_owner_registered here instantiates the class's program-start registrations, so they exist
+		// where its constructor or a binder does: a binary that loads a type it never constructs names it with a jai::registrar.
 		static void register_inheritance() {
-			(void)_jai_poly_registered;
-			(void)detail::declared_binding_queued<Derived>;
+			// a read, not a discarded name: (void)name is no odr-use, and MSVC drops the initializer of a variable nothing odr-uses
+			(void)*static_cast<const volatile bool*>(&detail::property_owner_registered<Derived>);
 			static const auto _inheritance_registered = []() {
 				add_base_edges(static_cast<detail::real_bases_t<Bases...>*>(nullptr));
 				return true;

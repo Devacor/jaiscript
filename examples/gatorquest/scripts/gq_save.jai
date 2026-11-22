@@ -24,7 +24,7 @@ bool SAVES_ON;                 // interactive play autosaves; tests and smoke do
 string data_root() {
 	if (DATA_ROOT != "") { return DATA_ROOT; }
 	string beside = parent_dir(current_script_dir());
-	DATA_ROOT = writable_dir(beside + "/saves") ? beside : app_data_dir("GatorQuest");
+	DATA_ROOT = file::ensure_writable_directory(beside + "/saves") ? beside : app_data_dir("GatorQuest");
 	return DATA_ROOT;
 }
 
@@ -79,23 +79,23 @@ string unseal(string text, string magic) {
 	return body;
 }
 
-// the file's text, "" when it is missing or cannot be read (read_file raises for those)
+// the file's text, "" when it is missing or cannot be read (file::read raises for those)
 string read_file_or_empty(string path) {
-	try { return read_file(path); } catch (e) { return ""; }
+	try { return file::read(path); } catch (e) { return ""; }
 }
 
 // write, read back, keep the previous good copy as .bak, then replace
 bool safe_write(string path, string text) {
 	string tmp = path + ".tmp";
-	if (!write_file(tmp, text)) { return false; }
+	if (!file::write(tmp, text)) { return false; }
 	if (read_file_or_empty(tmp) != text) { return false; }
-	if (file_exists(path)) {
+	if (file::exists(path)) {
 		string old = read_file_or_empty(path);
-		if (unseal(old, text.substr(0, text.find(" "))) != "") { write_file(path + ".bak", old); }
+		if (unseal(old, text.substr(0, text.find(" "))) != "") { file::write(path + ".bak", old); }
 	}
-	if (!write_file(path, text)) { return false; }
+	if (!file::write(path, text)) { return false; }
 	if (read_file_or_empty(path) != text) { return false; }
-	delete_file(tmp);
+	file::remove(tmp);
 	return true;
 }
 
@@ -104,7 +104,7 @@ string load_sealed(string path, string magic) {
 	array<string> tries = [path, path + ".bak", path + ".tmp"];
 	string first_problem = "";
 	for (int i = 0; i < tries.size(); ++i) {
-		if (!file_exists(tries[i])) {
+		if (!file::exists(tries[i])) {
 			if (i == 0) { first_problem = "missing"; }
 			continue;
 		}
@@ -470,7 +470,7 @@ map<int, string> world_players(string body) {
 // ---------------------------------------------------------- front door ---
 string save_world_and_chars() {
 	if (!WORLD_READY) { return "Nothing to save yet."; }
-	make_dirs(save_dir() + "/chars");
+	file::make_directories(save_dir() + "/chars");
 	int chars = 0;
 	for (int s = 0; s < CHARS.size(); ++s) {
 		if (!CHARS[s].active) { continue; }

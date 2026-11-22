@@ -41,7 +41,7 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">The web:: Library</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li class="current"><a href="../guide/17-web.html" aria-current="page">The web:: Library</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">The web:: Library</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li class="current"><a href="../guide/17-web.html" aria-current="page">The web:: Library</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li><li><a href="../guide/21-generics.html">Generics</a></li></ol></details></aside>
 <script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
 var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>17</nav>
@@ -58,7 +58,7 @@ print(`&lt;p title=&quot;${web::html_escape(name)}&quot;&gt;`);
 print(web::html_unescape(&quot;caf&amp;eacute; &amp;copy 2026 &amp;#x1F642; &amp;#150; &amp;#0; &amp;bogus; AT&amp;T&quot;));
 print(web::html_unescape(web::html_escape(name)) == name);
 utf8_string word = &quot;café&quot;;
-print(type_of(web::html_escape(word)));</code></pre></div>
+print(reflect::type_of(web::html_escape(word)));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">&lt;p title=&quot;Tom &amp;amp; Jerry&amp;#39;s &amp;lt;b&amp;gt;show&amp;lt;/b&amp;gt;&quot;&gt;
 café © 2026 🙂 – � &amp;bogus; AT&amp;T
 true
@@ -103,7 +103,7 @@ try { web::parse_url(&quot;http://example.org:99999/&quot;); } catch (e) { print
 https://[::1]:8443/posts/8?page=2&amp;sort=old#comments
 web::parse_url: &#x27;http://example.org:99999/&#x27; has a malformed host or port</code></pre></div>
 <h2 id="spider">Part 2: HTTP with <code>spider::</code><a class="hlink" href="#spider" aria-label="link">&#8203;</a></h2>
-<p>Each call runs one request to its whole answer and returns a <code>spider::Response</code>. It blocks the script until then, inside a coroutine too, and a parallel body cannot call it. The two sending calls take their arguments in opposite orders:</p>
+<p>Each call runs one request to its whole answer and returns a <code>spider::response</code>. It blocks the script until then, inside a coroutine too, and a parallel body cannot call it. The two sending calls take their arguments in opposite orders:</p>
 <div class="tablewrap"><table><thead><tr><th>Call</th><th>Argument order</th><th>Default method</th></tr></thead><tbody>
 <tr><td><code>spider::catch(url[, options])</code></td><td>URL</td><td>GET</td></tr>
 <tr><td><code>spider::get(url[, options])</code></td><td>the same call, plain name</td><td>GET</td></tr>
@@ -111,15 +111,15 @@ web::parse_url: &#x27;http://example.org:99999/&#x27; has a malformed host or po
 <tr><td><code>spider::post(url, content[, options])</code></td><td><strong>URL, then content</strong></td><td>POST</td></tr>
 </tbody></table></div>
 <p>This sample reaches the network, so it is shown without output:</p>
-<div class="codeblock cb-jai" data-host="network"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">spider::Response page = spider::catch(&quot;https://api.example.org/scores?game=snapjaw&quot;);
+<div class="codeblock cb-jai" data-host="network"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">spider::response page = spider::catch(&quot;https://api.example.org/scores?game=snapjaw&quot;);
 if (page.ok()) { print(&quot;top score: &quot;, page.json()[0][&quot;points&quot;]); }
-spider::Response saved = spider::sling({&quot;player&quot;: &quot;ada&quot;, &quot;points&quot;: 420}, &quot;https://api.example.org/scores&quot;);
+spider::response saved = spider::sling({&quot;player&quot;: &quot;ada&quot;, &quot;points&quot;: 420}, &quot;https://api.example.org/scores&quot;);
 print(saved.status, &quot; &quot;, saved.header(&quot;Location&quot;));
-spider::Response gone = spider::catch(&quot;https://api.example.org/scores/7&quot;,
+spider::response gone = spider::catch(&quot;https://api.example.org/scores/7&quot;,
     {&quot;method&quot;: &quot;DELETE&quot;, &quot;headers&quot;: {&quot;Authorization&quot;: &quot;Bearer &quot; + token}, &quot;timeout&quot;: 5});</code></pre></div>
 <p>Text content is sent as it is (<code>text/plain; charset=utf-8</code>); any other value (a map, an array, a number, a bool, null) is sent as <code>to_json</code> writes it (<code>application/json</code>). The options map takes:</p>
 <p><code>method</code>, <code>headers</code>, <code>timeout</code> (seconds, default 30), <code>type</code> and <code>redirects</code> (default 5). Their values: <a href="../reference/library.html#web-options">request options</a>.</p>
-<h3 id="spider-response"><code>spider::Response</code><a class="hlink" href="#spider-response" aria-label="link">&#8203;</a></h3>
+<h3 id="spider-response"><code>spider::response</code><a class="hlink" href="#spider-response" aria-label="link">&#8203;</a></h3>
 <p>An HTTP answer: what a client call returns, and what a <code>jai_spider</code> handler builds to answer a request. An error status is an answer, not an error: <code>ok()</code> tells them apart. A response is a value: assigning one copies its headers and cookies.</p>
 <div class="tablewrap"><table><thead><tr><th>Member</th><th>What it is</th></tr></thead><tbody>
 <tr><td><code>status</code>, <code>ok()</code></td><td>the status code (<code>int</code>); true for 2xx</td></tr>
@@ -127,9 +127,9 @@ spider::Response gone = spider::catch(&quot;https://api.example.org/scores/7&quo
 <tr><td><code>header(name)</code></td><td>a header by any spelling of its name, "" when absent</td></tr>
 <tr><td><code>set_cookie(name, value[, options])</code></td><td>adds a Set-Cookie line, the value percent-encoded</td></tr>
 </tbody></table></div>
-<p>Every member and cookie option: <a href="../reference/library.html#web-response">spider::Response members</a>.</p>
+<p>Every member and cookie option: <a href="../reference/library.html#web-response">spider::response members</a>.</p>
 <h3 id="spider-security">Cookies and sessions: what is and is not protected<a class="hlink" href="#spider-security" aria-label="link">&#8203;</a></h3>
-<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">spider::Response r = spider::Response(200, &quot;hi&quot;);
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">spider::response r = spider::response(200, &quot;hi&quot;);
 r.set_cookie(&quot;session&quot;, &quot;abc 1&quot;, {&quot;max_age&quot;: 3600});
 r.set_cookie(&quot;theme&quot;, &quot;dark&quot;, {&quot;secure&quot;: true, &quot;http_only&quot;: false, &quot;same_site&quot;: &quot;Strict&quot;});
 for (auto line : r.cookies) { print(line); }</code></pre></div>
@@ -153,11 +153,34 @@ theme=dark; Path=/; Secure; SameSite=Strict</code></pre></div>
 <li><strong>Before anything is sent:</strong> an unknown or wrong-kind option (<code>spider::catch: unknown option &#x27;retries&#x27; (method, headers, timeout, type, redirects)</code>); a header name that is not a token, or a value holding a line break or NUL; a header the transport writes itself (<code>Host</code>, <code>Content-Length</code>, <code>Transfer-Encoding</code>, <code>Connection</code>); a URL that is not absolute http or https; a host that installed no transport; <code>Insufficient permission: network.</code> without the permission.</li>
 <li><strong>During the call:</strong> <code>spider::catch: http://example.org/slow: timed out after 5 s</code>, <code>more than 5 redirects</code>, <code>a redirect from https to http (http://example.org/) is refused</code>, or the transport&#x27;s own reason (<code>cannot connect to 127.0.0.1:1</code>: no connection, an unresolved host, a certificate that did not verify, an answer cut short).</li>
 </ul>
+<h2 id="images">Part 3: Images with <code>image::</code><a class="hlink" href="#images" aria-label="link">&#8203;</a></h2>
+<p>An upload&#x27;s bytes become a picture a page can show: <code>image::data</code> reads the format and size from the header alone, so a check costs almost nothing, and <code>image::load</code> decodes the whole file into an <code>image</code> to scale, crop and save. It reads PNG, JPEG and the first frame of a GIF, and writes JPEG and PNG. The host opts in with <code>jai::stdlib::register_image</code>; the runner does. The codecs are JaiScript&#x27;s own, written from the file formats&#x27; specifications.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">// a 64 x 48 PNG, as the body of an upload holds it
+string upload = base64_decode(&quot;iVBORw0KGgoAAAANSUhEUgAAAEAAAAAwCAIAAAAuKetIAAAAQ0lEQVR42u3PQQkAAAgEsItjRCMaywp+hcEKLNP1WgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQErhaJouDxNuBloAAAAABJRU5ErkJggg==&quot;);
+var info = image::data(upload);
+print(&quot;{} {} x {}&quot;, info[&quot;format&quot;], info[&quot;width&quot;], info[&quot;height&quot;]);
+image photo = image::load(upload);
+image thumb = image::fit(photo, 32, 32);   // a new image
+photo.crop_fill(20, 20);                   // photo itself changes
+print(&quot;{} x {}, {} x {}&quot;, thumb.width, thumb.height, photo.width, photo.height);
+string saved = thumb.encode(&quot;jpeg&quot;, 85);  // the bytes of a JPEG, with no metadata
+print(&quot;{} {} x {}&quot;, image::data(saved)[&quot;format&quot;], image::data(saved)[&quot;width&quot;], image::data(saved)[&quot;height&quot;]);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">png 64 x 48
+32 x 24, 20 x 20
+jpeg 32 x 24</code></pre></div>
+<p>The dot methods change the image they are called on and return nothing, as a string&#x27;s or an array&#x27;s do; the <code>image::</code> function of the same name returns a changed copy and leaves its argument alone. A copy of an image is cheap: copies share their pixels until one of them changes.</p>
+<ul>
+<li><code>fit(w, h)</code> scales the image to fit inside <code>w</code> by <code>h</code>, keeping its shape, and never enlarges it: an image that already fits is unchanged.</li>
+<li><code>crop_fill(w, h)</code> scales the image to cover <code>w</code> by <code>h</code> and cuts away what falls outside, about the centre, so the result is exactly that size, enlarged when the image is smaller (an avatar).</li>
+<li><code>crop(x, y, w, h)</code> keeps the rectangle, which must lie inside the image.</li>
+<li><code>encode(&quot;jpeg&quot;, quality)</code> or <code>encode(&quot;png&quot;)</code> returns the image as the bytes of a file, a JPEG&#x27;s quality 1 to 100 (90 when left out). Nothing but the pixels is written, so a photo&#x27;s EXIF data (its camera, time and GPS position) is gone.</li>
+</ul>
+<p>The argument is always the image&#x27;s bytes, a string or an <code>array&lt;uint8&gt;</code>, never a path: a file on disk is <code>image::load(file::read(path))</code>. The limits and the resampling: <a href="../reference/library.html#images">Images</a>.</p>
 <nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/16-parallel.html"><span>&larr; previous</span>Parallel Loops</a><a class="next" rel="next" href="../guide/18-random.html"><span>next &rarr;</span>Random Numbers &amp; Crypto</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

@@ -246,7 +246,7 @@ public:
 			)"), "a captured host shared_ptr shares its object");
 			check_eq((int64_t)5, run_int(*eng, R"(
 				int run_typed() {
-					shared_ptr<Vec> h = Vec(1);
+					shared_ptr<Vec> h = make_shared<Vec>(1);
 					auto f = [h]() { return h.x; };
 					h.x = 5;
 					return f();
@@ -671,7 +671,7 @@ public:
 			const char* shares[] = {
 				"Vec v = Vec(1); mutate_ref(v); return v.x;",
 				"VecHolder holder = VecHolder(); var& held = holder.child(); mutate_ref(held); return holder.child().x;",
-				"shared_ptr<Vec> m = Vec(1); mutate(m); return m.x;",
+				"shared_ptr<Vec> m = make_shared<Vec>(1); mutate(m); return m.x;",
 				"auto m = make_shared_vec(1); mutate(m); return m.x;",
 				"auto m = new Vec(1); mutate(m); return m.x;",
 				"auto m = new P(); mutate(m); return m.x;",

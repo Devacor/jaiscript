@@ -5,4 +5,4 @@ ${flash == "" ? raw("") : template("flash.spider", flash)}
 <button>Sign</button>
 </form>
 ${entries.size() == 0 ? template("empty.spider") : raw("")}${array::map(entries, entry => template("card.spider", entry))}
-<footer>${views} page views since the server started</footer>
+<footer>${views} page views so far</footer>

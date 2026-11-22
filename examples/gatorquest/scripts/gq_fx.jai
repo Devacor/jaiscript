@@ -821,9 +821,9 @@ void live_apply() {
 void live_start(string dir) {
 	LIVE_PATH = dir + "/gq_live.jai";
 	LIVE_SEASON = SEASON;
-	if (!file_exists(LIVE_PATH)) {
-		make_dirs(dir);
-		write_file(LIVE_PATH, live_text(SEASON_NAMES[SEASON], LIVE_TORCH, LIVE_FIREFLIES));
+	if (!file::exists(LIVE_PATH)) {
+		file::make_directories(dir);
+		file::write(LIVE_PATH, live_text(SEASON_NAMES[SEASON], LIVE_TORCH, LIVE_FIREFLIES));
 	}
 	// the file's tweaks hold from the start; a broken file waits for its fix like any other reload
 	try {
@@ -837,12 +837,12 @@ void live_start(string dir) {
 // the menu's "next season": one line of the file changes, the reload does the rest
 void live_next_season() {
 	if (LIVE_PATH == "") { return; }
-	string text = read_file(LIVE_PATH);
+	string text = file::read(LIVE_PATH);
 	string next = SEASON_NAMES[(SEASON + 1) % 4];
 	string from = `live_set("season", "${SEASON_NAMES[SEASON]}");`;
 	if (text.contains(from)) { text.replace(from, `live_set("season", "${next}");`); }
 	else { text = live_text(next, LIVE_TORCH, LIVE_FIREFLIES); }
-	write_file(LIVE_PATH, text);
+	file::write(LIVE_PATH, text);
 }
 
 // ------------------------------------------------------------------ title ---

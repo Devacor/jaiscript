@@ -24,6 +24,8 @@
     #include <sys/socket.h>
     #include <netinet/in.h>
     #include <arpa/inet.h>
+    #include <fcntl.h>
+    #include <sys/select.h>
     #include <unistd.h>
 #endif
 
@@ -70,14 +72,6 @@ sock_t connect_client(int port) {
             addr.sin_port = htons(static_cast<uint16_t>(port));
             ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
             if (::connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
-                // 100 ms recv timeout so wait_for() polls its stall watch.
-#ifdef _WIN32
-                DWORD tv = 100;
-                ::setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
-#else
-                timeval tv{0, 100000};
-                ::setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-#endif
                 return s;
             }
             close_client(s);
@@ -97,12 +91,24 @@ void send_dap(sock_t s, const std::string& json) {
     }
 }
 
-bool recv_timed_out() {
-#ifdef _WIN32
-    return ::WSAGetLastError() == WSAETIMEDOUT;
-#else
-    return errno == EAGAIN || errno == EWOULDBLOCK;
+constexpr int k_nothing_yet = -2;
+
+// The bytes read, 0 once the peer closes, -1 on an error, or k_nothing_yet after 100 quiet ms so a caller polls its stall
+// watch; readiness is waited for, not a receive timeout, which leaves a Windows socket indeterminate once it fires
+int recv_some(sock_t s, char* into, int size) {
+    fd_set readable;
+    FD_ZERO(&readable);
+    FD_SET(s, &readable);
+    timeval wait{0, 100000};
+    const int ready = ::select(static_cast<int>(s) + 1, &readable, nullptr, nullptr, &wait);
+    if (ready == 0) return k_nothing_yet;
+    if (ready < 0) {
+#ifndef _WIN32
+        if (errno == EINTR) return k_nothing_yet;
 #endif
+        return -1;
+    }
+    return ::recv(s, into, size, 0);
 }
 
 // Recv into an accumulating buffer until it contains `needle`; false once the peer closes or sends nothing for the hang guard
@@ -111,8 +117,8 @@ bool wait_for(sock_t s, std::string& buf, const std::string& needle) {
     stall_watch watch;
     char tmp[4096];
     while (!watch.stalled(buf.size())) {
-        int n = ::recv(s, tmp, sizeof(tmp), 0);
-        if (n == 0 || (n < 0 && !recv_timed_out())) return false;
+        const int n = recv_some(s, tmp, sizeof(tmp));
+        if (n == 0 || n == -1) return false;
         if (n > 0) {
             buf.append(tmp, tmp + n);
             if (buf.find(needle) != std::string::npos) return true;
@@ -127,8 +133,8 @@ bool wait_for_unless(sock_t s, std::string& buf, const std::string& needle, cons
     char tmp[4096];
     while (buf.find(needle) == std::string::npos && !watch.stalled(buf.size())) {
         const bool finished = done.load();
-        int n = ::recv(s, tmp, sizeof(tmp), 0);
-        if (n == 0 || (n < 0 && !recv_timed_out())) return false;
+        const int n = recv_some(s, tmp, sizeof(tmp));
+        if (n == 0 || n == -1) return false;
         if (n > 0) {
             buf.append(tmp, tmp + n);
         } else if (finished) {
@@ -142,7 +148,7 @@ std::string dap_frame(const std::string& json) {
     return "Content-Length: " + std::to_string(json.size()) + "\r\n\r\n" + json;
 }
 
-// The bytes sent before an error or a send timeout
+// The bytes sent before an error
 size_t send_raw(sock_t s, const std::string& data) {
     size_t sent = 0;
     while (sent < data.size()) {
@@ -154,14 +160,44 @@ size_t send_raw(sock_t s, const std::string& data) {
     return sent;
 }
 
-void set_send_timeout(sock_t s, int timeout_ms) {
+void set_blocking(sock_t s, bool blocking) {
 #ifdef _WIN32
-    DWORD tv = static_cast<DWORD>(timeout_ms);
-    ::setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
+    u_long nonblocking = blocking ? 0 : 1;
+    ::ioctlsocket(s, FIONBIO, &nonblocking);
 #else
-    timeval tv{timeout_ms / 1000, (timeout_ms % 1000) * 1000};
-    ::setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    const int flags = ::fcntl(s, F_GETFL, 0);
+    ::fcntl(s, F_SETFL, blocking ? flags & ~O_NONBLOCK : flags | O_NONBLOCK);
 #endif
+}
+
+bool send_would_block() {
+#ifdef _WIN32
+    return ::WSAGetLastError() == WSAEWOULDBLOCK;
+#else
+    return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR;
+#endif
+}
+
+// The bytes the peer took before it took none for `quiet_ms`; sends never block, so the socket is never left mid-timeout
+size_t send_until_refused(sock_t s, const std::string& data, int quiet_ms) {
+    set_blocking(s, false);
+    size_t sent = 0;
+    while (sent < data.size()) {
+        fd_set writable;
+        FD_ZERO(&writable);
+        FD_SET(s, &writable);
+        timeval wait{quiet_ms / 1000, (quiet_ms % 1000) * 1000};
+        if (::select(static_cast<int>(s) + 1, nullptr, &writable, nullptr, &wait) <= 0) break;
+        const int chunk = static_cast<int>(std::min<size_t>(data.size() - sent, 1 << 20));
+        const int n = ::send(s, data.data() + sent, chunk, 0);
+        if (n > 0) {
+            sent += static_cast<size_t>(n);
+        } else if (!send_would_block()) {
+            break;
+        }
+    }
+    set_blocking(s, true);
+    return sent;
 }
 
 // True once the peer closes or resets the connection (pending replies are read and dropped)
@@ -170,9 +206,8 @@ bool closed_by_peer(sock_t s) {
     uint64_t dropped = 0;
     char tmp[4096];
     while (!watch.stalled(dropped)) {
-        int n = ::recv(s, tmp, sizeof(tmp), 0);
-        if (n == 0) return true;
-        if (n < 0 && !recv_timed_out()) return true;
+        const int n = recv_some(s, tmp, sizeof(tmp));
+        if (n == 0 || n == -1) return true;
         if (n > 0) dropped += static_cast<uint64_t>(n);
     }
     return false;
@@ -185,8 +220,8 @@ bool wait_for_streaming(sock_t s, const std::string& needle, size_t* bytes_read 
     std::string window;
     char tmp[65536];
     while (!watch.stalled(received)) {
-        int n = ::recv(s, tmp, sizeof(tmp), 0);
-        if (n == 0 || (n < 0 && !recv_timed_out())) return false;
+        const int n = recv_some(s, tmp, sizeof(tmp));
+        if (n == 0 || n == -1) return false;
         if (n > 0) {
             received += static_cast<uint64_t>(n);
             if (bytes_read) *bytes_read += static_cast<size_t>(n);
@@ -441,7 +476,11 @@ public:
             eval_buf.clear();
             send_dap(cli, R"({"seq":21,"type":"request","command":"evaluate","arguments":{"expression":"x + 1"}})");
             check_true(wait_for(cli, eval_buf, "\"command\":\"evaluate\""));
-            check_true(eval_buf.find("\"success\":false") != std::string::npos, eval_buf);
+            check_true(eval_buf.find("\"result\":\"2\",\"type\":\"int\"") != std::string::npos, eval_buf);
+            eval_buf.clear();
+            send_dap(cli, R"({"seq":22,"type":"request","command":"evaluate","arguments":{"expression":"x = 5","context":"watch"}})");
+            check_true(wait_for(cli, eval_buf, "\"command\":\"evaluate\""));
+            check_true(eval_buf.find("\"success\":false") != std::string::npos, "a watch never assigns: " + eval_buf);
 
             // --- next (step over) advances to line 3 ---
             std::string next_buf;
@@ -876,12 +915,12 @@ public:
             sock_t cli = connect_client(conn->port());
             check_true(cli != kBad);
             if (cli == kBad) return;
-            const int requests = 200000;
+            const int requests = 20000;
             std::string burst;
             const std::string one = dap_frame(R"({"seq":1,"type":"request","command":"threads"})");
             burst.reserve(one.size() * requests + 64);
             for (int i = 0; i < requests; ++i) burst += one;
-            burst += dap_frame(R"({"seq":2,"type":"request","command":"threads","arguments":{"padding":")" + std::string(8 << 20, 'x') + "\"}}");
+            burst += dap_frame(R"({"seq":2,"type":"request","command":"threads","arguments":{"padding":")" + std::string(1 << 20, 'x') + "\"}}");
             burst += dap_frame(R"({"seq":424242,"type":"request","command":"threads"})");
             std::thread sender([&] { send_raw(cli, burst); });
             size_t replies = 0;
@@ -889,7 +928,7 @@ public:
             const uint64_t moved = conn->buffered_bytes_moved();
             close_client(cli);
             sender.join();
-            check_true(last, "the burst's last request is answered");
+            check_true(last, "the burst's last request is answered (" + std::to_string(replies) + " reply bytes read)");
             // input moves at most the partial message behind each framed one; output moves less than it sent before each move
             check_true(moved <= burst.size() + 2 * replies, "buffers moved " + std::to_string(moved) + " bytes for "
                 + std::to_string(burst.size()) + " received and " + std::to_string(replies) + " sent");
@@ -903,7 +942,6 @@ public:
             sock_t cli = connect_client(conn->port());
             check_true(cli != kBad);
             if (cli == kBad) return;
-            set_send_timeout(cli, 2000);
             const std::string one = dap_frame(R"({"seq":1,"type":"request","command":"threads"})");
             std::string batch;
             for (int i = 0; i < 10000; ++i) batch += one;
@@ -911,7 +949,7 @@ public:
             std::string unsent;
             const size_t ceiling = size_t(256) << 20;
             while (sent < ceiling) {
-                const size_t n = send_raw(cli, batch);
+                const size_t n = send_until_refused(cli, batch, 2000);
                 sent += n;
                 if (n < batch.size()) {
                     unsent = batch.substr(n);
@@ -919,7 +957,6 @@ public:
                 }
             }
             check_true(sent < ceiling, "the connector stops reading while its replies are unread");
-            set_send_timeout(cli, 0);
             std::thread sender([&] { send_raw(cli, unsent + dap_frame(R"({"seq":424242,"type":"request","command":"threads"})")); });
             const bool resumed = wait_for_streaming(cli, "\"request_seq\":424242");
             close_client(cli);

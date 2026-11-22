@@ -65,7 +65,7 @@ public:
             check_false(restricted->execute("jai::permissions::is_enabled(jai::permissions::filesystem)").as_bool());
             check_true(trusted->execute("jai::permissions::is_enabled(jai::permissions::filesystem, jai::permissions::filesystem)").as_bool());
             filesystem_enabled(*restricted, true);
-            check_true(restricted->execute("jai::permissions::is_enabled(jai::permissions::filesystem, jai::permissions::scoped_template)").as_bool());
+            check_true(restricted->execute("jai::permissions::is_enabled(jai::permissions::filesystem, jai::permissions::untrusted_template)").as_bool());
             check_false(restricted->execute("jai::permissions::is_enabled(jai::permissions::filesystem, jai::permissions::network)").as_bool());
         });
 
@@ -74,7 +74,7 @@ public:
                 "root_script_path()", "root_script_dir()", "current_script_path()", "current_script_dir()",
                 "resolve_path(\"missing.jai\")", "executable_path()", "executable_dir()", "bin_dir()",
                 "working_dir()", "parent_dir(\"a/b.jai\")", "file_name(\"a/b.jai\")",
-                "app_data_dir(\"JaiTest\")", "app_cache_dir(\"JaiTest\")", "file_data(\"missing.jai\")"
+                "app_data_dir(\"JaiTest\")", "app_cache_dir(\"JaiTest\")", "file::data(\"missing.jai\")"
             };
             auto eng = make_engine();
             filesystem_enabled(*eng, false);
@@ -242,7 +242,7 @@ public:
         });
 
         test("confine_paths_limits_the_ladder_to_its_roots", [this]() {
-            // include, import, resolve_path and file_data open only files under the roots; a file found outside is skipped,
+            // include, import, resolve_path and file::data open only files under the roots; a file found outside is skipped,
             // its text never reaches an error, and no .cache is written beside a source outside them
             namespace fs = std::filesystem;
             const fs::path inside = test_temp_directory() / "confine_in";
@@ -264,7 +264,7 @@ public:
             const std::string secret = (outside / "secret.txt").generic_string();
             const std::string escapes[] = {
                 "include \"" + secret + "\";", "import \"" + secret + "\";", "include \"../confine_out/secret.txt\";",
-                "resolve_path(\"" + secret + "\");", "file_data(\"" + secret + "\");"
+                "resolve_path(\"" + secret + "\");", "file::data(\"" + secret + "\");"
             };
             for (const auto& source : escapes) {
                 const std::string text = failure([&]() { eng->execute(source); });

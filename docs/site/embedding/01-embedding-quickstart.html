@@ -82,7 +82,7 @@ int main() {
 jaiscript
 true</code></pre></div>
 <ul>
-<li><strong>The standard library is opt-in.</strong> A bare engine runs the whole language with a concatenating <code>print</code>, template strings, the container and string methods, <code>math::</code>, <code>regex</code> and <code>binary::</code>. <code>jai::stdlib::register_all</code> adds formatted printing, <code>to_string</code>, <code>type_of</code>, JSON, <code>random</code>, <code>time::</code>, <code>crypto::</code> and <code>reflect::</code>. The reference lists <a href="../reference/library.html#bare-engine">both sets</a>.</li>
+<li><strong>The standard library is opt-in.</strong> A bare engine runs the whole language with a concatenating <code>print</code>, template strings, the container and string methods, <code>math::</code>, <code>regex</code> and <code>binary::</code>. <code>jai::stdlib::register_all</code> adds formatted printing, <code>to_string</code>, <code>reflect::type_of</code>, JSON, <code>random</code>, <code>time::</code>, <code>crypto::</code> and <code>reflect::</code>. The reference lists <a href="../reference/library.html#bare-engine">both sets</a>.</li>
 <li><strong>Output</strong> goes to <code>std::cout</code> unless <code>set_output_stream</code> names another stream.</li>
 <li><strong>Keep a value in a <code>jai::held_value</code>.</strong> <code>execute</code>, <code>execute_file</code>, <code>get_variable</code> and <code>hold(v)</code> return one. It stays readable as long as the engine lives and never keeps the engine alive; after the engine is destroyed, reading it throws <code>Value outlived its engine.</code> A plain <code>jai::script_value</code>, such as an argument your C++ function receives, is a borrow for the duration of the call: store it with <code>eng-&gt;hold(v)</code>. Values pass between engines by copy (<a href="17-host-api.html#reading-script-state-back">Host API</a>).</li>
 </ul>
@@ -188,7 +188,7 @@ the engine carries on: 42</code></pre></div>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

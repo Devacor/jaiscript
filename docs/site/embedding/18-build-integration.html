@@ -108,7 +108,7 @@ add_executable(my_game main.cpp)
 target_link_libraries(my_game PRIVATE JaiScript::jaiscript)</code></pre></div>
 <p>Or fetch it at configure time:</p>
 <div class="codeblock cb-plain"><span class="cb-label">CMakeLists.txt</span><pre><code class="lang-plain">include(FetchContent)
-FetchContent_Declare(jaiscript GIT_REPOSITORY https://github.com/Devacor/jaiscript.git GIT_TAG v0.5.4)
+FetchContent_Declare(jaiscript GIT_REPOSITORY https://github.com/Devacor/jaiscript.git GIT_TAG v0.6.0)
 FetchContent_MakeAvailable(jaiscript)
 target_link_libraries(my_game PRIVATE JaiScript::jaiscript)</code></pre></div>
 <p>Options, set before <code>add_subdirectory</code> or <code>FetchContent_MakeAvailable</code>, or with <code>-D</code>:</p>
@@ -198,7 +198,7 @@ cmake --build build-jai
 cmake --install build-jai</code></pre></div>
 <div class="codeblock cb-plain"><span class="cb-label">CMakeLists.txt</span><pre><code class="lang-plain">cmake_minimum_required(VERSION 3.20)
 project(my_game CXX)
-find_package(JaiScript 0.5 CONFIG REQUIRED)        # configure with -DCMAKE_PREFIX_PATH=/opt/jaiscript
+find_package(JaiScript 0.6 CONFIG REQUIRED)        # configure with -DCMAKE_PREFIX_PATH=/opt/jaiscript
 add_executable(my_game main.cpp)
 target_link_libraries(my_game PRIVATE JaiScript::jaiscript)
 set_property(TARGET my_game PROPERTY MSVC_RUNTIME_LIBRARY &quot;${JaiScript_MSVC_RUNTIME_LIBRARY}&quot;)</code></pre></div>
@@ -207,8 +207,8 @@ set_property(TARGET my_game PROPERTY MSVC_RUNTIME_LIBRARY &quot;${JaiScript_MSVC
 (<code>/MT</code>, <code>/MTd</code>) unless you pass <code>CMAKE_MSVC_RUNTIME_LIBRARY</code>, and a CMake project
 defaults to the DLL runtime. The package records its runtime in <code>JaiScript_MSVC_RUNTIME_LIBRARY</code>; without the
 line the link fails with <code>LNK2038: mismatch detected for 'RuntimeLibrary'</code>.</li>
-<li><strong>The version must share its minor.</strong> <code>find_package(JaiScript 0.5)</code> accepts any installed
-0.5.z and refuses 0.6 (<a href="../stability.html#versions">Stability</a>).</li>
+<li><strong>The version must share its minor.</strong> <code>find_package(JaiScript 0.6)</code> accepts any installed
+0.6.z and refuses 0.7 (<a href="../stability.html#versions">Stability</a>).</li>
 <li><strong>From another build system,</strong> compile your files with the definitions the library was built with: its
 runtime, <code>NDEBUG</code> for a Release library, and <code>JAISCRIPT_ENABLE_DEBUGGER</code> unless it was configured
 off.</li>
@@ -244,7 +244,7 @@ standard library).</p><nav class="prevnext" aria-label="Chapter navigation"><a c
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

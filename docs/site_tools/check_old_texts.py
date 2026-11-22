@@ -14,10 +14,18 @@ import sys
 SITE = pathlib.Path(__file__).resolve().parent.parent / "site"
 
 OLD_TEXTS = [
+    r"time::now expects no arguments",
+    r"to_base64 expects exactly",
+    r"Insufficient permission: scoped_template",
+    r"a scoped template",
+    r"crypto::equals expects",
+    r"merge\(\) expects exactly 2 arguments",
+    r"merge\(\) requires two map arguments",
     r"is marked serial_function\(\)",
     r"is marked serial_static_method\(\)",
     r"is marked serial_method\(\)",
     r"Member '[^']*' accessed on null",
+    r"Class '[^']*' has no base '[^']*' to construct",
     r"String has no method",
     r"Array has no method",
     r"Map has no method or key",
@@ -46,6 +54,8 @@ OLD_TEXTS = [
     r"Cannot store '[^']*' in '[^']*'",
     r"Cannot assign to static member: field",
     r"resume\(\) takes no arguments",
+    r"coroutine_handle has no member",
+    r"on 'coroutine_handle'",
     r"shadows base class method",
     r"overrides virtual method from base class",
     # `Cannot push 'string' to array<int>` and `Cannot assign 'string' to element of type 'int'`
@@ -66,6 +76,11 @@ OLD_TEXTS = [
     r"\[object\]",
     r"\[function\]",
     r"catch takes one name and no type",
+    # jai_spider and the spider:: client name their classes in snake_case (spider::request, database)
+    r"spider::(?:Response|Request|Router|Route|Upload|Session|SessionStore|Task)\b",
+    r"\bResponse\.(?:header|set_cookie):",
+    r"\bDatabase(?:\.[a-z_]+| [a-z_]+ =)",
+    r"\bSqlFragment\b",
 ]
 
 

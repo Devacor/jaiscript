@@ -19,7 +19,7 @@ function check(bool ok, string what) -> void {
 // puts the player there facing the monster
 function place_player_facing(int m) -> bool {
 	for (int a = 0; a < 8; ++a) {
-		float ang = a * math::PI / 4.0;
+		float ang = a * math::pi / 4.0;
 		for (int di = 0; di < 3; ++di) {
 			float d = 140.0 + di * 70.0;
 			float px = MO_X[m] + math::cos(ang) * d;
@@ -464,7 +464,7 @@ function main() -> int {
 	// rocket flies up the corridor, direct-hits the target, splash reaches the bystander
 	int va = mobj_spawn(1056.0, -3300.0, 3004, 0.0, 1, "POSS", "ABCD", 20000, 20.0);
 	int vb = mobj_spawn(996.0, -3300.0, 3004, 0.0, 1, "POSS", "ABCD", 20000, 20.0);
-	P_ANG = math::PI / 2.0;
+	P_ANG = math::pi / 2.0;
 	W_COOL = 0;
 	int nbr = MO_X.size();
 	player_fire();
@@ -491,7 +491,7 @@ function main() -> int {
 	float wt = trace_block_t(P_X, P_Y, P_X - 512.0, P_Y, P_FLOORZ + 41.0);
 	check(wt < 1.0, "found the corridor's west wall");
 	corridor_stand(1056.0 - wt * 512.0 + 40.0, -3500.0);
-	P_ANG = math::PI;
+	P_ANG = math::pi;
 	P_HP = 200;
 	P_ARMOR = 0;
 	P_MOMX = 0.0;
@@ -512,7 +512,7 @@ function main() -> int {
 	// berserk: fists multiply x10 for the level
 	corridor_stand(1056.0, -3616.0);
 	P_HP = 100;
-	P_ANG = math::PI / 2.0;
+	P_ANG = math::pi / 2.0;
 	int sponge = mobj_spawn(1056.0, -3560.0, 3004, 0.0, 1, "POSS", "ABCD", 100000, 20.0);
 	CUR_WEAPON = 1;
 	P_BERSERK = false;
@@ -597,7 +597,7 @@ function main() -> int {
 	check(AMMO_BULLETS_MAX == 400, "second backpack doesn't re-double the caps");
 
 	// puffs: a wall shot leaves a PUFF mobj that animates out
-	P_ANG = math::PI;
+	P_ANG = math::pi;
 	CUR_WEAPON = 2;
 	AMMO_BULLETS = 10;
 	W_COOL = 0;
@@ -615,7 +615,7 @@ function main() -> int {
 
 	// blood: a monster hit bleeds BLUD instead
 	int bleeder = mobj_spawn(1056.0, -3560.0, 3004, 0.0, 1, "POSS", "ABCD", 100000, 20.0);
-	P_ANG = math::PI / 2.0;
+	P_ANG = math::pi / 2.0;
 	W_COOL = 0;
 	int nbb = MO_X.size();
 	player_fire();

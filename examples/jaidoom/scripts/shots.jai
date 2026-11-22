@@ -26,7 +26,7 @@ import "fx.jai";
 string OUT_DIR = ".";
 
 function shoot(string name) -> void {
-	write_file(`${OUT_DIR}/${name}.ans`, vid_blit());
+	file::write(`${OUT_DIR}/${name}.ans`, vid_blit());
 	print(`  ${OUT_DIR}/${name}.ans`);
 }
 
@@ -49,7 +49,7 @@ function draw_play() -> void {
 // a standable spot with a clear line to monster m, facing it
 function face_monster(int m) -> bool {
 	for (int a = 0; a < 8; ++a) {
-		float ang = a * math::PI / 4.0;
+		float ang = a * math::pi / 4.0;
 		for (int di = 0; di < 3; ++di) {
 			float d = 200.0 + di * 80.0;
 			float px = MO_X[m] + math::cos(ang) * d;
@@ -76,9 +76,9 @@ function main() -> int {
 	int tics = 30;
 	int every = 0;
 	bool panel = false;
-	for (int i = 0; i < ARGS.size(); ++i) {
-		string a = ARGS[i];
-		string next = i + 1 < ARGS.size() ? ARGS[i + 1] : "";
+	for (int i = 0; i < args.size(); ++i) {
+		string a = args[i];
+		string next = i + 1 < args.size() ? args[i + 1] : "";
 		if (a == "out") { OUT_DIR = next; i += 1; }
 		else if (a == "fight") { target = next.to_int(-1); i += 1; }
 		else if (a == "tics") { tics = next.to_int(tics); i += 1; }
@@ -131,7 +131,7 @@ function main() -> int {
 		for (int k = 0; k < PANEL_SPAN; ++k) {
 			stat_note(0.1 + (k % 5) * 0.03, 2.6 + (k % 7) * 0.2, 0.7 + (k % 3) * 0.1, 1.8 + (k % 4) * 0.3, 16.7);
 		}
-		write_file(`${OUT_DIR}/fight_panel.ans`, `${ESC}[1;1H` + vid_blit() + panel_text(2, 2));
+		file::write(`${OUT_DIR}/fight_panel.ans`, `${ESC}[1;1H` + vid_blit() + panel_text(2, 2));
 		print(`  ${OUT_DIR}/fight_panel.ans`);
 	}
 	return 0;

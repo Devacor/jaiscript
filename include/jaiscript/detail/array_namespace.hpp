@@ -27,20 +27,23 @@ namespace jai::detail {
 		}
 	}
 
-	// map::filter(m, predicate) returns the kept entries as a new map; m.filter(predicate) keeps them in m
+	// map::filter(m, predicate) returns the kept entries as a new map, m.filter(predicate) keeps them in m; map::merge(m, other)
+	// returns both as a new map, m.merge(other) puts other's entries into m
 	inline void register_map_namespace(engine& a_engine) {
 		auto& ns = engine_access::script_namespaces(a_engine)[engine_access::symbolize(a_engine, "map")];
 		if (!ns) { ns = std::make_shared<script_namespace_data>(); }
-		const uint64_t member = engine_access::symbolize(a_engine, "filter");
-		ns->signatures[member] = {2, 2, {script_value_type::jai_map_type}, script_value_type::jai_map_type, true, {}, true, true};
-		ns->variables[member] = script_value::make_function([engine = &a_engine, member](const std::vector<script_value>& a_args) -> checked_result<script_value> {
-			if (a_args.size() != 2) {
-				return checked_result<script_value>(make_error_code(runtime_error_code::argument_count_mismatch), "Incorrect argument count for map namespace transform");
-			}
-			if (!a_args[0].is_map()) { return checked_result<script_value>(make_error_code(runtime_error_code::type_mismatch), "map namespace transforms require a map"); }
-			script_value input = a_args[0].deref();
-			std::vector<script_value> arguments{a_args[1].deref()};
-			return engine_access::get_execution_backend(*engine)->map_transform(member, input, arguments);
-		}, &a_engine);
+		for (const char* name : {"filter", "merge"}) {
+			const uint64_t member = engine_access::symbolize(a_engine, name);
+			ns->signatures[member] = {2, 2, {script_value_type::jai_map_type}, script_value_type::jai_map_type, true, {}, true, true};
+			ns->variables[member] = script_value::make_function([engine = &a_engine, member](const std::vector<script_value>& a_args) -> checked_result<script_value> {
+				if (a_args.size() != 2) {
+					return checked_result<script_value>(make_error_code(runtime_error_code::argument_count_mismatch), "Incorrect argument count for map namespace transform");
+				}
+				if (!a_args[0].is_map()) { return checked_result<script_value>(make_error_code(runtime_error_code::type_mismatch), "map namespace transforms require a map"); }
+				script_value input = a_args[0].deref();
+				std::vector<script_value> arguments{a_args[1].deref()};
+				return engine_access::get_execution_backend(*engine)->map_transform(member, input, arguments);
+			}, &a_engine);
+		}
 	}
 }

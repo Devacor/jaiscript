@@ -1,7 +1,17 @@
 #include "../../include/jaiscript/core/type_info.hpp"
+#include "../../include/jaiscript/detail/type_name_key.hpp"
 #include <sstream>
 
 namespace jai {
+
+std::string detail::type_name_key(std::string_view a_text) {
+    std::string result;
+    result.reserve(a_text.size());
+    for (const char c : a_text) {
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f' && c != '\v') { result += c; }
+    }
+    return result;
+}
 
 namespace {
 [[noreturn]] JAI_NOINLINE void throw_type_shape_not_prewarmed() {
@@ -41,6 +51,57 @@ std::string leaf_canonical_name(const type_info& t) {
             return t.type_name.empty() ? "unknown" : t.type_name;
     }
 }
+}
+
+namespace {
+bool name_space(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
+}
+
+bool template_name_arguments(std::string_view name, std::string_view& base, std::vector<std::string_view>& arguments) {
+    const size_t open = name.find('<');
+    if (open == std::string_view::npos || open == 0 || name.back() != '>') { return false; }
+    base = name.substr(0, open);
+    arguments.clear();
+    int depth = 0;
+    size_t start = open + 1;
+    const auto cut = [&](size_t end) {
+        std::string_view argument = name.substr(start, end - start);
+        while (!argument.empty() && name_space(argument.front())) { argument.remove_prefix(1); }
+        while (!argument.empty() && name_space(argument.back())) { argument.remove_suffix(1); }
+        arguments.push_back(argument);
+        start = end + 1;
+    };
+    for (size_t i = open; i < name.size(); ++i) {
+        const char c = name[i];
+        if (c == '<' || c == '(') { ++depth; }
+        else if (c == '>' || c == ')') {
+            if (--depth == 0) {
+                if (i + 1 != name.size()) { return false; }
+                cut(i);
+            }
+        } else if (c == ',' && depth == 1) { cut(i); }
+    }
+    return depth == 0;
+}
+
+script_value_type sized_number_kind(std::string_view spelling) {
+    if (spelling == "float32") { return script_value_type::jai_float_type; }
+    std::string_view width = spelling;
+    if (width.substr(0, 4) == "uint") { width.remove_prefix(4); }
+    else if (width.substr(0, 3) == "int" && width.size() > 3) { width.remove_prefix(3); }   // int itself is the script's own
+    else { return script_value_type::jai_null_type; }
+    return width.empty() || width == "8" || width == "16" || width == "32" ? script_value_type::jai_int_type : script_value_type::jai_null_type;
+}
+
+size_t class_qualifier_cut(std::string_view name) {
+    int depth = 0;
+    for (size_t i = name.size(); i-- > 1;) {
+        const char c = name[i];
+        if (c == '>' || c == ')') { ++depth; }
+        else if (c == '<' || c == '(') { --depth; }
+        else if (depth == 0 && c == ':' && name[i - 1] == ':') { return i - 1; }
+    }
+    return std::string_view::npos;
 }
 
 // A composite type names its parameters on an explicit work list: the parser names each level of a nested type while the
@@ -108,14 +169,20 @@ std::string type_info::canonical_name() const {
                     result += "function";
                     break;
                 }
+                // a signature names var as written and a T& parameter by its T
                 text(">");
                 text(")");
                 for (size_t i = t.type_params.size(); i-- > 1;) {
-                    part(t.type_params[i], "");
+                    const type_info* arg = t.type_params[i].get();
+                    if (arg && arg->base_type == script_value_type::jai_reference_type) {
+                        text("&");
+                        arg = arg->element_type().get();
+                    }
+                    if (!arg || arg->base_type == script_value_type::jai_any_type) { text("var"); } else { pending.push_back({arg, nullptr}); }
                     if (i > 1) { text(","); }
                 }
                 text("(");
-                part(t.return_type(), "void");
+                if (t.return_type() && t.return_type()->base_type == script_value_type::jai_any_type) { text("var"); } else { part(t.return_type(), "void"); }
                 text("function<");
                 break;
             default:
@@ -143,6 +210,13 @@ std::string type_info::spelling() const {
         default:
             return canonical_name();
     }
+}
+
+std::string type_info::instance_name(std::string_view base, const std::vector<type_info_ptr>& arguments) {
+    std::vector<std::string> spellings;
+    spellings.reserve(arguments.size());
+    for (const auto& argument : arguments) { spellings.push_back(argument ? argument->spelling() : std::string("auto")); }
+    return template_instance_name(base, spellings);
 }
 
 type_info type_info::make_int(string_symbolizer& symbolizer) {
@@ -300,6 +374,16 @@ type_info type_info::make_function(string_symbolizer& symbolizer, type_info_ptr 
     type_info info(script_value_type::jai_function_type);
     info.type_params.push_back(return_type);
     info.type_params.insert(info.type_params.end(), arg_types.begin(), arg_types.end());
+    info.id = type_name_id(symbolizer, info.canonical_name());
+    return info;
+}
+
+type_info type_info::make_coroutine(string_symbolizer& symbolizer, type_info_ptr yield_type) {
+    type_info info(script_value_type::jai_object_type);
+    info.is_coroutine = true;
+    const bool dynamic = !yield_type || yield_type->base_type == script_value_type::jai_any_type;
+    info.type_name = "coroutine<" + (dynamic ? std::string("var") : yield_type->canonical_name()) + ">";
+    info.type_params.push_back(yield_type);
     info.id = type_name_id(symbolizer, info.canonical_name());
     return info;
 }

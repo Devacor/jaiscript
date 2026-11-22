@@ -41,7 +41,7 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Enums, Namespaces, Destructuring &amp; Friends</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li class="current"><a href="../guide/11-kitchen-sink.html" aria-current="page">Enums, Namespaces, Destructuring &amp; Friends</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Enums, Namespaces, Destructuring &amp; Friends</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li class="current"><a href="../guide/11-kitchen-sink.html" aria-current="page">Enums, Namespaces, Destructuring &amp; Friends</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li><li><a href="../guide/21-generics.html">Generics</a></li></ol></details></aside>
 <script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
 var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>11</nav>
@@ -53,7 +53,7 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 <li>A <code>Dir</code> slot (variable, parameter, return, field, element, map key or value) holds only <code>Dir</code> values and starts at the first one. <code>auto d = Dir::north;</code> is a <code>Dir</code>.</li>
 <li><strong>Enum to int is implicit</strong>: <code>int n = d + 1;</code>.</li>
 <li><strong>Int to enum needs <code>cast&lt;Dir&gt;(n)</code></strong>, which raises for a number the enum lacks. A bare int or another enum's value into a <code>Dir</code> slot is a load error, and so are <code>d += 1</code> and <code>d++</code>.</li>
-<li>A <code>var</code> holds the integer: <code>type_of</code> reports <code>"int"</code>, and it enters a <code>Dir</code> slot when it is one of the values.</li>
+<li>A <code>var</code> holds the integer: <code>reflect::type_of</code> reports <code>"int"</code>, and it enters a <code>Dir</code> slot when it is one of the values.</li>
 <li><code>print</code>, <code>to_string</code>, <code>format</code>, <code>to_json</code> and <code>to_binary</code> show or write the integer; a load restores the enum.</li>
 <li>Overloads tell <code>f(Dir)</code> from <code>f(int)</code>, <code>catch (Dir e)</code> takes a thrown <code>Dir</code>, and a map literal takes values as keys.</li>
 <li>A value that does not exist fails the load: <code>no value 'zzz' in enum 'Dir'</code>.</li>
@@ -62,7 +62,7 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 Dir d = Dir::south;
 int n = d + 1;                               // enum to int: implicit
 string name(Dir where) { return where == Dir::east ? "east" : "elsewhere"; }
-print("{} {} {} {}", d, type_of(d), n, name(cast&lt;Dir&gt;(n)));
+print("{} {} {} {}", d, reflect::type_of(d), n, name(cast&lt;Dir&gt;(n)));
 switch (d) {
     case Dir::north: print("up");
     case Dir::south: print("down");
@@ -70,7 +70,7 @@ switch (d) {
 }
 map&lt;Dir, string&gt; short_names = {Dir::north: "N", Dir::south: "S"};
 var v = d;
-print("{} {}", short_names[d], type_of(v));
+print("{} {}", short_names[d], reflect::type_of(v));
 try { d = cast&lt;Dir&gt;(9); } catch (e) { print("caught: {}", e); }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 Dir 2 east
 down
@@ -94,7 +94,7 @@ next = 8
 none = 0
 read = 1
 write = 2</code></pre></div>
-<p>An enum declared inside a function or block is local to it. A program-scope enum of the same name keeps its values, and the checker warns when a local one hides it.</p>
+<p>An enum declared inside a function or block is local to it. A program-scope enum of the same name keeps its values, and the checker warns when a local one hides it. An enum declared in a namespace is the namespace's, named <code>ns::Dir</code> (<a href="#namespaces">Namespaces</a>).</p>
 <h2 id="namespaces">Namespaces<a class="hlink" href="#namespaces" aria-label="link">&#8203;</a></h2>
 <p><code>namespace name { ... }</code> groups functions, variables, classes and enums behind <code>name::</code>. Blocks reopen: every <code>namespace utils { }</code> in the program, in any file, adds to the one namespace. <code>namespace a::b { }</code> and a block nested in <code>namespace a</code> declare the same <code>a::b</code>.</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int limit = 100;                              // a global of the same name stays separate
@@ -104,26 +104,32 @@ namespace game {
     int scale(int v) { return clamp_to(v * 2); }            // declared below: found when called
     int clamp_to(int v) { return v &gt; limit ? limit : v; }   // game::limit hides the global
     int global_limit() { return ::limit; }                  // ::name reaches the global
-    class Unit { int hp = 5; }
+    enum Mode { idle, busy }
+    class Unit { int hp = 5; Mode mode = Mode::busy; }      // the namespace's enum, by its bare name
     namespace ai {
         int think(int v) { return scale(v) + 1; }           // from the enclosing namespace
     }
 }
 game::limit += 1;
 game::Unit u;
-print("{} {} {} {} {}", game::scale(7), game::ai::think(2), game::global_limit(), game::bonus, type_of(u));
+game::Mode m = u.mode;
+print("{} {} {} {} {}", game::scale(7), game::ai::think(2), game::global_limit(), game::bonus, reflect::type_of(u));
+print("{} {}", reflect::type_of(m), m == game::Mode::busy);
 try { string::to_lower = 3; } catch (e) { print("caught: {}", e); }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">11 5 100 20 game::Unit
+game::Mode true
 caught: Cannot assign to 'to_lower': it is read-only</code></pre></div>
-<p id="bare-names-in-a-namespace"><strong>Bare names.</strong> Code in a namespace (its functions, their lambdas and coroutines, its classes' methods and field initializers) looks a bare name up in this order: locals, the namespace's own members, each enclosing namespace innermost first, then globals. The lookup happens when the code runs, so a function declared later, in a reopening or by a reload is found. Outside the namespace a member's bare name is <code>use of undeclared identifier</code>.</p>
+<p id="bare-names-in-a-namespace"><strong>Bare names.</strong> Code in a namespace (its functions, their lambdas and coroutines, its classes' methods and field initializers) looks a bare name up in this order: locals, the namespace's own members, each enclosing namespace innermost first, then globals. The lookup happens when the code runs, so a function declared later, in a reopening or by a reload is found. The load checks a bare member as it checks <code>ns::member</code>: a call&#x27;s arguments and result, a variable&#x27;s declared type. Outside the namespace a member's bare name is <code>use of undeclared identifier</code>.</p>
+<p id="relative-names-in-a-namespace"><strong>Relative names.</strong> The first segment of a qualified name is looked up the same way: in <code>namespace outer</code>, <code>inner::k()</code> names <code>outer::inner::k</code> when any file of the program opens <code>outer::inner</code>, as a call, a value or a type, at any depth (<code>inner::deep::Item</code>). The innermost namespace of that name wins and the search stops there, so with a program-scope <code>namespace inner</code> beside it <code>inner::k</code> is still <code>outer::inner::k</code>, and a member only the program-scope one declares is <code>no member 'only' in namespace 'outer::inner'</code>. <code>::inner::k</code> names the program-scope one.</p>
 <p id="a-namespace-is-a-scope"><strong>Rules.</strong></p>
 <ul>
 <li>A namespace variable is one variable; <code>ns::x = v</code> stores under its declared type. The namespace's top-level code runs in order, as a file's does (<a href="../reference/rules.html#rule-top-level-order">top-level order</a>).</li>
 <li>Functions overload as anywhere (<a href="06-functions.html#redefinition-and-the-duplicate-warning">Functions</a>). Redefining an existing signature needs <code>override</code>: <code>Function 'f' already exists in namespace 'n'. Use 'override' keyword to replace it.</code></li>
-<li>A class declared in a namespace is named <code>ns::Box</code> from every file; that is what <code>type_of</code> reports and a saved <code>$type</code> carries. Inside the namespace the bare <code>Box</code> works. Two namespaces that each declare a <code>Box</code> declare two classes.</li>
+<li>A class declared in a namespace is named <code>ns::Box</code> from every file; that is what <code>reflect::type_of</code> reports and a saved <code>$type</code> carries. Inside the namespace the bare <code>Box</code> works. Two namespaces that each declare a <code>Box</code> declare two classes.</li>
+<li>An enum declared in a namespace is named <code>ns::Mode</code> the same way: <code>reflect::type_of</code> and every message give that name, <code>ns::Mode::busy</code> is a value and <code>ns::Mode</code> the value table. Inside the namespace the bare <code>Mode</code> works as a type, before a value and as the table. A program-scope <code>Mode</code> is another enum, and the namespace's code reads its values as <code>::Mode::busy</code>.</li>
 <li>A namespace may share a class's name. Its functions replace the class's static methods of matching arity when they say <code>override</code>; without it the collision is an error.</li>
 <li>A qualified name the namespace does not declare fails the load: <code>no member 'sqroot' in namespace 'math'</code>. Every declaration counts (any file, an earlier run, the host), so a script's <code>namespace math { }</code> adds to <code>math::</code>. A file with a dynamic-path include gets a warning instead.</li>
-<li>The host's entries (<code>string::to_lower</code>, <code>time::now</code>) are read-only.</li>
+<li>The host's entries (<code>string::to_lower</code>, <code>time::engine_elapsed</code>) are read-only.</li>
 <li>Any reserved word but <code>this</code> and <code>super</code> names a namespace member or an enum value, reached qualified: <code>spider::catch(url)</code>, <code>Mode::default</code> (<a href="07-classes.html#reference-returns-and-keyword-names">keyword member names</a>).</li>
 </ul>
 <h3 id="using-declarations"><code>using ns::name;</code><a class="hlink" href="#using-declarations" aria-label="link">&#8203;</a></h3>
@@ -161,7 +167,7 @@ caught: Cannot access 'v' on null ('next' is null)</code></pre></div>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

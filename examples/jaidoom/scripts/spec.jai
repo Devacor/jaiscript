@@ -376,7 +376,7 @@ function teleport_player(int tag) -> bool {
 		if (SE_TAG[ds] != tag) { continue; }
 		P_X = TH_X[t] * 1.0;
 		P_Y = TH_Y[t] * 1.0;
-		P_ANG = TH_ANG[t] * math::PI / 180.0;
+		P_ANG = TH_ANG[t] * math::pi / 180.0;
 		P_MOMX = 0.0;
 		P_MOMY = 0.0;
 		P_FLOORZ = SE_FLOORH[ds];

@@ -116,6 +116,10 @@ public:
 			const std::string plain = failure(eng, f, "array<int> rows = [1]; template(\"call.spider\", rows[0]);");
 			check(plain.find("template() argument 2 is not a plain variable name") != std::string::npos && plain.find("(auto entry = rows[0];)") != std::string::npos,
 				"an argument that is not a name fails the load with the local to write: " + plain);
+			f.write("void.spider", "<p>\n${note()}</p>");
+			const std::string nothing = failure(eng, f, "void note() { } template(\"void.spider\");");
+			check(nothing.find("void.spider:2:8: error: the result of 'note' is used, but 'note' returns nothing: call it as a statement") != std::string::npos,
+				"a splice of a call that returns nothing names the template's line: " + nothing);
 			check_eq(std::string("<no error>"), failure(eng, f, "var r = 1; string s = \"\";"));
 		});
 
@@ -160,90 +164,90 @@ public:
 				"var node = {\"name\": \"root\", \"kids\": [{\"name\": \"a\", \"kids\": []}, {\"name\": \"b\", \"kids\": [{\"name\": \"c\", \"kids\": []}]}]}; template(\"tree.spider\", node).to_string();"));
 		});
 
-		// --------------------------------------------------------- scoped_template: one test per rule, each with the escape it blocks
+		// --------------------------------------------------------- untrusted_template: one test per rule, each with the escape it blocks
 
 		auto scoped_error = [=](const std::string& a_setup, const std::string& a_text) {
 			auto eng = engine_for();
 			dynamic_binder<template_host_thing>(*eng, "TemplateHostThing").constructor<>().method("reveal", &template_host_thing::reveal).build();
-			const std::string script = a_setup + " string text = R\"tpl(" + a_text + ")tpl\"; string m = \"<rendered>\"; try { m = scoped_template_text(text, data).to_string(); } catch (e) { m = e; } m;";
+			const std::string script = a_setup + " string text = R\"tpl(" + a_text + ")tpl\"; string m = \"<rendered>\"; try { m = untrusted_template_text(text, data).to_string(); } catch (e) { m = e; } m;";
 			return eng->execute(script).as_string();
 		};
 		const std::string data = "int secret = 42; int leak() { return secret; } class Pet { string name = \"Rex\"; string speak() { return \"secret \" + to_string(secret); } bool operator==(Pet o) { return secret == 42; } } "
 			"map<string, var> data = {\"name\": \"<ann>\", \"pet\": Pet(), \"host\": TemplateHostThing(), \"call\": () => secret, \"items\": [\"b\", \"a\"]};";
 
-		test("scoped_template_renders_built_in_values_escaped", [=, this]() {
+		test("untrusted_template_renders_built_in_values_escaped", [=, this]() {
 			check_eq(std::string("&lt;ann&gt; Rex 002 B,A"),
 				scoped_error(data, "${args[\"name\"]} ${args[\"pet\"].name} ${args[\"items\"].size():03} ${array::map(args[\"items\"], i => string::to_upper(i)).join(\",\")}"));
 			auto eng = engine_for();
-			check_eq(std::string("ab [\"b\",\"a\"]"), eng->execute("map<string, var> d = {\"items\": [\"b\", \"a\"]}; `${scoped_template_text(\"${array::sort(args[\\\"items\\\"])}\", d).to_string()} ${to_json(d[\"items\"])}`;").as_string(),
+			check_eq(std::string("ab [\"b\",\"a\"]"), eng->execute("map<string, var> d = {\"items\": [\"b\", \"a\"]}; `${untrusted_template_text(\"${array::sort(args[\\\"items\\\"])}\", d).to_string()} ${to_json(d[\"items\"])}`;").as_string(),
 				"the string::, array:: and map:: functions work on copies");
 			check_eq(std::string("sort changes obj in place and returns nothing; array::sort(obj) returns a sorted copy"),
-				eng->execute("map<string, var> d = {\"items\": [\"b\", \"a\"]}; string m = \"\"; try { scoped_template_text(\"${args[\\\"items\\\"].sort()}\", d); } catch (e) { m = e; } m;").as_string(),
+				eng->execute("map<string, var> d = {\"items\": [\"b\", \"a\"]}; string m = \"\"; try { untrusted_template_text(\"${args[\\\"items\\\"].sort()}\", d); } catch (e) { m = e; } m;").as_string(),
 				"an in-place method's result is the language's error");
-			check_eq(std::string(" \t\n\v\f\r|"), eng->execute("map<string, var> d; scoped_template_text(\"${string::whitespace}|\", d).to_string();").as_string(), "a namespace value reads");
+			check_eq(std::string(" \t\n\v\f\r|"), eng->execute("map<string, var> d; untrusted_template_text(\"${string::whitespace}|\", d).to_string();").as_string(), "a namespace value reads");
 		});
 
-		test("scoped_template_refuses_a_global_read", [=, this]() {
-			check_eq(std::string("parse failed:\n<scoped_template_text>:1:3: error: a scoped template sees only args: 'secret' is not available\n    ${secret}\n      ^"),
+		test("untrusted_template_refuses_a_global_read", [=, this]() {
+			check_eq(std::string("parse failed:\n<untrusted_template_text>:1:3: error: an untrusted template sees only args: 'secret' is not available\n    ${secret}\n      ^"),
 				scoped_error(data, "${secret}"));
 		});
 
-		test("scoped_template_refuses_a_free_function_call", [=, this]() {
+		test("untrusted_template_refuses_a_free_function_call", [=, this]() {
 			const std::string m = scoped_error(data, "${leak()}");
-			check(m.find("a scoped template calls only built-in methods and the string::, array:: and map:: functions: 'leak(...)' is not allowed") != std::string::npos, m);
+			check(m.find("an untrusted template calls only built-in methods and the string::, array:: and map:: functions: 'leak(...)' is not allowed") != std::string::npos, m);
 			const std::string other = scoped_error(data, "${web::html_escape(args[\"name\"])}");
-			check(other.find("a scoped template calls only built-in methods and the string::, array:: and map:: functions: 'html_escape(...)' is not allowed") != std::string::npos, "another namespace's function: " + other);
+			check(other.find("an untrusted template calls only built-in methods and the string::, array:: and map:: functions: 'html_escape(...)' is not allowed") != std::string::npos, "another namespace's function: " + other);
 			const std::string script_ns = scoped_error("namespace leaks { int f() { return 1; } } " + data, "${leaks::f()}");
 			check(script_ns.find("'f(...)' is not allowed") != std::string::npos, "a script namespace's function: " + script_ns);
 		});
 
-		test("scoped_template_refuses_a_bound_cpp_method", [=, this]() {
-			check_eq(std::string("a scoped template does not call a method of a class instance, a host object or a function: its code could run"),
+		test("untrusted_template_refuses_a_bound_cpp_method", [=, this]() {
+			check_eq(std::string("an untrusted template does not call a method of a class instance, a host object or a function: its code could run"),
 				scoped_error(data, "${args[\"host\"].reveal()}"));
-			check_eq(std::string("a scoped template reads the plain fields of a script class instance: 'secret' is not one"),
+			check_eq(std::string("an untrusted template reads the plain fields of a script class instance: 'secret' is not one"),
 				scoped_error(data, "${args[\"host\"].secret}"), "a host property's getter is host code");
 		});
 
-		test("scoped_template_refuses_a_script_class_method", [=, this]() {
-			check_eq(std::string("a scoped template does not call a method of a class instance, a host object or a function: its code could run"),
+		test("untrusted_template_refuses_a_script_class_method", [=, this]() {
+			check_eq(std::string("an untrusted template does not call a method of a class instance, a host object or a function: its code could run"),
 				scoped_error(data, "${args[\"pet\"].speak()}"));
-			check_eq(std::string("a scoped template does not splice a class instance, a host object or a function: its code could run"),
+			check_eq(std::string("an untrusted template does not splice a class instance, a host object or a function: its code could run"),
 				scoped_error(data, "${args[\"pet\"]}"), "splicing an instance would run its to_string()");
-			check_eq(std::string("a scoped template does not call a built-in method over a class instance, a host object or a function: its code could run"),
+			check_eq(std::string("an untrusted template does not call a built-in method over a class instance, a host object or a function: its code could run"),
 				scoped_error(data, "${array::map(args[\"items\"], i => args[\"pet\"]).size()}"), "a built-in that would reach an instance's code");
 		});
 
-		test("scoped_template_refuses_an_operator_overload", [=, this]() {
-			check_eq(std::string("a scoped template does not apply an operator to a class instance, a host object or a function: its code could run"),
+		test("untrusted_template_refuses_an_operator_overload", [=, this]() {
+			check_eq(std::string("an untrusted template does not apply an operator to a class instance, a host object or a function: its code could run"),
 				scoped_error(data, "${args[\"pet\"] == args[\"pet\"]}"));
 		});
 
-		test("scoped_template_refuses_a_function_value_call", [=, this]() {
+		test("untrusted_template_refuses_a_function_value_call", [=, this]() {
 			const std::string held = scoped_error(data, "${args[\"call\"]()}");
-			check(held.find("a scoped template does not call function values") != std::string::npos, "a function held in the map: " + held);
+			check(held.find("an untrusted template does not call function values") != std::string::npos, "a function held in the map: " + held);
 			check_eq(std::string("map has no member 'call'; read the key as [\"call\"]"), scoped_error(data, "${({\"k\": 1}).call()}"), "a map has no methods past its built-ins");
 			const std::string m = scoped_error(data, "${(x => x)(1)}");
-			check(m.find("a scoped template does not call function values") != std::string::npos, m);
+			check(m.find("an untrusted template does not call function values") != std::string::npos, m);
 		});
 
-		test("scoped_template_refuses_raw", [=, this]() {
+		test("untrusted_template_refuses_raw", [=, this]() {
 			const std::string m = scoped_error(data, "${raw(args[\"name\"])}");
-			check(m.find("raw() is not allowed in a scoped template: its output is always escaped") != std::string::npos, m);
+			check(m.find("raw() is not allowed in an untrusted template: its output is always escaped") != std::string::npos, m);
 		});
 
-		test("scoped_template_caps_its_output", [=, this]() {
+		test("untrusted_template_caps_its_output", [=, this]() {
 			auto eng = engine_for();
-			check_eq(std::string("1048576 10485760"), eng->execute("`${to_string(reflect::scoped_template_output_limit())} ${reflect::template_output_limit()}`;").as_string(),
+			check_eq(std::string("1048576 10485760"), eng->execute("`${to_string(reflect::untrusted_template_output_limit())} ${reflect::template_output_limit()}`;").as_string(),
 				"a script reads both limits, at their defaults");
-			eng->scoped_template_output_limit(16);
-			check_eq(std::string("a scoped template's output passed its 16-byte limit: the host raises it with engine::scoped_template_output_limit"), eng->execute(
-				"map<string, var> d = {\"s\": \"0123456789\"}; string m = \"\"; try { scoped_template_text(\"${args[\\\"s\\\"]}${args[\\\"s\\\"]}\", d); } catch (e) { m = e; } m;").as_string());
-			check_eq(std::string("0123456789"), eng->execute("map<string, var> d = {\"s\": \"0123456789\"}; scoped_template_text(\"${args[\\\"s\\\"]}\", d).to_string();").as_string());
-			check_eq(std::string("a scoped template's output passed its 16-byte limit: the host raises it with engine::scoped_template_output_limit"), eng->execute(
-				"map<string, var> d = {\"s\": \"0123456789\"}; string m = \"\"; try { scoped_template_text(\"${string::repeat(args[\\\"s\\\"], 2).size()}\", d); } catch (e) { m = e; } m;").as_string(),
+			eng->untrusted_template_output_limit(16);
+			check_eq(std::string("an untrusted template's output passed its 16-byte limit: the host raises it with engine::untrusted_template_output_limit"), eng->execute(
+				"map<string, var> d = {\"s\": \"0123456789\"}; string m = \"\"; try { untrusted_template_text(\"${args[\\\"s\\\"]}${args[\\\"s\\\"]}\", d); } catch (e) { m = e; } m;").as_string());
+			check_eq(std::string("0123456789"), eng->execute("map<string, var> d = {\"s\": \"0123456789\"}; untrusted_template_text(\"${args[\\\"s\\\"]}\", d).to_string();").as_string());
+			check_eq(std::string("an untrusted template's output passed its 16-byte limit: the host raises it with engine::untrusted_template_output_limit"), eng->execute(
+				"map<string, var> d = {\"s\": \"0123456789\"}; string m = \"\"; try { untrusted_template_text(\"${string::repeat(args[\\\"s\\\"], 2).size()}\", d); } catch (e) { m = e; } m;").as_string(),
 				"a built-in that makes a longer string counts as writing it");
-			eng->scoped_template_output_limit(0);
-			check_eq(std::string("20"), eng->execute("map<string, var> d = {\"s\": \"0123456789\"}; to_string(scoped_template_text(\"${args[\\\"s\\\"]}${args[\\\"s\\\"]}\", d).to_string().size());").as_string(), "0 is no limit");
+			eng->untrusted_template_output_limit(0);
+			check_eq(std::string("20"), eng->execute("map<string, var> d = {\"s\": \"0123456789\"}; to_string(untrusted_template_text(\"${args[\\\"s\\\"]}${args[\\\"s\\\"]}\", d).to_string().size());").as_string(), "0 is no limit");
 		});
 
 		test("template_caps_its_output", [=, this]() {
@@ -254,7 +258,7 @@ public:
 			eng->template_output_limit(12);
 			check_eq(std::string("template()'s output passed its 12-byte limit: the host raises it with engine::template_output_limit"), run(eng, f,
 				"string text = \"ab\"; string m = \"\"; try { m = template(\"page.spider\", text).to_string(); } catch (e) { m = e; } m;"));
-			check_eq(std::string("12 1048576"), eng->execute("`${to_string(reflect::template_output_limit())} ${reflect::scoped_template_output_limit()}`;").as_string());
+			check_eq(std::string("12 1048576"), eng->execute("`${to_string(reflect::template_output_limit())} ${reflect::untrusted_template_output_limit()}`;").as_string());
 			eng->template_output_limit(16);
 			check_eq(std::string("<p><i>ab</i></p>"), run(eng, f, "string text = \"ab\"; template(\"page.spider\", text).to_string();"), "the host raises it");
 			eng->template_output_limit(0);
@@ -272,47 +276,47 @@ public:
 			};
 			check_eq(std::string("Insufficient permission: filesystem."), caught("template(\"" + page + "\", who)"), "a literal path");
 			check_eq(std::string("Insufficient permission: filesystem."), caught("template(p, who)"), "a path known at run time");
-			check_eq(std::string("<b>y</b>"), eng->execute("map<string, var> m = {\"who\": \"y\"}; scoped_template_text(\"<b>${args[\\\"who\\\"]}</b>\", m).to_string();").as_string(), "template text needs no file");
+			check_eq(std::string("<b>y</b>"), eng->execute("map<string, var> m = {\"who\": \"y\"}; untrusted_template_text(\"<b>${args[\\\"who\\\"]}</b>\", m).to_string();").as_string(), "template text needs no file");
 			eng->enable(permissions::filesystem);
 			check_eq(std::string("<rendered>"), caught("template(\"" + page + "\", who)"), "granted again, the same call renders");
 		});
 
-		test("scoped_template_reads_a_map_key_with_brackets_never_a_dot", [=, this]() {
+		test("untrusted_template_reads_a_map_key_with_brackets_never_a_dot", [=, this]() {
 			auto eng = engine_for();
 			const std::string load = [&]() {
-				try { eng->execute("map<string, var> m = {\"name\": \"a\"}; scoped_template_text(\"x\\n${args.name}\", m);"); } catch (const std::exception& e) { return std::string(e.what()); }
+				try { eng->execute("map<string, var> m = {\"name\": \"a\"}; untrusted_template_text(\"x\\n${args.name}\", m);"); } catch (const std::exception& e) { return std::string(e.what()); }
 				return std::string("<no error>");
 			}();
-			check(load.find("<scoped_template_text>:2:8: error: map has no member 'name'; read the key as [\"name\"]") != std::string::npos, "args.k fails the load: " + load);
+			check(load.find("<untrusted_template_text>:2:8: error: map has no member 'name'; read the key as [\"name\"]") != std::string::npos, "args.k fails the load: " + load);
 			check_eq(std::string("map has no member 'k'; read the key as [\"k\"]"), eng->execute(
-				"map<string, var> m = {\"inner\": {\"k\": 1}}; string e = \"\"; try { scoped_template_text(\"${args[\\\"inner\\\"].k}\", m); } catch (err) { e = err; } e;").as_string(),
+				"map<string, var> m = {\"inner\": {\"k\": 1}}; string e = \"\"; try { untrusted_template_text(\"${args[\\\"inner\\\"].k}\", m); } catch (err) { e = err; } e;").as_string(),
 				"a map the template reaches at run time raises when it renders");
-			check_eq(std::string("1 a"), eng->execute("map<string, var> m = {\"inner\": {\"k\": 1}, \"name\": \"a\"}; scoped_template_text(\"${args[\\\"inner\\\"][\\\"k\\\"]} ${array::map([1], args => args)[0] == 1 ? args[\\\"name\\\"] : \\\"\\\"}\", m).to_string();").as_string(),
+			check_eq(std::string("1 a"), eng->execute("map<string, var> m = {\"inner\": {\"k\": 1}, \"name\": \"a\"}; untrusted_template_text(\"${args[\\\"inner\\\"][\\\"k\\\"]} ${array::map([1], args => args)[0] == 1 ? args[\\\"name\\\"] : \\\"\\\"}\", m).to_string();").as_string(),
 				"brackets read, and a lambda parameter named args is its own");
 		});
 
-		test("scoped_template_runs_on_its_own_permission", [=, this]() {
+		test("untrusted_template_runs_on_its_own_permission", [=, this]() {
 			folder f("scoped_permission");
 			f.write("template/card.spider", "<b>${args[\"who\"]}</b>");
 			auto eng = engine_for();
-			eng->set_scoped_template_dirs({(f.dir / "template").string()});
+			eng->set_untrusted_template_dirs({(f.dir / "template").string()});
 			auto render = [&](const std::string& a_call) {
 				return eng->execute("map<string, var> m = {\"who\": \"y\"}; string p = \"card.spider\"; string e = \"\"; try { e = " + a_call + ".to_string(); } catch (err) { e = err; } e;").as_string();
 			};
-			check_eq(std::string("true true"), eng->execute("to_string(jai::permissions::is_enabled(jai::permissions::scoped_template)) + \" \" + to_string(jai::permissions::is_enabled(jai::permissions::filesystem, jai::permissions::scoped_template));").as_string(), "on by default");
+			check_eq(std::string("true true"), eng->execute("to_string(jai::permissions::is_enabled(jai::permissions::untrusted_template)) + \" \" + to_string(jai::permissions::is_enabled(jai::permissions::filesystem, jai::permissions::untrusted_template));").as_string(), "on by default");
 			eng->disable(permissions::filesystem);
-			check_eq(std::string("<b>y</b>"), render("scoped_template(\"card.spider\", m)"), "a literal path with filesystem off");
-			check_eq(std::string("<b>y</b>"), render("scoped_template(p, m)"), "a path known at run time with filesystem off");
-			eng->disable(permissions::scoped_template);
-			check_eq(std::string("Insufficient permission: scoped_template."), render("scoped_template(\"card.spider\", m)"), "a literal path");
-			check_eq(std::string("Insufficient permission: scoped_template."), render("scoped_template(p, m)"), "a path known at run time");
-			check_eq(std::string("Insufficient permission: scoped_template."), render("scoped_template_text(\"<i>${args[\\\"who\\\"]}</i>\", m)"), "template text");
-			check_eq(std::string("false"), eng->execute("to_string(jai::permissions::is_enabled(jai::permissions::scoped_template));").as_string());
-			eng->enable(permissions::scoped_template);
-			check_eq(std::string("<i>y</i>"), render("scoped_template_text(\"<i>${args[\\\"who\\\"]}</i>\", m)"), "granted again");
+			check_eq(std::string("<b>y</b>"), render("untrusted_template(\"card.spider\", m)"), "a literal path with filesystem off");
+			check_eq(std::string("<b>y</b>"), render("untrusted_template(p, m)"), "a path known at run time with filesystem off");
+			eng->disable(permissions::untrusted_template);
+			check_eq(std::string("Insufficient permission: untrusted_template."), render("untrusted_template(\"card.spider\", m)"), "a literal path");
+			check_eq(std::string("Insufficient permission: untrusted_template."), render("untrusted_template(p, m)"), "a path known at run time");
+			check_eq(std::string("Insufficient permission: untrusted_template."), render("untrusted_template_text(\"<i>${args[\\\"who\\\"]}</i>\", m)"), "template text");
+			check_eq(std::string("false"), eng->execute("to_string(jai::permissions::is_enabled(jai::permissions::untrusted_template));").as_string());
+			eng->enable(permissions::untrusted_template);
+			check_eq(std::string("<i>y</i>"), render("untrusted_template_text(\"<i>${args[\\\"who\\\"]}</i>\", m)"), "granted again");
 		});
 
-		test("scoped_template_reads_its_template_dirs_in_order", [=, this]() {
+		test("untrusted_template_reads_its_template_dirs_in_order", [=, this]() {
 			folder f("scoped_dirs");
 			f.write("template/card.spider", "default ${args[\"who\"]}");
 			f.write("a/card.spider", "from a");
@@ -320,41 +324,41 @@ public:
 			f.write("b/only.spider", "only b");
 			f.write("loose.spider", "beside the script");
 			auto eng = engine_for();
-			check_eq(std::string("[\"template\"]"), eng->execute("to_json(reflect::scoped_template_dirs());").as_string(), "the default list");
-			const std::string call = "map<string, var> m = {\"who\": \"x\"}; string e = \"\"; try { e = scoped_template(p, m).to_string(); } catch (err) { e = err; } e;";
+			check_eq(std::string("[\"template\"]"), eng->execute("to_json(reflect::untrusted_template_dirs());").as_string(), "the default list");
+			const std::string call = "map<string, var> m = {\"who\": \"x\"}; string e = \"\"; try { e = untrusted_template(p, m).to_string(); } catch (err) { e = err; } e;";
 			auto render = [&](const std::string& a_path) { return run(eng, f, "string p = \"" + a_path + "\"; " + call); };
 			check_eq(std::string("default x"), render("card.spider"), "./template beside the calling script");
-			check_eq(std::string("template file 'loose.spider' not found in the scoped template directories"), render("loose.spider"), "the script's own folder is not a template folder");
-			eng->set_scoped_template_dirs({"a", "b"});
+			check_eq(std::string("template file 'loose.spider' not found in the untrusted template directories"), render("loose.spider"), "the script's own folder is not a template folder");
+			eng->set_untrusted_template_dirs({"a", "b"});
 			check_eq(std::string("from a"), render("card.spider"), "the first folder that holds the file wins");
 			check_eq(std::string("only b"), render("only.spider"), "a later folder answers what an earlier one lacks");
-			eng->remove_scoped_template_dir("a");
+			eng->remove_untrusted_template_dir("a");
 			check_eq(std::string("from b"), render("card.spider"));
-			eng->add_scoped_template_dir("template");
-			check_eq(std::string("[\"b\",\"template\"]"), eng->execute("to_json(reflect::scoped_template_dirs());").as_string());
-			eng->set_scoped_template_dirs({"missing"});
-			check_eq(std::string("template file 'card.spider' not found in the scoped template directories"), render("card.spider"), "a folder that does not exist holds nothing");
+			eng->add_untrusted_template_dir("template");
+			check_eq(std::string("[\"b\",\"template\"]"), eng->execute("to_json(reflect::untrusted_template_dirs());").as_string());
+			eng->set_untrusted_template_dirs({"missing"});
+			check_eq(std::string("template file 'card.spider' not found in the untrusted template directories"), render("card.spider"), "a folder that does not exist holds nothing");
 		});
 
-		test("scoped_template_refuses_a_path_that_leaves_its_dirs", [=, this]() {
+		test("untrusted_template_refuses_a_path_that_leaves_its_dirs", [=, this]() {
 			folder f("scoped_escape");
 			f.write("template/inner/x.spider", "inner");
 			f.write("secret.spider", "secret");
 			auto eng = engine_for();
-			const std::string call = "map<string, var> m; string e = \"\"; try { e = scoped_template(p, m).to_string(); } catch (err) { e = err; } e;";
+			const std::string call = "map<string, var> m; string e = \"\"; try { e = untrusted_template(p, m).to_string(); } catch (err) { e = err; } e;";
 			auto render = [&](const std::string& a_path) { return run(eng, f, "string p = R\"q(" + a_path + ")q\"; " + call); };
 			check_eq(std::string("inner"), render("inner/x.spider"));
-			check_eq(std::string("scoped_template: '../secret.spider' names a parent directory (..)"), render("../secret.spider"));
-			check_eq(std::string("scoped_template: 'inner/../inner/x.spider' names a parent directory (..)"), render("inner/../inner/x.spider"), "even one that stays inside");
-			check_eq(std::string("scoped_template: 'inner\\..\\x.spider' names a parent directory (..)"), render("inner\\..\\x.spider"));
-			check_eq(std::string("scoped_template: '/secret.spider' is not a path relative to its template directories"), render("/secret.spider"));
-			check_eq(std::string("scoped_template: '\\secret.spider' is not a path relative to its template directories"), render("\\secret.spider"));
-			check_eq(std::string("scoped_template: 'C:/secret.spider' is not a path relative to its template directories"), render("C:/secret.spider"));
-			check_eq(std::string("scoped_template: '//server/share/secret.spider' is not a path relative to its template directories"), render("//server/share/secret.spider"));
+			check_eq(std::string("untrusted_template: '../secret.spider' names a parent directory (..)"), render("../secret.spider"));
+			check_eq(std::string("untrusted_template: 'inner/../inner/x.spider' names a parent directory (..)"), render("inner/../inner/x.spider"), "even one that stays inside");
+			check_eq(std::string("untrusted_template: 'inner\\..\\x.spider' names a parent directory (..)"), render("inner\\..\\x.spider"));
+			check_eq(std::string("untrusted_template: '/secret.spider' is not a path relative to its template directories"), render("/secret.spider"));
+			check_eq(std::string("untrusted_template: '\\secret.spider' is not a path relative to its template directories"), render("\\secret.spider"));
+			check_eq(std::string("untrusted_template: 'C:/secret.spider' is not a path relative to its template directories"), render("C:/secret.spider"));
+			check_eq(std::string("untrusted_template: '//server/share/secret.spider' is not a path relative to its template directories"), render("//server/share/secret.spider"));
 			const std::string absolute = (f.dir / "secret.spider").string();
-			check_eq("scoped_template: '" + absolute + "' is not a path relative to its template directories", render(absolute));
-			const std::string load = failure(eng, f, "map<string, var> m; scoped_template(\"../secret.spider\", m);");
-			check(load.find("scoped_template: '../secret.spider' names a parent directory (..)") != std::string::npos, "a literal path fails the load: " + load);
+			check_eq("untrusted_template: '" + absolute + "' is not a path relative to its template directories", render(absolute));
+			const std::string load = failure(eng, f, "map<string, var> m; untrusted_template(\"../secret.spider\", m);");
+			check(load.find("untrusted_template: '../secret.spider' names a parent directory (..)") != std::string::npos, "a literal path fails the load: " + load);
 			std::error_code ec;
 			std::filesystem::create_directories(f.dir / "outside");
 			f.write("outside/leak.spider", "leaked");
@@ -366,7 +370,7 @@ public:
 			}
 #endif
 			if (!ec && std::filesystem::exists(f.dir / "template" / "link" / "leak.spider")) {
-				check_eq(std::string("scoped_template: 'link/leak.spider' leaves its template directory through a link"), render("link/leak.spider"), "a link out of the folder");
+				check_eq(std::string("untrusted_template: 'link/leak.spider' leaves its template directory through a link"), render("link/leak.spider"), "a link out of the folder");
 			}
 		});
 
@@ -380,20 +384,20 @@ public:
 			check_eq(std::string("<p>\nhi</p>hi"), run(eng, f, "var title = \"hi\"; template(\"page.spider\", title).to_string();"), "?? stays the way out");
 			const std::string load = failure(eng, f, "template(\"literal.spider\");");
 			check(load.find("literal.spider:1:3: error: a template splice is null: ${null} at ") != std::string::npos, "a splice the checker sees is null fails the load: " + load);
-			check_eq(std::string("a template splice is null: ${args[\"x\"]} at <scoped_template_text>:1"), eng->execute(
-				"map<string, var> m = {\"x\": null}; string e = \"\"; try { scoped_template_text(\"${args[\\\"x\\\"]}\", m); } catch (err) { e = err; } e;").as_string());
-			check_eq(std::string("-"), eng->execute("map<string, var> m = {\"x\": null}; scoped_template_text(\"${args[\\\"x\\\"] ?? \\\"-\\\"}\", m).to_string();").as_string());
+			check_eq(std::string("a template splice is null: ${args[\"x\"]} at <untrusted_template_text>:1"), eng->execute(
+				"map<string, var> m = {\"x\": null}; string e = \"\"; try { untrusted_template_text(\"${args[\\\"x\\\"]}\", m); } catch (err) { e = err; } e;").as_string());
+			check_eq(std::string("-"), eng->execute("map<string, var> m = {\"x\": null}; untrusted_template_text(\"${args[\\\"x\\\"] ?? \\\"-\\\"}\", m).to_string();").as_string());
 			check_eq(std::string("x null"), eng->execute("var n = null; `x ${n}`;").as_string(), "a backtick string outside a template is unchanged");
 		});
 
-		test("scoped_template_reads_a_file_checked_at_load", [=, this]() {
+		test("untrusted_template_reads_a_file_checked_at_load", [=, this]() {
 			folder f("scoped");
 			f.write("template/card.spider", "<b>${args[\"name\"]}</b>");
 			f.write("template/bad.spider", "\n${secret}");
 			auto eng = engine_for();
-			check_eq(std::string("<b>&lt;i&gt;</b>"), run(eng, f, "map<string, var> m = {\"name\": \"<i>\"}; scoped_template(\"card.spider\", m).to_string();"));
-			const std::string bad = failure(eng, f, "int secret = 1; map<string, var> m; scoped_template(\"bad.spider\", m);");
-			check(bad.find("bad.spider:2:3: error: a scoped template sees only args: 'secret' is not available") != std::string::npos, bad);
+			check_eq(std::string("<b>&lt;i&gt;</b>"), run(eng, f, "map<string, var> m = {\"name\": \"<i>\"}; untrusted_template(\"card.spider\", m).to_string();"));
+			const std::string bad = failure(eng, f, "int secret = 1; map<string, var> m; untrusted_template(\"bad.spider\", m);");
+			check(bad.find("bad.spider:2:3: error: an untrusted template sees only args: 'secret' is not available") != std::string::npos, bad);
 		});
 	}
 };

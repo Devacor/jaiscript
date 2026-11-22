@@ -132,7 +132,7 @@ public:
 					if (ink[cell] != fg) { fg = ink[cell]; parts.push(PAL_FG[fg]); }
 					if (upper != bg) { bg = upper; parts.push(PAL_BG[bg]); }
 					parts.push(ch);
-				} else if (upper == lower || HOST_ASCII) {
+				} else if (upper == lower || host_ascii) {
 					if (upper != bg) { bg = upper; parts.push(PAL_BG[bg]); }
 					parts.push(" ");
 				} else {

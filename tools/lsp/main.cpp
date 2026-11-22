@@ -4,7 +4,7 @@
 //   jaiscript_lsp [--host=runner|stdlib|bare] [--include=<dir>]... [--max-message=<bytes>] [--log]
 //
 // --host picks the registration surface scripts are checked against: `runner` (default) is the
-// jaiscript runner's (stdlib, file IO, console, networking, ARGS), `stdlib` is
+// jaiscript runner's (stdlib, file IO, console, networking, args), `stdlib` is
 // jai::stdlib::register_all alone, `bare` is a fresh engine.
 
 #include "server.hpp"
@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
 		else if (a == "--log") { log = true; }
 		else if (a == "--stdio" || a.rfind("--clientProcessId", 0) == 0) {}
 		else if (a == "--help" || a == "-h") { usage(); return 0; }
-		else if (a == "--version") { std::cout << "jaiscript_lsp 0.5.4-beta\n"; return 0; }
+		else if (a == "--version") { std::cout << "jaiscript_lsp 0.6.0-beta\n"; return 0; }
 		else { std::cerr << "jaiscript_lsp: ignoring unknown argument " << a << " (--help lists the flags)\n"; }
 	}
 	jai_lsp::server s(make_engine, host, includes, log, max_message);

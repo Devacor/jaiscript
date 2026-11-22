@@ -330,8 +330,8 @@ public:
             check_eq((int64_t)3, eng->execute("1 + 2").as_int(), "engine stays usable");
         });
 
-        // A load rebuilds an unnamed text receiver with nothing outside to hold it: the emitter holds it, as it holds a named one
-        test("unnamed_text_receivers_survive_a_load", [this]() {
+        // Only a named receiver saves: an unnamed one could not be disconnected once loaded
+        test("unnamed_receivers_stay_out_of_a_save", [this]() {
             auto eng = jai::foundry::make_engine();
             eng->execute("int hits = 0;");
             signal_box box;
@@ -356,12 +356,13 @@ public:
                 r(loaded);
                 r.end_object();
             }
+            check_true(json.find("hits += v;") == std::string::npos, "the unnamed receiver is not in the save: " + json);
             loaded.sig.emit(2);
-            check_eq((int64_t)102, eng->get_variable("hits").as_int(), "the unnamed receiver and the named one both ran after the load");
+            check_eq((int64_t)100, eng->get_variable("hits").as_int(), "only the named receiver ran after the load");
             check_eq(json, save(loaded), "the loaded signal saves what it loaded");
             loaded.sig.clear();
             loaded.sig.emit(5);
-            check_eq((int64_t)102, eng->get_variable("hits").as_int(), "clear() drops the loaded receivers");
+            check_eq((int64_t)100, eng->get_variable("hits").as_int(), "clear() drops the loaded receivers");
         });
 
         test("script_receiver_errors_reach_the_script_that_fired_the_signal", [this]() {
@@ -903,7 +904,7 @@ public:
 
         test("loading_into_a_live_signal_replaces_its_saved_receivers", [this]() {
             auto eng = jai::foundry::make_engine();
-            eng->execute("int hits = 0;");
+            eng->execute("int hits = 0; void count_hit(int v) { hits += 1000; }");
             signal_box box;
             box.sig.script_engine(eng.get());
             box.sig.parameter_names({"v"});
@@ -911,6 +912,7 @@ public:
             auto cpp = box.sig.connect([&](int) { ++cpp_hits; });
             auto unnamed = box.sig.connect(std::string("hits += v;"));
             box.sig.connect("named", std::string("hits += 100;"));
+            box.sig.connect("function", eng->get_variable("count_hit"));
             serialization::json_archive_writer w(2, eng.get());
             w.begin_object("", 1);
             w.serialize_object_content(box);
@@ -925,9 +927,9 @@ public:
                 r.end_object();
             }
             box.sig.emit(1);
-            check_eq((int64_t)101, eng->get_variable("hits").as_int(), "each saved receiver runs once after two loads into the same signal");
+            check_eq((int64_t)1101, eng->get_variable("hits").as_int(), "each saved receiver runs once after two loads into the same signal");
             check_eq(1, cpp_hits, "the C++ receiver stays connected");
-            check_false(unnamed->connected(), "the load replaced the text receiver C++ held with the saved one");
+            check_true(unnamed->connected(), "an unnamed receiver is not saved, so a load leaves it connected");
         });
 
         test("connect_immediate_joins_every_emit_on_the_stack", [this]() {
@@ -1359,6 +1361,145 @@ public:
             gate.reset();
             late.reset();
             check_eq(atDeath, noted, "releasing the receivers and their captures runs no script");
+        });
+
+        // An emitter the program owns dies at teardown in its turn, and its receivers with it: what they bind or capture is destroyed
+        // while the engine still runs script
+        test("a_script_owned_emitters_receivers_release_what_they_hold_at_teardown", [this]() {
+            std::string log;
+            {
+                auto eng = jai::foundry::make_engine();
+                jai::stdlib::register_all(*eng);
+                bind_signal_type<void(int)>(*eng, "SignalInt");
+                dynamic_binder<emit_board>(*eng, "EmitBoard").constructor<>().property("onTicked", &emit_board::onTicked).build();
+                eng->add_function("note_end", [&log](const std::string& name) { log += name + ";"; });
+                eng->execute(R"(
+                    class Ear { string name; int heard = 0; Ear(string n) { name = n; } ~Ear() { note_end(name); } void hear(int v) { heard += v; } }
+                    Ear bound = Ear("bound");
+                    auto captured = new Ear("captured");
+                    var board = EmitBoard();
+                    board.onTicked.connect("method", reflect::bind(bound, "hear"));
+                    board.onTicked.connect("lambda", [captured](var v) { captured.hear(v); });
+                    board.onTicked.connect("owned", reflect::bind(new Ear("owned"), "hear"));
+                )");
+                check_eq(std::string(), log);
+            }
+            check_eq(std::string("owned;captured;bound;"), log);
+        });
+
+        // An emitter the host owns outlives the program's variables: what its script receivers bind or capture is destroyed while the
+        // engine still runs script, after those variables, the last connected first; the receivers stay connected and silent
+        test("a_host_owned_emitters_receivers_release_what_they_hold_at_teardown", [this]() {
+            std::string log;
+            int heard = 0;
+            auto board = std::make_shared<emit_board>();
+            {
+                auto eng = jai::foundry::make_engine();
+                jai::stdlib::register_all(*eng);
+                bind_signal_type<void(int)>(*eng, "SignalInt");
+                dynamic_binder<emit_board>(*eng, "EmitBoard").constructor<>().property("onTicked", &emit_board::onTicked).build();
+                eng->add_function("note_end", [&log](const std::string& name) { log += name + ";"; });
+                eng->add_function("note_heard", [&heard](int v) { heard += v; });
+                eng->add_global("board", eng->make_object(board));
+                eng->execute(R"(
+                    class Ear { string name; Ear(string n) { name = n; } ~Ear() { note_end(name); } void hear(int v) { note_heard(v); } }
+                    Ear bound = Ear("bound");
+                    void wire() {
+                        auto captured = new Ear("captured");
+                        board.onTicked.connect("method", reflect::bind(bound, "hear"));
+                        board.onTicked.connect("lambda", [captured](var v) { captured.hear(v); });
+                        board.onTicked.connect("owned", reflect::bind(new Ear("owned"), "hear"));
+                        board.onTicked.connect_source("source", [](int v) { note_heard(v * 100); });
+                    }
+                    wire();
+                    class Last { ~Last() { note_end("a variable"); } }
+                    Last last;
+                )");
+                board->onTickedSignal.emit(1);
+                check_eq(103, heard, "every receiver runs while the engine lives");
+                check_eq(std::string(), log, "the receivers keep what they bind and capture");
+            }
+            check_eq(std::string("a variable;owned;captured;bound;"), log, "the program's variables die first, then what the host's receivers hold");
+            board->onTickedSignal.emit(1);
+            check_eq(103, heard, "no script receiver runs after its engine");
+            check_true(board->onTicked.connection("owned") != nullptr, "the receivers stay connected");
+            board.reset();
+            check_eq(std::string("a variable;owned;captured;bound;"), log, "dropping the emitter afterwards destroys nothing twice");
+        });
+
+        // The same for an emitter the program made and a cycle keeps (its receiver binds the object that holds it), and for a
+        // receiver whose destructor emits on the emitter while the engine is destroyed
+        test("a_receiver_cycle_through_an_emitter_ends_at_teardown", [this]() {
+            std::string log;
+            auto board = std::make_shared<emit_board>();
+            {
+                auto eng = jai::foundry::make_engine();
+                jai::stdlib::register_all(*eng);
+                bind_signal_type<void(int)>(*eng, "SignalInt");
+                dynamic_binder<emit_board>(*eng, "EmitBoard").constructor<>().property("onTicked", &emit_board::onTicked).property("onTickedEmitter", &emit_board::onTickedSignal).build();
+                eng->add_function("note_end", [&log](const std::string& name) { log += name + ";"; });
+                eng->add_function("shout", [board]() { board->onTickedSignal.emit(1); });
+                eng->add_global("board", eng->make_object(board));
+                eng->execute(R"(
+                    class Hub { string name; var mine = EmitBoard(); Hub(string n) { name = n; } ~Hub() { note_end(name); } void hear(int v) { note_end(name + " heard"); } }
+                    class Shouter { string name; Shouter(string n) { name = n; } ~Shouter() { note_end(name); shout(); } void hear(int v) { note_end(name + " heard"); } }
+                    void wire() {
+                        auto hub = new Hub("hub");
+                        hub.mine.onTicked.connect("self", reflect::bind(hub, "hear"));
+                        auto pair = new Hub("pair");
+                        pair.mine.onTicked.connect("self", [pair](var v) { pair.hear(v); });
+                        board.onTicked.connect("first", reflect::bind(new Shouter("first"), "hear"));
+                        board.onTicked.connect("second", reflect::bind(new Shouter("second"), "hear"));
+                    }
+                    wire();
+                )");
+                check_eq(std::string(), log);
+            }
+            check_eq(std::string("second;first;pair;hub;"), log, "each object dies once and no receiver hears an emit made while they are released");
+        });
+
+        // A std::function the host made of a script function and kept: what the function holds is destroyed with the engine
+        test("a_kept_script_callbacks_captures_are_destroyed_with_the_engine", [this]() {
+            std::string log;
+            std::vector<std::function<int(int)>> kept;
+            std::function<void()> copied;
+            {
+                auto eng = jai::foundry::make_engine();
+                jai::stdlib::register_all(*eng);
+                eng->add_function("note_end", [&log](const std::string& name) { log += name + ";"; });
+                eng->add_function("keep", [&kept](std::function<int(int)> a_callback) { kept.push_back(std::move(a_callback)); });
+                eng->execute(R"(
+                    class Ear { string name; int base = 40; Ear(string n) { name = n; } ~Ear() { note_end(name); } int add(int v) { return base + v; } }
+                    void wire() {
+                        auto first = new Ear("first");
+                        keep([first](int v) { return first.add(v); });
+                        keep(reflect::bind(new Ear("second"), "add"));
+                        auto third = new Ear("third");
+                        keep([third](int v) { return third.add(v); });
+                    }
+                    wire();
+                    var plain = [](int v) { return v; };
+                )");
+                check_eq(42, kept[0](2));
+                check_eq(43, kept[1](3));
+                std::vector<std::function<int(int)>> moved = std::move(kept);
+                kept = moved;
+                moved.clear();
+                copied = [again = kept[2]]() { again(1); };
+                check_eq(std::string(), log, "the callbacks keep what they capture");
+            }
+            check_eq(std::string("third;second;first;"), log, "the last made first, wherever the host moved or copied them");
+            for (auto& callback : kept) {
+                bool threw = false;
+                try { callback(2); } catch (const jai::runtime_error& e) {
+                    threw = true;
+                    check_eq(std::string("Cannot call a script function after its engine was destroyed"), std::string(e.what()));
+                }
+                check_true(threw, "a kept callback throws to the host instead of reaching the dead engine");
+            }
+            kept.clear();
+            copied = nullptr;
+            check_eq(std::string("third;second;first;"), log);
         });
 
         // Receivers the host holds past both the engine and the emitter release without reaching the engine

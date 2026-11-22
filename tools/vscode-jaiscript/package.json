@@ -1,8 +1,8 @@
 {
   "name": "jaiscript",
   "displayName": "JaiScript",
-  "description": "JaiScript language support: the jaiscript_lsp language server (diagnostics from the strict checker, go to definition, references, hover, completion, signature help, rename, symbols), syntax highlighting and attach debugging for the JaiScript embedded scripting language.",
-  "version": "0.5.4",
+  "description": "JaiScript language support: the jaiscript_lsp language server (diagnostics from the strict checker, go to definition, references, hover, completion, signature help, rename, symbols), syntax highlighting and attach debugging (conditional breakpoints, logpoints, exception breakpoints, expandable variables, set variable, watch and console evaluation) for the JaiScript embedded scripting language.",
+  "version": "0.6.0",
   "publisher": "snapjaw",
   "engines": {
     "vscode": "^1.91.0"
@@ -70,7 +70,7 @@
           ],
           "default": "runner",
           "enumDescriptions": [
-            "The jaiscript runner's registrations: the standard library, file IO, console, networking, ARGS.",
+            "The jaiscript runner's registrations: the standard library, file IO, console, networking, args.",
             "The standard library alone (jai::stdlib::register_all).",
             "A fresh engine: only what every engine has."
           ],

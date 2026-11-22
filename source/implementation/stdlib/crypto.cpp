@@ -471,7 +471,7 @@ namespace crypto_detail {
 		return difference == 0;
 	}
 
-	// The file streamed through SHA-256 in 64 KiB chunks into a_hex; null, else why it cannot be read (read_file's reasons)
+	// The file streamed through SHA-256 in 64 KiB chunks into a_hex; null, else why it cannot be read (file::read's reasons)
 	const char* sha256_file_hex(const std::string& a_path, std::string& a_hex) {
 		std::error_code error;
 		const std::filesystem::file_status status = std::filesystem::status(a_path, error);
@@ -937,8 +937,8 @@ namespace crypto_detail {
 		          {"hmac_sha512_bytes", "crypto::hmac_sha512_bytes expects 2 arguments (key, message)", "crypto::hmac_sha512_bytes expects strings"},
 		          [](std::string_view a_key, std::string_view a_message) { return hmac_of<sha512_digest>(a_key, a_message); });
 
-		static constexpr entry_texts k_equals {"equals", "crypto::equals expects 2 arguments (a, b)", "crypto::equals expects strings"};
-		define("equals", 2, 2, {svt::jai_string_type, svt::jai_string_type}, svt::jai_bool_type, [eng](const std::vector<script_value>& a_raw) -> function_result {
+		static constexpr entry_texts k_equals {"constant_time_equals", "crypto::constant_time_equals expects 2 arguments (a, b)", "crypto::constant_time_equals expects strings"};
+		define("constant_time_equals", 2, 2, {svt::jai_string_type, svt::jai_string_type}, svt::jai_bool_type, [eng](const std::vector<script_value>& a_raw) -> function_result {
 			if (a_raw.size() != 2) { return count_error(k_equals); }
 			std::string_view text[2];
 			if (!text_arguments(a_raw, text)) { return type_error(k_equals); }

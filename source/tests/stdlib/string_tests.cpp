@@ -289,7 +289,7 @@ public:
             check_eq(std::string("[\"a\",\"b\"]"), js("\"a|b\".explode(\"|\")"));
             check_eq(std::string("[\"a\",\"b\"]"), js("\"ab\".explode(\"\")"));
             check_eq(std::string(" \t\n\v\f\r"), engine->execute("string::whitespace;").as<std::string>());
-            check_eq(std::string("utf8_string|2|\xC3\xA9t\xC3\xA9"), engine->execute("var p = utf8_string(\"  \xC3\xA9t\xC3\xA9 \\n l\xC3\xA0 \").split(); type_of(p[0]) + \"|\" + to_string(p.size()) + \"|\" + p[0];").as<std::string>());
+            check_eq(std::string("utf8_string|2|\xC3\xA9t\xC3\xA9"), engine->execute("var p = utf8_string(\"  \xC3\xA9t\xC3\xA9 \\n l\xC3\xA0 \").split(); reflect::type_of(p[0]) + \"|\" + to_string(p.size()) + \"|\" + p[0];").as<std::string>());
             check_eq(std::string("3|\xC3\xA9"), engine->execute("var c = utf8_string(\"\xC3\xA9t\xC3\xA9\").explode(\"\"); to_string(c.size()) + \"|\" + c[0];").as<std::string>());
         });
 
@@ -314,7 +314,7 @@ public:
                 check_eq(std::string("Bob|Xbc"), es("class P { string name = \"bob\"; } class Q { string n = \"abc\"; void f() { n[0] = 'X'; } } P p = P(); p.name[0] = 'B'; Q q = Q(); q.f(); `${p.name}|${q.n}`;"));
                 check_eq(std::string("Word|word|Zbc"), es("string up(string w) { w[0] = 'W'; return w; } void set0(string& w) { w[0] = 'Z'; } string o = \"word\"; string x = \"abc\"; set0(x); `${up(o)}|${o}|${x}`;"));
                 check_eq(std::string("xxx|zzz"), es("string f() { string s = \"abc\"; for (int i = 0; i < 3; ++i) { s[i] = 'z'; } return s; } string g = \"abc\"; for (int i = 0; i < g.size(); ++i) { g[i] = 'x'; } `${g}|${f()}`;"));
-                check_eq(std::string("char|Q|Qb"), es("string s = \"ab\"; auto r = (s[0] = 'Q'); `${type_of(r)}|${r}|${s}`;"));
+                check_eq(std::string("char|Q|Qb"), es("string s = \"ab\"; auto r = (s[0] = 'Q'); `${reflect::type_of(r)}|${r}|${s}`;"));
                 check_eq(std::string("hello"), es("utf8_string u = \"h\xC3\xA9llo\"; u[1] = \"e\"; u;"));
                 check_eq(std::string("a\xE6\x97\xA5" "c|3|5"), es("utf8_string u = \"abc\"; u[1] = \"\xE6\x97\xA5\"; u + \"|\" + to_string(u.size()) + \"|\" + to_string(u.byte_size());"));
                 check_eq(std::string("a\xC3\xA9xc|zb"), es("utf8_string u = \"a\xC3\xA9" "c\"; u[1] += \"x\"; utf8_string w = \"ab\"; w[0] = 'z'; u + \"|\" + w;"));
@@ -661,27 +661,27 @@ public:
             check_eq(script_int(4), ei("utf8_string u = \"a\xC3\xB1\xE6\x97\xA5" "b\"; u.length();"));
             check_eq(script_int(7), ei("utf8_string u = \"a\xC3\xB1\xE6\x97\xA5" "b\"; u.byte_size();"));
             check_eq(std::string("\xE6\x97\xA5"), es("utf8_string u = \"a\xC3\xB1\xE6\x97\xA5" "b\"; u[2];"));
-            check_eq(std::string("utf8_string"), es("utf8_string u = \"a\xC3\xB1\xE6\x97\xA5" "b\"; type_of(u[2]);"));
+            check_eq(std::string("utf8_string"), es("utf8_string u = \"a\xC3\xB1\xE6\x97\xA5" "b\"; reflect::type_of(u[2]);"));
             check_eq(std::string("b|a|\xC3\xB1\xE6\x97\xA5" "b|\xC3\xB1\xE6\x97\xA5"), es("utf8_string u = \"a\xC3\xB1\xE6\x97\xA5" "b\"; u.at(-1) + \"|\" + u.front() + \"|\" + u.substr(1) + \"|\" + u.substr(1, 2);"));
             check_eq(std::string("2|3|-1|true|true"), es("utf8_string u = \"a\xC3\xB1\xE6\x97\xA5" "b\"; to_string(u.find(\"\xE6\x97\xA5\")) + \"|\" + to_string(u.rfind(\"b\")) + \"|\" + to_string(u.find(\"z\")) + \"|\" + to_string(u.contains(\"\xC3\xB1\")) + \"|\" + to_string(u.starts_with(\"a\xC3\xB1\"));"));
             check_eq(std::string("b\xE6\x97\xA5\xC3\xB1" "a|4|aZ\xC3\xB1\xE6\x97\xA5" "b"), es("utf8_string u = \"a\xC3\xB1\xE6\x97\xA5" "b\"; utf8_string r = u; r.reverse(); utf8_string z = u; z.insert(1, \"Z\"); r + \"|\" + to_string(u.split(\"\").size()) + \"|\" + z;"));
             check_eq(std::string("\xC3\xA9\xC3\xA9\xE6\x97\xA5|\xE6\x97\xA5\xC3\xA9\xC3\xA9"), es("utf8_string a = \"\xE6\x97\xA5\"; a.pad_left(3, \"\xC3\xA9\"); utf8_string b = \"\xE6\x97\xA5\"; b.pad_right(3, \"\xC3\xA9\"); a + \"|\" + b;"));
-            check_eq(std::string("utf8_string|utf8_string|utf8_string"), es("utf8_string u = \"a b\"; type_of(u.split(\" \")[0]) + \"|\" + type_of(string::to_upper(u)) + \"|\" + type_of(u.substr(0, 1));"));
+            check_eq(std::string("utf8_string|utf8_string|utf8_string"), es("utf8_string u = \"a b\"; reflect::type_of(u.split(\" \")[0]) + \"|\" + reflect::type_of(string::to_upper(u)) + \"|\" + reflect::type_of(u.substr(0, 1));"));
             check_eq(std::string("H\xC3\xA9LLO"), es("utf8_string u = \"h\xC3\xA9llo\"; u.to_upper(); u;"));
         });
 
         test("utf8_string_operators_and_slots", [this, es, ei, eb]() {
-            check_eq(std::string("utf8_string|utf8_string|utf8_string|string"), es("utf8_string u = \"\xC3\xA9\"; type_of(u + \"x\") + \"|\" + type_of(\"x\" + u) + \"|\" + type_of(u + \"5\") + \"|\" + type_of(\"x\" + \"y\");"));
+            check_eq(std::string("utf8_string|utf8_string|utf8_string|string"), es("utf8_string u = \"\xC3\xA9\"; reflect::type_of(u + \"x\") + \"|\" + reflect::type_of(\"x\" + u) + \"|\" + reflect::type_of(u + \"5\") + \"|\" + reflect::type_of(\"x\" + \"y\");"));
             check_eq(true, eb("utf8_string u = \"a\xC3\xB1\"; u == \"a\xC3\xB1\" && \"a\xC3\xB1\" == u && !(u != \"a\xC3\xB1\") && u < \"b\" && \"\xC3\xA9\" > u;"));
             check_eq(true, eb("utf8_string u = \"\"; utf8_string v = \"x\"; !u && v;"));
-            check_eq(std::string("string|3|utf8_string|2"), es("utf8_string u = \"a\xC3\xB1\"; string s = u; utf8_string back = s; type_of(s) + \"|\" + to_string(s.size()) + \"|\" + type_of(back) + \"|\" + to_string(back.size());"));
-            check_eq(std::string("utf8_string|12"), es("utf8_string n = to_string(12); `${type_of(n)}|${n}`;"));
+            check_eq(std::string("string|3|utf8_string|2"), es("utf8_string u = \"a\xC3\xB1\"; string s = u; utf8_string back = s; reflect::type_of(s) + \"|\" + to_string(s.size()) + \"|\" + reflect::type_of(back) + \"|\" + to_string(back.size());"));
+            check_eq(std::string("utf8_string|12"), es("utf8_string n = to_string(12); `${reflect::type_of(n)}|${n}`;"));
             check_eq(script_int(2), ei("function f(utf8_string t) -> utf8_string { return t + \"x\"; } f(\"\xC3\xBC\").size();"));
-            check_eq(std::string("utf8_string|utf8_string|2|3"), es("var w = utf8_string(\"\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E\"); class H { utf8_string t = \"\xC3\xBC\"; } H h = H(); h.t += \"x\"; array<var> a = [w]; a[0] += \"!\"; type_of(h.t) + \"|\" + type_of(a[0]) + \"|\" + to_string(h.t.size()) + \"|\" + to_string(w.size());"));
-            check_eq(std::string("utf8_string|string|utf8_string"), es("type_of(string::join([\"a\".to_utf8(), \"b\"], \"-\")) + \"|\" + type_of(string::join([\"a\", \"b\"], \"-\")) + \"|\" + type_of(string::trim(\"  \xC3\xBC \".to_utf8()));"));
+            check_eq(std::string("utf8_string|utf8_string|2|3"), es("var w = utf8_string(\"\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E\"); class H { utf8_string t = \"\xC3\xBC\"; } H h = H(); h.t += \"x\"; array<var> a = [w]; a[0] += \"!\"; reflect::type_of(h.t) + \"|\" + reflect::type_of(a[0]) + \"|\" + to_string(h.t.size()) + \"|\" + to_string(w.size());"));
+            check_eq(std::string("utf8_string|string|utf8_string"), es("reflect::type_of(string::join([\"a\".to_utf8(), \"b\"], \"-\")) + \"|\" + reflect::type_of(string::join([\"a\", \"b\"], \"-\")) + \"|\" + reflect::type_of(string::trim(\"  \xC3\xBC \".to_utf8()));"));
             check_eq(script_int(2), ei("map<var, int> m = {}; m[\"a\xC3\xB1\".to_utf8()] = 1; m[\"a\xC3\xB1\"] = 2; m[utf8_string(\"a\xC3\xB1\")] = 3; m.size();"));
             check_eq(std::string("[\"\xC3\xA9\",\"x\"]"), es("to_json([\"\xC3\xA9\".to_utf8(), \"x\"]);"));
-            check_eq(std::string("utf8_string|3"), es("var r = from_binary(to_binary(\"a\xC3\xB1\".to_utf8())); type_of(r) + \"|\" + to_string(r.byte_size());"));
+            check_eq(std::string("utf8_string|3"), es("var r = from_binary(to_binary(\"a\xC3\xB1\".to_utf8())); reflect::type_of(r) + \"|\" + to_string(r.byte_size());"));
         });
 
         test("utf8_string_iteration_and_errors", [this, eval, es, ei]() {
@@ -704,7 +704,7 @@ public:
             std::error_code ec;
             fs::remove_all(dir, ec);
             fs::create_directories(dir);
-            std::ofstream(dir / "main.jai") << "utf8_string u = \"a\xC3\xB1\"; var n = u.size(); var k = type_of(u);\n";
+            std::ofstream(dir / "main.jai") << "utf8_string u = \"a\xC3\xB1\"; var n = u.size(); var k = reflect::type_of(u);\n";
             for (int run = 0; run < 2; ++run) {   // the first run writes the sibling, the second loads it
                 auto engine = make_engine(); stdlib::register_all(*engine);
                 engine->execute_file((dir / "main.jai").string());
@@ -747,7 +747,7 @@ public:
                 string order = `${P("A")},${P("B")}`;
                 var u = `${"é".to_utf8()}!`;
                 string typed = "q"; string joined = `${typed}${typed}${typed}`;
-                `${first}|${trail}:${order}|${type_of(u)}|${joined.size()}|${type_of(joined)}`;)"));
+                `${first}|${trail}:${order}|${reflect::type_of(u)}|${joined.size()}|${reflect::type_of(joined)}`;)"));
         });
 
         test("floats_print_shortest_and_round_trip", [this, es, eb]() {

@@ -2,6 +2,7 @@
 #include <jaiscript/core/engine.hpp>
 #include <jaiscript/core/value.hpp>
 #include <jaiscript/core/dynamic_binder.hpp>
+#include <jaiscript/core/coroutine.hpp>
 #include <jaiscript/detail/format_spec.hpp>
 #include <jaiscript/detail/format_text.hpp>
 #include <jaiscript/detail/value_text.hpp>
@@ -271,11 +272,11 @@ namespace stdlib {
     inline const skip_newline_t skip_newline{};
     inline const skip_flush_t skip_flush{};
 
-    // THE object row, shared by type_of and reflect::type_name (stdlib/reflection.hpp):
+    // THE object row, shared by reflect::type_of and reflect::type_name (stdlib/reflection.hpp):
     // the instance's own class first, then the value tag, then the bare kind - a value
     // tagged with a base class still answers the class it actually holds.
     std::string object_type_name(const script_value& d) {
-        if (const auto* holder = d.peek_object_holder(); holder && holder->is_coroutine_handle()) { return "coroutine_handle"; }
+        if (const auto* holder = d.peek_object_holder(); holder && holder->is_coroutine_handle()) { return detail::coroutine_type_name(d); }
         try {
             auto instance = d.as<strong_ptr<class_instance>>();
             if (instance) {
@@ -316,7 +317,12 @@ namespace stdlib {
         constexpr engine::host_direct_invoke format_literal = [](const void* target, const script_value* args, size_t argc) -> checked_result<script_value> {
             return format_values(static_cast<engine*>(const_cast<void*>(target)), args, argc, true);
         };
-        eng_ref.add_variadic_function("format", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
+        // format, vformat and to_string give a string whatever they are passed: the registration states it, as a typed binding's does
+        const auto add_text_function = [&eng_ref](const std::string& name, script_function fn) {
+            detail::engine_access::stage_host_result(eng_ref, script_value_type::jai_string_type);
+            eng_ref.add_variadic_function(name, std::move(fn));
+        };
+        add_text_function("format", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
             return format_values(eng, args.data(), args.size(), false);
         });
         eng_ref.add_host_direct("format", engine::host_direct_any_arity, [](const void* target, const script_value* args, size_t argc) -> checked_result<script_value> {
@@ -325,7 +331,7 @@ namespace stdlib {
         detail::engine_access::add_format_literal(eng_ref, "format", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
             return format_values(eng, args.data(), args.size(), true);
         }, format_literal, eng);
-        eng_ref.add_variadic_function("vformat", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
+        add_text_function("vformat", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
             return format_values(eng, args.data(), args.size(), true);
         });
         eng_ref.add_host_direct("vformat", engine::host_direct_any_arity, format_literal, eng);
@@ -340,26 +346,13 @@ namespace stdlib {
             if (detail::engine_access::backend_unwinding(*e)) { return script_value(std::monostate{}, e); }
             return script_value(std::move(text.value()), e);
         };
-        eng_ref.add_variadic_function("to_string", [eng, to_string_of](const std::vector<script_value>& args) -> checked_result<script_value> {
+        add_text_function("to_string", [eng, to_string_of](const std::vector<script_value>& args) -> checked_result<script_value> {
             if (args.size() != 1) {
                 throw runtime_error("to_string expects exactly 1 argument, got " + std::to_string(args.size()));
             }
             return to_string_of(eng, args.data(), 1);
         });
         eng_ref.add_host_direct("to_string", 1, to_string_of, eng);
-
-        // Opaque host pointers (make_value(T*) on an UNREGISTERED
-        // type) are non-null/truthy to script but the engine cannot name them — this
-        // predicate is how scripts tell a registered/script object (true) from an opaque
-        // host-only pass-through token (false). All ordinary values answer true.
-        eng_ref.add_function("is_registered_type", [](const script_value& val) -> bool {
-            const script_value& d = val.is_reference() ? val.deref() : val;
-            if (d.raw_storage_index() == script_value::TYPEID_CPP_BOUND &&
-                !d.is_int() && !d.is_float() && !d.is_bool() && !d.is_char() && !d.is_string()) {
-                return false;
-            }
-            return true;
-        });
 
         // Byte minting: explicit int -> char, range-checked.
         // The reverse of promotion; there is deliberately no IMPLICIT int -> char.
@@ -373,37 +366,6 @@ namespace stdlib {
         eng_ref.add_function("utf8_string", [eng = &eng_ref](const script_value& val) -> script_value {
             const script_value& v = val.deref();
             return script_value::make_utf8(v.is_text() ? v.unchecked_text() : v.to_string(), eng);
-        });
-
-        eng_ref.add_function("type_of", [eng = &eng_ref](const script_value& val) -> std::string {
-            switch (val.type()) {
-                case script_value_type::jai_null_type: return "null";
-                case script_value_type::jai_bool_type: return "bool";
-                case script_value_type::jai_int_type: {
-                    const type_info* tag = val.deref().type_info_raw();
-                    return tag && tag->is_enum ? tag->type_name : std::string("int");
-                }
-                case script_value_type::jai_float_type: return "float";
-                case script_value_type::jai_char_type: return "char";
-                case script_value_type::jai_string_type: return detail::engine_access::is_caught_runtime_error(*eng, val) ? "error" : "string";
-                case script_value_type::jai_utf8_string_type: return "utf8_string";
-                case script_value_type::jai_array_type: return "array";
-                case script_value_type::jai_map_type: return "map";
-                case script_value_type::jai_function_type: return "function";
-                // A typed null keeps the bare kind (its tag is a class, its value is not)
-                case script_value_type::jai_object_type:
-                case script_value_type::jai_shared_ptr_type:
-                    return val.is_object() ? object_type_name(val) : "object";
-                case script_value_type::jai_reference_type: return "reference";
-                case script_value_type::jai_weak_ptr_type: return "weak_ptr";
-                case script_value_type::jai_vec2_type:
-                case script_value_type::jai_vec3_type:
-                case script_value_type::jai_vec4_type:
-                case script_value_type::jai_color_type:
-                case script_value_type::jai_ivec2_type:
-                case script_value_type::jai_ivec3_type: return math_type_name(val.type());
-                default: return "unknown";
-            }
         });
     }
 

@@ -10,6 +10,9 @@
 // callable slots additionally enforce the approved static contract.
 
 #include <jaiscript/detail/type_checker.hpp>
+#include <jaiscript/detail/foreign_keyword.hpp>
+#include <jaiscript/detail/generics.hpp>
+#include <jaiscript/detail/less_than.hpp>
 #include <filesystem>
 #include <jaiscript/detail/inline_variable.hpp>
 #include <jaiscript/detail/ast.hpp>
@@ -40,6 +43,7 @@
 #include <cctype>
 #include <jaiscript/detail/return_flow.hpp>
 #include <jaiscript/detail/ref_lvalue.hpp>
+#include <jaiscript/detail/cast_kernel.hpp>
 #include <jaiscript/detail/constant_arguments.hpp>
 #include <jaiscript/detail/format_text.hpp>
 #include <jaiscript/detail/regex_library.hpp>
@@ -47,6 +51,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -78,9 +83,14 @@ std::string check_report::format(std::string_view source, std::string_view scrip
         out += (d.severity == check_diagnostic::level::error) ? ": error: " : ": warning: ";
         out += d.message;
         if (d.related_line != 0) {
-            out += " (declared at " + std::to_string(d.related_line) + ":" + std::to_string(d.related_column) + ")";
+            out += " (declared at " + (d.related_file.empty() ? std::string() : d.related_file + ":") + std::to_string(d.related_line) + ":" + std::to_string(d.related_column) + ")";
         }
         out += '\n';
+        for (const auto& note : d.notes) {
+            out += "    ";
+            out += note;
+            out += '\n';
+        }
         if (d.file.empty() && d.line >= 1 && d.line <= lines.size()) {
             std::string_view line = lines[d.line - 1];
             out += "    ";
@@ -128,6 +138,13 @@ struct ctype {
     // proof source for the operand class stamp (the typed rows guard it at runtime) while it stays
     // tentative for diagnostics, so no load-time text changes
     bool element_proof = false;
+    // tentative, yet the kind is what a namespace variable's declaration spells (or what is read through one): the diagnostics
+    // hold the name to it as to a declared local, and no proof rests on it
+    bool declared_slot = false;
+    // tentative, yet the kind is the result a declaration states: a builtin method's in the registry's catalog, a host function's
+    // or a host namespace entry's by its registration, a math value's component. A deduction reads it as it reads a declared
+    // type (deduction_type); no proof rests on it and no diagnostic changes with it
+    bool declared_result = false;
     // a reference alias of a declared typed container (var& x = G): its element reads may prove while
     // diagnostics still see a reference
     bool alias_proof = false;
@@ -137,8 +154,16 @@ struct ctype {
     // The class a reference names (T&, auto& of a known class, a range-for variable over class elements): member diagnostics
     // read it, while the receiver keeps the proof pass's view
     bool diagnostic_only = false;
+    // What a flow test proved of a variable declared wider; open: the variable
+    // may hold a class the test did not name, so a member the narrowed class lacks is the run time's to answer
+    bool narrowed = false;
+    bool open = false;
     const expression* origin = nullptr; // this use's expression, for literal-only checks
     const type_info* yields = nullptr;  // coroutine_k: the declared type each yield converts to (null: undeclared)
+    // function_k read off a program function's name: the declarations the name holds (a signature slot checks them)
+    const std::vector<const function_decl*>* fns = nullptr;
+    // a result that is null where its coroutine hands out nothing (next()): typed for diagnostics, and an auto declared with it is a var
+    bool nullable_result = false;
 
     bool is_unknown() const { return kind == unknown; }
     static ctype make(kind_t k) { return ctype{k, {}}; }
@@ -156,7 +181,7 @@ std::string ctype_name(const ctype& t) {
         case ctype::bool_k: return "bool";
         case ctype::array_k: return t.ti ? t.ti->canonical_name() : "array";
         case ctype::map_k: return t.ti ? t.ti->canonical_name() : "map";
-        case ctype::function_k: return "function";
+        case ctype::function_k: return t.ti && t.ti->is_signature() ? t.ti->canonical_name() : "function";
         case ctype::weak_k: return t.ti ? t.ti->canonical_name() : "weak_ptr";
         case ctype::object_k:
             if (t.ti && t.ti->base_type == script_value_type::jai_shared_ptr_type) { return t.ti->canonical_name(); }
@@ -164,7 +189,7 @@ std::string ctype_name(const ctype& t) {
         case ctype::class_ref_k: return "class " + std::string(t.cls);
         case ctype::enum_ref_k: return "enum " + std::string(t.cls);
         case ctype::math_k: return std::string(t.cls);
-        case ctype::coroutine_k: return "coroutine_handle";
+        case ctype::coroutine_k: return "coroutine<" + (t.yields ? t.yields->canonical_name() : std::string("var")) + ">";
         default: return "unknown";
     }
 }
@@ -196,6 +221,12 @@ ctype spelled_ctype_from_type_info(const type_info* ti) {
             // shared_ptr<T> carries T's name; member access resolves identically (ti keeps
             // the base_type, so the proof pass still tells value object from handle)
             if (ti->type_name.empty()) { return {}; }
+            if (ti->is_coroutine) {
+                t = ctype::make(ctype::coroutine_k);
+                const type_info* yields = ti->type_params.empty() ? nullptr : ti->type_params[0].get();
+                t.yields = yields && yields->base_type != script_value_type::jai_any_type ? yields : nullptr;
+                break;
+            }
             t = ctype::object(ti->type_name);
             break;
         case script_value_type::jai_reference_type:
@@ -284,6 +315,7 @@ ctype binary_result(const ctype& l, token_type op, const ctype& r) {
     ctype out = binary_result_kind(l, op, r);
     out.tentative = l.tentative || r.tentative;
     out.element_proof = (l.tentative || r.tentative) && (!l.tentative || l.element_proof) && (!r.tentative || r.element_proof);
+    out.declared_result = out.tentative && !out.is_unknown() && (!l.tentative || l.declared_result) && (!r.tentative || r.declared_result);
     return out;
 }
 
@@ -306,18 +338,49 @@ public:
     }
 
     bool has_variable(const std::string& name) const { note(name); return engine_.has_variable(name); }
+    const std::vector<generic_definition_ptr>* find_generics(const std::string& qualified) const { note(qualified); return engine_access::find_generics(engine_, qualified); }
+    bool declares_generics() const { return engine_access::declares_generics(engine_); }
+    bool names_generic_method(const std::string& name) const { note(name); return engine_access::names_generic_method(engine_, name); }
+    bool generic_instance(const std::string& name, std::string& generic, std::vector<type_info_ptr>& arguments) const { return engine_access::generic_instance(engine_, name, generic, arguments); }
+    string_symbolizer& symbols() const { return *engine_access::get_symbolizer(engine_); }
+    uint64_t intern(std::string_view text, std::string_view& view) const {
+        const auto interned = engine_access::get_symbolizer(engine_)->intern_with_view(text);
+        view = interned.second;
+        return interned.first;
+    }
     bool has_function(const std::string& name) const { note(name); return engine_.has_function(name); }
     bool is_type_name(const std::string& name) const { note(name); return engine_access::is_type_name(engine_, name); }
+    // an enum a declaration that ran named (engine::note_enum)
+    bool is_enum_name(const std::string& name) const {
+        note(name);
+        const auto id = engine_access::get_symbolizer(engine_)->find(name);
+        return id && engine_access::is_enum_name(engine_, *id);
+    }
     bool is_const_global(const std::string& name) const { note(name); return engine_access::is_const_global(engine_, name); }
+    // The script class of the object an instance variable of the debugger's evaluation holds now (detail: the receiver of a
+    // generic method's instance); empty for any other name or value
+    std::string_view evaluation_receiver_class(const std::string& name) const {
+        const instance_variables* scope = engine_access::debug_evaluation_scope(engine_);
+        const auto held = scope ? scope->find(name) : instance_variables::const_iterator();
+        if (!scope || held == scope->end()) { return {}; }
+        const script_value& value = held->second.deref();
+        if (!value.is_object() || value.is_null()) { return {}; }
+        const auto instance = const_cast<script_value&>(value).get_class_instance();
+        const class_definition* cls = instance ? instance->get_class_definition() : nullptr;
+        return cls && cls->is_script_class() ? std::string_view(cls->get_name()) : std::string_view();
+    }
     held_value get_variable(const std::string& name) const { note(name); return engine_.get_variable(name); }
     std::shared_ptr<class_definition> get_class_definition(const std::string& name) const { note(name); return engine_access::get_class_definition(engine_, name); }
     std::shared_ptr<script_class_definition> find_script_class(const std::string& name) const { note(name); return engine_access::get_class_registry(engine_).find_script_class(name); }
+    // a generic whose declaration has run in the engine (an earlier run of the unit, another unit): class_registry's linker
+    bool generic_declared(const std::string& name) const { note(name); return engine_access::get_class_registry(engine_).declared_generics_.count(name) != 0; }
     std::shared_ptr<class_definition> get_class_definition_by_type(const std::type_index& type) const {
         auto result = engine_access::get_class_definition_by_type(engine_, type);
         if (result) { note(result->get_name()); }
         return result;
     }
     bool host_function_signatures(const std::string& name, std::vector<engine::host_overload_signature>& out) const { note(name); return engine_.host_function_signatures(name, out); }
+    uint64_t host_function_writeback(const std::string& name) const { note(name); return engine_access::host_function_writeback(engine_, name); }
     // the script function declarations the engine holds at program scope under a name (an earlier unit's, one or an overload set)
     std::vector<std::shared_ptr<script_defined_function>> held_function_declarations(std::string_view name) const {
         note(name);
@@ -335,9 +398,21 @@ public:
         return result;
     }
     std::string unit_label(uint32_t unit) const { return engine_access::unit_label(engine_, unit); }
+    // the units whose variable declarations made the program-scope cells the engine holds under a name (environment::declaring_units)
+    std::vector<uint32_t> variable_units(const std::string& name) const {
+        note(name);
+        const auto id = engine_access::get_symbolizer(engine_)->find(name);
+        const auto env = engine_access::get_global_environment(engine_);
+        return id && env ? env->declaring_units(*id) : std::vector<uint32_t>{};
+    }
     bool host_function_result(const std::string& name, script_value_type& out) const { note(name); return engine_access::host_function_result(engine_, name, out); }
     bool host_nodiscard(const std::string& callable) const { note(callable); return engine_.is_nodiscard_function(callable); }
+    uint8_t type_argument_result(const std::string& callable) const { note(callable); return engine_.type_argument_result(callable); }
+    // array<T> and shared_ptr<T> as the engine interns them (a typed host result: jai::returns<jai::array_of<jai::type_arg>>)
+    const type_info* array_type_of(const type_info* element) const { return engine_access::get_type_info_array(engine_, const_cast<type_info*>(element)); }
+    const type_info* shared_type_of(const type_info* pointee) const { return engine_access::get_type_info_shared_ptr(engine_, const_cast<type_info*>(pointee)); }
     std::vector<std::string> registered_class_names() const { return engine_.registered_class_names(); }
+    std::string unbound_instantiation_text(std::string_view name) const { note(name); return detail::unbound_instantiation_text(engine_, name); }
     std::vector<std::pair<size_t, const std::string*>> constant_argument_indexes(const std::string& callable) const { note(callable); return engine_access::constant_argument_indexes(engine_, callable); }
     const std::unordered_map<std::string, std::vector<std::string>>& constant_texts_by_name() const { note(k_outside_constants); return engine_access::constant_texts_by_name(engine_); }
     script_namespace_data* find_namespace(const std::string& path) const {
@@ -353,20 +428,33 @@ public:
     string_symbolizer* get_symbolizer() const { return engine_access::get_symbolizer(engine_); }
     std::shared_ptr<environment> get_global_environment() const { return engine_access::get_global_environment(engine_); }
     std::unordered_set<std::string> get_registered_template_types() const { return engine_access::get_registered_template_types(engine_); }
+    bool is_template_type(const std::string& base) const { return engine_access::is_template_type(engine_, base); }
     bool has_constant_arguments() const { return engine_access::has_constant_arguments(engine_); }
     bool sleep_callee(const void* fn) const noexcept { return engine_access::sleep_callee(engine_, fn); }
     bool format_literal_callee(const void* fn) const noexcept { return engine_access::format_literal_for(engine_, fn) != nullptr; }
     uint8_t math_alias_fn(uint64_t symbol) const { return engine_access::math_alias_fn(engine_, symbol); }
     const std::unordered_set<uint64_t>& builtin_method_ids(int kind) const { return engine_access::builtin_method_ids(engine_, kind); }
     type_info* get_type_info_object(const std::string& cls) const { return engine_access::get_type_info_object(engine_, cls); }
+    type_info* get_type_info_shared_ptr(type_info* pointee) const { return engine_access::get_type_info_shared_ptr(engine_, pointee); }
     type_info* get_type_info_int() const { return engine_access::get_type_info_int(engine_); }
     type_info* get_type_info_float() const { return engine_access::get_type_info_float(engine_); }
     type_info* get_type_info_bool() const { return engine_access::get_type_info_bool(engine_); }
+    type_info* get_type_info_char() const { return engine_access::get_type_info_char(engine_); }
     type_info* get_type_info_any() const { return engine_access::get_type_info_any(engine_); }
     type_info* get_type_info_uint8() const { return engine_access::get_type_info_uint8(engine_); }
     type_info* get_type_info_array(type_info* element) const { return engine_access::get_type_info_array(engine_, element); }
     type_info* get_type_info_string() const { return engine_access::get_type_info_string(engine_); }
+    type_info* get_type_info_utf8_string() const { return engine_access::get_type_info_utf8_string(engine_); }
+    type_info* get_type_info_math(script_value_type kind) const { return engine_access::get_type_info_math(engine_, kind); }
+    type_info* type_named(std::string_view canonical_name) const { return engine_access::type_named(engine_, canonical_name); }
     type_info* get_type_info_map(type_info* key, type_info* value) const { return engine_access::get_type_info_map(engine_, key, value); }
+    type_info* get_type_info_coroutine(type_info* yields) const { return engine_access::get_type_info_coroutine(engine_, yields); }
+    type_info* get_type_info_void() const { return engine_access::get_type_info_void(engine_); }
+    type_info* get_type_info_reference(type_info* referent) const { return engine_access::get_type_info_reference(engine_, referent); }
+    type_info* get_type_info_untyped_function() const { return engine_access::get_type_info_untyped_function(engine_); }
+    type_info* get_type_info_function(type_info* result, const std::vector<type_info*>& arguments) const {
+        return engine_access::get_type_info_function(engine_, result, arguments);
+    }
 
 private:
     engine& engine_;
@@ -396,7 +484,7 @@ void collect_namespace_members(const namespace_decl* n, std::unordered_set<std::
             case node_type::variable_decl: member(static_cast<const variable_decl*>(d.get())->name); break;
             case node_type::extern_decl: collect_qualified_extern(static_cast<const extern_decl*>(d.get()), out); break;
             case node_type::class_decl: member(static_cast<const class_decl*>(d.get())->name); break;
-            case node_type::enum_decl: member(static_cast<const enum_decl*>(d.get())->name); break;
+            case node_type::enum_decl: out.emplace(static_cast<const enum_decl*>(d.get())->name); break;   // already its qualified name
             case node_type::destructuring_decl:
                 for (const auto& [name, _] : static_cast<const destructuring_decl*>(d.get())->names) { member(name); }
                 break;
@@ -426,18 +514,25 @@ public:
         reload_dependent_ = opts.reload_dependent;
         observer_ = opts.observer;
         outside_out_ = opts.outside;
+        generic_requests_ = opts.generic_requests;
+        remade_failures_ = opts.remade_failures;
+        kept_instances_ = opts.kept_instances;
     }
 
     check_report run() {
         stack_.arm();
         try {
             collect_top_level();
+            for (const auto& d : decls_) {   // the unit's own text (an include spliced into a body keeps its file's places)
+                if (unit_file_.empty() && d && !instance_node(*d) && !d->location.filename.empty()) { unit_file_ = d->location.filename; }
+            }
             scopes_.emplace_back();
             mode_guard unit(mode_stack_, leading_mode(decls_), /*scoped=*/true);
             warn_duplicate_top_level_functions();   // under the unit's [[warn_mode]] / [[strict_mode]]
+            warn_kept_instances();
             lw_open_region();
             for (const auto& d : decls_) {
-                walk_decl(d.get());
+                walk_listed(d.get());
             }
             lw_close_region(nullptr, &decls_, nullptr);
             scopes_.pop_back();
@@ -460,7 +555,140 @@ public:
         return report;
     }
 
+    // what each site's head names, by the lookup a bare or a qualified name takes in this walk
+    std::string less_answers(const std::vector<std::string>& queries) {
+        stack_.arm();
+        std::string answers;
+        try {
+            collect_top_level();
+            for (const auto& query : queries) { answers.push_back(less_answer(less_query::parse(query))); }
+        } catch (const nesting_exhausted&) {
+            answers.resize(queries.size(), k_less_nothing);
+        }
+        return answers;
+    }
+
 private:
+    char less_answer(const less_query& q) {
+        switch (q.form) {
+            case less_head::member:
+                return generic_method_names_.count(q.head) || eng_.names_generic_method(q.head) ||
+                       engine_access::type_argument_method(eng_.asking(q.head), q.head) ? k_less_declared : k_less_nothing;
+            case less_head::qualified:
+                return less_qualified(q);
+            case less_head::bare:
+                if (const char kind = less_class_member(q.cls, q.head, 0)) { return kind; }
+                for (std::string space = q.space; !space.empty();) {
+                    if (const char kind = less_namespace_member(space, q.head)) { return kind; }
+                    const size_t cut = space.rfind("::");
+                    if (cut == std::string::npos) { break; }
+                    space.resize(cut);
+                }
+                return less_program_name(q.head);
+            default:
+                return less_program_name(q.head);
+        }
+    }
+    static bool less_listed(const std::vector<std::string_view>& names, std::string_view name) {
+        return std::find(names.begin(), names.end(), name) != names.end();
+    }
+    // A member of a registered class: a field, a static or a property is a variable, a method is not
+    char less_engine_member(const class_definition& def, std::string_view name, int depth) {
+        const uint64_t id = eng_.symbolize(name);
+        const uint64_t getter = eng_.symbolize("_get_" + std::string(name));
+        if (def.is_static_field(id) || def.has_static_field(id) || def.find_field_declaring_class(id) != nullptr ||
+            def.method_ptr(getter) != nullptr || def.has_static_method(getter)) { return k_less_variable; }
+        if (def.method_ptr(id) != nullptr || def.has_static_method(id)) { return k_less_declared; }
+        if (depth > 32) { return 0; }
+        for (const auto& parent : def.get_parent_classes()) {
+            if (parent) { if (const char kind = less_engine_member(*parent, name, depth + 1)) { return kind; } }
+        }
+        return 0;
+    }
+    // A class's member of that name, its own before each base's; 0 when the class or the member is not known
+    char less_class_member(std::string_view cls, std::string_view name, int depth) {
+        if (cls.empty() || depth > 32) { return 0; }
+        if (!generics_named(std::string(cls) + "::" + std::string(name)).empty()) { return k_less_declared; }
+        if (const sclass* c = find_sclass(cls)) {
+            if (c->fields.count(name) || c->static_fields.count(name)) { return k_less_variable; }
+            if (c->methods.count(name) || c->static_methods.count(name)) { return k_less_declared; }
+            for (auto base : c->decl->base_classes) {
+                if (const char kind = less_class_member(base, name, depth + 1)) { return kind; }
+            }
+            return 0;
+        }
+        // a generic class, or an instance the unit has not made yet: the members its declaration lists
+        const std::string_view generic = cls.substr(0, cls.find('<'));
+        if (const generic_definition_ptr g = generic_class_named(generic)) {
+            if (less_listed(g->member_variables, name)) { return k_less_variable; }
+            if (less_listed(g->member_functions, name)) { return k_less_declared; }
+            for (const std::string& base : g->bases) {
+                if (const char kind = less_class_member(base, name, depth + 1)) { return kind; }
+            }
+            return 0;
+        }
+        if (auto def = engine_class(cls)) { return less_engine_member(*def, name, 0); }
+        return 0;
+    }
+    template <typename Pool>
+    static bool less_pooled(const Pool* pool, const std::string& name) {
+        if (!pool) { return false; }
+        const auto held = pool->find(name);
+        return held != pool->end() && !held->second.empty();
+    }
+    char less_namespace_member(const std::string& space, std::string_view name) {
+        const std::string qualified = space + "::" + std::string(name);
+        if (namespace_vars_.count(qualified)) { return k_less_variable; }
+        if (namespace_fns_.count(qualified) || !generics_named(qualified).empty() || classes_.count(qualified) || enums_.count(qualified)) { return k_less_declared; }
+        if (less_pooled(program_globals_, qualified)) { return k_less_variable; }
+        if (less_pooled(program_functions_, qualified) || less_pooled(program_enums_, qualified) || (program_classes_ && program_classes_->count(qualified))) { return k_less_declared; }
+        if (namespace_members_.count(qualified + "::") || extra_global(qualified + "::")) { return k_less_declared; }   // a nested namespace
+        if (engine_class(qualified) || eng_.is_enum_name(qualified) || eng_.has_function(qualified)) { return k_less_declared; }
+        if (eng_.has_variable(qualified)) { return k_less_variable; }
+        eng_.note(qualified);
+        if (const script_namespace_data* ns = eng_.find_namespace(space)) {
+            const uint64_t id = eng_.symbolize(name);
+            if (ns->functions.count(id) || ns->classes.count(id) || ns->enums.count(id) || ns->signatures.count(id)) { return k_less_declared; }
+            if (ns->variables.count(id) || (ns->scope && ns->scope->get_own_value_ptr(id) != nullptr)) { return k_less_variable; }
+        }
+        if (namespace_members_.count(qualified) || extra_global(qualified)) { return k_less_variable; }   // an extern, a destructured name
+        return 0;
+    }
+    // A program-scope name: this unit's, then the pooled program's, then what the engine holds
+    char less_program_name(std::string_view name) {
+        const std::string spelled(name);
+        if (global_var_names_.count(name)) { return k_less_variable; }
+        if (functions_.count(name) || classes_.count(name) || enums_.count(name) || generics_.count(spelled) || namespace_members_.count(spelled + "::")) { return k_less_declared; }
+        if (less_pooled(program_globals_, spelled)) { return k_less_variable; }
+        if (less_pooled(program_functions_, spelled) || less_pooled(program_enums_, spelled) || (program_classes_ && program_classes_->count(spelled))) { return k_less_declared; }
+        if (const auto* held = eng_.find_generics(spelled); held && !held->empty()) { return k_less_declared; }
+        if (builtin_type_name(name) || engine_access::get_registered_template_types(eng_.asking(name)).count(spelled) || engine_class(name) ||
+            eng_.is_enum_name(spelled) || eng_.has_function(spelled) || extra_global(spelled + "::") || eng_.find_namespace(spelled)) { return k_less_declared; }
+        if (eng_.has_variable(spelled) || extra_global(spelled)) { return k_less_variable; }
+        return k_less_nothing;
+    }
+    // A::B::x: A::B as a namespace, a class or an enum, found from the enclosing namespace outward, and x in it
+    char less_qualified(const less_query& q) {
+        const size_t cut = q.head.rfind("::");
+        if (cut == std::string::npos) { return less_program_name(q.head); }
+        const std::string prefix = q.head.substr(0, cut);
+        const std::string_view name = std::string_view(q.head).substr(cut + 2);
+        std::vector<std::string> owners;
+        for (std::string space = q.space; !space.empty();) {
+            owners.push_back(space + "::" + prefix);
+            const size_t up = space.rfind("::");
+            if (up == std::string::npos) { break; }
+            space.resize(up);
+        }
+        owners.push_back(prefix);
+        for (const std::string& owner : owners) {
+            if (const char kind = less_class_member(owner, name, 0)) { return kind; }
+            if (enums_.count(owner) || less_pooled(program_enums_, owner) || eng_.is_enum_name(owner)) { return k_less_variable; }
+            if (const char kind = less_namespace_member(owner, name)) { return kind; }
+        }
+        return k_less_nothing;
+    }
+
     // -------------------------------------------------------------- tables
 
     struct sclass {
@@ -518,8 +746,25 @@ private:
         }
         return check_mode_attr_none;
     }
+    // the mode attribute of the first declaration of the text itself (a unit's instances and their requests stand ahead of it)
     static uint8_t leading_mode(const std::vector<declaration_ptr>& decls) {
-        return decls.empty() || !decls.front() ? check_mode_attr_none : decls.front()->check_mode_attr;
+        for (const auto& d : decls) {
+            if (!d) { return check_mode_attr_none; }
+            if (!instance_node(*d)) { return d->check_mode_attr; }
+        }
+        return check_mode_attr_none;
+    }
+    static bool instance_node(const declaration& d) {
+        switch (d.get_type()) {
+            case node_type::generic_instance_decl: return true;
+            case node_type::function_decl: return static_cast<const function_decl&>(d).instance_stamp != 0;
+            case node_type::class_decl: return static_cast<const class_decl&>(d).instance_stamp != 0 || static_cast<const class_decl&>(d).method_instances;
+            case node_type::namespace_decl: {
+                const auto& members = static_cast<const namespace_decl&>(d).declarations;
+                return !members.empty() && std::all_of(members.begin(), members.end(), [](const declaration_ptr& m) { return m && instance_node(*m); });
+            }
+            default: return false;
+        }
     }
 
     std::unordered_map<std::string_view, sclass> classes_;
@@ -528,6 +773,8 @@ private:
     const program_class_map* program_classes_ = nullptr;
     const program_function_map* program_functions_ = nullptr;
     const program_global_map* program_globals_ = nullptr;
+    struct top_var_decl { const variable_decl* decl = nullptr; size_t count = 0; };
+    std::unordered_map<std::string_view, top_var_decl> top_var_decls_;   // the unit's program-scope variables, ahead of the walk that meets them
     const program_enum_map* program_enums_ = nullptr;
     bool deferred_ = false;   // a program-table class met before the engine defined it: the unit's proofs re-stamp after the next import
     std::vector<std::string>* deferred_out_ = nullptr;   // their names, for the engine's re-stamp test
@@ -541,12 +788,35 @@ private:
     std::unordered_set<std::string_view> namespaces_;
     std::unordered_set<std::string> namespace_members_;   // this unit's namespace members and paths (collect_namespace_members)
     std::unordered_map<std::string, const variable_decl*> namespace_vars_;   // "path::name" -> its declaration (null: two spellings)
+    std::unordered_map<std::string, ctype> namespace_inferred_types_;   // "path::name" -> what the walk inferred for an auto namespace variable it has passed
     std::unordered_map<std::string, std::vector<const function_decl*>> namespace_fns_;   // "path::name" -> the unit's declarations of it
     // [[nodiscard]] (docs/site/guide/06-functions.html): what resolving the call being inferred found, and every such call the walk met;
     // twin names the in-place method a builtin namespace copy pairs with (empty for everything else)
     struct nodiscard_callee { std::string name; std::string twin; };
     nodiscard_callee nodiscard_hit_;
     std::unordered_map<const call_expr*, nodiscard_callee> nodiscard_calls_;
+    // A callee declared to return nothing (docs/site/guide/06-functions.html#returning-nothing) that resolving the call being
+    // inferred found: its name as the error quotes it ('f', 'C.m', or the callee), and for a method beside a copying static of
+    // its name the twin text (detail::in_place_result_text) and the call's member
+    // reason: for a callee whose deduced result is nothing because it returns a builtin in-place call, that call's text (it names
+    // the copying twin)
+    struct void_callee { std::string shown; std::string twin; const member_expr* member = nullptr; std::string reason; bool typed_slot = false; };
+    void_callee void_hit_;
+    // the calls in a place that discards the result (a statement, a return in a body that declares no value) whose callee returns
+    // nothing: the error a use of the result gives, and the reason a body that returns the call passes on
+    struct nothing_call { std::string used; std::string reason; };
+    std::unordered_map<const call_expr*, nothing_call> nothing_calls_;
+    // the bodies with a deduced result (an auto function or method, a lambda with no result type) whose returns all return nothing,
+    // with the reason they pass on: callees that return nothing
+    std::unordered_map<const lambda_expr*, std::string> nothing_lambdas_;
+    std::unordered_map<const function_decl*, std::string> nothing_functions_;
+    // A call with type arguments (call_expr::type_argument_count) being resolved: the script function it resolved to (an error:
+    // only a host takes a type argument), else the host callable whose registration may type its result
+    bool type_argument_call_ = false;
+    std::vector<std::pair<type_info_ptr, source_location>>* unknown_type_arguments_ = nullptr;   // the call's type arguments that name no type, while they are inferred
+    std::string type_argument_script_callee_;
+    std::string_view type_argument_script_kind_;   // what it is: a function, a method, a class, a lambda
+    std::string type_argument_host_callee_;
     // Every name the program scope declares (top level and namespace bodies, any order): a function reads a global declared
     // after it, so "undeclared" fires for names absent from this set AND the engine surface. A name a block, function, lambda
     // or class declares is visible only in its own scope, which the walk's scopes and member lookups resolve.
@@ -568,6 +838,11 @@ private:
     // names an assignment expression or a reference declaration targets, and each variable declaration's binary::layout(...)
     // initializer (null for any other initializer): a layout variable declared once and never assigned is statically known
     std::unordered_set<std::string_view> assigned_names_;
+    // the names a call may rebind: an identifier or a namespace path passed as an argument to anything but the library's own
+    // value-taking forms (array::, map::, parallel_transform, parallel_reduce), and a namespace path assigned (a name is a known
+    // callee only while nothing can rebind it)
+    std::unordered_set<std::string_view> passed_names_;
+    std::unordered_set<std::string> rebindable_paths_;
     std::unordered_map<std::string_view, std::vector<const expression*>> layout_inits_;
     std::unordered_set<std::string> extra_globals_;
     const std::unordered_set<std::string>* program_names_ = nullptr;   // the program's names, consulted beside extra_globals_ (never copied per check)
@@ -606,6 +881,96 @@ private:
 
     // A reference bound to a conditional names the arm the condition picks; arms of two types make a converted temporary in C++,
     // which a non-const reference cannot bind
+    std::unordered_map<const call_expr*, ctype> call_results_;   // what each call the walk inferred yields
+    std::unordered_set<const function_decl*> auto_value_returns_;   // auto functions whose every return yields a value (names_a_value)
+    // A value the checker knows, which names no storage once a call returns it: not a handle, a function or a coroutine
+    static bool names_a_value(const ctype& r) {
+        return !r.is_unknown() && r.kind != ctype::function_k && r.kind != ctype::coroutine_k && r.kind != ctype::null_k &&
+               !(r.ti && handle_type(r.ti)) && (r.kind != ctype::object_k || !r.cls.empty());
+    }
+    // every function a call names is an auto one whose returns all yield values
+    bool call_returns_auto_value(const call_expr* c) {
+        if (!c->callee || c->callee->get_type() != node_type::identifier_expr) { return false; }
+        auto it = functions_.find(static_cast<const identifier_expr*>(c->callee.get())->name);
+        if (it == functions_.end() || it->second.empty()) { return false; }
+        for (const auto* fn : it->second) { if (!auto_value_returns_.count(fn)) { return false; } }
+        return true;
+    }
+    // call_returns_by_value, also for a program function named at program scope (its name is a variable holding the function)
+    bool call_certainly_by_value(const call_expr* c) {
+        if (call_returns_by_value(c)) { return true; }
+        if (!c->callee || c->callee->get_type() != node_type::identifier_expr || class_ctx_) { return false; }
+        const auto* id = static_cast<const identifier_expr*>(c->callee.get());
+        if (id->global_qualified) { return false; }
+        const var_entry* v = find_local(id->name);
+        if (!v || v->type.kind != ctype::function_k || !v->type.fns || v->type.fns->empty()) { return false; }
+        for (const auto* fn : *v->type.fns) {
+            if (fn->return_type && fn->return_type->is_reference()) { return false; }
+        }
+        return true;
+    }
+    // Whether every function a call may reach returns a handle (shared_ptr<T>): its result names an object, as C++'s *make() does
+    bool call_returns_handle(const call_expr* c) {
+        if (!c->callee || c->callee->get_type() != node_type::identifier_expr) { return false; }
+        auto it = functions_.find(static_cast<const identifier_expr*>(c->callee.get())->name);
+        if (it == functions_.end() || it->second.empty()) { return false; }
+        for (const auto* fn : it->second) {
+            if (!fn->return_type || fn->return_type->base_type != script_value_type::jai_shared_ptr_type) { return false; }
+        }
+        return true;
+    }
+
+    // An expression the checker knows names no storage: a literal, an operator's result, a construction or a call that returns
+    // a value (a handle names its object, so a handle result is not one)
+    bool certainly_temporary(const expression* e) {
+        if (!e) { return false; }
+        switch (e->get_type()) {
+            case node_type::literal_expr: case node_type::array_literal_expr: case node_type::map_literal_expr:
+                return true;
+            case node_type::call_expr: {
+                const auto* c = static_cast<const call_expr*>(e);
+                if (!call_certainly_by_value(c) || call_returns_handle(c)) { return false; }
+                const auto found = call_results_.find(c);
+                if (found == call_results_.end()) { return false; }
+                return found->second.is_unknown() ? call_returns_auto_value(c) : names_a_value(found->second);
+            }
+            case node_type::binary_expr: {
+                const auto* b = static_cast<const binary_expr*>(e);
+                return b->op.type != token_type::left_bracket && (b->op.type == token_type::plus || b->op.type == token_type::minus ||
+                       b->op.type == token_type::star || b->op.type == token_type::slash || b->op.type == token_type::percent) &&
+                       certainly_temporary_operand(b->left.get()) && certainly_temporary_operand(b->right.get());
+            }
+            default:
+                return false;
+        }
+    }
+    // an operand of a builtin arithmetic operator: a literal or a variable the checker knows holds a number (a class
+    // operator may return a reference)
+    bool certainly_temporary_operand(const expression* e) {
+        if (e->get_type() == node_type::literal_expr) { return true; }
+        if (e->get_type() != node_type::identifier_expr) { return false; }
+        const var_entry* v = find_local(static_cast<const identifier_expr*>(e)->name);
+        return v && !v->dynamic && !v->is_reference && !v->type.tentative && (v->type.kind == ctype::int_k || v->type.kind == ctype::float_k);
+    }
+    // A chain of member reads and subscripts whose base is a temporary: the element or field of an object that dies with
+    // its statement
+    bool rooted_in_temporary(const expression* e) {
+        bool stepped = false;
+        while (e) {
+            if (e->get_type() == node_type::member_expr) {
+                const auto* m = static_cast<const member_expr*>(e);
+                if (m->is_static || m->null_safe || m->is_arrow) { return false; }
+                e = m->object.get();
+            } else if (e->get_type() == node_type::binary_expr && static_cast<const binary_expr*>(e)->op.type == token_type::left_bracket) {
+                e = static_cast<const binary_expr*>(e)->left.get();
+            } else {
+                return stepped && certainly_temporary(e);
+            }
+            stepped = true;
+        }
+        return false;
+    }
+
     void report_mixed_reference_conditional(const expression* e) {
         if (!detail::conditional_names_storage(e)) { return; }
         auto found = mixed_ternaries_.find(e);
@@ -626,6 +991,7 @@ private:
         std::string display;              // declared-type text for messages
         size_t line = 0, column = 0;
         const lambda_expr* lambda = nullptr;   // a frame-slot local declared with a lambda literal (its calls' graft declaration)
+        const lambda_expr* declared_lambda = nullptr;   // any local declared with a lambda literal, which a call through it runs unless it is assigned
         const enum_decl* enum_def = nullptr;   // an enum declared in a function or block: local to that scope
         bool is_const = false;            // const T x / const T& p / a const reference (auto& over a const)
         ctype referent;                   // the class (or typed container) a reference or an auto range-for variable holds: member diagnostics only
@@ -639,6 +1005,19 @@ private:
         const type_info* pair_value = nullptr;      // a range-for map entry: the map's declared value type
         bool shared_name = false;         // an extern's or an inline declaration's name: the unit's top level may declare it again
         ctype::kind_t literal_elem = ctype::unknown;   // an auto declared with a uniform scalar array literal: the element kind the run types the array by
+        const void* narrow_key = nullptr;   // a local's, parameter's or loop variable's own declaration: the variable a flow test may narrow
+        bool capture_copy = false;          // a lambda's named by-value capture: its own snapshot of the variable
+        bool capture_alias = false;         // a lambda's named by-reference capture: the enclosing frame's storage
+        bool namespace_function = false;    // a namespace's function in its body's scope: the namespace's member (enclosing_namespace_member), never a local
+    };
+
+    // What a call's arguments may bind to, for flow narrowing: a reference parameter may let the callee write the variable
+    struct narrow_callee {
+        bool copies = false;         // a library builtin: every argument is taken as a value
+        std::string_view host;       // a free function the engine holds under this name
+        bool resolved = false;       // a namespace entry: its declarations and its host write-back mask say it all
+        uint64_t writeback = 0;
+        std::vector<const function_decl*> declarations;
     };
 
     // A reference's (or an auto loop variable's) known class or typed container, for member diagnostics alone
@@ -727,6 +1106,19 @@ private:
         std::unordered_set<std::string_view> globals_used;
         uint8_t inferred_return = 0;      // auto: the kind every return so far certainly yields (1 int, 2 float, 3 bool)
         bool inferred_mixed = false;      // auto: a return of another kind, of an uncertain kind, or without a value
+        bool returns_seen = false;        // auto: a return with a value was walked
+        bool returns_values = true;       // auto: every return yields a value the checker knows (no handle, no reference, no function)
+        // auto, where the program declares a generic: the one type every return so far yields, for a deduction through a lambda's
+        // result (lambda_return_types_); mixed for two types or one the load cannot name
+        const type_info* returned = nullptr;
+        bool returned_mixed = false;
+        // the same with the results declarations state read (ctype::declared_result): what a deduction reads
+        const type_info* stated = nullptr;
+        bool stated_mixed = false;
+        bool returns_nothing = false;
+        bool gives_value = false;   // a return gave a value
+        bool dispatched = false;    // a non-static method with a deduced result: its calls dispatch, so its return is checked instead
+        std::vector<const call_expr*> nothing_returns;   // returns of calls that return nothing (an error once another return gives a value)
         const std::string* file = nullptr;   // the file the body is written in (a declaration from another one was spliced by an include)
     };
     std::vector<fn_ctx> fn_stack_;
@@ -840,6 +1232,7 @@ private:
     // every method named `name` a class derived from `cls` declares (a call through a `cls` receiver may reach any)
     std::vector<const function_decl*> overrides_of(std::string_view cls, std::string_view name) {
         std::vector<const function_decl*> out;
+        if (cls.empty()) { return out; }   // no method call: no class is asked
         for (const auto* table : {&classes_, &program_sclasses_}) {
             for (const auto& [cname, sc] : *table) {
                 if (cname == cls || class_relation(cname, cls) != 1) { continue; }
@@ -874,22 +1267,1000 @@ private:
 
     // -------------------------------------------------------------- diagnostics
 
-    // always_error: a program no run survives, an error under [[warn_mode]] too
+    // Where the declaration a diagnostic cites stands. One an AST node gives carries its file, which the listing names when
+    // it is not the diagnostic's own (an instance of a generic another file declares, text spliced into a body)
+    struct declared_at {
+        size_t line = 0, column = 0;
+        const std::string* file = nullptr;
+        declared_at() = default;
+        declared_at(size_t a_line, size_t a_column) : line(a_line), column(a_column) {}
+        declared_at(const source_location& a_place) : line(a_place.line), column(a_place.column), file(&a_place.filename) {}
+    };
     void diag(diag_level severity, const source_location& loc, std::string message,
               size_t related_line = 0, size_t related_column = 0, bool always_error = false) {
+        diag(severity, loc, std::move(message), declared_at{related_line, related_column}, always_error);
+    }
+    // always_error: a program no run survives, an error under [[warn_mode]] too
+    void diag(diag_level severity, const source_location& loc, std::string message, const declared_at& related, bool always_error = false) {
         if (!collect_diagnostics_) { return; }
         const uint8_t mode = region_mode();
+        // an error in an instance the unit only makes again is that instance's, which keeps its earlier declaration: under
+        // [[warn_mode]] too, where the unit's own errors are warnings
+        if (severity == diag_level::error && remade_failures_) {
+            if (const generic_instance_decl* remade = remade_root(instance_ctx_)) { note_remade_failure(*remade, loc, message); }
+        }
         if (mode == check_mode_attr_warn && !always_error) { severity = diag_level::warning; }
         if (diags_.size() >= k_check_diagnostic_cap) {
             capped_ = true;
             return;
         }
-        std::string file = template_files_ > 0 ? loc.filename : std::string();
+        // inside a template's body, a generic another file declares and a file an include splices in, the place is that file's
+        std::string file = template_files_ > 0 || (!unit_file_.empty() && !loc.filename.empty() && loc.filename != unit_file_) ? loc.filename : std::string();
         std::string key = file + ":" + std::to_string(loc.line) + ":" + std::to_string(loc.column) + ":" + message;
+        if (instance_ctx_) { key += ":"; key += instance_ctx_->name; }   // each instance reports what its own arguments break
         if (!seen_.insert(std::move(key)).second) {
             return;
         }
-        diags_.push_back({severity, loc.line, loc.column, std::move(message), file.empty() ? related_line : 0, file.empty() ? related_column : 0, std::move(file)});
+        const bool cites = file.empty() && related.line != 0;
+        std::string related_file = cites && related.file && !related.file->empty() && *related.file != loc.filename ? *related.file : std::string();
+        diags_.push_back({severity, loc.line, loc.column, std::move(message), cites ? related.line : 0, cites ? related.column : 0, std::move(file),
+                          instance_notes(instance_ctx_), std::move(related_file)});
+    }
+
+    // -------------------------------------------------------------- generics (detail/generics.hpp)
+
+    std::unordered_map<std::string, std::vector<generic_definition_ptr>> generics_;   // this unit's, by qualified name
+    std::unordered_set<std::string_view> generic_method_names_;                        // its generic methods' bare names
+    bool generics_live_ = false;   // the unit or the program declares a generic: calls look their callee up among them
+    // This unit's requests, by instance name: one per definition the name's instances are made from (generic_instance_id; two
+    // generic functions that take the same type arguments are two instances of one name)
+    std::unordered_map<std::string_view, std::vector<const generic_instance_decl*>> instance_requests_;
+    std::unordered_set<const generic_instance_decl*> unmade_instances_;   // their bounds do not hold: their declarations are not checked
+    struct method_instance {
+        std::vector<const function_decl*> fns;
+        uint8_t access = 0;
+        std::string_view owner;
+        bool is_static = false;
+    };
+    std::unordered_map<std::string_view, method_instance> method_instances_;   // "Class::name<Args>" -> the unit's declarations, one per definition
+    std::vector<generic_request>* generic_requests_ = nullptr;
+    std::set<std::pair<std::string, uint64_t>> requested_now_;   // the instances this check asked for, each by its name and stamp
+    std::vector<generic_kept_instance>* remade_failures_ = nullptr;
+    const std::vector<generic_kept_instance>* kept_instances_ = nullptr;
+    const generic_instance_decl* instance_ctx_ = nullptr;      // the instance whose declarations are being walked
+    std::string unit_file_;                                    // the file the unit's own text is in
+
+    void collect_generics(const std::vector<declaration_ptr>& decls) {
+        for (const auto& d : decls) {
+            if (!d) { continue; }
+            switch (d->get_type()) {
+                case node_type::generic_decl: {
+                    const auto& definition = static_cast<const generic_decl*>(d.get())->definition;
+                    generics_[definition->qualified_name()].push_back(definition);
+                    break;
+                }
+                case node_type::generic_instance_decl: {
+                    auto* request = static_cast<const generic_instance_decl*>(d.get());
+                    instance_requests_[request->name].push_back(request);
+                    if (request->within.empty() && unit_file_.empty()) { unit_file_ = request->location.filename; }
+                    break;
+                }
+                case node_type::namespace_decl:
+                    collect_generics(static_cast<const namespace_decl*>(d.get())->declarations);
+                    break;
+                case node_type::class_decl: {
+                    auto* cd = static_cast<const class_decl*>(d.get());
+                    for (const auto& m : cd->members) {
+                        if (!m.declaration) { continue; }
+                        if (m.declaration->get_type() == node_type::generic_decl) {
+                            const auto& definition = static_cast<const generic_decl*>(m.declaration.get())->definition;
+                            generics_[definition->qualified_name()].push_back(definition);
+                            generic_method_names_.insert(definition->name);
+                        } else if (cd->method_instances && m.declaration->get_type() == node_type::function_decl) {
+                            auto* fn = static_cast<const function_decl*>(m.declaration.get());
+                            method_instance& instance = method_instances_[fn->instance_name];
+                            const auto held = std::find_if(instance.fns.begin(), instance.fns.end(), [&](const function_decl* f) { return f->instance_stamp == fn->instance_stamp; });
+                            if (held == instance.fns.end()) { instance.fns.push_back(fn); } else { *held = fn; }
+                            instance.access = m.visibility == class_decl::Private ? 1 : m.visibility == class_decl::Protected ? 2 : 0;
+                            instance.owner = cd->name;
+                            instance.is_static = fn->is_static;
+                        }
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+    }
+
+    // "in Stack<int>, instantiated at app.jai:12:5", then the instance that asked for that one, outward
+    std::vector<std::string> instance_notes(const generic_instance_decl* instance) const {
+        std::vector<std::string> notes;
+        size_t levels = 0;
+        for (; instance && levels <= k_generic_depth_limit; ++levels) {
+            if (levels < 4) { notes.push_back("in " + shown_instance_name(instance->name) + ", instantiated at " + instance->location.to_string()); }
+            instance = instance->within.empty() ? nullptr : instance_request(instance->asker());
+        }
+        if (levels > 4) { notes.push_back("and " + std::to_string(levels - 4) + " more instantiations around these"); }
+        return notes;
+    }
+    const generic_instance_decl* instance_request(const generic_instance_id& instance) const {
+        const auto held = instance_requests_.find(instance.name);
+        if (held == instance_requests_.end()) { return nullptr; }
+        const auto request = std::find_if(held->second.begin(), held->second.end(), [&](const generic_instance_decl* r) { return r->stamp == instance.stamp; });
+        return request != held->second.end() ? *request : nullptr;
+    }
+    // the request a function's or a method's instance was made for
+    const generic_instance_decl* instance_request(const function_decl& fn) const { return instance_request(generic_instance_id{fn.instance_name, fn.instance_stamp}); }
+    // a class instance's: a class's name is one class
+    const generic_instance_decl* class_instance_request(std::string_view name) const { return instance_request(generic_instance_id{name, 0}); }
+    // The instance the unit makes again (generic_instance_decl::remade) that `instance` is, or was asked for by; null for one
+    // the unit's own text asked for
+    const generic_instance_decl* remade_root(const generic_instance_decl* instance) const {
+        for (size_t levels = 0; instance && levels <= k_generic_depth_limit; ++levels) {
+            if (instance->remade) { return instance; }
+            instance = instance->within.empty() ? nullptr : instance_request(instance->asker());
+        }
+        return nullptr;
+    }
+    void note_remade_failure(const generic_instance_decl& remade, const source_location& at, const std::string& message) {
+        const bool at_declaration = at.line == remade.location.line && at.column == remade.location.column && at.filename == remade.location.filename;
+        remade_failures_->push_back({std::string(remade.name), std::string(remade.generic), at_declaration ? message : message + " (" + at.to_string() + ")", remade.location, remade.stamp});
+    }
+    // The instances a declaration of this unit could not make again keep the declaration they have
+    void warn_kept_instances() {
+        if (!kept_instances_) { return; }
+        for (const auto& kept : *kept_instances_) {
+            diag(diag_level::warning, kept.at, "'" + kept.name + "' keeps its earlier declaration: this declaration of '" + kept.generic + "' cannot make it: " + kept.reason);
+        }
+    }
+    struct instance_scope {
+        const generic_instance_decl*& slot;
+        const generic_instance_decl* saved;
+        instance_scope(const generic_instance_decl*& s, const generic_instance_decl* entered) : slot(s), saved(s) { slot = entered; }
+        ~instance_scope() { slot = saved; }
+    };
+
+    // A generic's own declaration: its name is the unit's once per shape. A host template's name stays the template's, since
+    // Name<Args> spells the host's instantiation; a generic class cannot take a host-bound class's name, as no script class
+    // can; a generic function may, as a plain function may (a method's name is its class's own)
+    void walk_generic(const generic_definition& g) {
+        const std::string qualified = g.qualified_name();
+        if (g.kind != generic_kind::method) {
+            if (eng_.is_template_type(qualified)) {
+                diag(diag_level::error, g.location, "'" + qualified + "' is a host template: a generic cannot take its name", 0, 0, /*always_error=*/true);
+            } else if (g.kind == generic_kind::class_type) {
+                if (const auto held = eng_.get_class_definition(qualified); held && !held->is_script_class()) {
+                    diag(diag_level::error, g.location, format_error_message(detail::k_host_class_name_taken, qualified, qualified), 0, 0, /*always_error=*/true);
+                }
+            }
+        }
+        if (!generics_.count(qualified)) { return; }
+        const auto counted = [](size_t count) { return std::to_string(count) + (count == 1 ? " type parameter" : " type parameters"); };
+        // one name, one class: a class and a generic class of a name in one unit are an error at the second of them
+        if (const class_decl* plain = g.kind == generic_kind::class_type ? unit_plain_class(qualified) : nullptr) {
+            const bool generic_second = plain->location.line < g.location.line || (plain->location.line == g.location.line && plain->location.column < g.location.column);
+            const source_location& first = generic_second ? plain->location : g.location;
+            diag(diag_level::error, generic_second ? g.location : plain->location, "class '" + qualified + "' is declared " +
+                 (generic_second ? "without type parameters" : "with " + counted(g.parameters.size())) + " on line " + std::to_string(first.line) + " and " +
+                 (generic_second ? "with " + counted(g.parameters.size()) : "without type parameters") + " here: a class and a generic class cannot share a name",
+                 first.line, first.column, /*always_error=*/true);
+        }
+        const generic_definition* earlier = clashing_declaration(g);
+        if (!earlier) { return; }
+        if (!same_generic_signature(*earlier, g)) {
+            diag(diag_level::error, g.location, "generic class '" + qualified + "' is declared with " + counted(earlier->parameters.size()) + " on line " +
+                 std::to_string(earlier->location.line) + " and with " + counted(g.parameters.size()) + " here: a generic class cannot be overloaded by its parameter count",
+                 earlier->location, /*always_error=*/true);
+            return;
+        }
+        diag(diag_level::error, g.location, "generic '" + generic_spelling(g) + "' is declared again: line " + std::to_string(earlier->location.line) +
+             " declares it with the same parameters", earlier->location, /*always_error=*/true);
+    }
+    // The unit's earlier generic that `g` clashes with: one of its signature (`g` declares it again), or for a generic class one of
+    // another parameter count, as a class's name is one class (functions overload by their parameters, a generic class by nothing)
+    const generic_definition* clashing_declaration(const generic_definition& g) const {
+        const auto declared = generics_.find(g.qualified_name());
+        if (declared == generics_.end()) { return nullptr; }
+        for (const auto& earlier : declared->second) {
+            if (earlier.get() == &g) { break; }
+            if (g.kind == generic_kind::class_type && earlier->kind == generic_kind::class_type && earlier->parameters.size() != g.parameters.size()) { return earlier.get(); }
+            if (same_generic_signature(*earlier, g)) { return earlier.get(); }
+        }
+        return nullptr;
+    }
+    // An instance of a generic the unit declares again is that declaration's one error, never a definition of the instance's
+    // name beside the first declaration's
+    bool made_by_declaration_again(const function_decl* fn) const {
+        if (fn->instance_stamp == 0) { return false; }
+        const generic_instance_decl* request = instance_request(*fn);
+        const auto declared = request ? generics_.find(std::string(request->generic)) : generics_.end();
+        if (declared == generics_.end()) { return false; }
+        for (const auto& g : declared->second) {
+            if (g->stamp == fn->instance_stamp) { return clashing_declaration(*g) != nullptr; }
+        }
+        return false;
+    }
+
+    // The [[warn_mode]] / [[strict_mode]] region a requested instance's generic is declared in (none: the unit's own region)
+    uint8_t instance_region_mode(const generic_instance_decl* request) {
+        if (!request) { return check_mode_attr_none; }
+        for (const generic_definition_ptr& g : generics_named(std::string(request->generic))) {
+            if (g && generic_instance_stamp(*g) == request->stamp) { return g->check_mode; }
+        }
+        return check_mode_attr_none;
+    }
+
+    // A generic method's instances: each a method of the class the declaration names, checked as that class's own
+    void walk_method_instances(const class_decl* cd) {
+        sclass* owner = find_sclass(cd->name);
+        sclass engine_held;   // a class an earlier run declared: member lookups reach the engine's definition by its name
+        if (!owner) {
+            if (!engine_class(cd->name)) { return; }
+            model_class(cd, engine_held);
+            owner = &engine_held;
+        }
+        sclass* const enclosing = class_ctx_;
+        const std::string_view enclosing_name = class_ctx_name_;
+        class_ctx_ = owner;
+        class_ctx_name_ = cd->name;
+        for (const auto& m : cd->members) {
+            if (!m.declaration || m.declaration->get_type() != node_type::function_decl) { continue; }
+            auto* fn = static_cast<function_decl*>(m.declaration.get());
+            const generic_instance_decl* request = instance_request(*fn);
+            if (unmade_instances_.count(request)) { continue; }
+            instance_scope scope(instance_ctx_, request);
+            mode_guard declared(mode_stack_, instance_region_mode(request), /*scoped=*/true);
+            walk_function(fn);
+        }
+        class_ctx_ = enclosing;
+        class_ctx_name_ = enclosing_name;
+    }
+
+    // The request ahead of an instance's declarations: its bounds, checked where the instance was asked for, then whatever kept
+    // the instance from being made
+    void walk_instance_request(const generic_instance_decl* request) {
+        const generic_instance_decl* asker = request->within.empty() ? nullptr : instance_request(request->asker());
+        bool bounded = true;
+        {
+            instance_scope scope(instance_ctx_, asker);
+            for (const auto& bound : request->bounds) {
+                if (class_is_or_derives(handle_class(bound.argument), bound.requires_)) { continue; }
+                bounded = false;
+                std::string text = bound_failure_text(*request, bound);
+                if (request->remade && remade_failures_) { note_remade_failure(*request, request->location, text); }
+                diag(diag_level::error, request->location, std::move(text), 0, 0, /*always_error=*/true);
+            }
+        }
+        if (!bounded) { unmade_instances_.insert(request); return; }
+        for (const auto& failure : request->failures) {
+            const bool at_request = failure.at.line == request->location.line && failure.at.column == request->location.column &&
+                                    failure.at.filename == request->location.filename;
+            instance_scope scope(instance_ctx_, at_request ? asker : request);
+            if (at_request && request->remade && remade_failures_) { note_remade_failure(*request, failure.at, failure.message); }
+            diag(diag_level::error, failure.at, failure.message, 0, 0, /*always_error=*/true);
+        }
+    }
+
+    // The class this unit declares under a name that is no generic's instance; null when it declares none
+    const class_decl* unit_plain_class(std::string_view name) const {
+        const auto held = classes_.find(name);
+        return held != classes_.end() && held->second.decl && held->second.decl->instance_stamp == 0 && !held->second.decl->method_instances ? held->second.decl : nullptr;
+    }
+    // The generics a qualified name declares: this unit's, then those of the rest of the program this unit does not declare again.
+    // A class's name is one class: the unit's generic class, or its class of the name, stands for the program's generic class;
+    // a function or a method of one shape is one generic, and the unit's own stands for the program's.
+    std::vector<generic_definition_ptr> generics_named(const std::string& qualified) {
+        std::vector<generic_definition_ptr> found;
+        if (auto own = generics_.find(qualified); own != generics_.end()) { found = own->second; }
+        const bool class_here = unit_plain_class(qualified) || std::any_of(found.begin(), found.end(), [](const generic_definition_ptr& f) { return f->kind == generic_kind::class_type; });
+        if (const auto* held = eng_.find_generics(qualified)) {
+            for (const auto& g : *held) {
+                if (class_here && g->kind == generic_kind::class_type) { continue; }
+                const bool declared_here = std::any_of(found.begin(), found.end(), [&](const generic_definition_ptr& f) {
+                    return f == g || same_generic_signature(*f, *g);
+                });
+                if (!declared_here) { found.push_back(g); }
+            }
+        }
+        return found;
+    }
+    // The generic class that holds a name: where one does, the bare name is no class's (a class the name had before stays
+    // for the code and the objects that use it already)
+    generic_definition_ptr generic_class_named(std::string_view name) {
+        for (const auto& g : generics_named(std::string(name))) { if (g->kind == generic_kind::class_type) { return g; } }
+        return nullptr;
+    }
+    // A generic function or method a bare name reaches where a value stands, by the lookup a call of it takes: what to write
+    // instead, or empty when the name reaches none
+    JAI_NOINLINE std::string generic_named_as_value(std::string_view name) {
+        if (!generics_live_) { return {}; }
+        std::vector<generic_definition_ptr> found;
+        const bool in_class = class_ctx_ && !(found = class_generics(class_ctx_name_, name)).empty();
+        for (std::string space(namespace_walk_names_.empty() ? std::string_view() : namespace_walk_names_.back()); found.empty() && !space.empty();) {
+            found = generics_named(space + "::" + std::string(name));
+            const size_t cut = space.rfind("::");
+            space.resize(cut == std::string::npos ? 0 : cut);
+        }
+        if (found.empty()) { found = generics_named(std::string(name)); }
+        return generic_value_spelled(found, name, in_class ? "this" : "");
+    }
+    // `spelled` names `found` where a value stands; through `receiver` when it is a method reached through one
+    static std::string generic_value_spelled(const std::vector<generic_definition_ptr>& found, std::string_view spelled, const std::string& receiver) {
+        const auto callable = std::find_if(found.begin(), found.end(), [](const generic_definition_ptr& g) { return g->kind != generic_kind::class_type; });
+        if (callable == found.end()) { return {}; }
+        const generic_definition& g = **callable;
+        const std::string call = std::string(spelled) + generic_spelling(g).substr(g.qualified_name().size());
+        if (!receiver.empty() && !g.is_static) { return detail::generic_method_value_text(spelled, {}, receiver, call); }
+        return detail::generic_value_text(spelled, {}, g.kind == generic_kind::method, call);
+    }
+    // What a name is that takes no type arguments (detail/generics.hpp): a builtin type, an enum, a host class, a script class
+    plain_type_kind plain_type_named(const std::string& name) {
+        if (name.empty() || find_local(name)) { return plain_type_kind::none; }
+        if (builtin_type_name(name)) { return plain_type_kind::builtin; }
+        if (find_enum(name) || (program_enums_ && program_enums_->count(name) != 0) || eng_.is_enum_name(name)) { return plain_type_kind::enumeration; }
+        if (find_sclass(name)) { return plain_type_kind::script_class; }
+        const auto held = engine_class(name);
+        return held ? (held->is_cpp_class() ? plain_type_kind::host_class : plain_type_kind::script_class) : plain_type_kind::none;
+    }
+    // Where a class is spelled by a bare name a generic class holds: the error, and true
+    bool refuse_bare_generic_class(std::string_view name, const source_location& loc) {
+        if (!generics_live_ || name.empty()) { return false; }
+        const generic_definition_ptr g = generic_class_named(name);
+        if (!g) { return false; }
+        diag(diag_level::error, loc, "'" + std::string(name) + "' is a generic class: name its type arguments (" + generic_spelling(*g) + ")");
+        return true;
+    }
+    // A class's generic methods of a name: its own, else the nearest base's that declares one (a derived class's hides a base's)
+    std::vector<generic_definition_ptr> class_generics(std::string_view cls, std::string_view name, int depth = 0) {
+        if (depth > 32 || cls.empty()) { return {}; }
+        auto found = generics_named(std::string(cls) + "::" + std::string(name));
+        if (!found.empty()) { return found; }
+        if (const sclass* c = find_sclass(cls)) {
+            for (auto base : c->decl->base_classes) {
+                found = class_generics(base, name, depth + 1);
+                if (!found.empty()) { return found; }
+            }
+            return {};
+        }
+        if (auto def = engine_class(cls)) {
+            for (const auto& parent : def->get_parent_classes()) {
+                found = class_generics(parent->get_name(), name, depth + 1);
+                if (!found.empty()) { return found; }
+            }
+        }
+        return {};
+    }
+
+    // The class a program-scope variable of another unit is declared with (Counter c; shared_ptr<Counter> c;), when one unit
+    // declares the name once: what picks a generic method on it, as a declared type does in C++
+    std::string_view declared_global_class(const identifier_expr* id) {
+        if (!program_globals_ || find_local(id->name)) { return {}; }
+        eng_.note(id->name);
+        const auto held = program_globals_->find(std::string(id->name));
+        if (held == program_globals_->end() || held->second.size() != 1 || held->second.begin()->second.size() != 1) { return {}; }
+        const variable_decl* g = held->second.begin()->second.front().get();
+        const type_info* t = g ? g->type.get() : nullptr;
+        while (t && t->base_type == script_value_type::jai_reference_type && !t->type_params.empty()) { t = t->type_params[0].get(); }
+        if (!t || (t->base_type != script_value_type::jai_object_type && t->base_type != script_value_type::jai_shared_ptr_type)) { return {}; }
+        return t->type_name == "shared_ptr" ? std::string_view{} : std::string_view(t->type_name);
+    }
+
+    // What a call's callee names among the generics, by the lookup an ordinary call of that spelling takes: a method of the
+    // receiver's class, a member of an enclosing namespace, a program-scope name
+    std::vector<generic_definition_ptr> generic_callee(call_expr* c, bool& receiver_unknown) {
+        receiver_unknown = false;
+        expression* callee = c->callee.get();
+        if (callee->get_type() == node_type::identifier_expr) {
+            auto* id = static_cast<identifier_expr*>(callee);
+            if (!id->global_qualified) {
+                if (size_t scope_index = 0; callable_variable(id, &scope_index)) { return {}; }
+                if (class_ctx_) {
+                    auto found = class_generics(class_ctx_name_, id->name);
+                    if (!found.empty()) { return found; }
+                }
+                if (!namespace_walk_names_.empty()) {
+                    for (std::string space(namespace_walk_names_.back());;) {
+                        auto found = generics_named(space + "::" + std::string(id->name));
+                        if (!found.empty()) { return found; }
+                        const size_t cut = space.rfind("::");
+                        if (cut == std::string::npos) { break; }
+                        space.resize(cut);
+                    }
+                }
+            }
+            return generics_named(std::string(id->name));
+        }
+        if (callee->get_type() != node_type::member_expr) { return {}; }
+        auto* m = static_cast<member_expr*>(callee);
+        if (m->is_static) {
+            const std::string qualified = qualified_spelling(m);
+            if (qualified.empty()) { return {}; }
+            auto found = generics_named(qualified);
+            if (!found.empty()) { return found; }
+            const std::string owner = qualified.substr(0, qualified.size() - m->member.size() - 2);
+            return find_sclass(owner) || engine_class(owner) ? class_generics(owner, m->member) : std::vector<generic_definition_ptr>{};
+        }
+        if (!generic_method_names_.count(m->member) && !eng_.names_generic_method(std::string(m->member))) { return {}; }
+        const std::string_view cls = receiver_class(m, receiver_unknown);
+        return cls.empty() ? std::vector<generic_definition_ptr>{} : class_generics(cls, m->member);
+    }
+    // The class a method call's receiver has as the load knows it: its own type, a reference's declared class (Base& b), a
+    // global another unit declares with a class; empty when the load knows none (`unknown` when it knows nothing of it)
+    std::string_view receiver_class(const member_expr* m, bool& unknown) {
+        unknown = false;
+        const ctype recv = infer(m->object.get());
+        if ((recv.kind == ctype::object_k || recv.kind == ctype::class_ref_k) && !recv.cls.empty()) { return recv.cls; }
+        if (recv.is_unknown()) {
+            if (const ctype held = referent_receiver(m->object.get()); held.kind == ctype::object_k && !held.cls.empty()) { return held.cls; }
+            if (m->object->get_type() == node_type::identifier_expr) {
+                const auto* id = static_cast<const identifier_expr*>(m->object.get());
+                const std::string_view declared = declared_global_class(id);
+                if (!declared.empty()) { return declared; }
+                // a name of the frame the debugger evaluates in (its instance variables, which no declaration names): the class of
+                // the object it holds now
+                if (const std::string_view held = eng_.evaluation_receiver_class(std::string(id->name)); !held.empty()) { return held; }
+            }
+        }
+        unknown = recv.is_unknown();
+        return {};
+    }
+
+    static std::string generic_spelling(const generic_definition& g) {
+        std::string text = g.qualified_name() + "<";
+        for (size_t i = 0; i < g.parameters.size(); ++i) { text += (i ? ", " : "") + std::string(g.parameters[i].name); }
+        return text + ">";
+    }
+    // Whether the unit declares the instance of `g` under `instance`: the name alone for a class, and for a function or a
+    // method the one made from `g` among the name's overloads
+    bool instance_declared(const generic_definition& g, const std::string& instance) {
+        const auto made_from = [&](const std::vector<const function_decl*>& overloads) {
+            return std::any_of(overloads.begin(), overloads.end(), [&](const function_decl* fn) { return fn->instance_stamp == g.stamp; });
+        };
+        switch (g.kind) {
+            case generic_kind::class_type: return classes_.count(instance) != 0;
+            case generic_kind::method: {
+                const auto held = method_instances_.find(instance);
+                return held != method_instances_.end() && made_from(held->second.fns);
+            }
+            default: {
+                if (g.space.empty()) {
+                    const auto held = functions_.find(instance);
+                    return held != functions_.end() && made_from(held->second);
+                }
+                const auto held = namespace_fns_.find(instance);
+                return held != namespace_fns_.end() && made_from(held->second);
+            }
+        }
+    }
+
+    // ---- deduction (docs/site/guide/21-generics.html "Deduction")
+
+    // The one type a lambda's returns yield where it declares none: what the load is certain of, else the one its returns give
+    // with the results declarations state read
+    const type_info* lambda_yield(const lambda_expr* l) const {
+        if (const auto yields = lambda_return_types_.find(l); yields != lambda_return_types_.end()) { return yields->second; }
+        const auto states = lambda_stated_return_types_.find(l);
+        return states == lambda_stated_return_types_.end() ? nullptr : states->second;
+    }
+    // What a value argument's load-time type is, as a type an instance can be made with; null when the load does not know it.
+    // declared_results: a result a declaration states counts (ctype::declared_result), as it does for every call's deduction
+    const type_info* deduction_type(const ctype& arg) { return deduction_type(arg, true); }
+    const type_info* deduction_type(const ctype& arg, bool declared_results) {
+        const type_info* t = arg.ti;
+        while (t && t->base_type == script_value_type::jai_reference_type && !t->type_params.empty()) { t = t->type_params[0].get(); }
+        // a container spelled without its element (a literal's own type) is read from the literal below
+        const bool open_container = t && (t->base_type == script_value_type::jai_array_type || t->base_type == script_value_type::jai_map_type) &&
+                                    std::any_of(t->type_params.begin(), t->type_params.end(), [](const type_info_ptr& p) { return !p || p->base_type == script_value_type::jai_any_type; });
+        if (t && t->base_type != script_value_type::jai_any_type && !open_container) { return t; }
+        if (arg.tentative && !(arg.declared_result && declared_results)) { return nullptr; }
+        switch (arg.kind) {
+            case ctype::int_k: return arg.cls.empty() ? eng_.get_type_info_int() : eng_.get_type_info_object(std::string(arg.cls));
+            case ctype::float_k: return eng_.get_type_info_float();
+            case ctype::bool_k: return eng_.get_type_info_bool();
+            case ctype::string_k: return eng_.get_type_info_string();
+            case ctype::char_k: return eng_.get_type_info_char();
+            case ctype::utf8_k: return eng_.get_type_info_utf8_string();
+            case ctype::math_k: return eng_.get_type_info_math(math_type_from_name(arg.cls));   // a math constructor's result, a math-typed value
+            case ctype::coroutine_k: return arg.yields ? eng_.get_type_info_coroutine(const_cast<type_info*>(arg.yields)) : nullptr;
+            case ctype::object_k: return arg.cls.empty() ? nullptr : eng_.get_type_info_object(std::string(arg.cls));
+            case ctype::array_k: {   // a literal of one element type: [1, 2] is an array<int>
+                if (!arg.origin || arg.origin->get_type() != node_type::array_literal_expr) { return nullptr; }
+                const type_info* element = nullptr;
+                for (const auto& el : static_cast<const array_literal_expr*>(arg.origin)->elements) {
+                    const type_info* t = deduction_type(recorded_literal_element(el.get()), declared_results);
+                    if (!t || (element && t->canonical_name() != element->canonical_name())) { return nullptr; }
+                    element = t;
+                }
+                return element ? eng_.get_type_info_array(const_cast<type_info*>(element)) : nullptr;
+            }
+            case ctype::map_k: {
+                if (!arg.origin || arg.origin->get_type() != node_type::map_literal_expr) { return nullptr; }
+                const type_info* key = nullptr;
+                const type_info* value = nullptr;
+                for (const auto& [k, v] : static_cast<const map_literal_expr*>(arg.origin)->entries) {
+                    const type_info* kt = deduction_type(recorded_literal_element(k.get()), declared_results);
+                    const type_info* vt = deduction_type(recorded_literal_element(v.get()), declared_results);
+                    if (!kt || !vt || (key && kt->canonical_name() != key->canonical_name()) || (value && vt->canonical_name() != value->canonical_name())) { return nullptr; }
+                    key = kt;
+                    value = vt;
+                }
+                return key ? eng_.get_type_info_map(const_cast<type_info*>(key), const_cast<type_info*>(value)) : nullptr;
+            }
+            default: return nullptr;
+        }
+    }
+    static size_t type_parameter_index(const generic_definition& g, const type_info& t) {
+        if (t.base_type != script_value_type::jai_object_type || !t.type_params.empty()) { return SIZE_MAX; }
+        for (size_t i = 0; i < g.parameters.size(); ++i) { if (g.parameters[i].name == t.type_name) { return i; } }
+        return SIZE_MAX;
+    }
+    static bool names_type_parameter(const generic_definition& g, const type_info* pattern, size_t parameter, int depth = 0) {
+        if (!pattern || depth > 64) { return false; }
+        if (type_parameter_index(g, *pattern) == parameter) { return true; }
+        for (const auto& inner : pattern->type_params) { if (names_type_parameter(g, inner.get(), parameter, depth + 1)) { return true; } }
+        return false;
+    }
+    // The generic and arguments a class is an instance of, or derives an instance of, when the generic is `generic`
+    bool instance_arguments(std::string_view cls, std::string_view generic, std::vector<type_info_ptr>& arguments, int depth = 0) {
+        if (depth > 32 || cls.empty()) { return false; }
+        if (const generic_instance_decl* request = class_instance_request(cls)) {
+            if (request->generic == generic) { arguments = request->arguments; return true; }
+        } else {
+            std::string made_from;
+            std::vector<type_info_ptr> made_with;
+            if (eng_.generic_instance(std::string(cls), made_from, made_with) && made_from == generic) { arguments = std::move(made_with); return true; }
+            // a host template's instance is made by the host and named by its arguments (template_instance_name)
+            std::string_view base;
+            std::vector<std::string_view> spelled;
+            if (template_name_arguments(cls, base, spelled) && base == generic && eng_.is_template_type(std::string(base))) {
+                for (const std::string_view argument : spelled) { made_with.push_back(type_info_ptr(eng_.type_named(argument))); }
+                if (std::none_of(made_with.begin(), made_with.end(), [](const type_info_ptr& t) { return !t; })) { arguments = std::move(made_with); return true; }
+            }
+        }
+        if (const sclass* c = find_sclass(cls)) {
+            for (auto base : c->decl->base_classes) { if (instance_arguments(base, generic, arguments, depth + 1)) { return true; } }
+            return false;
+        }
+        if (auto def = engine_class(cls)) {
+            for (const auto& parent : def->get_parent_classes()) { if (instance_arguments(parent->get_name(), generic, arguments, depth + 1)) { return true; } }
+        }
+        return false;
+    }
+    struct deduced_type {
+        const type_info* type = nullptr;
+        size_t argument = 0;   // the value argument it came from, counted from 1; 0: written in the call
+    };
+    struct deduction {
+        const generic_definition& g;
+        std::vector<deduced_type> found;
+        std::string error;
+        size_t argument = 0;
+    };
+    // `pattern` (a parameter's declared type, the type parameters standing in it as classes) against the type an argument has
+    void unify(deduction& d, const type_info* pattern, const type_info* actual, int depth = 0) {
+        if (!pattern || !actual || depth > 64 || !d.error.empty()) { return; }
+        while (pattern->base_type == script_value_type::jai_reference_type && !pattern->type_params.empty() && pattern->type_params[0]) { pattern = pattern->type_params[0].get(); }
+        while (actual->base_type == script_value_type::jai_reference_type && !actual->type_params.empty() && actual->type_params[0]) { actual = actual->type_params[0].get(); }
+        if (const size_t p = type_parameter_index(d.g, *pattern); p != SIZE_MAX) {
+            deduced_type& slot = d.found[p];
+            if (!slot.type) {
+                slot = {actual, d.argument};
+            } else if (slot.argument != 0 && slot.type->canonical_name() != actual->canonical_name()) {
+                d.error = "cannot deduce " + std::string(d.g.parameters[p].name) + " for '" + std::string(d.g.name) + "': it is " + slot.type->canonical_name() +
+                          " from argument " + std::to_string(slot.argument) + " and " + actual->canonical_name() + " from argument " + std::to_string(d.argument);
+            }
+            return;
+        }
+        switch (pattern->base_type) {
+            case script_value_type::jai_array_type: case script_value_type::jai_map_type: case script_value_type::jai_weak_ptr_type:
+                if (actual->base_type != pattern->base_type) { return; }
+                for (size_t i = 0; i < pattern->type_params.size() && i < actual->type_params.size(); ++i) {
+                    unify(d, pattern->type_params[i].get(), actual->type_params[i].get(), depth + 1);
+                }
+                return;
+            case script_value_type::jai_shared_ptr_type:
+                if (actual->base_type != script_value_type::jai_shared_ptr_type || pattern->type_params.empty()) { return; }
+                if (!actual->type_params.empty() && actual->type_params[0]) { unify(d, pattern->type_params[0].get(), actual->type_params[0].get(), depth + 1); }
+                else if (!actual->type_name.empty() && actual->type_name != "shared_ptr") { unify(d, pattern->type_params[0].get(), eng_.get_type_info_object(actual->type_name), depth + 1); }
+                return;
+            case script_value_type::jai_function_type:   // function<U(T)> against a signature: the result, then each parameter
+                if (!pattern->is_signature() || !actual->is_signature() || pattern->type_params.size() != actual->type_params.size()) { return; }
+                for (size_t i = 0; i < pattern->type_params.size(); ++i) {
+                    const type_info* named = actual->type_params[i].get();
+                    if (i == 0 && (!named || named->base_type == script_value_type::jai_null_type)) { continue; }   // no result names no type
+                    unify(d, pattern->type_params[i].get(), named, depth + 1);
+                }
+                return;
+            case script_value_type::jai_object_type: {
+                if (pattern->is_coroutine) {   // coroutine<T> against a coroutine's handle
+                    if (actual->is_coroutine && !pattern->type_params.empty() && !actual->type_params.empty()) {
+                        unify(d, pattern->type_params[0].get(), actual->type_params[0].get(), depth + 1);
+                    }
+                    return;
+                }
+                if (pattern->type_params.empty() || actual->base_type != script_value_type::jai_object_type) { return; }
+                const std::string_view generic = std::string_view(pattern->type_name).substr(0, pattern->type_name.find('<'));
+                std::vector<type_info_ptr> arguments;
+                if (!instance_arguments(actual->type_name, generic, arguments)) { return; }
+                for (size_t i = 0; i < pattern->type_params.size() && i < arguments.size(); ++i) {
+                    unify(d, pattern->type_params[i].get(), arguments[i].get(), depth + 1);
+                }
+                return;
+            }
+            default:
+                return;
+        }
+    }
+    // A lambda's parameter that declares no type of its own: a bare name or auto, typed by the signature it is checked against
+    static bool arrow_parameter(const parameter& p) { return !p.is_reference && (p.untyped || !p.type || p.contextual); }
+    static bool untyped_arrow(const expression* e) {
+        if (!e || e->get_type() != node_type::lambda_expr) { return false; }
+        const auto& parameters = static_cast<const lambda_expr*>(e)->parameters;
+        return std::any_of(parameters.begin(), parameters.end(), arrow_parameter);
+    }
+    // The signature a function value declares, which a deduction reads function<R(A...)> against: a slot's own, or a lambda's
+    // or a function's whose every parameter declares its type, with the result it declares (a lambda's: the one type its
+    // returns yield). Null for a callable that declares no one signature: an overloaded name, a `function` slot, an arrow.
+    const type_info* declared_signature(const ctype& arg) {
+        if (arg.ti && arg.ti->is_signature()) { return arg.ti; }
+        const std::vector<parameter>* parameters = nullptr;
+        const type_info* result = nullptr;
+        if (arg.origin && arg.origin->get_type() == node_type::lambda_expr) {
+            const auto* l = static_cast<const lambda_expr*>(arg.origin);
+            parameters = &l->parameters;
+            result = l->return_type.get();
+            if (!result) { result = lambda_yield(l); }
+        } else if (arg.fns && arg.fns->size() == 1) {
+            const function_decl* fn = arg.fns->front();
+            parameters = &fn->parameters;
+            result = fn->is_coroutine && fn->return_type ? eng_.get_type_info_coroutine(fn->return_type.get()) : fn->return_type.get();
+        }
+        if (!parameters || !result) { return nullptr; }
+        std::vector<type_info*> taken;
+        for (const parameter& p : *parameters) {
+            if (!p.type || p.untyped || p.contextual) { return nullptr; }
+            taken.push_back(p.is_reference ? eng_.get_type_info_reference(p.type.get()) : p.type.get());
+        }
+        return eng_.get_type_info_function(const_cast<type_info*>(result), taken);
+    }
+    // `pattern` with each type parameter the deduction has found in its place; null while it names one not found yet, or an
+    // instance the unit does not declare
+    const type_info* substituted(const deduction& d, const type_info* pattern, int depth = 0) {
+        if (!pattern || depth > 64) { return nullptr; }
+        if (const size_t p = type_parameter_index(d.g, *pattern); p != SIZE_MAX) { return d.found[p].type; }
+        if (pattern->type_params.empty()) { return pattern; }
+        std::vector<type_info*> inner;
+        for (const auto& parameter : pattern->type_params) {
+            const type_info* made = substituted(d, parameter.get(), depth + 1);
+            if (!made) { return nullptr; }
+            inner.push_back(const_cast<type_info*>(made));
+        }
+        switch (pattern->base_type) {
+            case script_value_type::jai_array_type: return eng_.get_type_info_array(inner[0]);
+            case script_value_type::jai_map_type: return inner.size() == 2 ? eng_.get_type_info_map(inner[0], inner[1]) : nullptr;
+            case script_value_type::jai_shared_ptr_type: return eng_.get_type_info_shared_ptr(inner[0]);
+            case script_value_type::jai_reference_type: return eng_.get_type_info_reference(inner[0]);
+            case script_value_type::jai_function_type: return eng_.get_type_info_function(inner[0], std::vector<type_info*>(inner.begin() + 1, inner.end()));
+            case script_value_type::jai_object_type: {
+                if (pattern->is_coroutine) { return eng_.get_type_info_coroutine(inner[0]); }   // its name holds what it yields: made, never edited
+                const std::string instance = generic_instance_name(std::string_view(pattern->type_name).substr(0, pattern->type_name.find('<')),
+                                                                   std::vector<type_info_ptr>(inner.begin(), inner.end()));
+                return known_class(instance) ? eng_.get_type_info_object(instance) : nullptr;
+            }
+            default: return nullptr;
+        }
+    }
+    // A name in a deduced type that a host template's argument spelled and no script type reads as: no class, no enum and no
+    // sized number (sized_number_kind, which an instance reads as int or float)
+    std::string host_only_name(const type_info* type, int depth = 0) {
+        if (!type || depth > 64) { return {}; }
+        if (type->base_type == script_value_type::jai_object_type && !type->is_coroutine) {
+            return unknown_bare_type(type) && sized_number_kind(type->type_name) == script_value_type::jai_null_type ? type->type_name : std::string();
+        }
+        for (const auto& parameter : type->type_params) {
+            if (std::string found = host_only_name(parameter.get(), depth + 1); !found.empty()) { return found; }
+        }
+        return {};
+    }
+    // The type arguments a call leaves to its value arguments: `types` holds the written ones and takes the rest. False with
+    // `error` saying what to write.
+    bool deduce_type_arguments(const call_expr* c, const generic_definition& g, const std::vector<ctype>& args, std::vector<type_info_ptr>& types, std::string& error) {
+        deduction d{g, std::vector<deduced_type>(g.parameters.size()), {}, 0};
+        for (size_t i = 0; i < types.size(); ++i) { d.found[i] = {types[i].get(), 0}; }
+        std::vector<const type_info*> actual(args.size(), nullptr);
+        std::vector<size_t> arrows;   // the lambdas that take their parameters' types from what the other arguments find
+        const auto bare = [](const type_info* t) {
+            while (t && t->base_type == script_value_type::jai_reference_type && !t->type_params.empty()) { t = t->type_params[0].get(); }
+            return t;
+        };
+        for (size_t i = 0; i < args.size() && i < g.values.size(); ++i) {
+            if (args[i].kind == ctype::null_k) { continue; }   // a null says nothing of a type
+            if (args[i].kind == ctype::function_k) {   // nor does a function value, but through the signature it declares
+                const type_info* pattern = bare(g.values[i].type.get());
+                const bool through = pattern && pattern->is_signature();
+                if (!through && !(args[i].ti && args[i].ti->is_signature())) { continue; }
+                actual[i] = declared_signature(args[i]);
+                if (!actual[i]) {
+                    if (through && untyped_arrow(args[i].origin)) { arrows.push_back(i); }
+                    continue;
+                }
+            } else {
+                actual[i] = deduction_type(args[i]);
+                if (!actual[i] && args[i].is_unknown()) {   // a reference names what it was declared to name
+                    actual[i] = deduction_type(referent_receiver(c->arguments[c->type_argument_count + i].get()));
+                }
+            }
+            d.argument = i + 1;
+            unify(d, g.values[i].type.get(), actual[i]);
+            if (!d.error.empty()) { error = std::move(d.error); return false; }
+        }
+        // An arrow is read last: each parameter it leaves untyped takes the type the signature gives it with what is found so
+        // far, the arrow is checked so, and its result then names what the signature's result does
+        for (const size_t i : arrows) {
+            expression* written = c->arguments[c->type_argument_count + i].get();
+            auto* l = static_cast<lambda_expr*>(written);
+            const type_info* pattern = bare(g.values[i].type.get());
+            if (pattern->type_params.size() - 1 != l->parameters.size()) { continue; }
+            d.argument = i + 1;
+            std::vector<type_info*> taken;
+            for (size_t k = 0; k < l->parameters.size(); ++k) {
+                const parameter& p = l->parameters[k];
+                const type_info* wanted = pattern->type_params[k + 1].get();
+                const type_info* found = nullptr;
+                if (arrow_parameter(p)) { found = substituted(d, bare(wanted)); } else { unify(d, wanted, p.type.get()); }
+                taken.push_back(found ? const_cast<type_info*>(found) : eng_.get_type_info_any());
+            }
+            if (!d.error.empty()) { error = std::move(d.error); return false; }
+            infer_expecting(written, eng_.get_type_info_function(eng_.get_type_info_any(), taken));
+            const type_info* result = l->return_type.get();
+            if (!result) { result = lambda_yield(l); }
+            if (result && result->base_type != script_value_type::jai_null_type) { unify(d, pattern->type_params[0].get(), result); }
+            if (!d.error.empty()) { error = std::move(d.error); return false; }
+        }
+        const size_t given = c->type_argument_count;
+        const auto spelled = [&](std::string_view parameter) {   // name<string, V>(...): what to write, the found arguments filled in
+            std::string text = "write " + std::string(g.name) + "<";
+            for (size_t p = 0; p < g.parameters.size(); ++p) {
+                text += p ? ", " : "";
+                text += d.found[p].type && g.parameters[p].name != parameter ? d.found[p].type->canonical_name() : std::string(g.parameters[p].name);
+            }
+            return text + (c->arguments.size() == given ? ">()" : ">(...)");
+        };
+        for (size_t p = types.size(); p < g.parameters.size(); ++p) {
+            const std::string_view name = g.parameters[p].name;
+            const std::string lead = "cannot deduce " + std::string(name) + " for '" + std::string(g.name) + "': ";
+            if (d.found[p].type) {
+                std::vector<token> probe;
+                if (!generic_argument_tokens(*d.found[p].type, c->location, eng_.symbols(), probe)) {
+                    error = lead + "argument " + std::to_string(d.found[p].argument) + " is " + d.found[p].type->canonical_name() + ", which no instance is made with; " + spelled(name);
+                    return false;
+                }
+                // a name the host spelled for its template's argument is a type only there: the instance must not read it
+                if (const std::string host = host_only_name(d.found[p].type); !host.empty() && generic_parameter_read(g, p, eng_.get_registered_template_types())) {
+                    error = lead + "argument " + std::to_string(d.found[p].argument) + " names '" + host + "', a type the host binds that no script type reads as";
+                    return false;
+                }
+                types.push_back(type_info_ptr(const_cast<type_info*>(d.found[p].type)));
+                continue;
+            }
+            size_t named_by = 0;   // the first value parameter whose type names it, counted from 1
+            for (size_t i = 0; i < g.values.size() && named_by == 0; ++i) { if (names_type_parameter(g, g.values[i].type.get(), p)) { named_by = i + 1; } }
+            if (named_by == 0) {
+                error = lead + "no parameter names it; " + spelled(name);
+            } else if (named_by > args.size()) {
+                error = lead + "argument " + std::to_string(named_by) + " is left to its default; " + spelled(name);
+            } else if (args[named_by - 1].kind == ctype::null_k || (args[named_by - 1].kind == ctype::function_k && !actual[named_by - 1])) {
+                error = lead + "argument " + std::to_string(named_by) + " is " + (args[named_by - 1].kind == ctype::null_k ? "null" : "a function") + ", which says nothing of a type; " + spelled(name);
+            } else if (!actual[named_by - 1]) {
+                error = lead + "argument " + std::to_string(named_by) + "'s type is not known at load; " + spelled(name);
+            } else {
+                error = lead + "argument " + std::to_string(named_by) + " is " + actual[named_by - 1]->canonical_name() + ", which '" +
+                        g.values[named_by - 1].type->canonical_name() + "' does not match; " + spelled(name);
+            }
+            return false;
+        }
+        return true;
+    }
+
+    enum class generic_call : uint8_t { none, rewritten, pending };
+    // A call whose callee names a generic is its instance's call: the callee takes the instance's name (largest<int>) and the
+    // type arguments leave the argument list, once the unit declares that instance; until then the call asks for it and types
+    // nothing (the engine declares it and checks the unit again)
+    generic_call resolve_generic_call(call_expr* c, std::vector<ctype>& args) {
+        if (!generics_live_ || !c->callee) { return generic_call::none; }
+        bool receiver_unknown = false;
+        std::vector<generic_definition_ptr> candidates = generic_callee(c, receiver_unknown);
+        const size_t given = c->type_argument_count;
+        const size_t values = c->arguments.size() - given;
+        if (candidates.empty()) {
+            if (receiver_unknown && given > 0) {
+                auto* m = static_cast<const member_expr*>(c->callee.get());
+                std::vector<type_info_ptr> spelled;
+                for (size_t i = 0; i < given; ++i) { spelled.push_back(static_cast<const cast_expr*>(c->arguments[i].get())->target); }
+                diag(diag_level::error, c->location, "cannot instantiate '" + generic_instance_name(m->member, spelled) + "': the receiver's class is not known at load");
+                return generic_call::pending;
+            }
+            return generic_call::none;
+        }
+        const bool is_class = candidates.front()->kind == generic_kind::class_type;
+        const std::string shown(candidates.front()->name);
+        if (is_class && given == 0) {
+            std::string parameters;
+            for (size_t i = 0; i < candidates.front()->parameters.size(); ++i) { parameters += (i ? ", " : "") + std::string(candidates.front()->parameters[i].name); }
+            diag(diag_level::error, c->location, "'" + shown + "' is a generic class: its type arguments are written, never deduced from a constructor's (" +
+                 shown + "<" + parameters + ">(...))");
+            return generic_call::pending;
+        }
+        // an ordinary function or method of the name that takes the call keeps it
+        if (!is_class && given == 0 && ordinary_callee_fits(c, args)) { return generic_call::none; }
+        std::vector<generic_definition_ptr> fitting;
+        std::vector<std::vector<type_info_ptr>> fitting_types;
+        std::string deduction_error;
+        bool counted = false;
+        for (const auto& g : candidates) {
+            const bool counts = is_class ? g->parameters.size() == given : g->parameters.size() >= given;
+            if (!counts || (!is_class && (values < g->required_values() || values > g->values.size()))) { continue; }
+            counted = true;
+            std::vector<type_info_ptr> types;
+            for (size_t i = 0; i < given; ++i) { types.push_back(static_cast<const cast_expr*>(c->arguments[i].get())->target); }
+            if (types.size() < g->parameters.size()) {
+                const std::vector<ctype> value_args(args.begin() + static_cast<std::ptrdiff_t>(given), args.end());
+                std::string error;
+                if (!deduce_type_arguments(c, *g, value_args, types, error)) {
+                    if (deduction_error.empty()) { deduction_error = std::move(error); }
+                    continue;
+                }
+            }
+            fitting.push_back(g);
+            fitting_types.push_back(std::move(types));
+        }
+        if (fitting.empty() && counted) {
+            diag(diag_level::error, c->location, deduction_error);
+            return generic_call::pending;
+        }
+        if (fitting.empty()) {
+            const generic_definition& g = *candidates.front();
+            if (is_class ? g.parameters.size() != given : g.parameters.size() < given) {
+                diag(diag_level::error, c->location, "'" + shown + "' takes " + std::to_string(g.parameters.size()) + (g.parameters.size() == 1 ? " type argument" : " type arguments") +
+                     ", not " + std::to_string(given));
+            } else {
+                diag(diag_level::error, c->location, "'" + generic_spelling(g) + "' takes " + arity_text(g) + ", not " + std::to_string(values));
+            }
+            return generic_call::pending;
+        }
+        // Generics that take the same type arguments name one instance, each its own overload of that name: the call is that
+        // name's, and its value arguments pick among the overloads as among functions written by hand. Generics that name
+        // different instances cannot both take the call.
+        const generic_definition_ptr& g = fitting.front();
+        const std::string instance = generic_instance_name(g->qualified_name(), fitting_types.front());
+        for (size_t i = 1; i < fitting.size(); ++i) {
+            if (generic_instance_name(fitting[i]->qualified_name(), fitting_types[i]) == instance) { continue; }
+            diag(diag_level::error, c->location, "call to '" + shown + "' is ambiguous: the generics '" + generic_spelling(*fitting[0]) + "' (" +
+                 fitting[0]->location.to_string() + ") and '" + generic_spelling(*fitting[i]) + "' (" + fitting[i]->location.to_string() + ") both take it");
+            return generic_call::pending;
+        }
+        bool declared = true;
+        for (size_t i = fitting.size(); i-- > 0;) {   // the last first: each request stands ahead of the unit's others, so the overloads stand as declared
+            const generic_definition_ptr& overload = fitting[i];
+            const generic_instance_id asked{instance, generic_instance_stamp(*overload)};
+            const generic_instance_decl* standing = instance_request(asked);
+            const bool made = instance_declared(*overload, instance);
+            declared = declared && made;
+            // asked for when the unit does not declare it, and when the unit's own text names an instance it was only making
+            // again (the instance is the unit's from here)
+            const bool claims = remade_root(standing) && !remade_root(instance_ctx_);
+            if (!generic_requests_ || (made ? !claims : standing && !claims) || !requested_now_.emplace(instance, asked.stamp).second) { continue; }
+            generic_request request;
+            request.name = instance;
+            request.generic = overload->qualified_name();
+            request.arguments = fitting_types[i];
+            request.definition = overload;
+            request.at = c->location;
+            request.within = instance_ctx_ ? std::string(instance_ctx_->name) : std::string();
+            request.within_stamp = instance_ctx_ ? instance_ctx_->stamp : 0;
+            generic_requests_->push_back(std::move(request));
+        }
+        if (!declared) { return generic_call::pending; }
+        // the name the instance declares: what follows its generic's namespace; a method's in full (Base::tag<int>), which is
+        // what keeps a generic method from being virtual
+        const bool bare = g->kind == generic_kind::method || g->space.empty();
+        std::string_view simple;
+        const uint64_t id = eng_.intern(bare ? std::string_view(instance) : std::string_view(instance).substr(g->space.size() + 2), simple);
+        if (c->callee->get_type() == node_type::identifier_expr) {
+            auto* was = static_cast<identifier_expr*>(c->callee.get());
+            auto named = std::make_shared<identifier_expr>(was->location, simple, id);
+            named->global_qualified = was->global_qualified;
+            c->callee = std::move(named);
+        } else {
+            auto* was = static_cast<member_expr*>(c->callee.get());
+            auto named = std::make_shared<member_expr>(was->location, was->object, simple, id, was->is_arrow, was->is_static);
+            named->null_safe = was->null_safe;
+            named->call_result_discarded = was->call_result_discarded;
+            c->callee = std::move(named);
+        }
+        c->arguments.erase(c->arguments.begin(), c->arguments.begin() + static_cast<std::ptrdiff_t>(given));
+        args.erase(args.begin(), args.begin() + static_cast<std::ptrdiff_t>(given));
+        c->type_argument_count = 0;
+        return generic_call::rewritten;
+    }
+    static std::string arity_text(const generic_definition& g) {
+        const size_t least = g.required_values(), most = g.values.size();
+        return (least == most ? std::to_string(most) : std::to_string(least) + " to " + std::to_string(most)) + (most == 1 ? " argument" : " arguments");
+    }
+    // The script methods a class holds under a name, its own or the nearest base's that declares one: a class the load
+    // models by its model, a class an earlier unit declared by the declarations the engine holds of it
+    std::vector<const function_decl*> class_methods_named(std::string_view cls, std::string_view member, bool want_static, int depth = 0) {
+        if (depth > 32 || cls.empty()) { return {}; }
+        if (const sclass* c = find_sclass(cls)) {
+            if (auto held = (want_static ? c->static_methods : c->methods).find(member); held != (want_static ? c->static_methods : c->methods).end()) { return held->second; }
+            if (!want_static) {   // an object and a method's bare name reach a static too
+                if (auto held = c->static_methods.find(member); held != c->static_methods.end()) { return held->second; }
+            }
+            for (auto base : c->decl->base_classes) {
+                auto found = class_methods_named(base, member, want_static, depth + 1);
+                if (!found.empty()) { return found; }
+            }
+            return {};
+        }
+        const auto def = engine_class(cls);
+        if (!def) { return {}; }
+        std::vector<const function_decl*> found;
+        const uint64_t id = eng_.symbolize(member);
+        const auto take = [&](const std::unordered_map<uint64_t, std::vector<std::shared_ptr<function_decl>>>& table) {
+            if (const auto held = table.find(id); held != table.end()) { for (const auto& fn : held->second) { if (fn) { found.push_back(fn.get()); } } }
+        };
+        take(want_static ? def->script_static_method_overloads() : def->script_method_overloads());
+        if (found.empty() && !want_static) { take(def->script_static_method_overloads()); }
+        for (const auto& parent : def->get_parent_classes()) {
+            if (!found.empty()) { break; }
+            found = class_methods_named(parent->get_name(), member, want_static, depth + 1);
+        }
+        return found;
+    }
+    // A namespace's functions of a name: every declaration a call of space::member may reach, typed or not
+    std::vector<const function_decl*> namespace_functions_named(const std::string& space, std::string_view member) {
+        namespace_overloads fns = namespace_function_overloads(space, member);
+        fns.typed.insert(fns.typed.end(), fns.untyped.begin(), fns.untyped.end());
+        return std::move(fns.typed);
+    }
+    // Whether the ordinary declarations a call's callee names include one that takes these arguments, by the lookup an
+    // ordinary call of that spelling takes (a method of the class, a function of an enclosing namespace, a program-scope
+    // function). The declarations are this unit's and those the rest of the program holds under the name: another unit of
+    // the closure's, an earlier run's.
+    bool ordinary_callee_fits(call_expr* c, const std::vector<ctype>& args) {
+        std::vector<const function_decl*> overloads;
+        expression* callee = c->callee.get();
+        if (callee->get_type() == node_type::identifier_expr) {
+            auto* id = static_cast<identifier_expr*>(callee);
+            if (class_ctx_ && !id->global_qualified) { overloads = class_methods_named(class_ctx_name_, id->name, /*want_static=*/false); }
+            if (overloads.empty() && !id->global_qualified) {
+                if (const std::string space = enclosing_namespace_member(id->name); !space.empty()) { overloads = namespace_functions_named(space, id->name); }
+            }
+            if (overloads.empty()) {
+                static const std::vector<const function_decl*> none;
+                const auto own = functions_.find(id->name);
+                const std::vector<const function_decl*>& declared = own != functions_.end() ? own->second : none;
+                overloads = declared;
+                const auto& foreign = foreign_overloads(id->name, declared);
+                overloads.insert(overloads.end(), foreign.begin(), foreign.end());
+            }
+        } else if (callee->get_type() == node_type::member_expr) {
+            auto* m = static_cast<member_expr*>(callee);
+            if (m->is_static) {
+                const std::string qualified = qualified_spelling(m);
+                if (qualified.size() > m->member.size() + 2) {
+                    const std::string owner = qualified.substr(0, qualified.size() - m->member.size() - 2);
+                    overloads = find_sclass(owner) || engine_class(owner) ? class_methods_named(owner, m->member, /*want_static=*/true)
+                                                                          : namespace_functions_named(owner, m->member);
+                }
+            } else {
+                bool unknown = false;
+                overloads = class_methods_named(receiver_class(m, unknown), m->member, /*want_static=*/false);
+            }
+        }
+        return std::any_of(overloads.begin(), overloads.end(), [&](const function_decl* fn) { return script_fn_viable(fn, args, overloads.size() > 1); });
     }
 
     // C++ [basic.scope]: a block, a parameter list or one unit's top level declares a name once; a later run of the program
@@ -897,6 +2268,7 @@ private:
     // placeholder: a later '_' that names a local variable or a structured binding (name_independent) redeclares freely, and
     // the name then names none of them
     void declare_local(std::string_view name, var_entry entry, const source_location& at, bool name_independent = false) {
+        entry.type.fns = nullptr;
         auto [held, fresh] = scopes_.back().emplace(name, entry);
         if (fresh) { return; }
         if (name == "_" && (name_independent || scopes_.size() == 1)) {
@@ -922,7 +2294,7 @@ private:
                 const declaration* earlier = fields.count(name) ? fields[name] : methods.count(name) ? methods[name] : nullptr;
                 if (earlier) {
                     diag(diag_level::error, d->location, "redeclaration of member '" + std::string(name) + "' in class '" + std::string(cd->name) + "'",
-                         earlier->location.line, earlier->location.column);
+                         earlier->location);
                 } else {
                     fields.emplace(name, d);
                 }
@@ -930,7 +2302,7 @@ private:
                 const std::string_view name = static_cast<const function_decl*>(d)->name;
                 if (auto field = fields.find(name); field != fields.end()) {
                     diag(diag_level::error, d->location, "redeclaration of member '" + std::string(name) + "' in class '" + std::string(cd->name) + "'",
-                         field->second->location.line, field->second->location.column);
+                         field->second->location);
                 }
                 methods.emplace(name, d);
             }
@@ -944,11 +2316,20 @@ private:
              "'" + ns + "' is a namespace, not a value; name one of its members (" + ns + "::name)");
     }
 
-    void undeclared(const source_location& loc, std::string_view name) {
+    void undeclared(const source_location& loc, std::string_view name, bool less_site = false) {
+        if (instance_requests_.count(name)) { return; }   // an instance that could not be made: its request says why
+        if (const std::string generic = generic_named_as_value(name); !generic.empty()) {
+            diag(diag_level::error, loc, generic);
+            return;
+        }
         // Literal imports are covered by the program closure's names; a dynamic path can
         // define anything - keep the signal, drop the teeth.
         diag(has_dynamic_includes_ ? diag_level::warning : diag_level::error, loc,
-             "use of undeclared identifier '" + std::string(name) + "'");
+             "use of undeclared identifier '" + std::string(name) + "'" + (less_site ? " (" + no_generic_text(name) + ")" : std::string()));
+    }
+    // what a diagnostic at the head of a '<' site that compares adds: a call with type arguments was perhaps meant
+    static std::string no_generic_text(std::string_view name) {
+        return "no generic '" + std::string(name) + "' is declared: '<' after a name that takes no type arguments compares";
     }
 
     // -------------------------------------------------------------- collection
@@ -992,8 +2373,20 @@ private:
     }
 
     void collect_class(const class_decl* cd) {
+        if (cd->method_instances) { return; }   // no class of its own: its members join the class it names
         sclass& c = classes_[cd->name];
         model_class(cd, c);
+        attach_method_instances(c);
+    }
+    // the instances of a class's generic methods this unit declares are members of its model
+    void attach_method_instances(sclass& c) {
+        for (const auto& [name, instance] : method_instances_) {
+            if (instance.owner != c.decl->name) { continue; }
+            for (const function_decl* fn : instance.fns) {
+                add_overload((instance.is_static ? c.static_methods : c.methods)[fn->name], fn);
+                if (instance.access) { c.nonpublic[fn->name] = instance.access; }
+            }
+        }
     }
 
     // The unit's own class first, then the program table (modeled once per check; a table
@@ -1008,6 +2401,7 @@ private:
         const class_decl* cd = pit->second.get();
         sclass& c = program_sclasses_[cd->name];
         model_class(cd, c);
+        attach_method_instances(c);
         c.foreign = true;
         c.provable = engine_class(cd->name) != nullptr;
         if (!c.provable) { deferred_ = true; if (deferred_out_) { deferred_out_->push_back(std::string(cd->name)); } }
@@ -1095,7 +2489,7 @@ private:
         }
         if (find_sclass(name) || eng_.is_type_name(key)) { return nullptr; }
         const auto held = eng_.held_function_declarations(name);
-        if (held.empty()) { return eng_.has_variable(key) || eng_.has_function(key) ? nullptr : fn; }
+        if (held.empty()) { return eng_.has_function(key) || !engine_variable_only_from(key, *unit_path) ? nullptr : fn; }
         const std::string normal = std::filesystem::path(*unit_path).lexically_normal().string();
         for (const auto& h : held) {
             if (!h || eng_.unit_label(h->unit.id) != normal) { return nullptr; }
@@ -1130,12 +2524,39 @@ private:
             std::find(namespace_scopes_.begin(), namespace_scopes_.end(), scope_index) != namespace_scopes_.end();
         return program_scope && lookup_member(class_ctx_name_, name, /*want_static=*/false).found;
     }
+    // A bare name's entry in the walk's scopes is the variable it names unless a member of the class being walked or a nearer
+    // namespace's member takes the name first; a namespace's function is its member wherever its body declared it
+    bool names_variable(const var_entry* local, std::string_view name, size_t scope_index) {
+        return local && !local->namespace_function && !member_hides_program_name(name, scope_index) && !namespace_hides_program_name(name, scope_index);
+    }
+    // a bare name nothing nearer than the program scope takes: no local, no member of the class being walked, no namespace's member
+    bool reaches_program_scope(const identifier_expr* id) {
+        if (id->global_qualified) { return true; }
+        size_t scope_index = 0;
+        if (const var_entry* local = find_local(id->name, &scope_index); scope_index != 0 && names_variable(local, id->name, scope_index)) { return false; }
+        if (class_ctx_) {
+            const member_hit hit = lookup_member(class_ctx_name_, id->name, /*want_static=*/false);
+            if (hit.found || hit.unresolved) { return false; }
+        }
+        return enclosing_namespace_member(id->name).empty();
+    }
+    // the variable a call's bare callee names (::name: the unit's program scope only)
+    const var_entry* callable_variable(const identifier_expr* id, size_t* scope_index) {
+        *scope_index = 0;
+        if (id->global_qualified) {
+            if (scopes_.empty()) { return nullptr; }
+            const auto found = scopes_.front().find(id->name);
+            return found != scopes_.front().end() ? &found->second : nullptr;
+        }
+        const var_entry* local = find_local(id->name, scope_index);
+        return names_variable(local, id->name, *scope_index) ? local : nullptr;
+    }
     // ::name reaches the unit's program scope only: locals and fields never shadow it
     var_entry* find_named(const identifier_expr* id, size_t* scope_index = nullptr) {
         if (!id->global_qualified) {
             size_t at = 0;
             var_entry* local = find_local(id->name, &at);
-            if (local && (member_hides_program_name(id->name, at) || namespace_hides_program_name(id->name, at))) { return nullptr; }
+            if (local && !names_variable(local, id->name, at)) { return nullptr; }
             if (scope_index) { *scope_index = at; }
             if (local && local->placeholders) {
                 diag(diag_level::error, id->location, "'_' is declared more than once in this scope, so it names none of them: give the variable you use its own name");
@@ -1164,6 +2585,7 @@ private:
                     break;
                 case node_type::variable_decl:
                     global_var_names_.insert(static_cast<const variable_decl*>(d.get())->name);
+                    if (!collecting_namespace_) { ++top_var_decls_[static_cast<const variable_decl*>(d.get())->name].count; top_var_decls_[static_cast<const variable_decl*>(d.get())->name].decl = static_cast<const variable_decl*>(d.get()); }
                     if (!collecting_namespace_ && static_cast<const variable_decl*>(d.get())->is_const) {
                         top_consts_[static_cast<const variable_decl*>(d.get())->name] = static_cast<const variable_decl*>(d.get());
                     }
@@ -1227,36 +2649,82 @@ private:
         }
     }
 
-    // The declaration a qualified store `ns::x` names when the unit declares that namespace variable
-    const variable_decl* namespace_variable(const member_expr* m, std::string* qualified) const {
+    // `a::b::x` as the path its member is read from, "a::b" ("" when the chain is not names joined by ::)
+    static std::string member_path(const member_expr* m) {
         std::vector<std::string_view> segments;
         const expression* e = m->object.get();
         while (e && e->get_type() == node_type::member_expr) {
             segments.push_back(static_cast<const member_expr*>(e)->member);
             e = static_cast<const member_expr*>(e)->object.get();
         }
-        if (!e || e->get_type() != node_type::identifier_expr) { return nullptr; }
+        if (!e || e->get_type() != node_type::identifier_expr) { return {}; }
         std::string path(static_cast<const identifier_expr*>(e)->name);
         for (size_t i = segments.size(); i-- > 0;) { path += "::"; path += segments[i]; }
-        if (!namespaces_.count(std::string_view(path))) { return nullptr; }
-        auto it = namespace_vars_.find(path + "::" + std::string(m->member));
-        if (it == namespace_vars_.end() || !it->second) { return nullptr; }
-        *qualified = it->first;
-        return it->second;
+        return path;
     }
 
-    // ns::x where the unit declares that namespace variable with a spelled type: the type a read gives and a store respects
-    // (diagnostics only; a class slot may hold a subclass, so it types nothing)
-    ctype namespace_variable_type(const member_expr* m, const variable_decl** decl = nullptr, std::string* spelled = nullptr) {
-        std::string qualified;
-        const variable_decl* nv = namespace_variable(m, &qualified);
-        if (!nv || !nv->type || nv->type->is_reference() || nv->function_spelling) { return {}; }
-        ctype t = ctype_from_type_info(nv->type.get());
-        if (t.kind == ctype::object_k && nv->type->base_type != script_value_type::jai_shared_ptr_type) { return {}; }
-        if (decl) { *decl = nv; }
-        if (spelled) { *spelled = std::move(qualified); }
-        t.tentative = true;
-        return t;
+    // The declaration of the namespace variable `path::member`: the unit's own (none when its blocks spell two types), else the
+    // one another unit of the program makes
+    struct namespace_variable_hit {
+        const variable_decl* decl = nullptr;
+        bool foreign = false;   // another unit's source: its place is not this listing's
+    };
+    namespace_variable_hit namespace_variable(const std::string& path, std::string_view member) {
+        const std::string qualified = path + "::" + std::string(member);
+        if (auto it = namespace_vars_.find(qualified); it != namespace_vars_.end()) { return {it->second, false}; }
+        if (!program_globals_) { return {}; }
+        eng_.note(qualified);
+        auto it = program_globals_->find(qualified);
+        if (it == program_globals_->end()) { return {}; }
+        const variable_decl* only = nullptr;
+        size_t declarations = 0;
+        for (const auto& [unit, decls] : it->second) {
+            declarations += decls.size();
+            if (!decls.empty()) { only = decls.front().get(); }
+        }
+        return declarations == 1 ? namespace_variable_hit{only, true} : namespace_variable_hit{};
+    }
+    // the unit's own declaration of `ns::x` (a const verdict is stamped for the run: it rests on this unit's text alone)
+    const variable_decl* own_namespace_variable(const member_expr* m) const {
+        const std::string path = member_path(m);
+        const auto it = path.empty() ? namespace_vars_.end() : namespace_vars_.find(path + "::" + std::string(m->member));
+        return it == namespace_vars_.end() ? nullptr : it->second;
+    }
+
+    // The namespace variable `path::member` declared with a spelled type, `ns::x` and a bare x in the namespace's code alike: the
+    // type a read gives and a store respects (diagnostics only; a class slot may hold a subclass, so it types nothing)
+    ctype namespace_variable_type(const std::string& path, std::string_view member, namespace_variable_hit* declared = nullptr) {
+        const namespace_variable_hit hit = namespace_variable(path, member);
+        const variable_decl* nv = hit.decl;
+        if (!nv || (nv->type && nv->type->is_reference()) || nv->function_spelling) { return {}; }
+        ctype t = nv->type ? ctype_from_type_info(nv->type.get()) : ctype{};
+        if (t.is_unknown() && !hit.foreign) {   // auto: what the walk inferred, once it has passed the declaration, as at program scope
+            const auto inferred = namespace_inferred_types_.find(path + "::" + std::string(member));
+            if (inferred != namespace_inferred_types_.end()) { t = inferred->second; }
+        }
+        if (declared) { *declared = hit; }
+        return read_through_declared_slot(t);
+    }
+    static ctype read_through_declared_slot(ctype a_type) {
+        if (a_type.is_unknown()) { return a_type; }
+        a_type.tentative = true;
+        a_type.declared_slot = true;
+        a_type.element_proof = false;
+        a_type.alias_proof = false;
+        return a_type;
+    }
+    static bool kind_certain(const ctype& a_type) { return !a_type.tentative || a_type.declared_slot; }
+    // a kind the program states: a certain one, or a result a declaration gives
+    static bool kind_stated(const ctype& a_type) { return kind_certain(a_type) || a_type.declared_result; }
+    // a store to it: the declared type the right side must fit, unknown when no spelled declaration is in sight
+    ctype check_namespace_variable_store(const std::string& path, std::string_view member, const ctype& rhs, bool compound, token_type base_op,
+                                         const source_location& loc) {
+        namespace_variable_hit hit;
+        const ctype declared = namespace_variable_type(path, member, &hit);
+        if (declared.is_unknown()) { return {}; }
+        check_store(rhs, compound, base_op, declared, declared_variable_type_name(hit.decl), "'" + path + "::" + std::string(member) + "'", loc,
+                    hit.foreign ? declared_at{} : declared_at{hit.decl->location});
+        return declared;
     }
 
     // each namespace function and variable's first declaration in this unit ("a::b::f"), for top-level code that names it earlier
@@ -1280,7 +2748,28 @@ private:
         }
     }
 
+    // the unit's own declaration: no instance's (those carry their generic's file)
+    static bool own_text(const declaration& d) {
+        switch (d.get_type()) {
+            case node_type::generic_instance_decl: return false;
+            case node_type::class_decl: return static_cast<const class_decl&>(d).instance_stamp == 0 && !static_cast<const class_decl&>(d).method_instances;
+            case node_type::function_decl: return static_cast<const function_decl&>(d).instance_stamp == 0;
+            case node_type::namespace_decl: {
+                const auto& members = static_cast<const namespace_decl&>(d).declarations;
+                return members.empty() || std::any_of(members.begin(), members.end(), [](const declaration_ptr& m) { return m && own_text(*m); });
+            }
+            default: return true;
+        }
+    }
+
     void collect_top_level() {
+        // the unit's file is where its first own declaration stands; a unit of instances only takes its first request's
+        for (const auto& d : decls_) {
+            if (!unit_file_.empty()) { break; }
+            if (d && own_text(*d)) { unit_file_ = d->location.filename; }
+        }
+        collect_generics(decls_);
+        generics_live_ = !generics_.empty() || eng_.declares_generics();
         collect_scope_decls(decls_);
         for (const auto& d : decls_) {
             if (d && d->get_type() == node_type::namespace_decl) {
@@ -1353,24 +2842,25 @@ private:
         std::unordered_map<std::string, const function_decl*> first_seen;
         std::unordered_map<std::string_view, const function_decl*> first_name;
         for (const function_decl* fn : fns) {
+            if (made_by_declaration_again(fn)) { continue; }
             const std::string sig = parameter_signature(fn);
             const std::string key = std::string(fn->name) + (fn->is_static ? "#static" : "") + sig;
             auto [it, inserted] = first_seen.emplace(key, fn);
             if (inserted) {   // an earlier overload of the same name and table that differs only by reference
                 for (const function_decl* earlier : fns) {
                     if (earlier == fn) { break; }
-                    if (earlier->name != fn->name || earlier->is_static != fn->is_static ||
+                    if (earlier->name != fn->name || earlier->is_static != fn->is_static || made_by_declaration_again(earlier) ||
                         !detail::differs_only_by_reference(fn->parameters, earlier->parameters)) { continue; }
                     diag(diag_level::error, fn->location,
                          detail::reference_only_overload_text(fn->name, fn->parameters, earlier->parameters, earlier->location.line),
-                         earlier->location.line, earlier->location.column);
+                         earlier->location);
                     break;
                 }
             }
             if (!inserted && !fn->is_override) {
                 diag(diag_level::error, fn->location,
                      "'" + std::string(fn->name) + "' is already defined" + (by_name ? std::string() : " with parameters " + sig),
-                     it->second->location.line, it->second->location.column);
+                     it->second->location);
                 continue;
             }
             if (!by_name) { continue; }
@@ -1379,7 +2869,7 @@ private:
                 diag(diag_level::warning, fn->location,
                      "duplicate definition of function '" + std::string(fn->name) +
                      "' replaces the earlier one (a coroutine does not overload)",
-                     nit->second->location.line, nit->second->location.column);
+                     nit->second->location);
             }
         }
     }
@@ -1394,7 +2884,7 @@ private:
             if (!d) { continue; }
             if (d->get_type() == node_type::function_decl) { fns.push_back(static_cast<const function_decl*>(d.get())); }
             else if (d->get_type() == node_type::namespace_decl) { collect_namespace_functions(static_cast<const namespace_decl*>(d.get()), path, by_namespace); }
-            else if (d->get_type() == node_type::class_decl) { report_class_redefinitions(static_cast<const class_decl*>(d.get())); }
+            else if (d->get_type() == node_type::class_decl && !static_cast<const class_decl*>(d.get())->method_instances) { report_class_redefinitions(static_cast<const class_decl*>(d.get())); }
         }
     }
 
@@ -1438,6 +2928,7 @@ private:
     // A method redefining a base class method says 'override', and an 'override' redefines one (the run time raises both when
     // the class declaration runs)
     void report_override_markers(const class_decl* cd, const std::vector<const function_decl*>& fns) {
+        if (!final_base(cd).empty()) { return; }   // the derivation is the class's one error
         for (const function_decl* fn : fns) {
             if (fn->is_static || fn->name == cd->name || (fn->name.size() > 1 && fn->name[0] == '~')) { continue; }
             const base_method base = cd->base_classes.empty() ? base_method{} : find_base_method(cd, fn->name, fn->is_override);
@@ -1450,20 +2941,37 @@ private:
         }
     }
 
+    // A class's generic-method instances are its methods: two generic methods that make one instance of one signature define it
+    // twice, as two functions do. Each instance stands in a declaration of its own, so they meet here, in declaration order.
+    void report_method_instance_redefinitions() {
+        std::map<std::string_view, std::vector<const function_decl*>> by_class;
+        for (const auto& [name, instance] : method_instances_) {
+            for (const function_decl* fn : instance.fns) { by_class[instance.owner].push_back(fn); }
+        }
+        for (auto& [owner, fns] : by_class) {
+            std::sort(fns.begin(), fns.end(), [](const function_decl* a, const function_decl* b) {
+                return std::tie(a->location.line, a->location.column, a->name) < std::tie(b->location.line, b->location.column, b->name);
+            });
+            report_redefinitions(fns, /*by_name=*/false);
+        }
+    }
+
     void warn_duplicate_top_level_functions() {
         std::vector<const function_decl*> fns;
         std::map<std::string, std::vector<const function_decl*>> namespace_fns;
         for (const auto& d : decls_) {
             if (!d) { continue; }
             if (d->get_type() == node_type::function_decl) { fns.push_back(static_cast<const function_decl*>(d.get())); }
-            else if (d->get_type() == node_type::class_decl) { report_class_redefinitions(static_cast<const class_decl*>(d.get())); }
+            else if (d->get_type() == node_type::class_decl && !static_cast<const class_decl*>(d.get())->method_instances) { report_class_redefinitions(static_cast<const class_decl*>(d.get())); }
             else if (d->get_type() == node_type::namespace_decl) { collect_namespace_functions(static_cast<const namespace_decl*>(d.get()), {}, namespace_fns); }
         }
         for (const auto& [path, members] : namespace_fns) { report_redefinitions(members, /*by_name=*/false); }
         report_redefinitions(fns, /*by_name=*/true);
+        report_method_instance_redefinitions();
         if (!program_functions_) { return; }
         std::unordered_set<std::string> warned;
         for (const function_decl* fn : fns) {
+            if (fn->instance_stamp != 0) { continue; }   // every unit that uses a generic's instance declares it
             if (!warned.insert(std::string(fn->name) + parameter_signature(fn)).second) { continue; }
             eng_.note(fn->name);
             auto pit = program_functions_->find(std::string(fn->name));
@@ -1547,8 +3055,9 @@ private:
                     (hit->is_static ? "static field '" : "field '") + std::string(name) +
                     "' of class '" + std::string(hit->cls) + "'";
                 if (hit->decl && hit->decl->location.line != 0) {
-                    msg += " (field declared at " + std::to_string(hit->decl->location.line) + ":" +
-                           std::to_string(hit->decl->location.column) + ")";
+                    const source_location& field_at = hit->decl->location;   // a parent another file declares: that file's line
+                    msg += " (field declared at " + (field_at.filename.empty() || field_at.filename == loc.filename ? std::string() : field_at.filename + ":") +
+                           std::to_string(field_at.line) + ":" + std::to_string(field_at.column) + ")";
                 }
                 diag(diag_level::warning, loc, std::move(msg));
                 return;
@@ -1687,6 +3196,26 @@ private:
     }
 
     // cls is base or derives from it, through the modeled chain and registered ancestors
+    // The class a type argument names for a bound: a shared_ptr's, as dynamic_cast<T> reads a handle; any other type as it is
+    static std::string_view handle_class(std::string_view argument) {
+        constexpr std::string_view handle = "shared_ptr<";
+        if (argument.size() > handle.size() && argument.substr(0, handle.size()) == handle && argument.back() == '>') {
+            return argument.substr(handle.size(), argument.size() - handle.size() - 1);
+        }
+        return argument;
+    }
+    JAI_NOINLINE std::string bound_failure_text(const generic_instance_decl& request, const generic_instance_decl::bound& bound) {
+        std::string text = std::string(request.name) + ": ";
+        const bool declared = classes_.count(bound.requires_) != 0 || (program_classes_ && program_classes_->count(bound.requires_) != 0) || engine_class(bound.requires_);
+        if (!declared) {
+            return text + "the bound of " + bound.parameter + ", '" + bound.requires_ + "', is no declared class: declare it, or bound " + bound.parameter +
+                   " by a class that is (" + bound.parameter + " : Base)";
+        }
+        text += "'" + bound.argument + "' does not derive from '" + bound.requires_ + "', which " + bound.parameter + " requires";
+        if (bound.argument.starts_with("weak_ptr<")) { text += ": a weak_ptr names no object until it is locked; pass w.lock()"; }
+        return text;
+    }
+
     bool class_is_or_derives(std::string_view cls, std::string_view base, int depth = 0) {
         if (cls == base) { return true; }
         if (depth > 32) { return false; }
@@ -1709,7 +3238,7 @@ private:
         const std::string_view ctx = class_ctx_ ? class_ctx_name_ : std::string_view{};
         if (!ctx.empty() && class_is_or_derives(ctx, hit.declarer)) { return false; }
         diag(diag_level::error, loc,
-             "Cannot access private member '" + std::string(member) + "' of class '" + std::string(hit.declarer) + "'");
+             "Cannot access private member '" + std::string(member_display_name(member)) + "' of class '" + std::string(hit.declarer) + "'");
         return true;
     }
 
@@ -1758,6 +3287,16 @@ private:
             miss.unresolved = true;
             return miss;
         }
+        // an instance of one of its generic methods, which this unit declares and the class takes when the unit runs
+        if (const method_instance* instance = engine_method_instance(*def, member)) {
+            if (instance->is_static == want_static || (instance->is_static && !instance_only)) {
+                member_hit h{true, true, nullptr, &instance->fns};
+                h.provable = false;
+                h.access = instance->access;
+                h.declarer = instance->owner;
+                return h;
+            }
+        }
         uint64_t id = eng_.symbolize(member);
         // Script/vm classes from previous executes don't expose a uniform member surface
         // across backends: a hit is trusted, a miss is not. Only a cpp_class is closed, and
@@ -1795,6 +3334,14 @@ private:
         }
         miss.certain = closed;   // cpp classes: member definitely absent; others stay open
         return miss;
+    }
+
+    const method_instance* engine_method_instance(const class_definition& def, std::string_view member) {
+        if (method_instances_.empty() || member.find('<') == std::string_view::npos) { return nullptr; }
+        const auto held = method_instances_.find(member);
+        if (held == method_instances_.end()) { return nullptr; }
+        const auto owner = engine_class(held->second.owner);
+        return owner && (owner.get() == &def || def.derives_from(owner.get())) ? &held->second : nullptr;
     }
 
     // A user _get_/_set_ for `member` anywhere in cls's chain: modeled classes through their
@@ -1873,7 +3420,7 @@ private:
             stored = binary_result(gt, base_op, rhs);
         }
         check_store(stored, /*compound=*/false, base_op, target, pt->canonical_name(),
-                    "property '" + std::string(member) + "'", loc, 0, 0);
+                    "property '" + std::string(member) + "'", loc, {});
     }
 
     bool chain_open(std::string_view cls, int depth = 0) {
@@ -2114,8 +3661,14 @@ private:
         } else if (base->get_type() == node_type::member_expr) {   // C::s, ns::x
             auto* m = static_cast<const member_expr*>(base);
             hit.root = detail::const_spelled(m);
-            std::string qualified;
-            if (const variable_decl* nv = namespace_variable(m, &qualified)) {
+            if (const enum_decl* en = namespace_enum(m)) {   // ns::E, the enum's name: a const map<string, int>
+                is_const = true;
+                known = true; library = true;
+                hit.line = en->location.line; hit.column = en->location.column;
+            } else if (eng_.is_enum_name(qualified_spelling(m))) {   // ns::E an earlier run declared
+                is_const = true;
+                known = true; library = true;
+            } else if (const variable_decl* nv = own_namespace_variable(m)) {
                 is_const = nv->is_const;
                 hit.line = nv->location.line; hit.column = nv->location.column;
                 from_type(nv->type.get());
@@ -2253,6 +3806,40 @@ private:
         return v;
     }
 
+    // An enum's name read as its value table (a map<string, int>)
+    bool enum_table(const expression* e) {
+        if (e->get_type() == node_type::identifier_expr) {
+            const auto* id = static_cast<const identifier_expr*>(e);
+            return find_enum(id->name) || eng_.is_enum_name(std::string(id->name));
+        }
+        if (e->get_type() == node_type::member_expr && static_cast<const member_expr*>(e)->is_static) {
+            const auto* m = static_cast<const member_expr*>(e);
+            return namespace_enum(m) || eng_.is_enum_name(qualified_spelling(m));
+        }
+        return false;
+    }
+    // A builtin method of the library value a const path ends at (no type: an enum's value table, a map)
+    bool library_method(const type_info* t, std::string_view member) {
+        int kind = 1;
+        if (t && t->base_type == script_value_type::jai_array_type) { kind = 0; }
+        else if (t && t->base_type == script_value_type::jai_string_type) { kind = 2; }
+        else if (t && t->base_type == script_value_type::jai_utf8_string_type) { kind = 3; }
+        return eng_.builtin_method_ids(kind).count(eng_.symbolize(member)) != 0;
+    }
+    // E.v(...): an enum's value read with a dot is an int, and a call of it is the run time's text
+    void enum_value_called(const member_expr* m) {
+        const enum_decl* e = nullptr;
+        if (m->object->get_type() == node_type::identifier_expr) { e = find_enum(static_cast<const identifier_expr*>(m->object.get())->name); }
+        else if (m->object->get_type() == node_type::member_expr) { e = namespace_enum(static_cast<const member_expr*>(m->object.get())); }
+        if (!e) { return; }
+        for (const auto& [value, _] : e->values) {
+            if (value == m->member) {
+                diag(diag_level::error, m->location, "cannot call '" + std::string(m->member) + "': it is an int, not a function");
+                return;
+            }
+        }
+    }
+
     // a method call on a const-rooted receiver: an error when the method writes its receiver
     void check_const_call(call_expr* c) {
         if (!c->callee || c->callee->get_type() != node_type::member_expr) { stamp_const(c->const_check, const_none, {}); return; }
@@ -2265,6 +3852,11 @@ private:
         size_t line = 0;
         if (h.final_known && h.final_library) {
             builtin = true;
+            if ((h.final_ti || enum_table(m->object.get())) && !library_method(h.final_ti, m->member)) {   // a key or an enum's value read with a dot and called: nothing is written
+                stamp_const(c->const_check, const_none, {});
+                if (!h.final_ti) { enum_value_called(m); }
+                return;
+            }
             if (ref_write_reading_method(m->member)) {
                 verdict = const_none;
             } else if (ref_write_element_callback(m->member)) {
@@ -2298,7 +3890,7 @@ private:
         }
     }
 
-    // a T& / var& / shared_ptr<T> declaration bound to a const (an auto& or a const T& takes it as a const reference)
+    // a T& / var& declaration bound to a const (an auto& or a const T& takes it as a const reference)
     void check_const_bind(variable_decl* decl, var_entry& entry) {
         if (decl->is_const) {
             entry.is_const = true;
@@ -2307,34 +3899,27 @@ private:
             return;
         }
         if (!decl->initializer || !decl->type) { stamp_const(decl->const_check, const_none, {}); return; }
-        const bool reference = decl->type->base_type == script_value_type::jai_reference_type;
-        const bool handle = handle_type(decl->type.get());
-        if (!reference && !handle) { stamp_const(decl->const_check, const_none, {}); return; }
-        const const_hit h = const_path(decl->initializer.get(), /*value_too=*/handle);
+        if (decl->type->base_type != script_value_type::jai_reference_type) { stamp_const(decl->const_check, const_none, {}); return; }
+        const const_hit h = const_path(decl->initializer.get());
         if (!h.verdict) { stamp_const(decl->const_check, const_none, {}); return; }
-        const type_info* referent = reference ? const_referent(decl->type.get()) : nullptr;
-        if (reference && !referent) {   // auto& deduces const T& (C++)
+        if (!const_referent(decl->type.get())) {   // auto& deduces const T& (C++)
             entry.is_const = h.verdict == const_raises;
             stamp_const(decl->const_check, const_none, {});
             return;
         }
-        if (handle && h.final_known && h.final_cls.empty()) { stamp_const(decl->const_check, const_none, {}); return; }
         const std::string declared = decl->type->canonical_name();
-        auto text = [&] {
-            return reference ? detail::const_bind_text(decl->name, declared, decl->initializer.get(), h.root, false)
-                             : detail::const_share_text(decl->initializer.get(), h.root, declared);
-        };
+        auto text = [&] { return detail::const_bind_text(decl->name, declared, decl->initializer.get(), h.root, false); };
         stamp_const(decl->const_check, h.verdict, text);
         if (h.verdict == const_raises) { diag(diag_level::error, decl->location, detail::const_lowercase(text()), h.line, h.column); }
     }
 
-    // cast<T&>(c) and cast<shared_ptr<T>>(c) name the const as writable (no const_cast)
+    // cast<T&>(c) names the const as writable (no const_cast)
     void check_const_cast(cast_expr* c) {
-        if (c->implicit_ref || !(c->by_reference || handle_type(c->target.get()))) { stamp_const(c->const_check, const_none, {}); return; }
-        const const_hit h = const_path(c->operand.get(), handle_type(c->target.get()));
-        if (!h.verdict || (handle_type(c->target.get()) && h.final_known && h.final_cls.empty())) { stamp_const(c->const_check, const_none, {}); return; }
-        const std::string target = c->target ? c->target->canonical_name() + (c->by_reference && c->target->base_type != script_value_type::jai_reference_type ? "&" : "") : std::string("T&");
-        auto text = [&] { return handle_type(c->target.get()) ? detail::const_share_text(c->operand.get(), h.root, target) : detail::const_cast_text(c->operand.get(), h.root, target); };
+        if (c->implicit_ref || !c->by_reference) { stamp_const(c->const_check, const_none, {}); return; }
+        const const_hit h = const_path(c->operand.get());
+        if (!h.verdict) { stamp_const(c->const_check, const_none, {}); return; }
+        const std::string target = c->target ? c->target->canonical_name() + (c->target->base_type != script_value_type::jai_reference_type ? "&" : "") : std::string("T&");
+        auto text = [&] { return detail::const_cast_text(c->operand.get(), h.root, target); };
         stamp_const(c->const_check, h.verdict, text);
         if (h.verdict == const_raises) { diag(diag_level::error, c->location, detail::const_lowercase(text()), h.line, h.column); }
     }
@@ -2375,7 +3960,7 @@ private:
                 if (i >= fn->parameters.size() || !fn->parameters[i].is_reference || fn->parameters[i].is_const || fn->is_coroutine) { continue; }
                 const ref_param_write w = ref_writes(fn, i);
                 if (!w.writes) { continue; }
-                const std::string text = detail::const_argument_text(c->arguments[i].get(), h.root, fn->parameters[i].name, fn->name, w.line);
+                const std::string text = detail::const_argument_text(c->arguments[i].get(), h.root, fn->parameters[i].name, fn->shown_name(), w.line);
                 stamp_const(c->const_check, const_raises, [&] { return text; });
                 diag(diag_level::error, c->arguments[i]->location, "'" + std::string(fn->name) + "' writes through parameter '" + fn->parameters[i].name +
                      "' (line " + std::to_string(w.line) + "); '" + h.root + "' is const", h.line, h.column);
@@ -2421,15 +4006,45 @@ private:
             eng_.note(n);
             if (program_enums_->count(n)) { return true; }
         }
-        return eng_.is_type_name(n) || (n.find("::") != std::string::npos && extra_global(n));   // a class another unit's namespace declares
+        return eng_.is_type_name(n) || eng_.is_enum_name(n) || (n.find("::") != std::string::npos && extra_global(n));   // a class another unit's namespace declares
     }
 
-    // C++ [basic.lookup]: every type a declaration spells names a type; a template instance's own name is the host's, its
-    // arguments are checked. A dynamic-path include can declare anything, as for an undeclared identifier.
+    // ns::E where this unit declares enum E in namespace ns: the name is the enum's value table, and ns::E::v one of its values
+    const enum_decl* namespace_enum(const member_expr* m) {
+        if (!m->is_static || enums_.empty()) { return nullptr; }
+        const auto it = enums_.find(qualified_spelling(m));
+        return it != enums_.end() ? it->second : nullptr;
+    }
+
+    // C++ [temp.inst] has the compiler make any instantiation a program names; a host binds the ones it compiled, so a
+    // spelling of its template it did not bind names no class, wherever a type is written
+    bool unbound_instantiation(const type_info* ti, const source_location& loc) {
+        if (ti->base_type != script_value_type::jai_object_type || ti->type_params.empty() || known_class(ti->type_name)) { return false; }
+        const std::string text = eng_.unbound_instantiation_text(ti->type_name);
+        if (text.empty()) { return false; }
+        diag(diag_level::error, loc, text);
+        return true;
+    }
+    // The same through a type an expression spells (new, make_shared, a construction, a cast): its arguments, pointee and elements
+    bool report_unbound_instantiation(const type_info* ti, const source_location& loc) {
+        if (!ti) { return false; }
+        if (unbound_instantiation(ti, loc)) { return true; }
+        bool reported = false;
+        for (const auto& param : ti->type_params) { reported = report_unbound_instantiation(param.get(), loc) || reported; }
+        return reported;
+    }
+
+    // C++ [basic.lookup]: every type a declaration spells names a type; a template instance's own name is the host's (one
+    // the host bound), its arguments are checked. A dynamic-path include can declare anything, as for an undeclared identifier.
+    bool unknown_bare_type(const type_info* ti) {
+        return ti && ti->base_type == script_value_type::jai_object_type && ti->type_params.empty() && !ti->type_name.empty() && !known_type_name(ti->type_name);
+    }
     void check_spelled_type(const type_info* ti, const source_location& loc) {
         if (!ti) { return; }
         const bool object = ti->base_type == script_value_type::jai_object_type;
-        if (object && ti->type_params.empty() && !ti->type_name.empty() && !known_type_name(ti->type_name)) {
+        if (object && unbound_instantiation(ti, loc)) { return; }
+        if (object && ti->type_params.empty() && refuse_bare_generic_class(ti->type_name, loc)) { return; }
+        if (unknown_bare_type(ti)) {
             const std::string name(ti->type_name);
             const std::string math = "math::" + name;
             const std::string hint = math_type_from_name(math) != script_value_type::jai_null_type
@@ -2524,10 +4139,24 @@ private:
         }
         const std::string cls = c->target->canonical_name();
         const std::string src = cast_operand_spelling(operand);
+        const bool handle_operand = cast_operand_source(operand, operand_t) == cast_source::handle;
         diag(diag_level::warning, c->location,
-             "cast<" + cls + ">(" + src + ") copies the instance - use cast<" + cls + "&>(" + src +
-             ") to alias it or cast<shared_ptr<" + cls + ">>(" + src + ") to share it",
+             "cast<" + cls + ">(" + src + ") copies the instance - use cast<" + cls + "&>(" + src + ") to alias it" +
+             (handle_operand ? " or cast<shared_ptr<" + cls + ">>(" + src + ") to share it" : ""),
              related_line, related_column);
+    }
+    // A handle form over a class value a slot holds, used as an object: a handle never aliases a value slot. Read for its truth it is
+    // the test; a var or a reference may hold a handle, and the run decides
+    void refuse_handle_of_value(const cast_expr* c, const ctype& operand) {
+        if (c->by_reference || c->truth_read || !handle_type(c->target.get()) || !c->target->element_type()) { return; }
+        if (operand.kind != ctype::object_k || operand.cls.empty() || operand.tentative || operand.narrowed) { return; }
+        if (operand.ti && (operand.ti->base_type == script_value_type::jai_shared_ptr_type || operand.ti->base_type == script_value_type::jai_weak_ptr_type)) { return; }
+        if (!detail::cast_lvalue_source(c->operand.get()) || cast_operand_source(c->operand.get(), operand) != cast_source::plain) { return; }
+        const std::string name(c->target->element_type()->type_name);
+        const std::string src = cast_operand_spelling(c->operand.get());
+        const std::string test = "dynamic_cast<" + name + ">(" + src + ")";
+        diag(diag_level::error, c->location, (c->dynamic ? test : "cast<shared_ptr<" + name + ">>(" + src + ")") + ": '" + src +
+             "' is a class value, and a handle never aliases one; test it with if (" + test + "), or take a reference with dynamic_cast<" + name + "&>(" + src + ")");
     }
     static bool certain_scalar(const ctype& t) {
         return (!t.tentative || t.element_proof) && (t.kind == ctype::int_k || t.kind == ctype::float_k || t.kind == ctype::bool_k ||
@@ -2815,6 +4444,14 @@ private:
     }
 
     ctype container_value_type(const ctype& container) {
+        // a string's element is what its subscript gives: a char, and a utf8_string's a utf8_string
+        if ((container.kind == ctype::string_k || container.kind == ctype::utf8_k) && kind_stated(container)) {
+            ctype character = ctype::make(container.kind == ctype::string_k ? ctype::char_k : ctype::utf8_k);
+            character.tentative = true;
+            character.declared_result = true;
+            character.declared_slot = container.declared_slot;
+            return character;
+        }
         if (!container.ti) { return {}; }
         const type_info* element = container.kind == ctype::array_k
             ? container.ti->element_type().get()
@@ -2826,6 +4463,7 @@ private:
         // only an array's element proves (a typed map's value could, a missing key raising, but it is not claimed yet)
         result.element_proof = container.kind == ctype::array_k && (!container.tentative || container.alias_proof) &&
                                (result.kind == ctype::int_k || result.kind == ctype::float_k);
+        result.declared_slot = container.declared_slot;
         return result;
     }
 
@@ -2867,6 +4505,7 @@ private:
         if (dst.kind == ctype::array_k || dst.kind == ctype::map_k) {
             return container_issue(src, dst, depth + 1);
         }
+        if (std::string issue = value_into_handle_issue(src, target); !issue.empty()) { return issue; }
         bool accepted = src.kind == dst.kind || char_text_slot(src, dst);
         if (vec_narrows(src, dst)) { return "expected '" + ctype_name(dst) + "', got '" + ctype_name(src) + "'" + vec_narrowing_fix(dst); }
         if (enum_value(dst)) {
@@ -2889,6 +4528,12 @@ private:
                 (src.kind == ctype::object_k && (!src.ti || src.ti->base_type == script_value_type::jai_shared_ptr_type) &&
                  weak_initializer_compatible(src, dst));
         }
+        if (accepted && dst.kind == ctype::function_k) {
+            if (const std::string issue = signature_issue(src, dst); !issue.empty()) {
+                return "expected '" + target->canonical_name() + "', got '" + ctype_name(src) + "': " + issue;
+            }
+        }
+        if (accepted && dst.kind == ctype::coroutine_k) { accepted = assignable(src, dst); }
         if (accepted) { return {}; }
         std::string result = "expected '" + target->canonical_name() + "', got '" + ctype_name(src) + "'";
         if (dst.kind == ctype::int_k && src.kind == ctype::float_k) { result += std::string(": ") + float_to_int_fix; }
@@ -3013,12 +4658,268 @@ private:
             auto issue = container_issue(src, dst);
             if (!issue.empty()) { return ": " + issue; }
         }
+        if (dst.kind == ctype::function_k && src.kind == ctype::function_k) {
+            auto issue = signature_issue(src, dst);
+            if (!issue.empty()) { return ": " + issue; }
+        }
+        if (dst.kind == ctype::coroutine_k && src.kind == ctype::coroutine_k && dst.yields) {
+            return ": a coroutine<" + dst.yields->canonical_name() + "> holds a coroutine declared to yield '" + dst.yields->canonical_name() + "'";
+        }
         return {};
     }
 
+    // ---------------------------------------------------------------- signatures
+
+    // What a callable expression declares, as a signature slot judges it: one or more declarations (a function's name), a
+    // lambda literal, or another slot's signature
+    struct callable_view {
+        const std::vector<parameter>* parameters = nullptr;
+        const type_info* result = nullptr;      // the declared result; null when none is declared
+        ctype inferred{};                       // an undeclared lambda's result where every return agrees
+        bool coroutine = false;
+        std::string spelled;
+    };
+
+    static std::string argument_count_text(size_t required, size_t total) {
+        return (required == total ? std::to_string(total) : std::to_string(required) + " to " + std::to_string(total)) +
+               (total == 1 ? " argument" : " arguments");
+    }
+    static bool dynamic_type(const type_info* t) { return !t || t->base_type == script_value_type::jai_any_type; }
+    static std::string signature_argument_spelling(const type_info* argument) {
+        if (argument && argument->base_type == script_value_type::jai_reference_type) {
+            return signature_argument_spelling(argument->element_type().get()) + "&";
+        }
+        return dynamic_type(argument) ? std::string("var") : argument->canonical_name();
+    }
+
+    // A result as a call through a signature delivers it: no conversion runs, so it is the signature's own type, a class the
+    // signature's class takes as it stands, or anything where the signature returns void or var
+    bool result_fits(const ctype& made, const ctype& wanted) {
+        if (wanted.is_unknown() || wanted.kind == ctype::null_k || made.is_unknown()) { return true; }
+        if (made.kind != wanted.kind) { return false; }
+        switch (wanted.kind) {
+            case ctype::object_k: return class_relation(made.cls, wanted.cls) != 0;
+            case ctype::int_k: return made.cls == wanted.cls;
+            case ctype::math_k: return made.cls == wanted.cls;
+            case ctype::array_k: case ctype::map_k: case ctype::weak_k:
+                return !made.ti || !wanted.ti || made.ti->id == wanted.ti->id;
+            case ctype::function_k:
+                return !wanted.ti || !wanted.ti->is_signature() || (made.ti && made.ti->id == wanted.ti->id);
+            case ctype::coroutine_k: return !wanted.yields || (made.yields && made.yields->id == wanted.yields->id);
+            default: return true;
+        }
+    }
+
+    // Why `held` cannot stand behind `signature`; empty when it can
+    std::string callable_issue(const callable_view& held, const type_info* signature) {
+        const std::vector<parameter>& params = *held.parameters;
+        const size_t passed = signature->type_params.size() - 1;
+        size_t required = 0;
+        while (required < params.size() && !params[required].default_value) { ++required; }
+        if (passed < required || passed > params.size()) {
+            return held.spelled + " takes " + argument_count_text(required, params.size()) + ", the signature passes " + std::to_string(passed);
+        }
+        for (size_t i = 0; i < passed; ++i) {
+            const parameter& p = params[i];
+            const type_info* argument = signature->type_params[i + 1].get();
+            const bool by_reference = argument && argument->base_type == script_value_type::jai_reference_type;
+            const ctype given = ctype_from_type_info(argument);
+            const std::string declared = (p.is_const ? "const " : "") + (p.type ? p.type->canonical_name() : std::string("auto")) + (p.is_reference ? "&" : "");
+            if (p.is_reference && !p.is_const) {
+                if (!by_reference) {
+                    return held.spelled + " takes parameter '" + p.name + "' by reference ('" + declared + "'), the signature passes '" +
+                           signature_argument_spelling(argument) + "' by value";
+                }
+                if (!reference_parameter_binds(p, given)) {
+                    return held.spelled + " declares parameter '" + p.name + "' as '" + declared + "', which does not bind the signature's '" +
+                           signature_argument_spelling(argument) + "'";
+                }
+                continue;
+            }
+            const ctype slot = ctype_from_type_info(p.type.get());
+            if (!assignable(given, slot)) {
+                return held.spelled + " declares parameter '" + p.name + "' as '" + declared + "', which does not take the signature's '" +
+                       signature_argument_spelling(argument) + "'";
+            }
+        }
+        const ctype wanted = ctype_from_type_info(signature->type_params[0].get());
+        ctype made = held.result ? ctype_from_type_info(held.result->base_type == script_value_type::jai_reference_type ? held.result->element_type().get() : held.result)
+                                 : held.inferred;
+        if (held.coroutine) {
+            made = ctype::make(ctype::coroutine_k);
+            made.yields = dynamic_type(held.result) ? nullptr : held.result;
+        }
+        if (!result_fits(made, wanted)) {
+            return held.spelled + " returns '" + (made.kind == ctype::null_k ? std::string("void") : ctype_name(made)) + "', the signature returns '" +
+                   ctype_name(wanted) + "': a result is not converted on the way out; wrap the call in a lambda that converts it";
+        }
+        return {};
+    }
+
+    // Why a callable of static type `src` cannot be stored in the signature slot `dst`; empty when it can, or when the load
+    // cannot see what the callable declares (a var, a host function, a bare `function`: the store judges it when it runs)
+    std::string signature_issue(const ctype& src, const ctype& dst) {
+        const type_info* signature = dst.ti;
+        if (!signature || !signature->is_signature() || src.kind != ctype::function_k) { return {}; }
+        const expression* origin = src.origin;
+        if (origin && origin->get_type() == node_type::lambda_expr) {
+            const auto* l = static_cast<const lambda_expr*>(origin);
+            callable_view held{&l->parameters, l->return_type.get(), {}, false, "the lambda"};
+            if (auto it = lambda_results_.find(l); it != lambda_results_.end() && !l->return_type) { held.inferred = it->second; }
+            return callable_issue(held, signature);
+        }
+        const bool named = origin && (origin->get_type() == node_type::identifier_expr || origin->get_type() == node_type::member_expr);
+        if (named && src.fns && !src.fns->empty()) {
+            std::string spelled(src.fns->front()->name);
+            for (const auto& [qualified, declared] : namespace_fns_) { if (&declared == src.fns) { spelled = qualified; } }   // a namespace's function by its qualified name
+            std::string first;
+            for (const function_decl* fn : *src.fns) {
+                const callable_view held{&fn->parameters, fn->return_type.get(), {}, fn->is_coroutine, "'" + spelled + "'"};
+                std::string issue = callable_issue(held, signature);
+                if (issue.empty()) { return {}; }
+                if (first.empty()) { first = std::move(issue); }
+            }
+            return src.fns->size() == 1 ? first : "no overload of '" + spelled + "' fits the signature";
+        }
+        if (src.ti && src.ti->is_signature() && src.ti->id != signature->id) {
+            const type_info* from = src.ti;
+            const size_t passed = signature->type_params.size() - 1, taken = from->type_params.size() - 1;
+            if (passed != taken) {
+                return "a '" + from->canonical_name() + "' takes " + argument_count_text(taken, taken) + ", the signature passes " + std::to_string(passed);
+            }
+            for (size_t i = 1; i <= passed; ++i) {
+                const type_info* given = signature->type_params[i].get();
+                const type_info* taken_type = from->type_params[i].get();
+                const bool given_ref = given && given->base_type == script_value_type::jai_reference_type;
+                const bool taken_ref = taken_type && taken_type->base_type == script_value_type::jai_reference_type;
+                const bool fits = taken_ref ? given_ref && reference_type_compatible(ctype_from_type_info(given), ctype_from_type_info(taken_type))
+                                            : assignable(ctype_from_type_info(given), ctype_from_type_info(taken_type));
+                if (!fits) {
+                    return "parameter " + std::to_string(i) + " of a '" + from->canonical_name() + "' is '" + signature_argument_spelling(taken_type) +
+                           "', which does not take the signature's '" + signature_argument_spelling(given) + "'";
+                }
+            }
+            const ctype made = ctype_from_type_info(from->type_params[0].get());
+            const ctype wanted = ctype_from_type_info(signature->type_params[0].get());
+            const bool nothing = made.kind == ctype::null_k && !wanted.is_unknown() && wanted.kind != ctype::null_k;
+            if (nothing || !result_fits(made, wanted)) {
+                return "a '" + from->canonical_name() + "' returns '" + (made.kind == ctype::null_k ? std::string("void") : made.is_unknown() ? std::string("var") : ctype_name(made)) +
+                       "', the signature returns '" + ctype_name(wanted) + "': a result is not converted on the way out; wrap the call in a lambda that converts it";
+            }
+        }
+        return {};
+    }
+
+    // A call through a signature slot: the count, each argument as a parameter of that type takes it, and the signature's result
+    // (for diagnostics: the slot's callable is whatever was stored, so no proof rests on it)
+    ctype check_signature_call(const std::string& shown, const type_info* signature, const call_expr* c, const std::vector<ctype>& args) {
+        const size_t taken = signature->type_params.size() - 1;
+        if (declared_void(signature->type_params[0].get())) { void_hit_ = {shown, {}, nullptr, {}, /*typed_slot=*/true}; }
+        const ctype result_type = ctype_from_type_info(signature->type_params[0].get());
+        ctype result = result_type;
+        result.tentative = !result.is_unknown();
+        if (args.size() != taken) {
+            diag(diag_level::error, c->location, shown + " expects " + std::to_string(taken) + " argument(s), got " + std::to_string(args.size()) +
+                 " (it is a '" + signature->canonical_name() + "')");
+            return result;
+        }
+        for (size_t i = 0; i < taken; ++i) {
+            const type_info* declared = signature->type_params[i + 1].get();
+            const bool by_reference = declared && declared->base_type == script_value_type::jai_reference_type;
+            const ctype slot = ctype_from_type_info(declared);
+            const std::string position = "argument " + std::to_string(i + 1) + " of " + shown;
+            if (by_reference) {
+                const node_type k = c->arguments[i]->get_type();
+                if (k == node_type::literal_expr || k == node_type::array_literal_expr || k == node_type::map_literal_expr || k == node_type::lambda_expr) {
+                    diag(diag_level::error, c->arguments[i]->location, position + ": the signature takes '" + signature_argument_spelling(declared) + "'; pass a variable");
+                } else if (!args[i].is_unknown() && !slot.is_unknown() && !reference_type_compatible(args[i], slot)) {
+                    diag(diag_level::error, c->arguments[i]->location, position + ": cannot bind '" + ctype_name(args[i]) + "' to '" + signature_argument_spelling(declared) + "'");
+                }
+                continue;
+            }
+            if (!slot.is_unknown() && !assignable(args[i], slot)) {
+                diag(diag_level::error, c->arguments[i]->location, position + ": cannot pass '" + ctype_name(args[i]) + "' where the signature takes '" +
+                     signature_argument_spelling(declared) + "'" + assignment_detail(args[i], slot));
+            }
+        }
+        return result;
+    }
+
+    // `this` stored into a handle slot: it is the handle's object where the receiver is one (a method called through a handle, a
+    // constructor new runs), and on a class value the run raises rather than copy it
+    static void note_this_into_handle(const ctype& src, const type_info* target) {
+        if (src.origin && src.origin->get_type() == node_type::this_expr && handle_type(target)) {
+            static_cast<this_expr*>(const_cast<expression*>(src.origin))->into_handle = true;
+        }
+    }
+    // The declared type of the slot an expression names, read from the declarations rather than the walk: a program-scope variable
+    // declared below its use or in another unit (the program declares the name once), an element or entry of one
+    const type_info* declared_slot_type(const expression* e) {
+        if (!e) { return nullptr; }
+        if (e->get_type() == node_type::identifier_expr) {
+            const auto* id = static_cast<const identifier_expr*>(e);
+            if (find_local(id->name)) { return nullptr; }
+            if (auto top = top_var_decls_.find(id->name); top != top_var_decls_.end()) {
+                return top->second.count == 1 && top->second.decl ? top->second.decl->type.get() : nullptr;
+            }
+            if (!program_globals_) { return nullptr; }
+            const auto held = program_globals_->find(std::string(id->name));
+            if (held == program_globals_->end() || held->second.size() != 1 || held->second.begin()->second.size() != 1) { return nullptr; }
+            const variable_decl* g = held->second.begin()->second.front().get();
+            return g ? g->type.get() : nullptr;
+        }
+        if (e->get_type() == node_type::binary_expr && static_cast<const binary_expr*>(e)->op.type == token_type::left_bracket) {
+            const type_info* container = declared_slot_type(static_cast<const binary_expr*>(e)->left.get());
+            if (!container) { return nullptr; }
+            if (container->base_type == script_value_type::jai_array_type) { return container->element_type().get(); }
+            if (container->base_type == script_value_type::jai_map_type) { return container->value_type().get(); }
+        }
+        return nullptr;
+    }
+    // a `this` stored where the walk has no type for the slot, which its declaration may give
+    void note_this_into_declared_slot(const expression* value, const expression* slot, bool element) {
+        if (!value || value->get_type() != node_type::this_expr) { return; }
+        const type_info* t = declared_slot_type(slot);
+        if (t && element) { t = t->base_type == script_value_type::jai_array_type ? t->element_type().get() : nullptr; }
+        if (handle_type(t)) { static_cast<this_expr*>(const_cast<expression*>(value))->into_handle = true; }
+    }
     // a class held by value (never null); a handle, a var and an unknown wrapper are not
     static bool class_value(const ctype& t) {
         return t.kind == ctype::object_k && t.ti && t.ti->base_type == script_value_type::jai_object_type && !t.ti->type_name.empty();
+    }
+    // A class held by value copies out of the handle a dynamic_cast<T>(e) gives, which is null where e is no T: the warning beside
+    // cast<T>(handle)'s names the tested form and the reference form
+    // A class value never becomes a handle on its own (C++): make_shared<T>(value) is the copy into a new one
+    std::string value_into_handle_issue(const ctype& src, const type_info* slot) {
+        if (!handle_type(slot) || !class_value(src)) { return {}; }
+        std::string text(detail::value_into_handle_text);
+        const std::string cls = ctype_name(src);
+        for (size_t at = text.find("{0}"); at != std::string::npos; at = text.find("{0}", at + cls.size())) { text.replace(at, 3, cls); }
+        return detail::const_lowercase(text);
+    }
+    void warn_dynamic_handle_copy(const ctype& src, const ctype& dst) {
+        note_this_into_handle(src, dst.ti);
+        if (src.origin && !dst.tentative) {
+            if (const std::string issue = value_into_handle_issue(src, dst.ti); !issue.empty()) { diag(diag_level::error, src.origin->location, issue); }
+        }
+        if (!collect_diagnostics_ || !class_value(dst) || !src.origin || src.origin->get_type() != node_type::cast_expr) { return; }
+        const auto* c = static_cast<const cast_expr*>(src.origin);
+        if (!c->dynamic || c->by_reference || !c->target || !c->target->element_type() || class_relation(src.cls, dst.cls) == 0) { return; }
+        size_t related_line = 0, related_column = 0;
+        if (var_entry* local = cast_operand_local(c->operand.get())) {
+            related_line = local->line;
+            related_column = local->column;
+        }
+        const std::string cls = c->target->element_type()->canonical_name();
+        const std::string cast = "dynamic_cast<" + cls + ">(" + cast_operand_spelling(c->operand.get()) + ")";
+        diag(diag_level::warning, c->location, cast + " is copied into a value here and is null when the object is no " + cls + " - test it first with if (auto x = " + cast +
+             "), or use dynamic_cast<" + cls + "&>(" + cast_operand_spelling(c->operand.get()) + ") when it must be one", related_line, related_column);
+    }
+    // the one declaration that takes a call: each by-value class parameter an argument copies into
+    void warn_dynamic_handle_arguments(const function_decl* fn, const std::vector<ctype>& args) {
+        for (size_t i = 0; fn && i < args.size() && i < fn->parameters.size(); ++i) {
+            if (!fn->parameters[i].is_reference) { warn_dynamic_handle_copy(args[i], ctype_from_type_info(fn->parameters[i].type.get())); }
+        }
     }
     static std::string never_null_fix(const ctype& t) {
         return "a '" + ctype_name(t) + "' is never null; declare 'shared_ptr<" + ctype_name(t) + ">' (or var) for a slot that can be empty";
@@ -3054,7 +4955,12 @@ private:
             case ctype::char_k: return src.kind == ctype::char_k || src.kind == ctype::string_k || may_convert_via_method(src, "to_char");
             case ctype::array_k:
             case ctype::map_k: return container_issue(src, dst).empty();
-            case ctype::function_k: return src.kind == ctype::function_k || src.kind == ctype::null_k;
+            case ctype::function_k:
+                if (src.kind == ctype::null_k) { return true; }
+                return src.kind == ctype::function_k && signature_issue(src, dst).empty();
+            case ctype::coroutine_k:
+                if (src.kind == ctype::null_k) { return true; }
+                return src.kind == ctype::coroutine_k && (!dst.yields || (src.yields && src.yields->id == dst.yields->id));
             case ctype::weak_k: return weak_initializer_compatible(src, dst);
             case ctype::null_k: return src.kind == ctype::null_k;   // void returns
             case ctype::math_k: {
@@ -3081,12 +4987,39 @@ private:
         }
     }
 
-    // Constructor-conversion fallback Target(src): checkable only for in-script classes;
-    // engine-registered targets stay lenient.
+    // A bound constructor's or operator's parameter against the one value a conversion hands it (engine.cpp
+    // object_param_cost): a parameter of a bound class takes that class or one derived from it, as a script constructor's does
+    bool host_constructor_param_takes(const ctype& src, const param_type_info& p) {
+        const bool object_param = p.base_type == script_value_type::jai_object_type || p.base_type == script_value_type::jai_shared_ptr_type ||
+                                  p.base_type == script_value_type::jai_weak_ptr_type;
+        auto bound = object_param && p.cpp_type != std::type_index(typeid(void)) ? eng_.get_class_definition_by_type(p.cpp_type) : nullptr;
+        if (!bound) { return host_param_accepts(src, p); }
+        if (src.is_unknown() || src.kind == ctype::null_k) { return true; }
+        return src.kind == ctype::object_k && (src.cls.empty() || class_relation(src.cls, bound->get_name()) != 0);
+    }
+
+    // Target(src) through a C++ class's bound constructors, as the run time's conversion calls them: one of exactly one
+    // parameter that may take the source (a variadic or untyped binding may take anything)
+    bool host_class_constructs_from(const class_definition& target, const ctype& src) {
+        const std::string& name = target.get_name();
+        if (src.kind == ctype::object_k && src.cls.empty()) { return true; }
+        std::vector<engine::host_overload_signature> signatures;
+        if (!eng_.host_function_signatures(name, signatures)) { return eng_.has_function(name); }
+        for (const auto& signature : signatures) {
+            if (signature.arity == SIZE_MAX) { return true; }
+            if (signature.arity != 1) { continue; }
+            if (signature.param_types.size() != 1 || host_constructor_param_takes(src, signature.param_types[0])) { return true; }
+        }
+        return false;
+    }
+
+    // Constructor-conversion fallback Target(src): a script class's declared constructors, a C++ class's bound ones; a script
+    // class only the engine holds stays lenient.
     bool may_construct_from(std::string_view target_cls, const ctype& src) {
         const sclass* c = find_sclass(target_cls);
         if (!c) {
-            return engine_class(target_cls) != nullptr;   // registered: lenient
+            auto def = engine_class(target_cls);
+            return def && (!def->is_cpp_class() || host_class_constructs_from(*def, src));
         }
         for (const auto* ctor : c->ctors) {
             // A defaulted-param ctor is NOT a converting ctor -
@@ -3261,12 +5194,56 @@ private:
 
     void note_host_nodiscard(const std::string& callable) {
         if (eng_.host_nodiscard(callable)) { nodiscard_hit_ = {callable, {}}; }
+        if (type_argument_call_) { type_argument_host_callee_ = callable; }
     }
-    void check_namespace_function_nodiscard(const std::string& qualified, const std::vector<const function_decl*>& decls) {
-        if (decls.empty()) { return; }
-        for (const auto* d : decls) { if (!d->is_nodiscard) { return; } }
-        nodiscard_hit_ = {qualified, {}};
+    // a host function every registration of which returns void in C++ (engine::host_function_result)
+    void note_host_void(const std::string& callable) {
+        script_value_type k;
+        if (eng_.host_function_result(callable, k) && k == script_value_type::jai_invalid_type) { void_hit_ = {"'" + callable + "'"}; }
     }
+    // a script callee of a call with type arguments: the call's one error, in place of the overload verdict
+    bool script_callee_takes_type_arguments(std::string_view fname, std::string_view kind) {
+        if (!type_argument_call_) { return false; }
+        type_argument_script_callee_ = std::string(fname);
+        type_argument_script_kind_ = kind;
+        return true;
+    }
+    JAI_NOINLINE static std::string no_type_parameters_text(const std::string& callee, std::string_view kind) {
+        if (kind == "lambda") { return "'" + callee + "' takes no type arguments: it is a lambda, and a lambda takes no type parameters"; }
+        return "'" + callee + "' takes no type arguments: it is not a generic " + std::string(kind);
+    }
+    // A host registration's typed result (core/permission.hpp jai::returns<jai::type_arg> and its siblings): the first type
+    // argument T, array<T> or shared_ptr<T>
+    ctype type_argument_result(const call_expr* c, uint8_t shape) {
+        const type_info* t = static_cast<const cast_expr*>(c->arguments[0].get())->target.get();
+        switch (shape) {
+            case 1: return ctype_from_type_info(t);
+            case 2: return ctype_from_type_info(eng_.array_type_of(t));
+            case 3: return ctype_from_type_info(eng_.shared_type_of(t));
+            default: return {};
+        }
+    }
+
+    // A call whose result is used, of a callee declared to return nothing: the builtin methods' text where the method has a copying twin
+    // A call through a name something may rebind: a bare name (a function, a host function, a lambda variable) or a namespace path
+    bool callee_rebindable(const call_expr* c) const {
+        if (!c->callee) { return false; }
+        if (c->callee->get_type() == node_type::identifier_expr) {
+            const auto* id = static_cast<const identifier_expr*>(c->callee.get());
+            if (class_ctx_ && void_hit_.shown != "'" + std::string(id->name) + "'" && void_hit_.shown.find("::") == std::string::npos) { return false; }   // a method by its bare name
+            return rebindable(id->name) || rebindable_paths_.count(void_hit_.shown.size() > 2 ? void_hit_.shown.substr(1, void_hit_.shown.size() - 2) : std::string());
+        }
+        if (c->callee->get_type() == node_type::member_expr && static_cast<const member_expr*>(c->callee.get())->is_static) {
+            const std::string path = qualified_spelling(static_cast<const member_expr*>(c->callee.get()));
+            return !path.empty() && rebindable_paths_.count(path);
+        }
+        return false;
+    }
+    static std::string void_result_text(const void_callee& hit) {
+        if (hit.member) { return detail::in_place_result_text(hit.member->member, detail::method_value_receiver(hit.member), hit.twin); }
+        return "the result of " + hit.shown + " is used, but " + hit.shown + " returns nothing: " + (hit.reason.empty() ? std::string("call it as a statement") : hit.reason);
+    }
+    JAI_NOINLINE void report_void_result(const call_expr* c, const void_callee& hit) { diag(diag_level::error, c->location, void_result_text(hit)); }
 
     // An expression statement drops its value: a call to a [[nodiscard]] callee there (or in either arm of a ternary there) fails the load
     void check_discarded(const expression* e) {
@@ -3302,73 +5279,203 @@ private:
              "unchanged, so the statement does nothing; keep the result, or call the in-place method (" + receiver + "." + hit.twin + "(...))");
     }
 
-    // A host namespace entry with a declared signature (script_namespace_data::signatures): arity and argument kinds are
-    // certainties the entry's own run-time check would raise; a unit that declares the namespace, or a script function of
-    // the name, keeps the call lenient
-    ctype check_namespace_entry(const member_expr* m, const std::vector<ctype>& args, const source_location& loc) {
-        std::vector<std::string_view> segments;
-        const expression* e = m->object.get();
-        while (e && e->get_type() == node_type::member_expr) {
-            segments.push_back(static_cast<const member_expr*>(e)->member);
-            e = static_cast<const member_expr*>(e)->object.get();
+    // The declarations of the namespace function `path::member` a call or a read of it may reach, `ns::f` and a bare f in the
+    // namespace's code alike. typed: the ones whose declared result types the call, the unit's own (a later one of a signature
+    // replaces the earlier) and another unit's of the program that nothing else of its signature can stand in for. untyped: the
+    // rest another unit of the program makes or the engine holds from a run, which only widen what the call may pass.
+    struct namespace_overloads {
+        const std::vector<const function_decl*>* own = nullptr;   // every declaration the unit makes, in order
+        std::vector<const function_decl*> typed, untyped;
+        size_t own_typed = 0;   // typed leads with this many of the unit's own
+        bool empty() const { return typed.empty() && untyped.empty(); }
+        bool only_own() const { return untyped.empty() && own_typed == typed.size(); }
+        bool all_nodiscard() const {
+            const auto marked = [](const function_decl* fn) { return fn->is_nodiscard; };
+            return !empty() && (!own || std::all_of(own->begin(), own->end(), marked)) && std::all_of(typed.begin(), typed.end(), marked) &&
+                   std::all_of(untyped.begin(), untyped.end(), marked);
         }
-        if (!e || e->get_type() != node_type::identifier_expr) { return {}; }
-        std::string path(static_cast<const identifier_expr*>(e)->name);
-        for (size_t i = segments.size(); i-- > 0;) { path += "::"; path += segments[i]; }
-        const std::string qualified = path + "::" + std::string(m->member);
-        if (namespaces_.count(std::string_view(path))) {
-            auto fit = namespace_fns_.find(qualified);
-            if (fit == namespace_fns_.end()) { return {}; }
-            if (find_sclass(path) || known_class(path)) {   // a class of the namespace's name answers with its statics too
-                check_namespace_function_nodiscard(qualified, fit->second);
-                return {};
-            }
-            // a later declaration of a signature replaces the earlier one (a namespace's override)
-            std::vector<const function_decl*> own;
+    };
+    namespace_overloads namespace_function_overloads(const std::string& path, std::string_view member) {
+        namespace_overloads result;
+        const std::string qualified = path + "::" + std::string(member);
+        const auto same = [](const function_decl* a, const function_decl* b) {
+            return a == b || (a->body && a->body == b->body) || same_signature(a->parameters, b->parameters) || differs_only_by_reference(a->parameters, b->parameters);
+        };
+        if (auto fit = namespace_fns_.find(qualified); fit != namespace_fns_.end() && !fit->second.empty()) {
+            result.own = &fit->second;
             for (size_t i = 0; i < fit->second.size(); ++i) {
                 bool replaced = false;
                 for (size_t k = i + 1; k < fit->second.size() && !replaced; ++k) { replaced = same_signature(fit->second[i]->parameters, fit->second[k]->parameters); }
-                if (!replaced) { own.push_back(fit->second[i]); }
+                if (!replaced) { result.typed.push_back(fit->second[i]); }
             }
-            // the unit's declarations of it, with any the engine holds from another unit's run of the namespace
-            std::vector<const function_decl*> foreign;
-            if (script_namespace_data* held = eng_.find_namespace(path)) {
-                eng_.note(qualified);
-                if (auto hit = held->functions.find(eng_.symbolize(m->member)); hit != held->functions.end()) {
-                    for (const auto& d : hit->second) {
-                        if (!d) { continue; }
-                        const bool own = std::any_of(fit->second.begin(), fit->second.end(), [&](const function_decl* fn) {
-                            return fn == d.get() || fn->body == d->body || same_signature(fn->parameters, d->parameters) || differs_only_by_reference(fn->parameters, d->parameters);
-                        });
-                        if (!own) { foreign.push_back(d.get()); }
+        } else if (has_dynamic_includes_ || (!program_functions_ && extra_global(qualified))) {
+            return result;   // a file the load cannot read, or a program whose declarations it was not given, may declare it
+        }
+        const size_t own_count = result.typed.size();
+        std::vector<bool> stands(own_count, true);   // typed[i] is the one declaration of its signature the program makes
+        std::vector<std::string> units(own_count);   // the unit that makes typed[i], for another unit's
+        const auto declared_again = [&](const function_decl* fn) {
+            for (size_t i = 0; i < result.typed.size(); ++i) {
+                if (!same(result.typed[i], fn)) { continue; }
+                // the table's copy of this very declaration, or of the file's earlier text, is no second declaration
+                stands[i] = stands[i] && (result.typed[i] == fn || (fn->body && result.typed[i]->body == fn->body) ||
+                                          (i < own_count && fn->location.filename == result.typed[i]->location.filename));
+                return true;
+            }
+            return false;
+        };
+        if (program_functions_) {
+            eng_.note(qualified);
+            if (auto pit = program_functions_->find(qualified); pit != program_functions_->end()) {
+                for (const auto& [unit, decls] : pit->second) {
+                    for (const auto& d : decls) {
+                        if (!d || declared_again(d.get())) { continue; }
+                        result.typed.push_back(d.get());
+                        stands.push_back(collect_diagnostics_ && !has_dynamic_includes_);
+                        units.push_back(std::filesystem::path(unit).lexically_normal().string());
                     }
                 }
             }
-            ctype r = foreign.empty() ? check_script_overloads(qualified, own, args, loc).result
-                                      : check_program_overloads(qualified, own, foreign, args, loc);
-            check_namespace_function_nodiscard(qualified, fit->second);
-            r.tentative = true;
-            return r;
         }
+        if (script_namespace_data* held = eng_.find_namespace(path)) {
+            eng_.note(qualified);
+            if (auto hit = held->functions.find(eng_.symbolize(member)); hit != held->functions.end()) {
+                for (const auto& d : hit->second) {
+                    if (!d) { continue; }
+                    bool known = false;
+                    for (size_t i = 0; i < result.typed.size() && !known; ++i) {
+                        if (!same(result.typed[i], d.get())) { continue; }
+                        known = true;
+                        // the unit's own declaration replaces it when the unit runs; another unit's stands for it when it is that
+                        // declaration or the unit's earlier text, which its reload replaces
+                        if (i >= own_count && result.typed[i] != d.get() && eng_.unit_label(d->unit.id) != units[i]) { stands[i] = false; }
+                    }
+                    if (!known && std::none_of(result.untyped.begin(), result.untyped.end(), [&](const function_decl* fn) { return same(fn, d.get()); })) {
+                        result.untyped.push_back(d.get());
+                    }
+                }
+            }
+        }
+        std::vector<const function_decl*> typed;
+        for (size_t i = 0; i < result.typed.size(); ++i) {
+            (stands[i] ? typed : result.untyped).push_back(result.typed[i]);
+            result.own_typed += stands[i] && i < own_count;
+        }
+        result.typed = std::move(typed);
+        return result;
+    }
+
+    // A call of the namespace function `path::member`: an error only when no declaration in sight takes it, typed by the one
+    // that does when its result is certain. False when none is in sight (a host entry, a variable, a file the load cannot read).
+    bool check_namespace_function_call(const std::string& path, std::string_view member, const std::vector<ctype>& args, const source_location& loc,
+                                       narrow_callee& seen, ctype& result) {
+        const namespace_overloads fns = namespace_function_overloads(path, member);
+        if (fns.empty()) { return false; }
+        const std::string qualified = path + "::" + std::string(member);
+        const bool class_too = find_sclass(path) || known_class(path);   // a class of the namespace's name answers with its statics too
+        seen.resolved = !class_too;
+        seen.declarations = fns.typed;
+        seen.declarations.insert(seen.declarations.end(), fns.untyped.begin(), fns.untyped.end());
+        result = {};
+        if (!class_too) {
+            result = fns.only_own() ? check_script_overloads(qualified, fns.typed, args, loc).result
+                                    : check_program_overloads(qualified, fns.typed, fns.untyped, args, loc, /*foreign_first=*/fns.own_typed == 0);
+            result = read_through_declared_slot(result);
+        }
+        if (fns.all_nodiscard()) { nodiscard_hit_ = {qualified, {}}; }
+        return true;
+    }
+
+    // The class `qualified` names, by its own spelling (the program's or the engine's); empty when it names none
+    std::string_view namespace_class_named(const std::string& qualified) {
+        if (const sclass* sc = find_sclass(qualified)) { return sc->decl->name; }
+        const auto held = engine_class(qualified);
+        return held ? std::string_view(held->get_name()) : std::string_view{};
+    }
+    // `ns::C::member`: the receiver is a namespace's class, read as any class's statics are (a namespace of C's path keeps its own lookup)
+    bool namespace_class_receiver(const member_expr* m) {
+        const std::string path = member_path(m);
+        return !path.empty() && path.find("::") != std::string::npos && !namespace_known(path) && !namespace_class_named(path).empty();
+    }
+
+    // A value a host registered in its namespace (math::pi): script cannot assign it, so its kind is the one it was registered with
+    ctype host_namespace_value_type(const std::string& path, std::string_view member) {
+        const std::string qualified = path + "::" + std::string(member);
+        if (namespaces_.count(std::string_view(path)) || (program_globals_ && program_globals_->count(qualified))) { return {}; }
         script_namespace_data* space = eng_.find_namespace(path);
         if (!space) { return {}; }
         eng_.note(qualified);
-        const uint64_t member_id = eng_.symbolize(m->member);
-        if (auto fit = space->functions.find(member_id); fit != space->functions.end()) {
-            std::vector<const function_decl*> decls;
-            for (const auto& d : fit->second) { if (d) { decls.push_back(d.get()); } }
-            // another unit's namespace functions, held from its run: an error only when none of them takes the call
-            // (a unit of the program that declares the name may be reloading: the engine's declarations are then the old text's)
-            if (!decls.empty() && collect_diagnostics_ && !has_dynamic_includes_ && !extra_global(qualified) && !find_sclass(path) && !known_class(path)) {
-                check_program_overloads(qualified, {}, decls, args, loc);
+        const auto found = space->variables.find(eng_.symbolize(member));
+        if (found == space->variables.end()) { return {}; }
+        const script_value& value = found->second.deref();
+        ctype t;
+        if (value.is_int()) { t = ctype::make(ctype::int_k); }
+        else if (value.is_float()) { t = ctype::make(ctype::float_k); }
+        else if (value.is_bool()) { t = ctype::make(ctype::bool_k); }
+        else if (value.is_string()) { t = ctype::make(ctype::string_k); }
+        else if (value.is_char()) { t = ctype::make(ctype::char_k); }
+        else { return {}; }
+        t.tentative = true;
+        t.declared_result = true;
+        return t;
+    }
+
+    // What a read of the namespace member `path::member` gives: a function (its declarations, when the unit makes every one a
+    // call could reach), else the declared type of a variable
+    ctype namespace_member_read(const std::string& path, std::string_view member) {
+        const namespace_overloads fns = namespace_function_overloads(path, member);
+        if (fns.empty()) {
+            if (const std::string_view cls = namespace_class_named(path + "::" + std::string(member)); !cls.empty()) {
+                return read_through_declared_slot(ctype{ctype::class_ref_k, cls});
             }
-            check_namespace_function_nodiscard(qualified, decls);
-            return {};
+            const ctype declared = namespace_variable_type(path, member);
+            return declared.is_unknown() ? host_namespace_value_type(path, member) : declared;
+        }
+        ctype named = ctype::make(ctype::function_k);
+        if (fns.only_own() && fns.typed.size() == fns.own->size() && !find_sclass(path) && !known_class(path)) { named.fns = fns.own; }
+        return named;
+    }
+
+    // A host namespace entry with a declared signature (script_namespace_data::signatures): arity and argument kinds are
+    // certainties the entry's own run-time check would raise; a unit that declares the namespace, or a script function of
+    // the name, keeps the call lenient
+    ctype check_namespace_entry(const member_expr* m, const std::vector<ctype>& args, const source_location& loc, narrow_callee& seen, const call_expr* c) {
+        const std::string path = member_path(m);
+        return path.empty() ? ctype{} : check_namespace_call(path, m->member, args, loc, seen, c);
+    }
+    ctype check_namespace_call(const std::string& path, std::string_view member, const std::vector<ctype>& args, const source_location& loc, narrow_callee& seen, const call_expr* c) {
+        if (c && c->arguments.size() >= 2 && (path == "array" || path == "map") && library_namespace(path)) {
+            if (const auto wants = callback_result_wanted(path == "array" ? 0 : 1, member)) { callback_result_read(path + "::" + std::string(member), *wants, c->arguments[1].get()); }
+        }
+        if (ctype result; check_namespace_function_call(path, member, args, loc, seen, result)) { return result; }
+        const std::string qualified = path + "::" + std::string(member);
+        if (const std::string_view cls = namespace_class_named(qualified); !cls.empty()) {   // a construction, typed as the bare spelling is
+            if (script_callee_takes_type_arguments(cls, "class")) { return {}; }
+            if (const sclass* sc = find_sclass(cls)) { check_ctor_call(cls, *sc, args, loc); }
+            return read_through_declared_slot(object_of(cls));
+        }
+        if (namespace_variable_called(path, qualified, member, c && c->callee ? c->callee->location : loc)) { return {}; }
+        if (namespaces_.count(std::string_view(path))) { return {}; }
+        script_namespace_data* space = eng_.find_namespace(path);
+        if (!space) { return {}; }
+        eng_.note(qualified);
+        const uint64_t member_id = eng_.symbolize(member);
+        if (space->functions.count(member_id)) { return {}; }
+        if (auto vit = space->variables.find(member_id); vit != space->variables.end() && vit->second.is_function()) {
+            const auto* w = vit->second.as_function().target<host_writeback_function>();
+            seen.resolved = true;
+            seen.writeback = w ? w->mask : 0;
         }
         auto sit = space->signatures.find(member_id);
-        if (sit == space->signatures.end()) { return {}; }
+        if (sit == space->signatures.end()) {   // a qualified host registration is held to its bound signatures, as a global host function is
+            if (!eng_.has_function(qualified)) { return {}; }
+            check_host_call(qualified, args, loc, c);
+            note_host_void(qualified);
+            return host_result_type(qualified);
+        }
         const host_entry_signature& sig = sit->second;
-        if (sig.nodiscard) { nodiscard_hit_ = {qualified, sig.in_place_twin ? std::string(m->member) : std::string()}; }
+        if (sig.nodiscard) { nodiscard_hit_ = {qualified, sig.in_place_twin ? std::string(member) : std::string()}; }
+        if (type_argument_call_) { type_argument_host_callee_ = qualified; }
         if (args.size() < sig.min_args || args.size() > sig.max_args) {
             const std::string expected = sig.min_args == sig.max_args ? std::to_string(sig.min_args)
                 : std::to_string(sig.min_args) + " to " + std::to_string(sig.max_args);
@@ -3383,7 +5490,7 @@ private:
             }
         }
         if (path == "array" && !args.empty() && args[0].kind == ctype::array_k) {
-            check_array_sizing_arguments(m->member, args[0], args.data() + 1, args.size() - 1, loc);
+            check_array_sizing_arguments(member, args[0], args.data() + 1, args.size() - 1, loc);
         }
         ctype t;
         if (sig.result_follows_first && !args.empty() && (args[0].kind == ctype::string_k || args[0].kind == ctype::utf8_k || args[0].kind == ctype::array_k)) { t = args[0]; }
@@ -3399,6 +5506,7 @@ private:
         }
         else { return {}; }
         t.tentative = path != "array";
+        t.declared_result = t.tentative;
         return t;
     }
     static bool namespace_arg_accepts(const ctype& arg, script_value_type p) {
@@ -3451,8 +5559,9 @@ private:
     // program, an earlier run, the host's registrations), never a class's statics or a nested namespace
     bool namespace_member_declared(const std::string& space, std::string_view member) {
         const std::string qualified = space + "::" + std::string(member);
-        if (known_type_name(qualified) || find_sclass(qualified)) { return false; }   // the parser reads a namespace's bare class name qualified
-        if (namespace_members_.count(qualified) || extra_global(qualified) || eng_.has_variable(qualified) || eng_.has_function(qualified)) { return true; }
+        if (known_class(qualified) || find_sclass(qualified) || eng_.is_type_name(qualified)) { return false; }   // the parser reads a namespace's bare class name qualified
+        if (namespace_members_.count(qualified) || eng_.has_variable(qualified) || eng_.has_function(qualified)) { return true; }
+        if (extra_global(qualified) && !extra_global(qualified + "::")) { return true; }   // another unit's member; a nested namespace is named by its path
         eng_.note(qualified);
         const script_namespace_data* ns = eng_.find_namespace(space);
         if (!ns) { return false; }
@@ -3517,7 +5626,17 @@ private:
             path += parts[k];
             if (namespace_known(path)) { space = path; next = k + 1; }
         }
+        // a namespace's generic class by its bare name (shop::Box, shop::Box::made): no class answers to it
+        for (std::string named = path + "::" + std::string(parts.back()); named.size() > parts.front().size(); named.resize(named.rfind("::"))) {
+            if (refuse_bare_generic_class(named, m->location)) { return; }
+        }
         if (space.empty() || namespace_declares(space, parts[next])) { return; }
+        const std::string member = space + "::" + std::string(parts[next]);
+        if (instance_requests_.count(member)) { return; }   // an instance that could not be made: its request says why
+        if (const std::string generic = generic_value_spelled(generics_named(member), path + "::" + std::string(parts.back()), ""); !generic.empty()) {
+            diag(diag_level::error, m->location, generic);
+            return;
+        }
         diag(has_dynamic_includes_ ? diag_level::warning : diag_level::error, m->location,
              "no member '" + std::string(parts[next]) + "' in namespace '" + space + "'");
     }
@@ -3536,6 +5655,10 @@ private:
         const auto& ids = eng_.builtin_method_ids(kind);
         if (ids.count(eng_.symbolize(m->member))) { return; }
         if (kind == 1) { map_dot_key(m); return; }
+        if (const std::string_view hint = detail::foreign_member_text(ctype_name(recv), m->member); !hint.empty()) {
+            diag(diag_level::error, m->location, "no member '" + std::string(m->member) + "' on '" + ctype_name(recv) + "': " + std::string(hint));
+            return;
+        }
         std::string best;
         size_t best_distance = 3;
         for (const uint64_t id : ids) {
@@ -3548,7 +5671,7 @@ private:
     }
     // A coroutine handle answers next(), done(), advance() and result() only (the runtime's texts); resume is the retired spelling
     // of next
-    void coroutine_member_missing(const member_expr* a_member) {
+    void coroutine_member_missing(const ctype& a_receiver, const member_expr* a_member) {
         std::string best;
         if (a_member->member == "resume") {
             best = "next";
@@ -3559,7 +5682,7 @@ private:
                 if (distance < bestDistance) { bestDistance = distance; best = std::string(name); }
             }
         }
-        diag(diag_level::error, a_member->location, "no member '" + std::string(a_member->member) + "' on 'coroutine_handle'" +
+        diag(diag_level::error, a_member->location, "no member '" + std::string(a_member->member) + "' on '" + ctype_name(a_receiver) + "'" +
             (best.empty() ? std::string() : " (did you mean '" + best + "'?)"));
     }
     ctype coroutine_method_call(const ctype& a_receiver, const member_expr* a_member, const call_expr* a_call, const std::vector<ctype>& a_args) {
@@ -3574,7 +5697,11 @@ private:
             } else if (a_args.size() == 1 && !a_args[0].is_unknown() && !a_args[0].tentative && a_args[0].kind != ctype::int_k) {
                 diag(diag_level::error, a_call->arguments[0]->location, "next() count must be an integer");
             }
-            return {};
+            // the declared type, for diagnostics: the step that ends a body which returns nothing hands out null
+            ctype stepped = a_receiver.yields ? ctype_from_type_info(a_receiver.yields) : ctype{};
+            stepped.tentative = !stepped.is_unknown();
+            stepped.nullable_result = true;
+            return stepped;
         }
         if (a_member->member == "result") {
             if (!a_args.empty()) { diag(diag_level::error, a_call->location, "result() takes no arguments"); }
@@ -3608,7 +5735,7 @@ private:
             }
             return ctype::make(ctype::bool_k);
         }
-        coroutine_member_missing(a_member);
+        coroutine_member_missing(a_receiver, a_member);
         return {};
     }
     // An argument's shape where the load is sure of it: a number, text, an array, a map, a function or a math value (the api
@@ -3715,12 +5842,12 @@ private:
             }
         }
         result.tentative = true;
+        result.declared_result = !result.is_unknown();
         return result;
     }
 
     // A call that uses the result of a builtin that changes its known receiver in place and returns nothing (detail/in_place_result.hpp)
     void in_place_result_used(const ctype& a_receiver, const member_expr* a_member, const call_expr* a_call) {
-        if (a_member->call_result_discarded) { return; }
         std::optional<std::string_view> twin;
         switch (a_receiver.kind) {
             case ctype::array_k: twin = in_place_method_twin(0, a_member->member); break;
@@ -3730,7 +5857,77 @@ private:
             default: break;
         }
         if (!twin) { return; }
-        diag(diag_level::error, a_call->location, detail::in_place_result_text(a_member->member, detail::method_value_receiver(a_member), *twin));
+        std::string text = detail::in_place_result_text(a_member->member, detail::method_value_receiver(a_member), *twin);
+        if (a_member->call_result_discarded) {
+            nothing_calls_[a_call] = {text, text};
+            return;
+        }
+        diag(diag_level::error, a_call->location, text);
+    }
+
+    // A returned expression all of whose calls return nothing (either arm of a conditional): a return of nothing, its calls in out
+    bool calls_nothing(const expression* e, std::vector<const call_expr*>* out = nullptr) const {
+        if (!e) { return false; }
+        if (e->get_type() == node_type::ternary_expr) {
+            const auto* t = static_cast<const ternary_expr*>(e);
+            return calls_nothing(t->then_expression.get(), out) && calls_nothing(t->else_expression.get(), out);
+        }
+        if (e->get_type() != node_type::call_expr || !nothing_calls_.count(static_cast<const call_expr*>(e))) { return false; }
+        if (out) { out->push_back(static_cast<const call_expr*>(e)); }
+        return true;
+    }
+    // A body with a deduced result has walked its returns: one that gives a value makes each return of nothing the use it is
+    // (C++ deduces no result from both); none makes the body a callee that returns nothing, passing on the first reason, unless
+    // the body never returns (every path throws: its call has no result to use or to miss)
+    bool close_deduced_body(const fn_ctx& done, const statement* body, std::string& reason) {
+        if (done.gives_value) {
+            for (const call_expr* c : done.nothing_returns) {
+                if (auto it = nothing_calls_.find(c); it != nothing_calls_.end()) { diag(diag_level::error, c->location, it->second.used); }
+            }
+            return false;
+        }
+        if (!body || !(return_flow().analyze(body).paths & (return_flow::normal | return_flow::maybe_normal | return_flow::returns | return_flow::bare_return))) {
+            return false;
+        }
+        for (const call_expr* c : done.nothing_returns) {
+            if (auto it = nothing_calls_.find(c); it != nothing_calls_.end() && !it->second.reason.empty()) { reason = it->second.reason; break; }
+        }
+        return !has_includes_;
+    }
+
+    // A callback whose first parameter is a reference: a lambda's, or that of every overload of a script function the name declares
+    bool callback_takes_first_by_reference(const expression* callback) const {
+        if (!callback) { return false; }
+        if (callback->get_type() == node_type::lambda_expr) {
+            const auto* l = static_cast<const lambda_expr*>(callback);
+            return !l->parameters.empty() && l->parameters[0].is_reference;
+        }
+        if (callback->get_type() != node_type::identifier_expr) { return false; }
+        auto it = functions_.find(static_cast<const identifier_expr*>(callback)->name);
+        if (it == functions_.end() || it->second.empty()) { return false; }
+        return std::all_of(it->second.begin(), it->second.end(), [](const function_decl* fn) { return !fn->parameters.empty() && fn->parameters[0].is_reference; });
+    }
+
+    // A builtin that reads its callback's result (detail::callback_result_wanted), handed a callback that returns nothing: a lambda
+    // whose returns give no value, a function or lambda declared void
+    void callback_result_read(std::string_view builtin, std::string_view wants, const expression* callback) {
+        if (!callback) { return; }
+        std::string shown;
+        if (callback->get_type() == node_type::lambda_expr) {
+            const auto* l = static_cast<const lambda_expr*>(callback);
+            if (nothing_lambdas_.count(l) || declared_void(l->return_type.get())) { shown = "the lambda"; }
+        } else if (callback->get_type() == node_type::identifier_expr) {
+            const auto* id = static_cast<const identifier_expr*>(callback);
+            bool nothing = declared_void(callback_declared_return(callback));
+            if (rebindable(id->name)) { return; }
+            if (auto it = functions_.find(id->name); !nothing && it != functions_.end() && !it->second.empty()) {
+                nothing = std::all_of(it->second.begin(), it->second.end(), [&](const function_decl* fn) { return returns_nothing(fn); });
+            }
+            if (!nothing) { nothing = lambda_variable_returns_nothing(id) != nullptr; }
+            if (nothing) { shown = "'" + std::string(id->name) + "'"; }
+        }
+        if (shown.empty()) { return; }
+        diag(diag_level::error, callback->location, shown + " returns nothing, but " + std::string(builtin) + " needs " + std::string(wants) + " from it");
     }
 
     // The return type a callback argument declares: a lambda's spelled one, or the one overload of a named script function
@@ -3784,11 +5981,11 @@ private:
             if (kind == 1) { map_dot_key(m); }
             return;
         }
-        diag(diag_level::error, m->location, detail::method_value_text(m->member, owner, detail::method_value_receiver(m), true));
+        diag(diag_level::error, m->location, detail::method_value_text(m->member, owner, detail::method_value_receiver(m), true) + (m->less_compared ? " (" + no_generic_text(m->member) + ")" : std::string()));
     }
-    // A member of a known int, float, bool or char: the registry (BUILTIN_ARITIES) gives these kinds no methods and same_as answers
-    // every value, so any other name is the run time's text; same_as read without a call is the method-value text
-    void scalar_member_missing(const ctype& recv, const member_expr* m, bool called) {
+    // A member of a known int, float, bool or char: the registry (BUILTIN_ARITIES) gives these kinds no methods, so any name is the
+    // run time's text
+    void scalar_member_missing(const ctype& recv, const member_expr* m) {
         script_value_type kind;
         switch (recv.kind) {
             case ctype::int_k: kind = script_value_type::jai_int_type; break;
@@ -3798,11 +5995,7 @@ private:
             default: return;
         }
         if (recv.tentative || recv.diagnostic_only || m->is_static) { return; }
-        if (m->member != "same_as") {
-            diag(diag_level::error, m->location, no_member_text(base_type_spelling(kind), m->member));
-        } else if (!called) {
-            diag(diag_level::error, m->location, detail::method_value_text(m->member, base_type_spelling(kind), detail::method_value_receiver(m), true));
-        }
+        diag(diag_level::error, m->location, no_member_text(static_cast<engine*>(nullptr), base_type_spelling(kind), m->member));
     }
     // a map's key is read with [] (only an enum's value table reads its keys with a dot, and an enum's name is no map here): the run time's text
     void map_dot_key(const member_expr* m) {
@@ -3823,11 +6016,11 @@ private:
         return row[b.size()];
     }
 
-    // Handle builtins every object value answers (shared_ptr registry + the universal
-    // same_as): a class method of the same name wins first, so this runs on misses only.
+    // Handle builtins every object value answers (the shared_ptr registry): a class method of the same name wins first, so this
+    // runs on misses only.
     static bool handle_builtin_result(std::string_view member, ctype& out) {
         if (member == "use_count" || member == "cpp_ref_count") { out = ctype::make(ctype::int_k); return true; }
-        if (member == "unique" || member == "same_as") { out = ctype::make(ctype::bool_k); return true; }
+        if (member == "unique") { out = ctype::make(ctype::bool_k); return true; }
         if (member == "reset") { out = {}; return true; }
         return false;
     }
@@ -4032,7 +6225,8 @@ private:
 
     // a method call on a host class that opted into strict signatures: the arity and argument kinds its overloads accept, and
     // the result they agree on; other host classes stay lenient
-    ctype check_strict_host_method(std::string_view cls, std::string_view member, const std::vector<ctype>& args, const source_location& loc) {
+    ctype check_strict_host_method(std::string_view cls, std::string_view member, const std::vector<ctype>& args, const source_location& loc,
+                                   const call_expr* c = nullptr, const member_expr* m = nullptr) {
         auto def = engine_class(cls);
         if (!def || !def->is_cpp_class() || def->extended_ever()) { return {}; }
         const auto& table = def->cpp_method_overload_table();
@@ -4059,13 +6253,18 @@ private:
             diag(diag_level::error, loc, "'" + fname + "' expects " + text + " argument(s), got " + std::to_string(args.size()));
             return {};
         }
+        {
+            std::vector<std::vector<param_type_info>> overloads;
+            for (const auto& entry : bucket->second) { overloads.push_back(entry.param_types); }
+            if (report_host_callback(fname, overloads, args, c)) { return {}; }
+        }
         std::optional<ctype> result;
         bool agree = true;
         bool viable = false;
         for (const auto& entry : bucket->second) {
             bool ok = true;
             for (size_t i = 0; i < args.size() && i < entry.param_types.size(); ++i) {
-                if (!host_param_accepts(args[i], entry.param_types[i])) { ok = false; break; }
+                if (!host_param_accepts(args[i], entry.param_types[i]) || !host_callback_issue(args[i], entry.param_types[i]).empty()) { ok = false; break; }
             }
             if (!ok) { continue; }
             viable = true;
@@ -4150,46 +6349,90 @@ private:
     // A call to a program-scope function whose overloads other units hold as well: an error only when no declaration of the
     // program takes it; the result is typed only when the one that does is this unit's own, and no proof rests on the set
     ctype check_program_overloads(std::string_view fname, const std::vector<const function_decl*>& own, const std::vector<const function_decl*>& foreign,
-                                  const std::vector<ctype>& args, const source_location& loc) {
+                                  const std::vector<ctype>& args, const source_location& loc, bool foreign_first = false) {
+        if (script_callee_takes_type_arguments(fname, "function")) { return {}; }
         std::vector<const function_decl*> all(own);
         all.insert(all.end(), foreign.begin(), foreign.end());
         const bool rivals = arity_rivals(all, args.size());
         const function_decl* only_viable = nullptr;
         int viable_count = 0;
         int nodiscard_viable = 0;
+        int void_viable = 0;
+        std::string reason;
         for (const auto* fn : all) {
             if (!script_fn_viable(fn, args, rivals)) { continue; }
             ++viable_count;
             nodiscard_viable += fn->is_nodiscard;
+            void_viable += returns_nothing(fn);
+            if (returns_nothing(fn) && reason.empty()) { reason = nothing_reason(fn); }
             only_viable = fn;
         }
         if (viable_count == 0) {
-            report_no_overload(fname, all, args, loc);
+            report_no_overload(fname, all, args, loc, foreign_first);
             return {};
         }
+        if (viable_count == 1) { warn_dynamic_handle_arguments(only_viable, args); }
         if (nodiscard_viable == viable_count) { nodiscard_hit_ = {std::string(fname), {}}; }
+        if (void_viable == viable_count) { void_hit_ = {"'" + std::string(fname) + "'", {}, nullptr, reason}; }
         if (viable_count > 1 || std::find(own.begin(), own.end(), only_viable) == own.end()) { return {}; }
         ctype result = only_viable->is_coroutine ? ctype::make(ctype::coroutine_k) : ctype_from_type_info(only_viable->return_type.get());
         if (only_viable->is_coroutine) { result.yields = only_viable->return_type.get(); }
         return result;
     }
 
+    // A function declared void: its call has no value (a coroutine's call is the coroutine)
+    bool returns_nothing(const function_decl* fn) const {
+        return !fn->is_coroutine && (declared_void(fn->return_type.get()) || (!fn->return_type && nothing_functions_.count(fn)));
+    }
+    // the reason a deduced body that returns nothing passes on (empty for a void declaration or a plain call)
+    std::string nothing_reason(const function_decl* fn) const {
+        auto it = fn->return_type ? nothing_functions_.end() : nothing_functions_.find(fn);
+        return it == nothing_functions_.end() ? std::string() : it->second;
+    }
+    // The library's forms that take their arguments as values: what they are passed cannot be rebound through them
+    static bool value_taking_library_call(const call_expr* c) {
+        if (!c->callee) { return false; }
+        if (c->callee->get_type() == node_type::identifier_expr) {
+            const std::string_view name = static_cast<const identifier_expr*>(c->callee.get())->name;
+            return name == "parallel_transform" || name == "parallel_reduce";
+        }
+        return static_path(static_cast<const member_expr*>(c->callee->get_type() == node_type::member_expr ? c->callee.get() : nullptr), "array") ||
+               static_path(static_cast<const member_expr*>(c->callee->get_type() == node_type::member_expr ? c->callee.get() : nullptr), "map");
+    }
+    // A name something may rebind (rebinding_names): assigned, passed where a reference may take it, bound by a reference
+    bool rebindable(std::string_view name) const { return assigned_names_.count(name) || passed_names_.count(name); }
+    // A local declared from a lambda literal and never rebound (rebindable), whose body returns nothing: its reason
+    const std::string* lambda_variable_returns_nothing(const identifier_expr* id) {
+        const var_entry* local = find_local(id->name);
+        if (!local || !local->declared_lambda || rebindable(id->name)) { return nullptr; }
+        auto it = nothing_lambdas_.find(local->declared_lambda);
+        return it == nothing_lambdas_.end() ? nullptr : &it->second;
+    }
+    static bool declared_void(const type_info* t) { return t && t->base_type == script_value_type::jai_null_type && t->type_name == "void"; }
+
     // args already inferred by the caller; foreign = the overloads belong to another unit's source; scored = the runtime picks
     // among them by type (methods); a program's free functions of one name are redefinitions, the last one taking the call
     call_check check_script_overloads(std::string_view fname, const std::vector<const function_decl*>& overloads,
                                       const std::vector<ctype>& args, const source_location& loc, bool foreign = false,
-                                      bool scored = true) {
+                                      bool scored = true, std::string_view kind = "function") {
+        if (script_callee_takes_type_arguments(fname, kind)) { return {}; }
         const function_decl* only_viable = nullptr;
         int viable_count = 0;
         int nodiscard_viable = 0;
+        int void_viable = 0;
+        std::string reason;
         for (const auto* fn : overloads) {
             if (script_fn_viable(fn, args, scored && arity_rivals(overloads, args.size()))) {
                 ++viable_count;
                 nodiscard_viable += fn->is_nodiscard;
+                void_viable += returns_nothing(fn);
+                if (returns_nothing(fn) && reason.empty()) { reason = nothing_reason(fn); }
                 only_viable = fn;
             }
         }
         if (viable_count > 0 && nodiscard_viable == viable_count) { nodiscard_hit_ = {std::string(fname), {}}; }
+        if (viable_count > 0 && void_viable == viable_count) { void_hit_ = {"'" + std::string(fname) + "'", {}, nullptr, reason}; }
+        if (viable_count == 1) { warn_dynamic_handle_arguments(only_viable, args); }
         call_check out;
         out.checked = true;
         if (viable_count == 0) {
@@ -4314,12 +6557,13 @@ private:
         const std::string name(fname);
         diag(diag_level::error, loc, "ambiguous call to '" + name + "' with " + list + ": '" + name + detail::parameter_signature(best->parameters) +
              "' and '" + name + detail::parameter_signature(rival->parameters) + "' match equally",
-             best->location.line, best->location.column);
+             best->location);
     }
 
     // A T& parameter's argument: a primitive of exactly that kind, a class T or a subclass; unknown and var& / auto& pass; a const T&
     // binds a temporary T made from whatever a T parameter takes (C++)
-    bool reference_parameter_binds(const parameter& p, const ctype& arg) {
+    bool reference_parameter_binds(const parameter& p, const ctype& narrowed_arg) {
+        const ctype arg = narrow_declared_view(narrowed_arg);
         if (!p.type || arg.is_unknown()) { return true; }
         if (p.is_const && assignable(arg, ctype_from_type_info(p.type.get()))) { return true; }
         switch (p.type->base_type) {
@@ -4407,9 +6651,9 @@ private:
 
     void report_no_overload(std::string_view fname, const std::vector<const function_decl*>& overloads,
                             const std::vector<ctype>& args, const source_location& loc, bool foreign = false) {
-        size_t rl = (overloads.empty() || foreign) ? 0 : overloads[0]->location.line;
-        size_t rc = (overloads.empty() || foreign) ? 0 : overloads[0]->location.column;
+        const declared_at declared = (overloads.empty() || foreign) ? declared_at{} : declared_at{overloads[0]->location};
         const std::string hint = hidden_function_hint(fname, args);
+        if (!overloads.empty() && overloads[0]->method_instance) { fname = member_display_name(fname); }   // function_decl::shown_name
         if (overloads.size() == 1) {
             const function_decl* fn = overloads[0];
             auto [min_a, max_a] = arity_range(fn);
@@ -4418,7 +6662,7 @@ private:
                     ? std::to_string(min_a)
                     : std::to_string(min_a) + " to " + std::to_string(max_a);
                 diag(diag_level::error, loc, "'" + std::string(fname) + "' expects " + expected +
-                     " argument(s), got " + std::to_string(args.size()) + hint, rl, rc);
+                     " argument(s), got " + std::to_string(args.size()) + hint, declared);
                 return;
             }
             for (size_t i = 0; i < args.size(); ++i) {
@@ -4426,7 +6670,7 @@ private:
                 if (p.is_reference) {
                     if (!reference_parameter_binds(p, args[i])) {
                         diag(diag_level::error, loc, "argument " + std::to_string(i + 1) + " of '" + std::string(fname) + "': cannot bind '" +
-                             ctype_name(args[i]) + "' to '" + p.name + "' declared '" + (p.is_const ? "const " : "") + p.type->canonical_name() + "&'" + hint, rl, rc);
+                             ctype_name(args[i]) + "' to '" + p.name + "' declared '" + (p.is_const ? "const " : "") + p.type->canonical_name() + "&'" + hint, declared);
                         return;
                     }
                     continue;
@@ -4436,22 +6680,27 @@ private:
                     diag(diag_level::error, loc, "argument " + std::to_string(i + 1) + " of '" +
                          std::string(fname) + "': cannot pass '" + ctype_name(args[i]) + "' to '" +
                          p.name + "' declared '" + (p.type ? p.type->canonical_name() : "auto") + "'" + assignment_detail(args[i], pt) + hint,
-                         rl, rc);
+                         declared);
                     return;
                 }
             }
             return;
         }
         diag(diag_level::error, loc, "no overload of '" + std::string(fname) + "' matches this call (" +
-             std::to_string(args.size()) + " argument(s))" + hint, rl, rc);
+             std::to_string(args.size()) + " argument(s))" + hint, declared);
     }
 
     // Host (C++) function surface: reject only certainties — arity misses across every
     // overload, or a known-primitive argument no builtin conversion reaches.
-    void check_host_call(const std::string& fname, const std::vector<ctype>& args, const source_location& loc) {
+    void check_host_call(const std::string& fname, const std::vector<ctype>& args, const source_location& loc, const call_expr* c = nullptr) {
         std::vector<engine::host_overload_signature> sigs;
         if (!eng_.host_function_signatures(fname, sigs) || sigs.empty()) {
             return;
+        }
+        {
+            std::vector<std::vector<param_type_info>> overloads;
+            for (const auto& sig : sigs) { overloads.push_back(sig.param_types); }
+            if (report_host_callback(fname, overloads, args, c)) { return; }
         }
         bool arity_ok = false;
         bool viable = false;
@@ -4499,7 +6748,7 @@ private:
         if (sig.param_types.empty()) { return true; }   // untyped legacy binding
         if (sig.param_types.size() != args.size()) { return true; }   // defensive: don't guess
         for (size_t i = 0; i < args.size(); ++i) {
-            if (!host_param_accepts(args[i], sig.param_types[i])) {
+            if (!host_param_accepts(args[i], sig.param_types[i]) || !host_callback_issue(args[i], sig.param_types[i]).empty()) {
                 return false;
             }
         }
@@ -4520,6 +6769,7 @@ private:
             default: return {};
         }
         t.tentative = true;
+        t.declared_result = true;
         return t;
     }
 
@@ -4607,14 +6857,34 @@ private:
         const auto& bases = c->decl->base_classes;
         std::vector<int> named(bases.size(), 0);
         bool delegates = false;
+        using kind_t = constructor_initializer::kind_t;
+        std::vector<const constructor_initializer*> fields_named;
         for (const auto& init : fn->initializers) {
-            if (init.target == "this") { delegates = true; continue; }
+            if (init.kind == kind_t::delegation) {
+                delegates = true;
+                if (fn->initializers.size() > 1) {
+                    const constructor_initializer& other = &init == &fn->initializers.front() ? fn->initializers[1] : fn->initializers.front();
+                    diag(diag_level::error, fn->location, format_error_message(detail::k_delegation_alone, class_ctx_name_, other.target));
+                }
+                continue;
+            }
+            if (init.kind == kind_t::field) {
+                const bool twice = std::any_of(fields_named.begin(), fields_named.end(), [&](const constructor_initializer* f) { return f->target == init.target; });
+                if (twice) { diag(diag_level::error, init.location, format_error_message(detail::k_field_named_twice, class_ctx_name_, init.target)); }
+                else { fields_named.push_back(&init); }
+                continue;
+            }
+            if (init.kind == kind_t::unresolved) {
+                const bool is_static = c->static_fields.count(init.target) != 0;
+                diag(diag_level::error, init.location, format_error_message(is_static ? detail::k_static_in_initializer_list : detail::k_not_a_base, class_ctx_name_, init.target));
+                continue;
+            }
             size_t index = init.target == "super" && !bases.empty() ? 0 : SIZE_MAX;
             for (size_t i = 0; index == SIZE_MAX && i < bases.size(); ++i) {
                 if (detail::initializer_names(init.target, bases[i])) { index = i; }
             }
             if (index == SIZE_MAX) {
-                if (init.target != "super") { diag(diag_level::error, fn->location, format_error_message(detail::k_not_a_base, class_ctx_name_, init.target)); }
+                if (init.target != "super") { diag(diag_level::error, init.location, format_error_message(detail::k_not_a_base, class_ctx_name_, init.target)); }
                 continue;
             }
             if (++named[index] == 2) { diag(diag_level::error, fn->location, format_error_message(detail::k_base_named_twice, class_ctx_name_, bases[index])); }
@@ -4628,8 +6898,85 @@ private:
         }
     }
 
-    void check_ctor_call(std::string_view cls_name, const sclass& c, const std::vector<ctype>& args,
+    // The implicit copy constructor may take a one-argument construction (detail::implicit_copy_construction): the argument is an
+    // object of the class or of a class derived from it, a value or a handle, and no declared constructor is from the class itself
+    bool implicit_copy_may_take(std::string_view cls_name, const sclass& c, const std::vector<ctype>& args) {
+        if (c.ctors.empty() || args.size() != 1 || args[0].kind != ctype::object_k || class_relation(args[0].cls, cls_name) == 0) { return false; }
+        for (const auto* ctor : c.ctors) {
+            auto [lo, hi] = arity_range(ctor);
+            if (ctor->parameters.empty() || lo > 1 || hi < 1) { continue; }
+            const type_info* first = ctor->parameters[0].type.get();
+            if (first && first->base_type == script_value_type::jai_reference_type) { first = first->type_params.empty() ? nullptr : first->type_params[0].get(); }
+            if (first && first->base_type == script_value_type::jai_object_type && first->type_name == cls_name) { return false; }
+        }
+        return true;
+    }
+
+    // true: the implicit copy constructor may be the one that runs (which constructor does is the run's pick)
+    // A constructor's member initializers (C++ [class.base.init]): each value stores into its field as `=` would; the fields
+    // initialize in declaration order, so a list written in another order warns (as C++'s -Wreorder) and a value that reads a field
+    // initialized after it is the field initializer's error
+    void check_member_initializers(const function_decl* fn) {
+        const sclass* c = class_ctx_;
+        if (!c || !c->decl) { return; }
+        std::vector<const variable_decl*> order;
+        for (const auto& m : c->decl->members) {
+            if (m.declaration && m.declaration->get_type() == node_type::variable_decl) {
+                const auto* f = static_cast<const variable_decl*>(m.declaration.get());
+                if (!f->is_static) { order.push_back(f); }
+            }
+        }
+        const auto position = [&](std::string_view name) {
+            for (size_t i = 0; i < order.size(); ++i) { if (order[i]->name == name) { return i; } }
+            return order.size();
+        };
+        const constructor_initializer* previous = nullptr;
+        bool warned = false;
+        for (const auto& init : fn->initializers) {
+            if (init.kind != constructor_initializer::kind_t::field || !init.value) { continue; }
+            const size_t at = position(init.target);
+            if (at == order.size()) { continue; }
+            const variable_decl* field = order[at];
+            initializing_field initializing{field->name, {}};
+            initializing.unready = fields_from(c->decl, field);
+            initializing_field_ = &initializing;
+            const ctype value = infer_expecting(init.value.get(), field->auto_spelled ? nullptr : field->type.get());
+            initializing_field_ = nullptr;
+            if (field->type && !field->auto_spelled && field->type->base_type != script_value_type::jai_any_type) {
+                check_store(value, false, token_type::equal, declared_variable_type(field), declared_variable_type_name(field),
+                            "field '" + std::string(field->name) + "'", init.location, field->location);
+            }
+            if (previous && !warned && position(previous->target) > at) {
+                diag(diag_level::warning, init.location, "member initializer of '" + std::string(field->name) + "' follows '" + previous->target +
+                     "', but fields initialize in declaration order: '" + std::string(field->name) + "' first; write the list in that order");
+                warned = true;
+            }
+            previous = &init;
+        }
+    }
+
+    // a class value field with no initializer of its own that every constructor names in its list (or delegates to one that
+    // does): its default construction never runs, so the class need not have a default constructor
+    bool every_constructor_initializes(const sclass& c, std::string_view field) {
+        if (c.ctors.empty()) { return false; }
+        for (const auto* ctor : c.ctors) {
+            const bool names = std::any_of(ctor->initializers.begin(), ctor->initializers.end(), [&](const constructor_initializer& init) {
+                return init.kind == constructor_initializer::kind_t::delegation || (init.kind == constructor_initializer::kind_t::field && init.target == field);
+            });
+            if (!names) { return false; }
+        }
+        return true;
+    }
+
+    bool check_ctor_call(std::string_view cls_name, const sclass& c, const std::vector<ctype>& args,
                          const source_location& loc) {
+        if (implicit_copy_may_take(cls_name, c, args)) { return true; }
+        check_declared_ctor_call(cls_name, c, args, loc);
+        return false;
+    }
+
+    void check_declared_ctor_call(std::string_view cls_name, const sclass& c, const std::vector<ctype>& args,
+                                  const source_location& loc) {
         if (c.ctors.empty() && args.empty()) {
             report_base_without_default(cls_name, loc);
             for (size_t i = 1; c.decl && i < c.decl->base_classes.size(); ++i) {
@@ -4650,14 +6997,14 @@ private:
                     if (args.size() > fields.size()) {   // the runtime's text (detail::too_many_initializers)
                         diag(diag_level::error, loc, "too many initializers for '" + std::string(cls_name) + "': it has " +
                              std::to_string(fields.size()) + (fields.size() == 1 ? " field" : " fields") + ", got " + std::to_string(args.size()),
-                             c.foreign ? 0 : c.decl->location.line, c.foreign ? 0 : c.decl->location.column);
+                             c.foreign ? declared_at{} : declared_at{c.decl->location});
                         return;
                     }
                     for (size_t i = 0; i < args.size(); ++i) {
                         const variable_decl* f = fields[i];
                         if (!f->type || f->type->base_type == script_value_type::jai_any_type) { continue; }
                         check_store(args[i], false, token_type::equal, ctype_from_type_info(f->type.get()), declared_variable_type_name(f),
-                                    "field '" + std::string(f->name) + "'", loc, 0, 0);
+                                    "field '" + std::string(f->name) + "'", loc, {});
                     }
                     return;
                 case aggregate_shape::not_aggregate:
@@ -4668,7 +7015,7 @@ private:
                 for (size_t i = 0; i < args.size() && i < 6; ++i) { if (i) { list += ", "; } list += ctype_name(args[i]); }
                 if (args.size() > 6) { list += ", ..."; }
                 diag(diag_level::error, loc, "no constructor of '" + std::string(cls_name) + "' takes " + list + ")",
-                     c.foreign ? 0 : c.decl->location.line, c.foreign ? 0 : c.decl->location.column);
+                     c.foreign ? declared_at{} : declared_at{c.decl->location});
             }
             return;
         }
@@ -4692,13 +7039,451 @@ private:
         report_no_overload(cls_name, c.ctors, args, loc, c.foreign);
     }
 
+    // -------------------------------------------------------------- flow narrowing
+    //
+    // A test of what a local holds (reflect::is_instance_of(x, "T"), a dynamic handle cast of x, reflect::type_of(x) == "int") gives the name that type where
+    // the test is known to have held: a fact on narrow_facts_, read by infer_identifier (a reference's by referent_receiver).
+    // narrow_end is everything that can give the variable another value. A fact changes no declaration and no run-time path:
+    // the proofs a narrowed read feeds select lanes that keep their run-time guards.
+
+    struct narrow_fact {
+        const void* key = nullptr;   // var_entry::narrow_key
+        ctype type;
+        bool referent = false;       // a reference's: member diagnostics read it and the proof view stays unknown
+        bool proof_only = false;     // a var's: the proof walk reads it, diagnostics keep the var (no load-time text changes)
+        bool dead = false;
+    };
+    struct narrow_event { const void* key; bool escape; };
+    enum class narrow_bound : uint8_t { alias, copy };
+    struct narrow_frame { size_t base; narrow_bound kind; };   // a body whose names at a lower scope index belong to an enclosing frame
+    std::vector<narrow_fact> narrow_facts_;
+    std::vector<narrow_event> narrow_ended_;               // every end, in walk order: a region reads what ended since its mark
+    std::unordered_set<const void*> narrow_escaped_;       // variables a reference may still reach
+    std::vector<narrow_frame> narrow_frames_;
+    std::unordered_set<const void*>* narrow_declared_ = nullptr;   // the declarations of a body being walked ahead
+    bool narrow_dry_ = false;                              // a loop or lambda body walked ahead for what it ends: nothing narrows, nothing is reported
+    bool narrow_in_list_ = false;                          // the statement about to be walked stands in a statement list
+    bool narrow_derived_ = false;                          // the initializer or return value just inferred read a narrowed name
+    size_t narrow_reads_ = 0;
+    const ctype* narrow_observed_ = nullptr;               // a var's narrowing the diagnostics walk does not read: the observer still sees it
+
+    // Program-scope and namespace variables are any function's to write
+    void narrow_declare(var_entry& entry, const void* key) {
+        if (scopes_.size() <= 1 || (!namespace_scopes_.empty() && namespace_scopes_.back() == scopes_.size() - 1)) { return; }
+        entry.narrow_key = key;
+        if (narrow_declared_) { narrow_declared_->insert(key); }
+    }
+
+    // Through a by-reference capture or a parallel body a name is the enclosing frame's storage, which that frame may write
+    // between two of this body's steps; through by-value captures alone it is a snapshot taken where the lambda was made
+    bool narrow_aliased(const var_entry& e, size_t scope_index) const {
+        if (e.capture_alias) { return true; }
+        return std::any_of(narrow_frames_.begin(), narrow_frames_.end(), [&](const narrow_frame& f) { return f.base > scope_index && f.kind == narrow_bound::alias; });
+    }
+    bool narrow_crosses(const var_entry& e, size_t scope_index) const {
+        if (e.capture_alias || e.capture_copy) { return true; }
+        for (const narrow_frame& f : narrow_frames_) { if (f.base > scope_index) { return true; } }
+        return false;
+    }
+
+    void narrow_apply(const narrow_event& ev) {
+        for (narrow_fact& f : narrow_facts_) { if (f.key == ev.key) { f.dead = true; } }
+        if (ev.escape) { narrow_escaped_.insert(ev.key); }
+    }
+    // The variable may hold another value from here on. escape: something that can write it may outlive this point (a reference
+    // a callee kept, a lambda that runs again), so it does not narrow again
+    void narrow_end(const var_entry& e, size_t scope_index, bool escape) {
+        if (!e.narrow_key) { return; }
+        const narrow_event ev{e.narrow_key, escape || narrow_crosses(e, scope_index)};
+        narrow_ended_.push_back(ev);
+        if (!narrow_dry_) { narrow_apply(ev); }
+    }
+    // The variables an expression names as storage: a name, a cast of one, an arm of a conditional, an assignment's target
+    template <class F>
+    void narrow_each_root(const expression* e, F&& f) {
+        if (!e) { return; }
+        switch (e->get_type()) {
+            case node_type::identifier_expr: {
+                auto* id = static_cast<const identifier_expr*>(e);
+                if (id->global_qualified) { return; }
+                size_t scope = 0;
+                if (const var_entry* v = find_local(id->name, &scope); v && v->narrow_key) { f(*v, scope); }
+                return;
+            }
+            case node_type::cast_expr: {
+                narrow_each_root(static_cast<const cast_expr*>(e)->operand.get(), f);
+                return;
+            }
+            case node_type::ternary_expr:
+                narrow_each_root(static_cast<const ternary_expr*>(e)->then_expression.get(), f);
+                narrow_each_root(static_cast<const ternary_expr*>(e)->else_expression.get(), f);
+                return;
+            case node_type::assignment_expr:
+                narrow_each_root(static_cast<const assignment_expr*>(e)->target.get(), f);
+                return;
+            default:
+                return;
+        }
+    }
+    void narrow_end_roots(const expression* e, bool escape) {
+        narrow_each_root(e, [&](const var_entry& v, size_t scope) { narrow_end(v, scope, escape); });
+    }
+
+    const narrow_fact* narrow_live_fact(const var_entry& e, size_t scope_index) const {
+        if (narrow_facts_.empty() || !e.narrow_key) { return nullptr; }
+        for (auto it = narrow_facts_.rbegin(); it != narrow_facts_.rend(); ++it) {
+            if (it->key != e.narrow_key || it->dead) { continue; }
+            return narrow_aliased(e, scope_index) ? nullptr : &*it;
+        }
+        return nullptr;
+    }
+    const ctype* narrow_read(const var_entry& e, size_t scope_index, bool referent) {
+        const narrow_fact* fact = narrow_live_fact(e, scope_index);
+        if (!fact || fact->referent != referent) { return nullptr; }
+        if (fact->proof_only && !semantic_walk()) {
+            narrow_observed_ = &fact->type;
+            return nullptr;
+        }
+        ++narrow_reads_;
+        return &fact->type;
+    }
+
+    // A reference binds the variable, not the value it holds: a narrowed name binds as it is declared
+    ctype narrow_declared_view(const ctype& t) {
+        if (!t.narrowed || !t.origin || t.origin->get_type() != node_type::identifier_expr) { return t; }
+        const var_entry* e = find_local(static_cast<const identifier_expr*>(t.origin)->name);
+        if (!e) { return t; }
+        ctype result = e->dynamic ? ctype{} : e->type;
+        result.origin = t.origin;
+        return result;
+    }
+
+    // A local, parameter or loop variable this body may narrow: its own, with no reference left that could write it
+    const var_entry* narrow_target(const expression* operand, size_t& scope) {
+        if (!operand || operand->get_type() != node_type::identifier_expr) { return nullptr; }
+        auto* id = static_cast<const identifier_expr*>(operand);
+        if (id->global_qualified || extended_names_.count(id->name)) { return nullptr; }
+        const var_entry* e = find_local(id->name, &scope);
+        if (!e || !e->narrow_key || narrow_escaped_.count(e->narrow_key) || narrow_aliased(*e, scope)) { return nullptr; }
+        return e;
+    }
+
+    // What a passed class test tells of a variable, given what it is declared and already narrowed to. A declared class or handle
+    // narrows to the tested class as if declared so; a var or a reference to one may hold more than the test named (open)
+    bool narrow_class_fact(const var_entry& e, size_t scope, std::string_view cls, const std::vector<narrow_fact>& pending, narrow_fact& out) {
+        if (!find_sclass(cls) && !engine_class(cls)) { return false; }
+        // a reference, or an auto loop variable over class elements: its class is the referent member diagnostics read
+        const bool reference = e.is_reference || (e.dynamic && e.referent.kind == ctype::object_k);
+        if (!e.dynamic && e.type.kind != ctype::object_k) { return false; }
+        const ctype* held = nullptr;   // the narrowing in force: one this condition already gathered, else the live one
+        for (auto it = pending.rbegin(); it != pending.rend() && !held; ++it) { if (it->key == e.narrow_key) { held = &it->type; } }
+        if (!held) { if (const narrow_fact* live = narrow_live_fact(e, scope)) { held = &live->type; } }
+        if (held && held->kind != ctype::object_k) { return false; }
+        const ctype& declared = reference ? e.referent : e.type;
+        const bool declared_class = declared.kind == ctype::object_k && !declared.cls.empty() && (reference || !e.dynamic);
+        bool open = held ? held->open : !declared_class;
+        const std::string_view from = held ? held->cls : declared_class ? declared.cls : std::string_view{};
+        if (!from.empty()) {
+            if (from == cls) { return false; }
+            if (class_relation(cls, from) != 1) {
+                if (class_relation(from, cls) == 1) { return false; }   // tested for an ancestor: nothing new
+                open = true;   // an object of both: the first class's members stay possible
+            }
+        }
+        const type_info* object_type = eng_.get_type_info_object(std::string(cls));
+        if (!object_type) { return false; }
+        ctype t = ctype::object(object_type->type_name);
+        t.narrowed = true;
+        t.open = open;
+        out = narrow_fact{};
+        out.key = e.narrow_key;
+        if (reference) {
+            t.tentative = true;
+            t.diagnostic_only = true;
+            out.referent = true;
+        } else if (e.dynamic) {
+            t.tentative = true;   // a value or a handle, of this class or one derived from it
+            out.proof_only = true;
+        } else if (e.is_handle || (e.type.ti && e.type.ti->base_type == script_value_type::jai_shared_ptr_type)) {
+            t.ti = eng_.get_type_info_shared_ptr(const_cast<type_info*>(object_type));
+            t.tentative = e.type.tentative || open;
+        } else {
+            t.ti = object_type;
+            t.tentative = e.type.tentative || open;
+        }
+        out.type = t;
+        return true;
+    }
+    // reflect::type_of(x) == "int": a var holds exactly that kind
+    bool narrow_kind_fact(const var_entry& e, ctype::kind_t kind, narrow_fact& out) {
+        if (!e.dynamic || e.is_reference || e.alias.kind != ctype::unknown) { return false; }
+        out = narrow_fact{};
+        out.key = e.narrow_key;
+        out.type = ctype::make(kind);
+        out.type.narrowed = true;
+        out.proof_only = true;
+        return true;
+    }
+    static ctype::kind_t narrow_kind_name(std::string_view name) {
+        return name == "int" ? ctype::int_k : name == "float" ? ctype::float_k : name == "bool" ? ctype::bool_k
+             : name == "string" ? ctype::string_k : name == "char" ? ctype::char_k : ctype::unknown;
+    }
+    static bool narrow_text_literal(const expression* e, std::string& out) {
+        if (!e || e->get_type() != node_type::literal_expr) { return false; }
+        const script_value& v = static_cast<const literal_expr*>(e)->value;
+        if (v.type() != script_value_type::jai_string_type) { return false; }
+        out = std::string(v.unchecked_as_string());
+        return true;
+    }
+    void narrow_named_test(const expression* operand, const std::string& name, bool kinds, std::vector<narrow_fact>& out) {
+        size_t scope = 0;
+        const var_entry* e = narrow_target(operand, scope);
+        if (!e) { return; }
+        narrow_fact f;
+        const ctype::kind_t kind = kinds ? narrow_kind_name(name) : ctype::unknown;
+        if (kind != ctype::unknown ? narrow_kind_fact(*e, kind, f) : narrow_class_fact(*e, scope, name, out, f)) { out.push_back(f); }
+    }
+    static bool narrow_same(const narrow_fact& a, const narrow_fact& b) {
+        return a.key == b.key && a.referent == b.referent && a.type.kind == b.type.kind && a.type.cls == b.type.cls && a.type.ti == b.type.ti && a.type.open == b.type.open;
+    }
+    // The facts an expression's value implies when it is `sense`
+    void narrow_collect(const expression* e, bool sense, std::vector<narrow_fact>& out) {
+        if (!e) { return; }
+        stack_.guard(e->location);
+        switch (e->get_type()) {
+            case node_type::unary_expr: {
+                auto* u = static_cast<const unary_expr*>(e);
+                if (u->op.type == token_type::bang) { narrow_collect(u->operand.get(), !sense, out); }
+                return;
+            }
+            case node_type::binary_expr: {
+                auto* b = static_cast<const binary_expr*>(e);
+                const token_type op = b->op.type;
+                if (op == token_type::ampersand_ampersand || op == token_type::pipe_pipe) {
+                    if ((op == token_type::ampersand_ampersand) == sense) {   // both operands had that value
+                        narrow_collect(b->left.get(), sense, out);
+                        narrow_collect(b->right.get(), sense, out);
+                        return;
+                    }
+                    std::vector<narrow_fact> l, r;   // either may have: what both tell
+                    narrow_collect(b->left.get(), sense, l);
+                    if (!l.empty()) { narrow_collect(b->right.get(), sense, r); }
+                    for (const narrow_fact& a : l) {
+                        if (std::any_of(r.begin(), r.end(), [&](const narrow_fact& c) { return narrow_same(a, c); })) { out.push_back(a); }
+                    }
+                    return;
+                }
+                if ((op != token_type::equal_equal && op != token_type::bang_equal) || (op == token_type::equal_equal) != sense) { return; }
+                const expression* call = b->left.get();
+                const expression* text = b->right.get();
+                if (call && call->get_type() != node_type::call_expr) { std::swap(call, text); }
+                std::string name;
+                if (!call || call->get_type() != node_type::call_expr || !narrow_text_literal(text, name)) { return; }
+                auto* c = static_cast<const call_expr*>(call);
+                if (c->arguments.size() != 1 || !c->callee || c->callee->get_type() != node_type::member_expr) { return; }
+                auto* callee = static_cast<const member_expr*>(c->callee.get());
+                if (static_path(callee, "reflect") && callee->member == "type_of") { narrow_named_test(c->arguments[0].get(), name, /*kinds=*/true, out); }
+                return;
+            }
+            case node_type::cast_expr: {
+                auto* c = static_cast<const cast_expr*>(e);
+                // dynamic_cast<T>(x) as the condition: x is a T where the handle was not null
+                if (c->dynamic && !c->by_reference && sense && c->target && c->target->element_type()) {
+                    narrow_named_test(c->operand.get(), c->target->element_type()->type_name, /*kinds=*/false, out);
+                }
+                return;
+            }
+            case node_type::call_expr: {
+                auto* c = static_cast<const call_expr*>(e);
+                std::string name;
+                if (!sense || c->arguments.size() != 2 || !c->callee || c->callee->get_type() != node_type::member_expr) { return; }
+                auto* m = static_cast<const member_expr*>(c->callee.get());
+                if (static_path(m, "reflect") && m->member == "is_instance_of" && narrow_text_literal(c->arguments[1].get(), name)) {
+                    narrow_named_test(c->arguments[0].get(), name, /*kinds=*/false, out);
+                }
+                return;
+            }
+            default:
+                return;
+        }
+    }
+    bool narrow_ended_since(size_t mark, const void* key) const {
+        for (size_t i = mark; i < narrow_ended_.size(); ++i) { if (narrow_ended_[i].key == key) { return true; } }
+        return false;
+    }
+    void narrow_drop_ended(std::vector<narrow_fact>& facts, size_t mark) {
+        std::erase_if(facts, [&](const narrow_fact& f) { return narrow_escaped_.count(f.key) != 0 || narrow_ended_since(mark, f.key); });
+    }
+    // What a condition evaluated since `mark` tells where it was true and where it was false; a variable the condition itself
+    // ended tells nothing
+    void narrow_conclude(const expression* condition, size_t mark, std::vector<narrow_fact>& when_true, std::vector<narrow_fact>& when_false) {
+        if (narrow_dry_ || !condition) { return; }
+        narrow_collect(condition, true, when_true);
+        narrow_collect(condition, false, when_false);
+        narrow_drop_ended(when_true, mark);
+        narrow_drop_ended(when_false, mark);
+    }
+    void narrow_push(const std::vector<narrow_fact>& facts) {
+        if (narrow_dry_) { return; }
+        for (const narrow_fact& f : facts) { if (!narrow_escaped_.count(f.key)) { narrow_facts_.push_back(f); } }
+    }
+    void narrow_pop(size_t held) {
+        if (narrow_facts_.size() > held) { narrow_facts_.erase(narrow_facts_.begin() + static_cast<std::ptrdiff_t>(held), narrow_facts_.end()); }
+    }
+    bool narrow_live() const {
+        return std::any_of(narrow_facts_.begin(), narrow_facts_.end(), [](const narrow_fact& f) { return !f.dead; });
+    }
+    static bool narrow_completes(const statement* s) {
+        return !s || (return_flow().analyze(s).paths & (return_flow::normal | return_flow::maybe_normal)) != 0;
+    }
+    // a break that leaves this loop: its condition was not false on the way out
+    bool narrow_breaks(const ast_node* n) {
+        if (!n) { return false; }
+        stack_.guard(n->location);
+        switch (n->get_type()) {
+            case node_type::break_stmt: return true;
+            case node_type::while_stmt: case node_type::for_stmt: case node_type::range_for_stmt: case node_type::parallel_for_stmt:
+            case node_type::function_decl: case node_type::class_decl: case node_type::namespace_decl:
+                return false;
+            default: break;
+        }
+        if (n->get_type() < node_type::expression_stmt) { return false; }
+        bool found = false;
+        lw_each_child(n, [&](const ast_node* k) { found = found || narrow_breaks(k); });
+        return found;
+    }
+    // whether a body tests what a variable holds
+    bool narrow_has_test(const ast_node* n) {
+        if (!n) { return false; }
+        stack_.guard(n->location);
+        const node_type t = n->get_type();
+        bool found = false;
+        if (t < node_type::expression_stmt) {
+            auto* e = static_cast<const expression*>(n);
+            if (t == node_type::cast_expr && static_cast<const cast_expr*>(e)->dynamic) { return true; }
+            if (t == node_type::call_expr) {
+                const expression* callee = static_cast<const call_expr*>(e)->callee.get();
+                if (callee && callee->get_type() == node_type::member_expr &&
+                    (static_cast<const member_expr*>(callee)->member == "is_instance_of" || static_cast<const member_expr*>(callee)->member == "type_of")) { return true; }
+            }
+            if (t == node_type::lambda_expr && narrow_has_test(static_cast<const lambda_expr*>(e)->body.get())) { return true; }
+            for_each_child_expression(e, [&](const expression* k) { found = found || narrow_has_test(k); });
+            return found;
+        }
+        if (t == node_type::class_decl || t == node_type::namespace_decl) { return false; }
+        if (t == node_type::try_stmt && !static_cast<const try_stmt*>(n)->clause_types.empty()) { return true; }
+        lw_each_child(n, [&](const ast_node* k) { found = found || narrow_has_test(k); });
+        return found;
+    }
+    bool narrow_wants_ahead(const ast_node* body) { return !narrow_dry_ && (narrow_live() || narrow_has_test(body)); }
+
+    // A loop's body runs again after anything in it, and a lambda's body runs later and more than once: what the body ends for a
+    // variable declared outside it is ended before the body is walked. The body is walked ahead with nothing narrowed, so every
+    // call resolves by declared types alone, and nothing reported or stamped.
+    template <class F>
+    std::vector<narrow_event> narrow_walk_ahead(const void* own_variable, F&& walk) {
+        std::vector<narrow_event> ended;
+        std::unordered_set<const void*> declared;
+        {
+            const proof_mode proofs = std::exchange(proofs_, proof_mode::leave);
+            const bool collecting = std::exchange(collect_diagnostics_, false);
+            check_observer* const observer = std::exchange(observer_, nullptr);
+            std::vector<narrow_fact> facts = std::exchange(narrow_facts_, {});
+            std::vector<narrow_event> log = std::exchange(narrow_ended_, {});
+            std::unordered_set<const void*>* const outer_declared = std::exchange(narrow_declared_, &declared);
+            const mixed_ternary_note mixed = last_mixed_ternary_;
+            std::optional<fn_ctx> function;
+            if (!fn_stack_.empty()) { function = fn_stack_.back(); }
+            const bool in_list = std::exchange(narrow_in_list_, false);
+            const bool derived = narrow_derived_;
+            const size_t reads = narrow_reads_;
+            narrow_dry_ = true;
+            scopes_.emplace_back();
+            walk();
+            scopes_.pop_back();
+            narrow_dry_ = false;
+            narrow_reads_ = reads;
+            narrow_derived_ = derived;
+            narrow_in_list_ = in_list;
+            if (function) { fn_stack_.back() = std::move(*function); }
+            last_mixed_ternary_ = mixed;
+            narrow_declared_ = outer_declared;
+            ended = std::exchange(narrow_ended_, std::move(log));
+            narrow_facts_ = std::move(facts);
+            observer_ = observer;
+            collect_diagnostics_ = collecting;
+            proofs_ = proofs;
+        }
+        std::erase_if(ended, [&](const narrow_event& ev) { return ev.key == own_variable || declared.count(ev.key) != 0; });
+        for (const narrow_event& ev : ended) { narrow_apply(ev); }
+        return ended;
+    }
+
+    // An argument that names a variable outright may bind to a reference the callee, or something the callee keeps, writes
+    // through. A parameter declared by value or const&, a host parameter that writes nothing back and a library builtin take
+    // the value; a callee the checker cannot see may take anything.
+    bool narrow_binds_reference(const call_expr* c, size_t i, const std::vector<const function_decl*>* ov, const narrow_callee& seen) {
+        if (seen.copies) { return false; }
+        const auto by_reference = [i](const function_decl* fn) {
+            return fn && !fn->is_coroutine && i < fn->parameters.size() && fn->parameters[i].is_reference && !fn->parameters[i].is_const;
+        };
+        if (ov) {
+            if (std::any_of(ov->begin(), ov->end(), by_reference)) { return true; }
+            if (ov_class_.empty() || !c->callee) { return false; }
+            const std::string_view name = c->callee->get_type() == node_type::member_expr ? std::string_view(static_cast<const member_expr*>(c->callee.get())->member)
+                                        : c->callee->get_type() == node_type::identifier_expr ? std::string_view(static_cast<const identifier_expr*>(c->callee.get())->name)
+                                        : std::string_view{};
+            const auto overrides = overrides_of(ov_class_, name);
+            return std::any_of(overrides.begin(), overrides.end(), by_reference);
+        }
+        if (seen.resolved) {
+            return std::any_of(seen.declarations.begin(), seen.declarations.end(), by_reference) || i >= 64 || ((seen.writeback >> i) & 1) != 0;
+        }
+        if (seen.host.empty()) { return true; }
+        for (const auto& held : eng_.held_function_declarations(seen.host)) {
+            if (!held) { return true; }
+            const auto& parameters = held->parameters();
+            if (i < parameters.size() && parameters[i].is_reference && !parameters[i].is_const) { return true; }
+        }
+        return i >= 64 || ((eng_.host_function_writeback(std::string(seen.host)) >> i) & 1) != 0;
+    }
+    // A call may write the variable a reference aliases (a global, a field, a container element): a reference's narrowing ends
+    void narrow_end_references() {
+        for (narrow_fact& f : narrow_facts_) {
+            if (!f.referent || f.dead) { continue; }
+            narrow_ended_.push_back({f.key, false});
+            if (!narrow_dry_) { f.dead = true; }
+        }
+    }
+    void narrow_call_arguments(const call_expr* c, const std::vector<const function_decl*>* ov, const narrow_callee& seen) {
+        if (!seen.copies) { narrow_end_references(); }
+        for (size_t i = 0; i < c->arguments.size(); ++i) {
+            int binds = -1;
+            narrow_each_root(c->arguments[i].get(), [&](const var_entry& v, size_t scope) {
+                if (binds < 0) { binds = narrow_binds_reference(c, i, ov, seen) ? 1 : 0; }
+                if (binds == 1) { narrow_end(v, scope, /*escape=*/true); }
+            });
+        }
+    }
+
     // -------------------------------------------------------------- expressions
+
+    // The declared type the next expression inferred initializes (a declaration's, a parameter's, a slot's): a lambda literal
+    // takes its untyped parameters and its result from a signature there, and an array or map literal hands its element type on
+    const type_info* expected_ = nullptr;
+    ctype infer_expecting(expression* e, const type_info* expected) {
+        expected_ = expected;
+        return infer(e);
+    }
 
     JAI_NOINLINE ctype infer(expression* e) {
         if (e) { stack_.guard(e->location); }
-        ctype result = infer_impl(e);
+        narrow_observed_ = nullptr;
+        const type_info* expected = std::exchange(expected_, nullptr);
+        ctype result = infer_impl(e, expected);
         result.origin = e;
-        if (observer_ && e) { observe(e, result); }
+        if (observer_ && e) { observe(e, narrow_observed_ && e->get_type() == node_type::identifier_expr ? *narrow_observed_ : result); }
+        narrow_observed_ = nullptr;
         if (e && lw_on()) { lw_types_[e] = result; }
         return result;
     }
@@ -4710,11 +7495,12 @@ private:
         view.cls = t.cls;
         view.ti = t.ti;
         view.tentative = t.tentative;
+        view.narrowed = t.narrowed;
         view.name = ctype_name(t);
         observer_->expression_type(e, view);
     }
 
-    JAI_NOINLINE ctype infer_impl(expression* e) {
+    JAI_NOINLINE ctype infer_impl(expression* e, const type_info* expected) {
         if (!e) { return {}; }
         switch (e->get_type()) {
             case node_type::literal_expr: {
@@ -4741,9 +7527,13 @@ private:
                 return infer_call(static_cast<call_expr*>(e));
             case node_type::member_expr:
                 return infer_member_expression(static_cast<member_expr*>(e));
-            case node_type::lambda_expr:
-                walk_lambda(static_cast<lambda_expr*>(e));
+            case node_type::lambda_expr: {
+                auto* l = static_cast<lambda_expr*>(e);
+                const lambda_context context = open_lambda_context(l, expected);
+                walk_lambda(l);
+                close_lambda_context(l, context);
                 return ctype::make(ctype::function_k);
+            }
             case node_type::new_expr:
                 return infer_new(static_cast<new_expr*>(e));
             case node_type::include_expr: {
@@ -4754,11 +7544,11 @@ private:
             case node_type::import_expr:
                 return infer_import(static_cast<import_expr*>(e));
             case node_type::ternary_expr:
-                return infer_ternary(static_cast<ternary_expr*>(e));
+                return infer_ternary(static_cast<ternary_expr*>(e), expected);
             case node_type::array_literal_expr:
-                return infer_array_literal(static_cast<array_literal_expr*>(e));
+                return infer_array_literal(static_cast<array_literal_expr*>(e), expected);
             case node_type::map_literal_expr:
-                return infer_map_literal(static_cast<map_literal_expr*>(e));
+                return infer_map_literal(static_cast<map_literal_expr*>(e), expected);
             case node_type::this_expr:
                 return infer_this(e);
             case node_type::super_expr:
@@ -4784,13 +7574,45 @@ private:
     }
 
     JAI_NOINLINE ctype infer_binary(binary_expr* b) {
+        if (b->op.type == token_type::greater && value_as_type_argument(b)) { return {}; }
+        const size_t mark = narrow_ended_.size();
         ctype l = infer(b->left.get());
+        const size_t held = narrow_facts_.size();
+        if ((b->op.type == token_type::ampersand_ampersand || b->op.type == token_type::pipe_pipe) && !narrow_dry_) {
+            std::vector<narrow_fact> decided;   // the right operand runs only where the left was true (&&) or false (||)
+            narrow_collect(b->left.get(), b->op.type == token_type::ampersand_ampersand, decided);
+            narrow_drop_ended(decided, mark);
+            narrow_push(decided);
+        }
         ctype r = infer(b->right.get());
+        narrow_pop(held);
         return binary_type(b, l, r);
+    }
+
+    // Box<3> x; reads as (Box < 3) > x, where a generic class's bare name is an error anyway: its one error says a type
+    // argument is a type
+    JAI_NOINLINE bool value_as_type_argument(const binary_expr* b) {
+        if (!generics_live_ || !b->left || b->left->get_type() != node_type::binary_expr) { return false; }
+        const auto* less = static_cast<const binary_expr*>(b->left.get());
+        if (less->op.type != token_type::less || !less->left || !less->right || less->right->get_type() != node_type::literal_expr) { return false; }
+        std::string name;
+        if (less->left->get_type() == node_type::identifier_expr) {
+            const auto* id = static_cast<const identifier_expr*>(less->left.get());
+            if (find_local(id->name)) { return false; }
+            name = std::string(id->name);
+        } else if (less->left->get_type() == node_type::member_expr && static_cast<const member_expr*>(less->left.get())->is_static) {
+            name = qualified_spelling(static_cast<const member_expr*>(less->left.get()));
+        }
+        const generic_definition_ptr g = name.empty() ? nullptr : generic_class_named(name);
+        if (!g) { return false; }
+        diag(diag_level::error, less->right->location,
+             "a type argument names a type: a value is not one an instance can be made with; '" + name + "' takes types (" + generic_spelling(*g) + ")");
+        return true;
     }
 
     JAI_NOINLINE ctype binary_type(binary_expr* b, ctype& l, ctype& r) {
         if (b->op.type == token_type::left_bracket) {
+            function_subscripted(b, l);
             // the proven element kind rides the node's class (int_int / float_float) for the compiler's temps
             const ctype cont = declared_container_receiver(b->left.get(), l);
             const ctype el = container_value_type(cont);
@@ -4940,21 +7762,43 @@ private:
         }
     }
 
-    // ++ and -- take numbers and chars; no class operator answers them
-    bool incdec_refused(const ctype& t) {
+    // The class of an object target declares an in-place operator (op: "+=", "++", ...) that may take the operation, as
+    // detail::object_operator_in_place asks: a compound one taking rhs, ++/-- in the form written (prefix none, postfix the int
+    // marker); an uncertain member answers yes, a script class's overloads none of which takes it no
+    bool in_place_operator_may_take(const ctype& t, std::string_view op, const ctype* rhs, bool postfix) {
+        if (t.kind != ctype::object_k || t.cls.empty()) { return false; }
+        const member_hit hit = lookup_member(t.cls, op, /*want_static=*/false);
+        if (!hit.certain || extended_members_.count(std::string(op))) { return true; }
+        if (!hit.found) { return false; }
+        if (!hit.methods) { return true; }
+        for (const auto* fn : *hit.methods) {
+            auto [lo, hi] = arity_range(fn);
+            if (rhs) {
+                if (lo <= 1 && hi >= 1 && script_fn_viable(fn, std::vector<ctype>{*rhs})) { return true; }
+            } else if (postfix ? (lo <= 1 && hi >= 1) : lo == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ++ and -- take numbers and chars, and an object whose class declares the operator in the form written
+    bool incdec_refused(const ctype& t, const char* op = nullptr, bool postfix = false) {
+        if (op && in_place_operator_may_take(t, op, nullptr, postfix)) { return false; }
         return settled_operand(t) && t.kind != ctype::int_k && t.kind != ctype::float_k && t.kind != ctype::char_k;
     }
 
-    // x op= rhs runs x op rhs: the binary rows above, then the store; the diagnostic names the compound spelling
-    bool check_compound_operands(const ctype& target, token_type base_op, const ctype& rhs, const source_location& loc, size_t decl_line, size_t decl_col) {
+    // x op= rhs runs the class's operator op= when it declares one taking rhs, else x op rhs: the binary rows above, then the store;
+    // the diagnostic names the compound spelling
+    bool check_compound_operands(const ctype& target, token_type base_op, const ctype& rhs, const source_location& loc, const declared_at& declared) {
         if (incdec_op_) {
-            if (!incdec_refused(target)) { return false; }
-            diag(diag_level::error, loc, std::string("cannot apply '") + incdec_op_ + "' to '" + ctype_name(target) + "'", decl_line, decl_col);
+            if (!incdec_refused(target, incdec_op_, incdec_postfix_)) { return false; }
+            diag(diag_level::error, loc, std::string("cannot apply '") + incdec_op_ + "' to '" + ctype_name(target) + "'", declared);
             return true;
         }
         const binary_refusal refusal = builtin_binary_refusal(target, base_op, rhs);
         if (!refusal.op) { return false; }
-        diag(diag_level::error, loc, builtin_binary_message(std::string(refusal.op) + "=", refusal, target, rhs, /*compound=*/true), decl_line, decl_col);
+        diag(diag_level::error, loc, builtin_binary_message(std::string(refusal.op) + "=", refusal, target, rhs, /*compound=*/true), declared);
         return true;
     }
 
@@ -4972,7 +7816,9 @@ private:
                 return is_numeric(operand.kind) || (operand.kind == ctype::math_k && u->op.type == token_type::plus) ? plain_int(operand) : ctype{};
             case token_type::plus_plus:
             case token_type::minus_minus:
+                narrow_end_roots(u->operand.get(), /*escape=*/false);
                 check_incdec_target(u);
+                if (in_place_operator_may_take(operand, u->op.type == token_type::plus_plus ? "++" : "--", nullptr, u->is_postfix)) { return {}; }
                 if (incdec_refused(operand) || (enum_value(operand) && !operand.tentative)) {
                     diag(diag_level::error, u->location, std::string("cannot apply '") + (u->op.type == token_type::plus_plus ? "++" : "--") + "' to '" + ctype_name(operand) + "'");
                 } else if (operand.kind == ctype::char_k && !operand.tentative && !operand.diagnostic_only && u->operand->get_type() == node_type::identifier_expr) {
@@ -4998,10 +7844,20 @@ private:
         std::vector<ctype> args;
         for (auto& a : n->arguments) { args.push_back(infer(a.get())); }
         ctype t = ctype_from_type_info(n->type.get());
+        if (t.kind == ctype::object_k && refuse_bare_generic_class(t.cls, n->location)) { return t; }
+        report_unbound_instantiation(n->type.get(), n->location);
+        const sclass* made = t.kind == ctype::object_k ? find_sclass(t.cls) : nullptr;
+        narrow_end_references();   // a constructor runs code
+        for (size_t i = 0; i < n->arguments.size(); ++i) {   // a constructor's reference parameter, or a host constructor's
+            const bool binds = !made || std::any_of(made->ctors.begin(), made->ctors.end(), [i](const function_decl* fn) {
+                return i < fn->parameters.size() && fn->parameters[i].is_reference && !fn->parameters[i].is_const;
+            });
+            if (binds) { narrow_end_roots(n->arguments[i].get(), /*escape=*/true); }
+        }
         if (t.kind == ctype::object_k) {
             if (n->type && n->type->base_type == script_value_type::jai_shared_ptr_type) { note_handle_held(t.cls, n->location); }
-            if (const sclass* c = find_sclass(t.cls)) {
-                check_ctor_call(t.cls, *c, args, n->location);
+            if (made) {
+                check_ctor_call(t.cls, *made, args, n->location);
             } else {
                 check_strict_host_constructor(std::string(t.cls), args, n->location);
             }
@@ -5019,14 +7875,27 @@ private:
         return ctype::make(ctype::bool_k);   // true when a module (re)ran
     }
 
-    JAI_NOINLINE ctype infer_ternary(ternary_expr* t) {
+    JAI_NOINLINE ctype infer_ternary(ternary_expr* t, const type_info* expected) {
+        const size_t mark = narrow_ended_.size();
+        const expression* outer_chain_test = std::exchange(null_chain_test_, t->null_chain ? t->condition.get() : nullptr);
         infer(t->condition.get());
-        ctype a = infer(t->then_expression.get());
-        ctype b = infer(t->else_expression.get());
+        null_chain_test_ = outer_chain_test;
+        std::vector<narrow_fact> when_true, when_false;
+        narrow_conclude(t->condition.get(), mark, when_true, when_false);
+        const size_t held = narrow_facts_.size();
+        narrow_push(when_true);
+        ctype a = infer_expecting(t->then_expression.get(), expected);
+        narrow_pop(held);
+        narrow_push(when_false);
+        ctype b = infer_expecting(t->else_expression.get(), expected);
+        narrow_pop(held);
         if (a.kind == b.kind && a.cls == b.cls) {
+            if (!mixed_ternaries_.empty()) { mixed_ternaries_.erase(t); }   // a walk ahead judged the arms by their declared types
             if (a.ti != b.ti) { a.ti = nullptr; }   // two spellings (value vs handle) are not one certain type
             a.tentative = a.tentative || b.tentative;
             a.const_key = a.const_key || b.const_key;
+            a.narrowed = a.narrowed && b.narrowed;
+            a.open = a.open || b.open;
             return a;
         }
         if (!a.is_unknown() && !b.is_unknown() && a.kind != ctype::null_k && b.kind != ctype::null_k) {   // a T-or-null arm pair is a nullable value, never a type mix
@@ -5044,17 +7913,306 @@ private:
         return mixed;
     }
 
-    JAI_NOINLINE ctype infer_array_literal(array_literal_expr* a) {
-        for (auto& el : a->elements) { literal_element_types_[el.get()] = infer(el.get()); }
+    JAI_NOINLINE ctype infer_array_literal(array_literal_expr* a, const type_info* expected) {
+        const type_info* element = expected && expected->base_type == script_value_type::jai_array_type ? expected->element_type().get() : nullptr;
+        for (auto& el : a->elements) { literal_element_types_[el.get()] = infer_expecting(el.get(), element); }
         return ctype::make(ctype::array_k);
     }
 
-    JAI_NOINLINE ctype infer_map_literal(map_literal_expr* m) {
+    JAI_NOINLINE ctype infer_map_literal(map_literal_expr* m, const type_info* expected) {
+        const type_info* value = expected && expected->base_type == script_value_type::jai_map_type ? expected->value_type().get() : nullptr;
         for (auto& [k, v] : m->entries) {
             literal_element_types_[k.get()] = infer(k.get());
-            literal_element_types_[v.get()] = infer(v.get());
+            literal_element_types_[v.get()] = infer_expecting(v.get(), value);
         }
         return ctype::make(ctype::map_k);
+    }
+
+    // an expression whose checking takes the slot's declared type (infer_expecting)
+    static bool contextual_literal(const expression* e) {
+        if (!e) { return false; }
+        const node_type k = e->get_type();
+        return k == node_type::lambda_expr || k == node_type::array_literal_expr || k == node_type::map_literal_expr || k == node_type::ternary_expr;
+    }
+
+    // The static type of a name, `this` or a field of either, read without walking it (no diagnostic, no stamp)
+    ctype peek_type(const expression* e) {
+        if (!e) { return {}; }
+        if (e->get_type() == node_type::this_expr) { return class_ctx_ ? ctype::object(class_ctx_name_) : ctype{}; }
+        if (e->get_type() == node_type::identifier_expr) {
+            const auto* id = static_cast<const identifier_expr*>(e);
+            if (const var_entry* local = find_local(id->name)) { return local->dynamic ? ctype{} : local->type; }
+            if (class_ctx_ && !id->global_qualified) {
+                const member_hit hit = lookup_member(class_ctx_name_, id->name, false);
+                if (hit.found) { return hit.field && !hit.methods && hit.field->type ? member_type(hit) : ctype{}; }
+            }
+            if (find_sclass(id->name)) { return ctype{ctype::class_ref_k, id->name}; }
+            return {};
+        }
+        if (e->get_type() == node_type::member_expr) {
+            const auto* m = static_cast<const member_expr*>(e);
+            if (m->is_static) { return {}; }
+            const ctype recv = peek_type(m->object.get());
+            if (recv.kind != ctype::object_k || recv.cls.empty()) { return {}; }
+            const member_hit hit = lookup_member(recv.cls, m->member, false);
+            return hit.found && hit.field && !hit.methods && hit.field->type ? member_type(hit) : ctype{};
+        }
+        return {};
+    }
+
+    // The declared type of the storage an assignment's target names, where the load sees it: a variable, a field, an element
+    const type_info* peek_declared_type(const expression* e) {
+        if (!e) { return nullptr; }
+        if (e->get_type() == node_type::binary_expr) {
+            const auto* b = static_cast<const binary_expr*>(e);
+            if (b->op.type != token_type::left_bracket) { return nullptr; }
+            const type_info* container = peek_declared_type(b->left.get());
+            if (container && container->base_type == script_value_type::jai_array_type) { return container->element_type().get(); }
+            if (container && container->base_type == script_value_type::jai_map_type) { return container->value_type().get(); }
+            return nullptr;
+        }
+        const type_info* declared = peek_type(e).ti;
+        return declared && declared->base_type == script_value_type::jai_reference_type ? declared->element_type().get() : declared;
+    }
+
+    // A C++ parameter as a script type: the scalars, a registered class (by value or shared_ptr), a math kind, a std::function's
+    // signature; null (var) for a script_value and for what the binding does not name
+    type_info* host_parameter_type(const param_type_info& p) {
+        using k = script_value_type;
+        switch (p.base_type) {
+            case k::jai_int_type: return eng_.get_type_info_int();
+            case k::jai_float_type: return eng_.get_type_info_float();
+            case k::jai_bool_type: return eng_.get_type_info_bool();
+            case k::jai_char_type: return eng_.get_type_info_char();
+            case k::jai_string_type: return eng_.get_type_info_string();
+            case k::jai_invalid_type: return eng_.get_type_info_void();
+            case k::jai_object_type:
+            case k::jai_shared_ptr_type: {
+                auto def = eng_.get_class_definition_by_type(p.cpp_type);
+                if (!def) { return nullptr; }
+                type_info* object = eng_.get_type_info_object(def->get_name());
+                return p.base_type == k::jai_object_type ? object : eng_.get_type_info_shared_ptr(object);
+            }
+            case k::jai_function_type: {
+                if (!p.signature) { return eng_.get_type_info_untyped_function(); }
+                std::vector<type_info*> arguments;
+                for (size_t i = 0; i < p.signature->parameters.size(); ++i) {
+                    type_info* argument = host_parameter_type(p.signature->parameters[i]);
+                    if (p.signature->references[i] && argument) { argument = eng_.get_type_info_reference(argument); }
+                    arguments.push_back(argument ? argument : eng_.get_type_info_any());
+                }
+                type_info* result = host_parameter_type(p.signature->result);
+                return eng_.get_type_info_function(result ? result : eng_.get_type_info_any(), arguments);
+            }
+            default:
+                return is_math_type(p.base_type) ? eng_.get_type_info_math(p.base_type) : nullptr;
+        }
+    }
+
+    // The type each argument of a host call initializes where every registration the count admits agrees on it
+    void host_arguments_agreed(const std::vector<std::vector<param_type_info>>& overloads, size_t argc, std::vector<const type_info*>& out) {
+        std::vector<const type_info*> agreed(argc, nullptr);
+        bool any = false;
+        for (const auto& params : overloads) {
+            if (params.size() != argc) { continue; }
+            for (size_t i = 0; i < argc; ++i) {
+                const type_info* declared = params[i].base_type == script_value_type::jai_function_type ? host_parameter_type(params[i]) : nullptr;
+                if (!any) { agreed[i] = declared; } else if (agreed[i] != declared) { agreed[i] = nullptr; }
+            }
+            any = true;
+        }
+        if (any) { out = std::move(agreed); }
+    }
+    void host_argument_types(const std::string& name, size_t argc, std::vector<const type_info*>& out) {
+        std::vector<engine::host_overload_signature> sigs;
+        if (!eng_.host_function_signatures(name, sigs)) { return; }
+        std::vector<std::vector<param_type_info>> overloads;
+        for (auto& sig : sigs) { overloads.push_back(std::move(sig.param_types)); }
+        host_arguments_agreed(overloads, argc, out);
+    }
+    void host_method_argument_types(std::string_view cls, std::string_view member, size_t argc, std::vector<const type_info*>& out) {
+        auto def = engine_class(cls);
+        if (!def || !def->is_cpp_class()) { return; }
+        const auto& table = def->cpp_method_overload_table();
+        auto it = table.find(eng_.symbolize(member));
+        if (it == table.end()) { return; }
+        auto bucket = it->second.find(argc);
+        if (bucket == it->second.end()) { return; }
+        std::vector<std::vector<param_type_info>> overloads;
+        for (const auto& entry : bucket->second) { overloads.push_back(entry.param_types); }
+        host_arguments_agreed(overloads, argc, out);
+    }
+
+    // A script callable handed to a std::function parameter: what keeps it from standing behind the signature (empty: nothing)
+    std::string host_callback_issue(const ctype& arg, const param_type_info& p) {
+        if (p.base_type != script_value_type::jai_function_type || !p.signature || arg.kind != ctype::function_k) { return {}; }
+        ctype slot = ctype::make(ctype::function_k);
+        slot.ti = host_parameter_type(p);
+        return signature_issue(arg, slot);
+    }
+    // the first argument of a host call whose callable the one registration of that count refuses, reported with its reason
+    bool report_host_callback(const std::string& fname, const std::vector<std::vector<param_type_info>>& overloads, const std::vector<ctype>& args,
+                              const call_expr* c) {
+        const std::vector<param_type_info>* only = nullptr;
+        for (const auto& params : overloads) {
+            if (params.size() != args.size()) { continue; }
+            if (only) { return false; }
+            only = &params;
+        }
+        if (!only || !c) { return false; }
+        for (size_t i = 0; i < args.size(); ++i) {
+            if (const std::string issue = host_callback_issue(args[i], (*only)[i]); !issue.empty()) {
+                diag(diag_level::error, c->arguments[i]->location, "argument " + std::to_string(i + 1) + " of '" + fname + "': cannot pass '" +
+                     ctype_name(args[i]) + "' where it takes '" + host_parameter_type((*only)[i])->canonical_name() + "': " + issue);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // What each argument of a call initializes, where one declaration answers the call: the parameter types every overload the
+    // count admits agrees on, a signature slot's, a typed array's element for push. Asked only for a call that passes a literal
+    // whose checking takes it.
+    void expected_argument_types(const call_expr* c, std::vector<const type_info*>& out) {
+        const size_t argc = c->arguments.size();
+        if (!std::any_of(c->arguments.begin(), c->arguments.end(), [](const expression_ptr& a) { return contextual_literal(a.get()); })) { return; }
+        const auto from_signature = [&](const type_info* signature) {
+            if (!signature || !signature->is_signature() || signature->type_params.size() - 1 != argc) { return; }
+            for (size_t i = 1; i <= argc; ++i) { out.push_back(signature->type_params[i].get()); }
+        };
+        const auto from_overloads = [&](const std::vector<const function_decl*>& fns) {
+            std::vector<const type_info*> agreed(argc, nullptr);
+            bool any = false;
+            for (const function_decl* fn : fns) {
+                auto [min_a, max_a] = arity_range(fn);
+                if (argc < min_a || argc > max_a) { continue; }
+                for (size_t i = 0; i < argc; ++i) {
+                    const type_info* declared = fn->parameters[i].is_reference ? nullptr : fn->parameters[i].type.get();
+                    if (!any) { agreed[i] = declared; } else if (agreed[i] != declared) { agreed[i] = nullptr; }
+                }
+                any = true;
+            }
+            if (any) { out = std::move(agreed); }
+        };
+        const auto from_member = [&](const member_hit& hit) {
+            if (!hit.found) { return; }
+            if (hit.methods) { from_overloads(*hit.methods); } else if (hit.field) { from_signature(hit.field->type.get()); }
+        };
+        const expression* callee = c->callee.get();
+        if (callee && callee->get_type() == node_type::identifier_expr) {
+            const auto* id = static_cast<const identifier_expr*>(callee);
+            size_t scope_index = 0;
+            if (const var_entry* local = callable_variable(id, &scope_index)) {
+                if (!local->dynamic) { from_signature(local->type.ti); }
+                return;
+            }
+            if (class_ctx_ && !id->global_qualified) {
+                const member_hit hit = lookup_member(class_ctx_name_, id->name, false);
+                if (hit.found || hit.unresolved) { from_member(hit); return; }
+            }
+            if (const std::string space = id->global_qualified ? std::string() : enclosing_namespace_member(id->name); !space.empty()) {
+                if (auto it = namespace_fns_.find(space + "::" + std::string(id->name)); it != namespace_fns_.end() && namespace_member_settled(space, id->name, c->location)) {
+                    from_overloads(it->second);
+                }
+                return;
+            }
+            if (auto it = functions_.find(id->name); it != functions_.end()) { from_overloads(it->second); return; }
+            if (const sclass* sc = find_sclass(id->name)) { from_overloads(sc->ctors); return; }
+            if (const function_decl* declared = program_function(id->name)) { from_overloads({declared}); return; }
+            host_argument_types(std::string(id->name), argc, out);
+            return;
+        }
+        if (callee && callee->get_type() == node_type::member_expr) {
+            const auto* m = static_cast<const member_expr*>(callee);
+            if (m->is_static) {
+                if (auto it = namespace_fns_.find(qualified_spelling(m)); it != namespace_fns_.end()) { from_overloads(it->second); return; }
+                const ctype recv = peek_type(m->object.get());
+                if (recv.kind == ctype::class_ref_k) { from_member(lookup_member(recv.cls, m->member, true)); }
+                return;
+            }
+            const ctype recv = peek_type(m->object.get());
+            if (recv.kind == ctype::object_k && !recv.cls.empty()) {
+                const member_hit hit = lookup_member(recv.cls, m->member, false);
+                if (!hit.methods && !hit.field) { host_method_argument_types(recv.cls, m->member, argc, out); } else { from_member(hit); }
+            } else if (recv.kind == ctype::array_k && recv.ti && ((m->member == "push" && argc == 1) || (m->member == "insert" && argc == 2))) {
+                out.assign(argc, nullptr);
+                out.back() = recv.ti->element_type().get();
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- contextual lambda types
+
+    // What a lambda's parameters and result were before a walk typed them from the signature it is checked against: a walk that
+    // only reports puts them back, the walk that stamps the program keeps them (the backends bind and convert by them)
+    struct lambda_context {
+        std::vector<std::pair<type_info_ptr, bool>> parameters;
+        type_info_ptr result;
+        bool contextual_result = false;
+    };
+
+    lambda_context open_lambda_context(lambda_expr* l, const type_info* signature) {
+        lambda_context was;
+        was.parameters.reserve(l->parameters.size());
+        for (parameter& p : l->parameters) {
+            was.parameters.emplace_back(p.type, p.contextual);
+            if (p.contextual) {   // as parsed: a bare name is a var, an auto has no type
+                p.type = p.untyped ? type_info_ptr{eng_.get_type_info_any()} : type_info_ptr{};
+                p.contextual = false;
+            }
+        }
+        was.result = l->return_type;
+        was.contextual_result = l->contextual_return;
+        if (l->contextual_return) {
+            l->return_type = type_info_ptr{};
+            l->contextual_return = false;
+        }
+        if (!signature || !signature->is_signature() || signature->type_params.size() - 1 != l->parameters.size()) { return was; }
+        for (size_t i = 0; i < l->parameters.size(); ++i) {
+            parameter& p = l->parameters[i];
+            const type_info* declared = signature->type_params[i + 1].get();
+            if (declared && declared->base_type == script_value_type::jai_reference_type) { declared = declared->element_type().get(); }
+            if (p.is_reference || !(p.untyped || !p.type) || dynamic_type(declared)) { continue; }
+            p.type = type_info_ptr{const_cast<type_info*>(declared)};
+            p.contextual = true;
+        }
+        const type_info* result = signature->type_params[0].get();
+        if (!l->return_type && !dynamic_type(result) && result->base_type != script_value_type::jai_null_type) {
+            l->return_type = type_info_ptr{const_cast<type_info*>(result)};
+            l->contextual_return = true;
+        }
+        return was;
+    }
+
+    void close_lambda_context(lambda_expr* l, const lambda_context& was) {
+        if (!semantic_walk()) {
+            for (size_t i = 0; i < l->parameters.size(); ++i) {
+                l->parameters[i].type = was.parameters[i].first;
+                l->parameters[i].contextual = was.parameters[i].second;
+            }
+            l->return_type = was.result;
+            l->contextual_return = was.contextual_result;
+            return;
+        }
+        bool moved = l->return_type.get() != was.result.get();
+        for (size_t i = 0; i < l->parameters.size(); ++i) {
+            const parameter& p = l->parameters[i];
+            if (p.type.get() == was.parameters[i].first.get()) { continue; }
+            moved = true;
+            // a store to the name rebinds a handle only while the parameter is a var (identifier_expr::names_var_decl, the parser's)
+            detail::body_walker names;
+            names.symbolizer = nullptr;
+            names.on_identifier = [&p](identifier_expr* id) {
+                if (id->symbol_id == p.symbol_id && id->slot_index == p.slot_index && id->slot_index != SIZE_MAX) { id->names_var_decl = !p.contextual; }
+            };
+            names.stmt(l->body);
+        }
+        if (moved) {   // the functions made from here on bind by the new declaration
+            l->shared_params_cache.reset();
+            l->mint_cache.reset();
+            l->graft_decl.reset();
+            l->graft_overloads.clear();
+        }
     }
 
     JAI_NOINLINE ctype infer_this(expression* e) {
@@ -5067,34 +8225,35 @@ private:
 
     // cast<T>(e): certain T (proofs flow); cast<T&>(e): T for member lookup, never a store proof (tentative, like every reference);
     // cast<shared_ptr<T>>(e): the handle spelling. The operand is the explicit typed boundary - never checked against T.
-    // e instanceof T: T names a class; an operand whose declared type can hold no object of a class is never one
-    ctype infer_instance_test(cast_expr* c, const ctype& operand) {
-        stamp_const(c->const_check, const_none, {});
-        const std::string name(c->target->type_name);
-        const ctype result = ctype::make(ctype::bool_k);
-        if (enum_type_name(*c->target) || find_enum(name)) {
-            diag(diag_level::error, c->location, "'instanceof' tests a class, and '" + name + "' is an enum: compare the value with one of its values (x == " + name + "::value)");
-            return result;
-        }
-        if (!known_class(name) && !extra_global(name)) {
-            diag(diag_level::error, c->location, "unknown type '" + name + "'");
-            return result;
-        }
-        if (operand.tentative || operand.is_unknown()) { return result; }
+    // dynamic_cast names a class and takes an operand that can hold an object: an operand whose declared type holds none is the
+    // load's error, and two classes neither of which derives from the other meet only in a class derived from both
+    bool dynamic_cast_of_enum(const cast_expr* c) {
+        const type_info* named = c->by_reference ? c->target.get() : c->target->element_type().get();
+        if (!named || (!enum_type_name(*named) && !find_enum(named->type_name))) { return false; }
+        const std::string name(named->type_name);
+        diag(diag_level::error, c->location, "dynamic_cast<" + name + (c->by_reference ? "&>" : ">") +
+             " names a class, and '" + name + "' is an enum: cast<" + name + ">(n) converts an int that is one of its values");
+        return true;
+    }
+    void check_dynamic_cast(const cast_expr* c, const ctype& operand) {
+        const type_info* named = c->by_reference ? c->target.get() : c->target->element_type().get();
+        if (!named) { return; }
+        const std::string name(named->type_name);
+        const std::string form = "dynamic_cast<" + name + (c->by_reference ? "&>" : ">");
+        if (operand.tentative || operand.is_unknown() || operand.narrowed) { return; }
         switch (operand.kind) {
             case ctype::int_k: case ctype::float_k: case ctype::bool_k: case ctype::char_k: case ctype::string_k: case ctype::utf8_k:
             case ctype::array_k: case ctype::map_k: case ctype::math_k: case ctype::function_k:
-                diag(diag_level::error, c->location, "'instanceof " + name + "' is always false: the operand is '" + ctype_name(operand) + "', never an object of a class");
+                diag(diag_level::error, c->location, form + (c->by_reference ? " always raises" : " is always null") + ": the operand is '" + ctype_name(operand) + "', never an object of a class");
                 break;
             case ctype::object_k:
-                // two classes neither of which derives from the other: true only of an object whose class derives from both
                 if (!operand.cls.empty() && class_relation(operand.cls, name) == 0 && class_relation(name, operand.cls) == 0) {
-                    diag(diag_level::warning, c->location, "'instanceof " + name + "' is false for every '" + std::string(operand.cls) + "' but one whose class derives from '" + name + "' too");
+                    diag(diag_level::warning, c->location, form + (c->by_reference ? " raises" : " is null") + " for every '" + std::string(operand.cls) +
+                         "' but one whose class derives from '" + name + "' too");
                 }
                 break;
             default: break;
         }
-        return result;
     }
 
     JAI_NOINLINE ctype infer_cast(cast_expr* c) {
@@ -5104,14 +8263,28 @@ private:
             return operand_t;
         }
         ctype operand_t = infer(c->operand.get());
-        if (c->instance_test) { return infer_instance_test(c, operand_t); }
+        if (c->type_value) {   // a type argument: its type names a type, as a declaration's does
+            stamp_const(c->const_check, const_none, {});
+            if (unknown_type_arguments_ && unknown_bare_type(c->target.get())) {   // its call reports it, once the callee is known
+                unknown_type_arguments_->emplace_back(c->target, c->location);
+                return ctype::object("reflect::type");
+            }
+            check_spelled_type(c->target.get(), c->location);
+            return ctype::object("reflect::type");
+        }
         if (c->by_reference) { report_mixed_reference_conditional(c->operand.get()); }
         check_const_cast(c);
         ctype t = ctype_from_type_info(c->target.get());
+        if (t.kind == ctype::object_k && refuse_bare_generic_class(t.cls, c->location)) { return {}; }
+        if (report_unbound_instantiation(c->target.get(), c->location)) { return {}; }
+        if (c->dynamic && dynamic_cast_of_enum(c)) { return {}; }
         if (t.kind == ctype::object_k && !known_class(t.cls) && !extra_global(std::string(t.cls))) {
             diag(diag_level::error, c->location, "unknown type in cast: '" + std::string(t.cls) + "'");
             return {};
         }
+        if (c->dynamic) { check_dynamic_cast(c, operand_t); }
+        refuse_handle_of_value(c, operand_t);
+        if (!c->by_reference && !c->truth_read) { note_this_into_handle(operand_t, c->target.get()); }
         if (collect_diagnostics_ && !c->by_reference && c->target->base_type == script_value_type::jai_object_type) {
             warn_cast_copy(c, operand_t);
         }
@@ -5155,6 +8328,7 @@ private:
                         std::string(id->name) + "'; name it or use [=] or [&]", local->line, local->column);
                 }
             }
+            if (const ctype* narrowed = narrow_read(*local, scope_index, /*referent=*/false)) { return *narrowed; }
             return local->dynamic ? (local->alias.kind != ctype::unknown ? local->alias : ctype{}) : local->type;
         }
         if (class_ctx_ && !id->global_qualified) {
@@ -5182,17 +8356,22 @@ private:
         if (!id->global_qualified) {
             const std::string space = enclosing_namespace_member(id->name);
             if (!space.empty()) {
-                if (namespace_member_unready(space, id->name, id->location, false)) { return {}; }
-                return namespace_fns_.count(space + "::" + std::string(id->name)) ? ctype::make(ctype::function_k) : ctype{};
+                if (namespace_member_unready(space, id->name, id->location, false) || !namespace_member_settled(space, id->name, id->location)) { return {}; }
+                return namespace_member_read(space, id->name);
             }
         }
-        if (functions_.count(id->name)) {
+        if (auto declared = functions_.find(id->name); declared != functions_.end()) {
             note_global_use(id->name);
             report_function_before_declaration(id->name, id->location, false);
-            return ctype::make(ctype::function_k);
+            report_instance_before_declaration(id->name, id->location, false);
+            ctype named = ctype::make(ctype::function_k);
+            if (foreign_overloads(id->name, declared->second).empty()) { named.fns = &declared->second; }   // another unit's overloads answer the name too
+            return named;
         }
         if (find_sclass(id->name)) {
+            if (refuse_bare_generic_class(id->name, id->location)) { return {}; }
             report_class_before_declaration(id->name, id->location);
+            report_instance_before_declaration(id->name, id->location, false);
             return ctype{ctype::class_ref_k, id->name};
         }
         if (enums_.count(id->name)) { return ctype{ctype::enum_ref_k, id->name}; }
@@ -5202,9 +8381,11 @@ private:
             return {};
         }
         report_use_before_declaration(id->name, id->location, false, [&] { return eng_.has_variable(name); });
+        if (!bare_name_reaches_members(id) && program_function(id->name)) { note_global_use(id->name); return ctype::make(ctype::function_k); }
         if (const variable_decl* g = program_global(name)) { note_global_use(id->name); return program_global_type(g); }   // the proof pass alone types a global another unit declares
         if (extra_global(name)) { note_global_use(id->name); return program_scope_read_type(name); }
         if (eng_.is_type_name(name) || eng_.find_script_class(name)) {
+            if (refuse_bare_generic_class(id->name, id->location)) { return {}; }
             return ctype{ctype::class_ref_k, id->name};
         }
         if (eng_.has_function(name)) { note_global_use(id->name); return ctype::make(ctype::function_k); }
@@ -5216,7 +8397,8 @@ private:
         if (engine_knows_name(name)) { return {}; }
         if (program_or_derived_name(id->name)) { return {}; }
         if (stale_field_context()) { return {}; }   // bare old-shape field in a redefined class's method
-        undeclared(id->location, id->name);
+        if (refuse_bare_generic_class(id->name, id->location)) { return {}; }   // a generic class's name and nothing else's
+        undeclared(id->location, id->name, id->less_compared);
         return {};
     }
 
@@ -5262,8 +8444,11 @@ private:
             case node_type::identifier_expr: {
                 const auto* id = static_cast<const identifier_expr*>(e);
                 if (extended_names_.count(id->name)) { return {}; }
-                const var_entry* local = find_named(id);
-                return local ? local->referent : ctype{};
+                size_t scope_index = 0;
+                const var_entry* local = find_named(id, &scope_index);
+                if (!local) { return {}; }
+                if (const ctype* narrowed = narrow_read(*local, scope_index, /*referent=*/true)) { return *narrowed; }
+                return local->referent;
             }
             case node_type::member_expr: {
                 const auto* m = static_cast<const member_expr*>(e);
@@ -5298,13 +8483,19 @@ private:
     ctype infer_member_impl(member_expr* m, bool writing, const variable_decl** typed_field_out,
                             ctype* recv_out, member_hit* hit_out) {
         if (m->is_static && binary_width_token(m)) { return object_of("binary::width"); }
-        if (m->is_static && namespace_path_receiver(m)) {
-            check_namespace_member(m);
-            if (const var_entry* x = qualified_extern(m); x && !x->dynamic) { return x->type; }
-            return namespace_variable_type(m);
+        if (m->is_static && namespace_path_receiver(m) && !namespace_class_receiver(m)) {
+            if (const enum_decl* named = namespace_enum(m)) { return ctype{ctype::enum_ref_k, named->name}; }
+            const bool enum_value = m->object->get_type() == node_type::member_expr && namespace_enum(static_cast<const member_expr*>(m->object.get()));
+            if (!enum_value) {
+                check_namespace_member(m);
+                if (const var_entry* x = qualified_extern(m); x && !x->dynamic) { return x->type; }
+                const std::string path = member_path(m);
+                return path.empty() ? ctype{} : namespace_member_read(path, m->member);
+            }
         }
         ctype recv = infer(m->object.get());
         if (recv_out) { *recv_out = recv; }
+        if (function_member(m, recv)) { return {}; }
         if (recv.kind == ctype::math_k) {
             // a component (x / width, y / height, z / depth): an int or a float for diagnostics, never a proof source (the
             // VM's component rows are a later phase); anything else is the runtime's no-member text, statically
@@ -5316,10 +8507,11 @@ private:
             }
             ctype c = ctype::make(detail::math::integral(kind) ? ctype::int_k : ctype::float_k);
             c.tentative = true;
+            c.declared_result = true;
             return c;
         }
         if (recv.kind == ctype::coroutine_k) {
-            if (!recv.tentative && m->member != "next" && m->member != "done" && m->member != "advance" && m->member != "result") { coroutine_member_missing(m); }
+            if (!recv.tentative && m->member != "next" && m->member != "done" && m->member != "advance" && m->member != "result") { coroutine_member_missing(recv, m); }
             return {};
         }
         if (recv.is_unknown() && !m->is_static) {
@@ -5335,16 +8527,17 @@ private:
             recv.kind == ctype::string_k || recv.kind == ctype::utf8_k || recv.kind == ctype::function_k || recv.kind == ctype::weak_k || recv.kind == ctype::null_k ||
             recv.kind == ctype::int_k || recv.kind == ctype::float_k || recv.kind == ctype::char_k ||
             recv.kind == ctype::bool_k) {
-            if (!writing && !recv.tentative && !m->is_static) {
+            if (!writing && kind_certain(recv) && !m->is_static) {
                 builtin_method_value(recv, m);
-                scalar_member_missing(recv, m, false);
+                scalar_member_missing(recv, m);
             }
-            if (writing && recv.kind == ctype::map_k && !recv.tentative && !m->is_static) {
+            if (writing && recv.kind == ctype::map_k && kind_certain(recv) && !m->is_static) {
                 diag(diag_level::error, m->location, "cannot assign to member '" + std::string(m->member) + "' of a map; store the key as [\"" + std::string(m->member) + "\"]");
             }
             return {};   // builtin methods / map keys / dynamic: lenient
         }
-        return infer_class_member(m, recv, writing, typed_field_out, hit_out);
+        const ctype member = infer_class_member(m, recv, writing, typed_field_out, hit_out);
+        return recv.declared_slot ? read_through_declared_slot(member) : member;
     }
 
     // obj.name where name is a static of obj's script class and no instance member: the run finds no such member on an instance,
@@ -5376,7 +8569,7 @@ private:
                 }
                 diag(diag_level::error, m->location, "no value '" + std::string(m->member) +
                      "' in enum '" + std::string(recv.cls) + "'",
-                     e->location.line, e->location.column);
+                     e->location);
             }
             return {};
         }
@@ -5392,26 +8585,33 @@ private:
             if (typed_field_out && hit.field && (hit.field->type || hit.field->function_spelling)) { *typed_field_out = hit.field; }
             if (hit.methods) {
                 if (!writing && !want_static) {   // a method is called or bound, never read bare
-                    diag(diag_level::error, m->location, detail::method_value_text(m->member, cls, detail::method_value_receiver(m), false));
+                    diag(diag_level::error, m->location, detail::method_value_text(m->member, cls, detail::method_value_receiver(m), false) + (m->less_compared ? " (" + no_generic_text(m->member) + ")" : std::string()));
                 }
-                return ctype::make(ctype::function_k);
+                ctype named = ctype::make(ctype::function_k);
+                if (want_static && hit.provable) { named.fns = hit.methods; }
+                return named;
             }
             if (hit.field && (hit.field->type || hit.field->function_spelling)) { return member_type(hit); }
             return {};
         }
-        if (!hit.certain) { return {}; }
+        // a generic method is no member: it is named, called or bound with its type arguments
+        if (want_static && instance_requests_.count(std::string(cls) + "::" + std::string(m->member))) { return {}; }   // its request says why
+        if (const std::string generic = generic_value_spelled(class_generics(cls, m->member), want_static ? std::string(cls) + "::" + std::string(m->member) : std::string(m->member),
+                                                              want_static ? std::string() : detail::method_value_receiver(m));
+            !generic.empty()) {
+            diag(diag_level::error, m->location, generic);
+            return {};
+        }
+        if (!hit.certain || recv.open) { return {}; }
         if (stale_shape_receiver(recv, m->object.get())) { return {}; }
         if (!want_static) {
             if (ctype t; handle_builtin_result(m->member, t)) { return {}; }   // builtin as a value: lenient
         }
-        size_t rl = 0, rc = 0;
-        if (auto it = classes_.find(cls); it != classes_.end()) {
-            rl = it->second.decl->location.line;
-            rc = it->second.decl->location.column;
-        }
+        declared_at declared;
+        if (auto it = classes_.find(cls); it != classes_.end()) { declared = it->second.decl->location; }
         diag(diag_level::error, m->location,
              std::string(want_static ? "no static member '" : "no member '") + std::string(m->member) +
-             "' in class '" + std::string(cls) + "'", rl, rc);
+             "' in class '" + std::string(cls) + "'", declared);
         (void)writing;
         return {};
     }
@@ -5420,15 +8620,27 @@ private:
     void check_constant_arguments(const std::string& callable, const std::string& shown, const call_expr* c) {
         if (!eng_.has_constant_arguments()) { return; }
         for (const auto& [index, refusal] : eng_.constant_argument_indexes(callable)) {
-            if (index >= c->arguments.size()) { continue; }
+            const size_t at = index + c->type_argument_count;   // an index counts the value arguments
+            if (at >= c->arguments.size()) { continue; }
             std::vector<std::string> texts;
-            if (detail::constant_texts(c->arguments[index].get(), eng_.constant_texts_by_name(), texts)) { continue; }
-            diag(diag_level::error, c->arguments[index]->location, "argument " + std::to_string(index + 1) + " of '" + shown + "' is not a constant: " + *refusal);
+            if (detail::constant_texts(c->arguments[at].get(), eng_.constant_texts_by_name(), texts)) { continue; }
+            diag(diag_level::error, c->arguments[at]->location, "argument " + std::to_string(index + 1) + " of '" + shown + "' is not a constant: " + *refusal);
         }
+    }
+
+    // The callee of a call with type arguments as its text spells it: a name, or a name's member; empty for any other
+    static std::string type_argument_callee(const call_expr* c) {
+        if (!c->callee) { return {}; }
+        if (c->callee->get_type() == node_type::identifier_expr) { return std::string(static_cast<const identifier_expr*>(c->callee.get())->name); }
+        if (c->callee->get_type() != node_type::member_expr) { return {}; }
+        const auto* m = static_cast<const member_expr*>(c->callee.get());
+        if (!m->object || m->object->get_type() != node_type::identifier_expr) { return {}; }
+        return std::string(static_cast<const identifier_expr*>(m->object.get())->name) + (m->is_static ? "::" : m->is_arrow ? "->" : ".") + std::string(m->member);
     }
 
     JAI_NOINLINE ctype infer_call(call_expr* c) {
         std::vector<ctype> args;
+        std::vector<std::pair<type_info_ptr, source_location>> unknown_types;   // type arguments that name no type: one error, once the callee is known
         args.reserve(c->arguments.size());
         const std::string_view callee_name = c->callee && c->callee->get_type() == node_type::identifier_expr
             ? std::string_view(static_cast<const identifier_expr*>(c->callee.get())->name) : std::string_view{};
@@ -5442,21 +8654,119 @@ private:
         }
         template_files_ += template_body;
         struct template_scope { int& depth; bool on; ~template_scope() { depth -= on; } } in_template{template_files_, template_body};
+        std::vector<const type_info*> expected;
+        expected_argument_types(c, expected);
+        // An arrow that declares no parameter types, passed to a generic, takes them from the call's other arguments: it is
+        // walked once the callee is known (deduce_type_arguments types it on the way), by the instance's own signature
+        std::vector<expression*> arrows;
+        bool generic_named = false;
+        if (generics_live_ && c->callee && std::any_of(c->arguments.begin(), c->arguments.end(), [](const expression_ptr& a) { return untyped_arrow(a.get()); })) {
+            bool receiver_unknown = false;
+            generic_named = !generic_callee(c, receiver_unknown).empty();
+        }
         for (size_t k = 0; k < c->arguments.size(); ++k) {
             auto& a = c->arguments[k];
+            if (generic_named && untyped_arrow(a.get())) {
+                ctype held = ctype::make(ctype::function_k);
+                held.origin = a.get();
+                args.push_back(held);
+                arrows.push_back(a.get());
+                continue;
+            }
             const bool combine = callee_name == "parallel_reduce" && k == 3;   // runs serially after the join
             const bool body = parallel_callee && !combine && a->get_type() == node_type::lambda_expr;
             parallel_body_depth_ += body;
-            args.push_back(infer(a.get()));
+            auto* const outer_unknown = unknown_type_arguments_;
+            unknown_type_arguments_ = k < c->type_argument_count ? &unknown_types : nullptr;
+            args.push_back(infer_expecting(a.get(), k < expected.size() ? expected[k] : nullptr));
+            unknown_type_arguments_ = outer_unknown;
             parallel_body_depth_ -= body;
+        }
+        const std::string spelled_callee = unknown_types.empty() ? std::string() : type_argument_callee(c);
+        const generic_call generic = resolve_generic_call(c, args);
+        if (!arrows.empty()) {
+            if (generic == generic_call::rewritten) {
+                expected.clear();
+                expected_argument_types(c, expected);
+            }
+            for (size_t k = 0; k < c->arguments.size(); ++k) {
+                expression* a = c->arguments[k].get();
+                if (std::find(arrows.begin(), arrows.end(), a) != arrows.end()) { args[k] = infer_expecting(a, k < expected.size() ? expected[k] : nullptr); }
+            }
+        }
+        if (generic != generic_call::none || spelled_callee.empty()) {   // a generic's own type arguments: the declaration's error
+            for (const auto& [type, at] : unknown_types) { check_spelled_type(type.get(), at); }
+            unknown_types.clear();
+        }
+        if (generic == generic_call::pending) { return {}; }   // a generic's call waits for its instance
+        if (generic == generic_call::none && c->type_argument_count > 0) {   // Name<Args>(...) on a type that takes none: the declaration's error
+            std::string named;   // a name alone or a qualified one: what a type's spelling is
+            if (c->callee->get_type() == node_type::identifier_expr) {
+                named = std::string(static_cast<const identifier_expr*>(c->callee.get())->name);
+            } else if (c->callee->get_type() == node_type::member_expr && static_cast<const member_expr*>(c->callee.get())->is_static) {
+                named = qualified_spelling(static_cast<const member_expr*>(c->callee.get()));
+            }
+            if (const plain_type_kind kind = plain_type_named(named); kind != plain_type_kind::none) {
+                for (const auto& [type, at] : unknown_types) { check_spelled_type(type.get(), at); }
+                diag(diag_level::error, c->location, no_type_arguments_text(named, kind), 0, 0, /*always_error=*/true);
+                return {};
+            }
         }
         const std::vector<const function_decl*>* ov = nullptr;   // the statically resolved same-script overload set
         ov_class_ = {};
         nodiscard_hit_ = {};
-        ctype t = infer_call_impl(c, args, ov);
+        void_hit_ = {};
+        // a call in the callee's receiver resolves its own type arguments: the enclosing call's state comes back after it
+        const bool outer_type_argument_call = type_argument_call_;
+        std::string outer_script_callee = std::move(type_argument_script_callee_), outer_host_callee = std::move(type_argument_host_callee_);
+        const std::string_view outer_script_kind = type_argument_script_kind_;
+        type_argument_call_ = c->type_argument_count > 0;
+        type_argument_script_callee_.clear();
+        type_argument_host_callee_.clear();
+        narrow_callee seen;
+        ctype t = infer_call_impl(c, args, ov, seen);
+        if (!unknown_types.empty() && !type_argument_host_callee_.empty()) {   // a host's type arguments: the declaration's error
+            for (const auto& [type, at] : unknown_types) { check_spelled_type(type.get(), at); }
+            unknown_types.clear();
+        }
+        if (!unknown_types.empty()) {
+            // C#'s rule read `a < b, c > (d)` as a call with type arguments; the callee takes none and a type argument names no
+            // type, so a comparison was most likely meant: the call's one error says how to write it
+            const std::string first = unknown_types.front().first->canonical_name();
+            const std::string first_given = static_cast<const cast_expr*>(c->arguments[0].get())->target->canonical_name();
+            std::string given;
+            for (size_t i = 0; i < c->type_argument_count; ++i) { given += (i ? ", " : "") + static_cast<const cast_expr*>(c->arguments[i].get())->target->canonical_name(); }
+            diag(has_dynamic_includes_ ? diag_level::warning : diag_level::error, unknown_types.front().second,
+                 "unknown type '" + first + "': '" + spelled_callee + "<" + given + ">(...)' reads as a call with type arguments, which '" + spelled_callee +
+                 "' does not take; if this is a comparison, write (" + spelled_callee + " < " + first_given + ")");
+            ov = nullptr;
+            t = {};
+        } else if (c->type_argument_count > 0) {
+            if (!type_argument_script_callee_.empty()) {
+                diag(diag_level::error, c->location, no_type_parameters_text(type_argument_script_callee_, type_argument_script_kind_));
+                ov = nullptr;
+                t = {};
+            } else if (!type_argument_host_callee_.empty()) {
+                if (const uint8_t shape = eng_.type_argument_result(type_argument_host_callee_)) { t = type_argument_result(c, shape); }
+            }
+        }
+        type_argument_call_ = outer_type_argument_call;
+        type_argument_script_callee_ = std::move(outer_script_callee);
+        type_argument_script_kind_ = outer_script_kind;
+        type_argument_host_callee_ = std::move(outer_host_callee);
+        narrow_call_arguments(c, ov, seen);
         t = check_call(c, args, ov, std::move(t));
         if (!nodiscard_hit_.name.empty() && collect_diagnostics_) { nodiscard_calls_[c] = std::move(nodiscard_hit_); }
         nodiscard_hit_ = {};
+        if (!void_hit_.shown.empty() && !void_hit_.typed_slot && callee_rebindable(c)) { void_hit_ = {}; }
+        if (!void_hit_.shown.empty() && !c->result_discarded) {
+            report_void_result(c, void_hit_);
+            t = {};   // the one error: no null to initialize, pass or compare
+        } else if (!void_hit_.shown.empty()) {
+            nothing_calls_[c] = {void_result_text(void_hit_), void_hit_.reason};
+        }
+        void_hit_ = {};
+        call_results_[c] = t;
         return t;
     }
 
@@ -5472,13 +8782,14 @@ private:
         // a free function another unit of the program declares (one unit, once): the inliner's decl and the argument proofs; the
         // unit's own diagnostics keep their view (ov stays the unit's)
         std::vector<const function_decl*> program_ov;
-        if (!ov && program_functions_ && c->callee && c->callee->get_type() == node_type::identifier_expr) {
+        if (!ov && program_functions_ && c->callee && c->callee->get_type() == node_type::identifier_expr && reaches_program_scope(static_cast<identifier_expr*>(c->callee.get()))) {
             const std::string_view name = static_cast<identifier_expr*>(c->callee.get())->name;
             if (functions_.find(name) == functions_.end()) {
                 eng_.note(name);
                 auto pit = program_functions_->find(std::string(name));
                 if (pit != program_functions_->end() && pit->second.size() == 1 && pit->second.begin()->second.size() == 1) { program_ov.push_back(pit->second.begin()->second[0].get()); }
                 if (program_ov.size() == 1 && program_ov[0]->is_nodiscard) { nodiscard_hit_ = {std::string(name), {}}; }
+                if (program_ov.size() == 1 && returns_nothing(program_ov[0])) { void_hit_ = {"'" + std::string(name) + "'", {}, nullptr, nothing_reason(program_ov[0])}; }
             }
             // the proof pass alone types the call by that declaration's scalar return (the consumers guard it; a graft re-checks the
             // callee's declared return per definition epoch, call_expr::k_proof_function)
@@ -5568,8 +8879,7 @@ private:
             // temporary for a string& overload; otherwise it binds a temporary when the callee (every override of a method)
             // never writes through the parameter, else the load reports the write
             for (size_t i = 0; i < c->arguments.size() && i < args.size(); ++i) {
-                const node_type k = c->arguments[i]->get_type();
-                if (k != node_type::literal_expr && k != node_type::array_literal_expr && k != node_type::map_literal_expr) { continue; }
+                if (!certainly_temporary(c->arguments[i].get()) && !rooted_in_temporary(c->arguments[i].get())) { continue; }
                 std::vector<const function_decl*> by_ref;
                 bool all_ref = false;
                 for (const auto* fn : *ov) {
@@ -5646,6 +8956,23 @@ private:
         diag(diag_level::error, at, "'" + std::string(name) + "' is " + (call ? "called" : "used") + " before its declaration (line " + std::to_string(first->second.line) +
                                     "): top-level code runs in order, so declare it above the " + use + " or make the " + use + " after it");
     }
+    // A generic's instance is declared the moment everything it is built on is (class_registry's linker), so a use of one in
+    // top-level code stands below what this file declares of that: the generic, and the classes the instance waits for (the
+    // request's needs, the very names the linker waits on). The texts are a plain name's.
+    void report_instance_before_declaration(std::string_view instance, const source_location& at, bool call) {
+        if (!top_level_code()) { return; }
+        const auto named = instance_requests_.find(instance);   // the requests of a name share its generic and what it waits for
+        if (named == instance_requests_.end()) { return; }
+        const generic_instance_decl* request = named->second.front();
+        const std::string generic(request->generic);
+        if (const auto declared = generics_.find(generic); declared != generics_.end() && !declared->second.empty() &&
+            declared->second.front()->kind != generic_kind::method && declared_after(declared->second.front()->location, at) && !eng_.generic_declared(generic)) {
+            const char* use = call ? "call" : "use";
+            diag(diag_level::error, at, "'" + generic + "' is " + (call ? "called" : "used") + " before its declaration (line " + std::to_string(declared->second.front()->location.line) +
+                                        "): top-level code runs in order, so declare it above the " + use + " or make the " + use + " after it");
+        }
+        for (const std::string_view need : request->needs) { report_class_before_declaration(need, at); }
+    }
     void report_function_before_declaration(std::string_view name, const source_location& at, bool call) {
         report_use_before_declaration(name, at, call, [&] { return eng_.has_function(std::string(name)); });
     }
@@ -5659,37 +8986,251 @@ private:
         if (!top_level_code()) { return false; }
         const auto first = namespace_decls_.find(space + "::" + std::string(name));
         if (first == namespace_decls_.end() || !declared_after(first->second, at)) { return false; }
-        const std::string qualified = space + "::" + std::string(name);
-        if (eng_.has_variable(qualified) || eng_.has_function(qualified)) { return false; }
-        if (const script_namespace_data* ns = eng_.find_namespace(space)) {
-            const uint64_t id = eng_.symbolize(name);
-            if (ns->functions.count(id) || ns->variables.count(id) || (ns->scope && ns->scope->get_own_value_ptr(id) != nullptr)) { return false; }
-        }
-        const std::string bare(name);
-        bool outside = functions_.count(name) || all_names_.count(name) || find_sclass(name) || enums_.count(name) || extra_global(bare) || engine_knows_name(bare);
-        for (std::string outer = space; !outside && outer.rfind("::") != std::string::npos;) {
-            outer.resize(outer.rfind("::"));
-            outside = namespace_member_declared(outer, name);
-        }
-        if (!outside) {
+        if (namespace_member_held(space, name)) { return false; }
+        if (!named_outside_namespace(space, name)) {
             const char* use = call ? "call" : "use";
-            diag(diag_level::error, at, "'" + bare + "' is " + (call ? "called" : "used") + " before its declaration (line " + std::to_string(first->second.line) +
+            diag(diag_level::error, at, "'" + std::string(name) + "' is " + (call ? "called" : "used") + " before its declaration (line " + std::to_string(first->second.line) +
                                         "): top-level code runs in order, so declare it above the " + use + " or make the " + use + " after it");
         }
         return true;
     }
+    // the engine holds the member from an earlier run or a host registration
+    bool namespace_member_held(const std::string& space, std::string_view name) {
+        const std::string qualified = space + "::" + std::string(name);
+        if (eng_.has_variable(qualified) || eng_.has_function(qualified)) { return true; }
+        const script_namespace_data* ns = eng_.find_namespace(space);
+        if (!ns) { return false; }
+        const uint64_t id = eng_.symbolize(name);
+        return ns->functions.count(id) || ns->variables.count(id) || (ns->scope && ns->scope->get_own_value_ptr(id) != nullptr);
+    }
+    // what a bare name reaches past the namespace: a member of an enclosing namespace, or a name of the program scope
+    bool named_outside_namespace(const std::string& space, std::string_view name) {
+        const std::string bare(name);
+        bool result = functions_.count(name) || all_names_.count(name) || find_sclass(name) || enums_.count(name) || extra_global(bare) || engine_knows_name(bare);
+        for (std::string outer = space; !result && outer.rfind("::") != std::string::npos;) {
+            outer.resize(outer.rfind("::"));
+            result = namespace_member_declared(outer, name);
+        }
+        return result;
+    }
+    // A bare name is its namespace's member whenever the code that names it runs, unless the name reaches something outside the
+    // namespace too and the member's declaration may not have run by then (a function called from top-level code above it, a file
+    // imported later): a declaration above the use has run, and so has one the engine holds. False: the caller stays lenient.
+    bool namespace_member_settled(const std::string& space, std::string_view name, const source_location& at) {
+        const auto first = namespace_decls_.find(space + "::" + std::string(name));
+        if (first != namespace_decls_.end() && !declared_after(first->second, at)) { return true; }
+        return namespace_member_held(space, name) || !named_outside_namespace(space, name);
+    }
 
-    ctype infer_call_impl(call_expr* c, const std::vector<ctype>& args, const std::vector<const function_decl*>*& ov) {
+    // -------------------------------------------------------------- uses that can never succeed
+    // (docs/site/guide/13-strict-checking.html "A use that can never succeed"): a call of a name declared with a type no call
+    // takes, and a member or a subscript of a declared function. Each is refused only where the load knows the one thing
+    // the name is: whatever may answer it another way when the line runs (a function or a class of the name anywhere in the
+    // program or the engine, a member of the object a method runs on, a file the load cannot read) leaves it to the run.
+    static std::string with_article(std::string_view noun) {
+        const bool vowel = !noun.empty() && noun.substr(0, 4) != "utf8" && std::string_view("aeiouAEIOU").find(noun.front()) != std::string_view::npos;
+        return (vowel ? "an " : "a ") + std::string(noun);
+    }
+    static std::string declaration_place(const source_location& declared, const source_location& use) {
+        const std::string at = std::to_string(declared.line) + ":" + std::to_string(declared.column);
+        return declared.filename.empty() || declared.filename == use.filename ? at : declared.filename + ":" + at;
+    }
+    // a declared type no call takes: a number, text, a bool, an array, a map, a math value (an enum's value is an int)
+    static bool never_called(const ctype& t) {
+        if (t.tentative || t.diagnostic_only) { return false; }
+        switch (t.kind) {
+            case ctype::int_k: case ctype::float_k: case ctype::bool_k: case ctype::char_k: case ctype::string_k: case ctype::utf8_k:
+            case ctype::array_k: case ctype::map_k: case ctype::math_k: return true;
+            default: return false;
+        }
+    }
+    bool never_called(const variable_decl* g) {
+        return g && g->type && !g->type->is_reference() && !g->function_spelling && never_called(ctype_from_type_info(g->type.get()));
+    }
+    void never_a_function(const source_location& at, std::string_view shown, std::string_view what, const std::string& where) {
+        diag(diag_level::error, at, "'" + std::string(shown) + "' is " + with_article(what) + " (declared at " + where + "), not a function");
+    }
+    // the engine's variable of the name, if it holds one, was declared by `declarer`'s earlier run alone: what its new text replaces
+    bool engine_variable_only_from(const std::string& name, const std::string& declarer) {
+        if (!eng_.has_variable(name) || !eng_.held_function_declarations(name).empty()) { return true; }
+        const std::vector<uint32_t> units = eng_.variable_units(name);
+        if (units.empty()) { return false; }   // the host's
+        const std::string normal = std::filesystem::path(declarer).lexically_normal().string();
+        for (const uint32_t unit : units) { if (eng_.unit_label(unit) != normal) { return false; } }
+        return true;
+    }
+    // Something a call of a program-scope name may reach besides the one variable or enum the load found: a function, a generic
+    // or a class of the name in this unit, in another unit of the program or in the engine. `declarer` is the unit whose
+    // earlier run the pooled text replaces (null: none): a function the engine holds from that run is no second answer.
+    bool callable_elsewhere(const std::string& name, const std::string* declarer) {
+        if (has_dynamic_includes_ || functions_.count(std::string_view(name)) || find_sclass(name) || eng_.is_type_name(name) || eng_.find_script_class(name)) { return true; }
+        if (generics_live_ && !generics_named(name).empty()) { return true; }
+        if (program_functions_) {
+            if (const auto pooled = program_functions_->find(name); pooled != program_functions_->end()) {
+                for (const auto& [path, decls] : pooled->second) { if (!decls.empty()) { return true; } }
+            }
+        }
+        const auto held = eng_.held_function_declarations(name);
+        if (held.empty()) { return eng_.has_function(name); }
+        if (!declarer) { return true; }
+        const std::string normal = std::filesystem::path(*declarer).lexically_normal().string();
+        for (const auto& h : held) { if (!h || eng_.unit_label(h->unit.id) != normal) { return true; } }
+        return false;
+    }
+    // how many variable declarations the program's units make under a program-scope name
+    size_t program_variable_declarations(const std::string& name) {
+        if (!program_globals_) { return 0; }
+        eng_.note(name);
+        const auto pooled = program_globals_->find(name);
+        size_t declarations = 0;
+        if (pooled != program_globals_->end()) { for (const auto& [path, decls] : pooled->second) { declarations += decls.size(); } }
+        return declarations;
+    }
+    // The one variable exactly one other unit of the program declares under a program-scope or namespace name, with a spelled
+    // type, and the unit that declares it; null when anything else may answer the name
+    const variable_decl* program_variable(const std::string& name, const std::string*& declarer) {
+        if (!collect_diagnostics_ || has_dynamic_includes_ || !program_globals_ || instance_names_.count(name) || extra_globals_.count(name)) { return nullptr; }
+        eng_.note(name);
+        const auto pooled = program_globals_->find(name);
+        if (pooled == program_globals_->end()) { return nullptr; }
+        const variable_decl* g = nullptr;
+        size_t declarations = 0;
+        for (const auto& [path, decls] : pooled->second) {
+            declarations += decls.size();
+            if (!decls.empty()) { g = decls.front().get(); declarer = &path; }
+        }
+        if (declarations != 1 || !g || g->is_static) { return nullptr; }
+        if (callable_elsewhere(name, declarer) || !engine_variable_only_from(name, *declarer)) { return nullptr; }
+        return g;
+    }
+    // the enum exactly one other unit of the program declares under a name, and that unit
+    const enum_decl* program_enum(const std::string& name, const std::string*& declarer) {
+        if (!collect_diagnostics_ || has_dynamic_includes_ || !program_enums_) { return nullptr; }
+        eng_.note(name);
+        const auto pooled = program_enums_->find(name);
+        if (pooled == program_enums_->end() || pooled->second.size() != 1 || !pooled->second.begin()->second) { return nullptr; }
+        declarer = &pooled->second.begin()->first;
+        return pooled->second.begin()->second.get();
+    }
+    // a bare name inside a method reaches the members of the object the method runs on before the program's names, and a
+    // class derived from this one may declare any of them
+    bool bare_name_reaches_members(const identifier_expr* id) const { return class_ctx_ && !id->global_qualified; }
+    // a call of a variable declared with a type no call takes, or of an enum a function declares
+    void uncallable_variable(const var_entry& v, size_t scope_index, const identifier_expr* id) {
+        // a reference names whatever it was bound to, and a var it borrows may hold a function by the time the call runs
+        if (v.dynamic || v.is_reference || v.shared_name || v.namespace_function || v.placeholders) { return; }
+        if (const auto space = std::find(namespace_scopes_.begin(), namespace_scopes_.end(), scope_index); space != namespace_scopes_.end()) {
+            if (bare_name_reaches_members(id) || v.enum_def) { return; }
+            const std::string path(namespace_walk_names_[static_cast<size_t>(space - namespace_scopes_.begin())]);
+            namespace_variable_called(path, path + "::" + std::string(id->name), id->name, id->location);
+            return;
+        }
+        if (scope_index != 0 && instance_ctx_) { return; }   // a generic's local: its type may be a type argument, and an instance may never reach the line
+        std::string what;
+        if (v.enum_def) { what = "enum"; }
+        else if (never_called(v.type)) { what = !v.display.empty() && v.display.rfind("auto", 0) != 0 ? v.display : ctype_name(v.type); }
+        else { return; }
+        if (scope_index == 0) {   // the unit's program scope: a local hides every other answer, and here each of them counts
+            const std::string name(id->name);
+            if (bare_name_reaches_members(id) || callable_elsewhere(name, nullptr) || program_variable_declarations(name) > 1) { return; }
+        }
+        never_a_function(id->location, id->name, what, std::to_string(v.line) + ":" + std::to_string(v.column));
+    }
+    // a call of a namespace's variable, the unit's own or the one exactly one other unit declares
+    bool namespace_variable_called(const std::string& path, const std::string& qualified, std::string_view member, const source_location& loc) {
+        if (bare_member_reach_) { return false; }
+        const variable_decl* g = nullptr;
+        const std::string* declarer = nullptr;
+        if (const auto own = namespace_vars_.find(qualified); own != namespace_vars_.end()) {
+            g = own->second;
+            if (!g || callable_elsewhere(qualified, nullptr) || program_variable_declarations(qualified) > 1) { return false; }
+        } else {
+            g = program_variable(qualified, declarer);
+        }
+        if (!never_called(g)) { return false; }
+        if (script_namespace_data* space = eng_.find_namespace(path)) {   // a function the engine's namespace holds under the name answers the call
+            const uint64_t member_id = eng_.symbolize(member);
+            if (space->functions.count(member_id) || space->signatures.count(member_id)) { return false; }
+            if (const auto held = space->variables.find(member_id); held != space->variables.end() && held->second.is_function()) { return false; }
+        }
+        never_a_function(loc, qualified, g->type->spelling(), declaration_place(g->location, loc));
+        return true;
+    }
+    // Enum::value(...): a value of an enum is an int. The enum is the unit's own, which the receiver's type names, or the one
+    // exactly one other unit declares, which a receiver nothing in this unit declares names; a namespace's enum stays the run's
+    bool enum_value_called(const member_expr* m, const ctype& recv) {
+        if (has_dynamic_includes_ || instance_ctx_ || !m->is_static || !m->object || m->object->get_type() != node_type::identifier_expr) { return false; }
+        const auto* id = static_cast<const identifier_expr*>(m->object.get());
+        const std::string name(id->name);
+        const std::string* declarer = nullptr;
+        const enum_decl* named = nullptr;
+        if (recv.kind == ctype::enum_ref_k) {
+            if (recv.tentative || recv.cls != id->name) { return false; }
+            named = find_enum(recv.cls);
+        } else if (recv.is_unknown() && !find_local(id->name) && !functions_.count(id->name) && !enums_.count(id->name)) {
+            named = program_enum(name, declarer);
+        }
+        if (!named) { return false; }
+        if (namespaces_.count(id->name) || eng_.find_namespace(name) || find_sclass(id->name) || eng_.is_type_name(name) || eng_.find_script_class(name) ||
+            (program_classes_ && program_classes_->count(name))) { return false; }
+        const std::string qualified = name + "::" + std::string(m->member);
+        if ((program_functions_ && program_functions_->count(qualified)) || (program_globals_ && program_globals_->count(qualified))) { return false; }
+        if (std::none_of(named->values.begin(), named->values.end(), [&](const auto& value) { return value.first == m->member; })) { return false; }
+        never_a_function(m->location, qualified, "value of the enum '" + name + "'", declaration_place(named->location, m->location));
+        return true;
+    }
+    // Class::name(...): a static field declared with a type no call takes
+    void static_field_called(const member_expr* m, const ctype& recv, const member_hit& hit) {
+        if (has_dynamic_includes_ || instance_ctx_ || !hit.certain || hit.unresolved || !hit.field || !hit.field->is_static || chain_open(recv.cls) || chain_has_user_accessor(recv.cls, m->member)) { return; }
+        if (!never_called(hit.field)) { return; }
+        never_a_function(m->location, std::string(recv.cls) + "::" + std::string(m->member), hit.field->type->spelling(), declaration_place(hit.field->location, m->location));
+    }
+    // The declared function a bare name names when nothing nearer answers the name: the unit's own, which no other unit adds
+    // an overload to, else the one exactly one other unit declares
+    const function_decl* named_function(const expression* e) {
+        if (!e || has_dynamic_includes_ || e->get_type() != node_type::identifier_expr) { return nullptr; }
+        const auto* id = static_cast<const identifier_expr*>(e);
+        size_t scope_index = 0;
+        if (callable_variable(id, &scope_index) || bare_name_reaches_members(id)) { return nullptr; }
+        if (!id->global_qualified && !enclosing_namespace_member(id->name).empty()) { return nullptr; }
+        if (const auto own = functions_.find(id->name); own != functions_.end()) {
+            return !own->second.empty() && foreign_overloads(id->name, own->second).empty() ? own->second.front() : nullptr;
+        }
+        return program_function(id->name);
+    }
+    // name.member where the name is a declared function; true when it was reported
+    bool function_member(const member_expr* m, const ctype& recv) {
+        if (recv.kind != ctype::function_k || m->is_static) { return false; }
+        const function_decl* fn = named_function(m->object.get());
+        if (!fn) { return false; }
+        diag(diag_level::error, m->location, "'" + std::string(fn->name) + "' is a function (declared at " + declaration_place(fn->location, m->location) +
+             "): it has no member '" + std::string(m->member) + "'");
+        return true;
+    }
+    // name[key] where the name is a declared function
+    void function_subscripted(const binary_expr* b, const ctype& left) {
+        if (left.kind != ctype::function_k) { return; }
+        const function_decl* fn = named_function(b->left.get());
+        if (!fn) { return; }
+        const source_location& at = b->left->location;
+        diag(diag_level::error, at, "'" + std::string(fn->name) + "' is a function (declared at " + declaration_place(fn->location, at) + "): it cannot be subscripted");
+    }
+    bool bare_member_reach_ = false;   // the namespace member a call names was written bare inside a method (bare_name_reaches_members)
+
+    ctype infer_call_impl(call_expr* c, const std::vector<ctype>& args, const std::vector<const function_decl*>*& ov, narrow_callee& seen) {
         expression* callee = c->callee.get();
         if (callee->get_type() == node_type::identifier_expr) {
             auto* id = static_cast<identifier_expr*>(callee);
             if (id->name == "weak_from_this" || id->name == "shared_from_this") { return {}; }   // call-shape builtins, resolved before any lookup
             stamp(id->program_name, semantic_walk() && bare_program_name(id), false);
             size_t scope_index = 0;
-            if (find_local(id->name, &scope_index) && (id->global_qualified ||
-                (!member_hides_program_name(id->name, scope_index) && !namespace_hides_program_name(id->name, scope_index)))) {
+            if (const var_entry* local = callable_variable(id, &scope_index)) {
                 if (scope_index == 0) { note_global_use(id->name); }
-                return {};   // callable local: signature unknown
+                if (local->lambda && script_callee_takes_type_arguments(id->name, "lambda")) { return {}; }
+                if (!local->dynamic && signature_slot(local->type)) { return check_signature_call("'" + std::string(id->name) + "'", local->type.ti, c, args); }
+                if (const std::string* reason = lambda_variable_returns_nothing(id)) { void_hit_ = {"'" + std::string(id->name) + "'", {}, nullptr, *reason}; }
+                uncallable_variable(*local, scope_index, id);
+                return {};   // a callable local without a signature
             }
             if (class_ctx_ && !id->global_qualified) {
                 member_hit hit = lookup_member(class_ctx_name_, id->name, /*want_static=*/false);
@@ -5698,11 +9239,19 @@ private:
                     if (hit.methods) {
                         if (hit.provable) { ov = hit.methods; ov_class_ = class_ctx_name_; }
                         hidden_function_probe_ = true;
-                        ctype r = check_script_overloads(id->name, *hit.methods, args, c->location, hit.foreign).result;
+                        ctype r = check_script_overloads(id->name, *hit.methods, args, c->location, hit.foreign, true, "method").result;
                         hidden_function_probe_ = false;
                         if (!nodiscard_hit_.name.empty()) { nodiscard_hit_.name = std::string(class_ctx_name_) + "." + nodiscard_hit_.name; }
+                        if (!void_hit_.shown.empty()) {
+                            const bool statics = std::all_of(hit.methods->begin(), hit.methods->end(), [](const function_decl* fn) { return fn->is_static; });
+                            if (statics) { void_hit_.shown = "'" + std::string(class_ctx_name_) + "." + std::string(method_spelling(id->name)) + "'"; }
+                            else { void_hit_ = {}; }
+                        }
                         if (!hit.provable) { r.tentative = true; }
                         return r;
+                    }
+                    if (hit.field && hit.field->type) {
+                        if (const ctype held = member_type(hit); signature_slot(held)) { return check_signature_call("'" + std::string(id->name) + "'", held.ti, c, args); }
                     }
                     return {};
                 }
@@ -5710,18 +9259,16 @@ private:
             }
             if (!id->global_qualified) {
                 if (const std::string space = enclosing_namespace_member(id->name); !space.empty()) {
-                    if (namespace_member_unready(space, id->name, c->location, true)) { return {}; }
-                    const std::string qualified = space + "::" + std::string(id->name);
-                    if (auto fit = namespace_fns_.find(qualified); fit != namespace_fns_.end()) {
-                        check_namespace_function_nodiscard(qualified, fit->second);
-                        return check_script_overloads(id->name, fit->second, args, c->location).result;
-                    }
-                    return {};
+                    if (namespace_member_unready(space, id->name, c->location, true) || !namespace_member_settled(space, id->name, c->location)) { return {}; }
+                    struct reach { bool& flag; bool outer; ~reach() { flag = outer; } } bare{bare_member_reach_, bare_member_reach_};
+                    bare_member_reach_ = bare_name_reaches_members(id);
+                    return check_namespace_call(space, id->name, args, c->location, seen, c);
                 }
             }
             if (auto it = functions_.find(id->name); it != functions_.end()) {
                 note_global_use(id->name);
                 report_function_before_declaration(id->name, c->location, true);
+                report_instance_before_declaration(id->name, c->location, true);
                 if (const auto& foreign = foreign_overloads(id->name, it->second); !foreign.empty()) {
                     return check_program_overloads(id->name, it->second, foreign, args, c->location);
                 }
@@ -5729,19 +9276,36 @@ private:
                 return check_script_overloads(id->name, it->second, args, c->location).result;
             }
             if (const sclass* sc = find_sclass(id->name)) {
+                if (script_callee_takes_type_arguments(id->name, "class")) { return {}; }
                 report_class_before_declaration(id->name, c->location);
-                check_ctor_call(id->name, *sc, args, c->location);
-                if (sc->provable) { ov = &sc->ctors; }
+                report_instance_before_declaration(id->name, c->location, false);
+                const bool may_copy = check_ctor_call(id->name, *sc, args, c->location);
+                if (sc->provable && !may_copy) { ov = &sc->ctors; }
                 return object_of(id->name);
             }
-            if (enums_.count(id->name)) { return {}; }
             std::string name(id->name);
+            if (const auto named = enums_.find(id->name); named != enums_.end()) {
+                if (!bare_name_reaches_members(id) && !callable_elsewhere(name, nullptr)) { never_a_function(id->location, id->name, "enum", declaration_place(named->second->location, id->location)); }
+                return {};
+            }
             if (const function_decl* declared = program_function(id->name)) {
                 note_global_use(id->name);
                 const std::vector<const function_decl*> one{declared};
                 ctype r = check_script_overloads(id->name, one, args, c->location, /*foreign=*/true, /*scored=*/false).result;
                 r.tentative = true;
                 return r;
+            }
+            if (!bare_name_reaches_members(id)) {
+                const std::string* declarer = nullptr;
+                if (const variable_decl* g = program_variable(name, declarer); never_called(g)) {
+                    note_global_use(id->name);
+                    never_a_function(id->location, id->name, g->type->spelling(), declaration_place(g->location, id->location));
+                    return {};
+                }
+                if (const enum_decl* named = program_enum(name, declarer); named && !callable_elsewhere(name, declarer)) {
+                    never_a_function(id->location, id->name, "enum", declaration_place(named->location, id->location));
+                    return {};
+                }
             }
             if (extra_global(name)) { note_global_use(id->name); return {}; }
             if (name == "regex") { check_regex_constant(c); }
@@ -5751,6 +9315,7 @@ private:
                 return object_of(id->name);   // registered class ctor: args lenient unless the host class is strict
             }
             if (eng_.has_function(name)) {
+                seen.host = id->name;
                 note_global_use(id->name);
                 note_host_nodiscard(name);
                 check_constant_arguments(name, name, c);
@@ -5758,9 +9323,17 @@ private:
                     check_sleep_call(args, c->location);
                     return ctype::make(ctype::null_k);
                 }
-                check_host_call(name, args, c->location);
+                check_host_call(name, args, c->location, c);
+                note_host_void(name);
                 check_held_script_call(id->name, args, c->location);
                 if (name == "parallel_reduce") { check_reduce_callbacks(c); }
+                // the engine's parallel forms read their callbacks' results as array::map and reduce do, but a step that takes its
+                // accumulator by reference folds in place (void step(T& acc, x))
+                if (name == "parallel_transform" && c->arguments.size() >= 2) { callback_result_read(name, "a value", c->arguments[1].get()); }
+                if (name == "parallel_reduce") {
+                    if (c->arguments.size() >= 3 && !callback_takes_first_by_reference(c->arguments[2].get())) { callback_result_read(name, "a value", c->arguments[2].get()); }
+                    if (c->arguments.size() >= 4) { callback_result_read(name, "a value", c->arguments[3].get()); }
+                }
                 if (name == "format") { check_format_text(c, args); }
                 if (name == "print" || name == "format") {
                     check_format_arguments(c, name, args);
@@ -5775,7 +9348,7 @@ private:
             if (!id->global_qualified && report_cdtor_call(id->name, id->location)) { return {}; }
             if (program_or_derived_name(id->name)) { return {}; }
             if (stale_field_context()) { return {}; }
-            undeclared(id->location, id->name);
+            undeclared(id->location, id->name, id->less_compared);
             return {};
         }
         if (callee->get_type() == node_type::member_expr) {
@@ -5794,16 +9367,18 @@ private:
                 }
                 if (fn != math_fn::none && !detail::math_arity_accepts(fn, args.size())) { return {}; }   // the kernel raises the table's text
                 if (fn != math_fn::none && args.size() <= 8) {
+                    seen.copies = true;
                     checkMathShapes(m, c, args);
                     return math_intrinsic_result(fn, args);
                 }
                 if (ctype t; library_namespace_call(c, m, args, t)) { return t; }
-                if (namespace_path_receiver(m)) {
+                if (namespace_path_receiver(m) && !namespace_class_receiver(m)) {
                     check_namespace_member(m);
-                    return check_namespace_entry(m, args, c->location);
+                    return check_namespace_entry(m, args, c->location, seen, c);
                 }
             }
             ctype recv = declared_container_receiver(m->object.get(), infer(m->object.get()));
+            if (function_member(m, recv)) { return {}; }
             if (!m->is_static && recv.kind == ctype::object_k && !recv.cls.empty() && eng_.has_constant_arguments()) {
                 check_constant_arguments(std::string(recv.cls) + "." + std::string(m->member), std::string(m->member), c);
             }
@@ -5828,11 +9403,16 @@ private:
             }
             if (recv.kind == ctype::coroutine_k && !m->is_static) { return coroutine_method_call(recv, m, c, args); }
             if (ctype t; binary_member_call(c, m, recv, args, t)) { return t; }
+            if ((m->member == "push" && c->arguments.size() == 1) || (m->member == "insert" && c->arguments.size() == 2)) {
+                note_this_into_declared_slot(c->arguments.back().get(), m->object.get(), true);
+            }
             if (recv.kind == ctype::array_k && recv.ti && m->member == "insert" && args.size() == 2) {
+                note_this_into_handle(args[1], recv.ti->element_type().get());
                 const auto issue = container_element_issue(args[1], recv.ti->element_type().get());
                 if (!issue.empty()) { diag(diag_level::error, c->location, "cannot insert into '" + ctype_name(recv) + "': " + issue); }
             }
             if (recv.kind == ctype::array_k && recv.ti && m->member == "push" && args.size() == 1) {
+                note_this_into_handle(args[0], recv.ti->element_type().get());
                 const auto issue = container_element_issue(args[0], recv.ti->element_type().get());
                 if (!issue.empty()) {
                     diag(diag_level::error, c->location, "cannot push into '" + ctype_name(recv) + "': " + issue);
@@ -5841,13 +9421,18 @@ private:
             if (recv.kind == ctype::array_k && !m->is_static) { check_array_sizing_arguments(m->member, recv, args.data(), args.size(), c->location); }
             if (recv.const_key && string_mutator_name(m->member)) { map_key_mutation(m->location, m->object.get()); }
             if (class_dot_receiver(m, recv)) { return {}; }
-            if (recv.kind == ctype::object_k || recv.kind == ctype::class_ref_k) { return class_member_call(c, m, recv, args, &ov); }
+            if (recv.kind == ctype::object_k || recv.kind == ctype::class_ref_k) {
+                if (recv.declared_slot) { return read_through_declared_slot(class_member_call(c, m, recv, args, nullptr)); }
+                return class_member_call(c, m, recv, args, &ov);
+            }
             if (recv.is_unknown() && !m->is_static) {
                 if (const ctype held = referent_receiver(m->object.get()); held.kind == ctype::object_k) { class_member_call(c, m, held, args, nullptr); }
             }
             if (recv.kind == ctype::enum_ref_k) {
+                enum_value_called(m, recv);
                 return {};
             }
+            if (recv.is_unknown() && enum_value_called(m, recv)) { return {}; }
             uint8_t proven = 0;
             if (!recv.tentative || recv.element_proof) {
                 proven = recv.kind == ctype::string_k ? 1 : recv.kind == ctype::array_k ? 2 : recv.kind == ctype::map_k ? 3 : 0;
@@ -5857,13 +9442,19 @@ private:
                     proven = v->builtin_alias == ctype::string_k ? 1 : v->builtin_alias == ctype::array_k ? 2 : v->builtin_alias == ctype::map_k ? 3 : 0;
                 }
             }
-            if (!recv.tentative && !m->is_static) {
-                scalar_member_missing(recv, m, true);
+            seen.copies = proven != 0;   // the library's string, array and map methods
+            if (kind_certain(recv) && !m->is_static) {
+                scalar_member_missing(recv, m);
                 check_builtin_member(recv, m);
                 checkBuiltinArity(recv, m, c);
                 checkBuiltinMethodShapes(recv, m, c, args);
                 in_place_result_used(recv, m, c);
                 call_result_mutation(m, c);
+                if (recv.kind == ctype::array_k || recv.kind == ctype::map_k) {
+                    if (const auto wants = callback_result_wanted(recv.kind == ctype::array_k ? 0 : 1, m->member); wants && !c->arguments.empty()) {
+                        callback_result_read(m->member, *wants, c->arguments[0].get());
+                    }
+                }
             }
             stamp(c->builtin_receiver, proven, uint8_t(0));
             stamp(c->builtin_receiver_open, uint8_t(!proven && (recv.kind == ctype::unknown || recv.kind == ctype::string_k || recv.kind == ctype::array_k || recv.kind == ctype::map_k)), uint8_t(0));
@@ -5884,11 +9475,14 @@ private:
                     }
                 }
             }
-            return !recv.tentative && !m->is_static ? builtin_result(recv, m, args) : ctype{};   // builtin container/string methods etc.
+            if (recv.declared_slot && !m->is_static) { return read_through_declared_slot(builtin_result(recv, m, args)); }
+            return kind_stated(recv) && !m->is_static ? builtin_result(recv, m, args) : ctype{};   // builtin container/string methods etc.
         }
-        infer(callee);
+        if (const ctype held = infer(callee); signature_slot(held)) { return check_signature_call("the callee", held.ti, c, args); }
         return {};
     }
+
+    static bool signature_slot(const ctype& t) { return t.kind == ctype::function_k && t.ti && t.ti->is_signature(); }
 
     // p.reset(h) as the run time judges it, where the load can see it: one argument, a handle (a value or a primitive is not), of a
     // class a typed shared_ptr<T> receiver admits
@@ -5926,6 +9520,11 @@ private:
         }
     }
 
+    // A method's name as a call spells it: a generic method's instance declares its class in full (C::g<int>), which a call omits
+    static std::string_view method_spelling(std::string_view name) {
+        const size_t scope = name.substr(0, name.find('<')).rfind("::");
+        return scope == std::string_view::npos ? name : name.substr(scope + 2);
+    }
     // recv.m(args) on a class or a class used as a value; ov (null for a reference's referent: diagnostics only) takes the overloads
     // a proof may rest on
     ctype class_member_call(call_expr* c, member_expr* m, const ctype& recv, const std::vector<ctype>& args,
@@ -5937,18 +9536,29 @@ private:
         if (hit.found) {
             if (hit.methods) {
                 if (hit.provable && ov) { *ov = hit.methods; ov_class_ = recv.cls; }
-                ctype result = check_script_overloads(m->member, *hit.methods, args, c->location, hit.foreign).result;
+                ctype result = check_script_overloads(m->member, *hit.methods, args, c->location, hit.foreign, true, "method").result;
                 if (!nodiscard_hit_.name.empty()) { nodiscard_hit_.name = std::string(recv.cls) + "." + nodiscard_hit_.name; }
+                // a method dispatches on the object, so only a static's result is known (an override may give a value)
+                if (!void_hit_.shown.empty()) {
+                    if (want_static) { void_hit_.shown = "'" + std::string(recv.cls) + "." + std::string(method_spelling(m->member)) + "'"; }
+                    else { void_hit_ = {}; }
+                }
                 if (!hit.provable) { result.tentative = true; }
                 return result;
             }
+            if (hit.field && hit.field->type) {
+                if (const ctype held = member_type(hit); signature_slot(held)) { return check_signature_call("'" + std::string(m->member) + "'", held.ti, c, args); }
+                if (want_static) { static_field_called(m, recv, hit); }
+            }
             note_host_nodiscard(std::string(recv.cls) + "." + std::string(m->member));
-            if (!want_static) { return check_strict_host_method(recv.cls, m->member, args, c->location); }
+            if (type_argument_call_ && (find_sclass(recv.cls) || eng_.find_script_class(std::string(recv.cls)))) { type_argument_host_callee_.clear(); }   // a script class's field: no host method
+            if (!want_static) { return check_strict_host_method(recv.cls, m->member, args, c->location, c, m); }
             check_host_static_arity(recv.cls, m->member, args.size(), c->location);
             return {};
         }
         if (!want_static) {
             if (ctype t; handle_builtin_result(m->member, t)) {
+                if (m->member == "reset") { narrow_end_roots(m->object.get(), /*escape=*/false); }   // the handle names another object, or none
                 if (m->member == "reset" && !c->arguments.empty()) { check_handle_reset(c, m, recv, args); }
                 if (recv.ti && recv.ti->base_type == script_value_type::jai_shared_ptr_type && !recv.tentative) { in_place_result_used(recv, m, c); }
                 return t;
@@ -5959,15 +9569,12 @@ private:
             report_cdtor_call(m->member, m->location)) {
             return {};
         }
-        if (hit.certain) {
-            size_t rl = 0, rc = 0;
-            if (auto it = classes_.find(recv.cls); it != classes_.end()) {
-                rl = it->second.decl->location.line;
-                rc = it->second.decl->location.column;
-            }
+        if (hit.certain && !recv.open) {
+            declared_at declared;
+            if (auto it = classes_.find(recv.cls); it != classes_.end()) { declared = it->second.decl->location; }
             diag(diag_level::error, m->location,
                  std::string(want_static ? "no static member '" : "no member '") + std::string(m->member) +
-                 "' in class '" + std::string(recv.cls) + "'", rl, rc);
+                 "' in class '" + std::string(recv.cls) + "'", declared);
         }
         return {};
     }
@@ -5984,16 +9591,20 @@ private:
     }
 
     ctype infer_assignment_impl(assignment_expr* a, uint8_t& store_proof) {
+        if (a->op.type == token_type::equal) { note_this_into_declared_slot(a->value.get(), a->target.get(), false); }
         if (a->bare_condition) {
-            diag(diag_level::warning, a->location, "assignment used as a condition: write '==' to compare, or '((a = b))' with parentheses of its own to assign");
+            diag(diag_level::error, a->location, "assignment used as a condition: write '==' to compare, or '((a = b))' with parentheses of its own to assign");
         }
-        ctype rhs = infer(a->value.get());
+        const type_info* slot = a->op.type == token_type::equal && contextual_literal(a->value.get()) ? peek_declared_type(a->target.get()) : nullptr;
+        ctype rhs = infer_expecting(a->value.get(), slot);
         // a plain store of a string-valued right side: the compiler's text-builder store (`s = s + ...`) takes it, behind its run-time guards
         if (a->op.type == token_type::equal) {
             stamp(a->static_operand_class, rhs.kind == ctype::string_k ? operand_class_string_string : operand_class_unknown, operand_class_unknown);
         }
         struct incdec_scope { const char*& slot; const char* prev; ~incdec_scope() { slot = prev; } } incdec_guard{incdec_op_, incdec_op_};
         incdec_op_ = !a->incdec_desugar ? nullptr : a->op.type == token_type::plus_equal ? "++" : "--";
+        const bool enclosing_postfix = std::exchange(incdec_postfix_, a->incdec_desugar && a->postfix_old_result);
+        struct postfix_scope { bool& slot; bool prev; ~postfix_scope() { slot = prev; } } postfix_guard{incdec_postfix_, enclosing_postfix};
         bool compound = (a->op.type != token_type::equal);
         token_type base_op = compound_base(a->op.type);
 
@@ -6006,6 +9617,7 @@ private:
             size_t scope_index = 0;
             if (var_entry* local = find_named(id, &scope_index)) {
                 if (scope_index == 0) { note_global_use(id->name); }   // top-level var write
+                narrow_end(*local, scope_index, /*escape=*/false);
                 if (rhs.const_key && local->is_handle && !compound) { map_key_alias(a->location, a->value.get()); return done(rhs); }
                 if (const type_info* referent = !local->is_reference || !local->declared ? nullptr
                                                 : local->declared->is_reference() ? local->declared->element_type().get() : local->declared) {
@@ -6013,7 +9625,7 @@ private:
                     const ctype slot = ctype_from_type_info(referent);
                     if (reference_store_checked(slot) && !rhs.is_unknown() && !rhs.tentative) {
                         check_store(rhs, compound, base_op, slot, referent->canonical_name() + "&",
-                                    "'" + std::string(id->name) + "'", a->location, local->line, local->column);
+                                    "'" + std::string(id->name) + "'", a->location, declared_at{local->line, local->column});
                     }
                 }
                 if (local->reference_parameter && stamping()) {
@@ -6021,8 +9633,10 @@ private:
                     if (stored.kind == ctype::float_k) { local->reference_parameter->ref_store_unproven = true; }
                 }
                 if (local->dynamic) { return done(rhs); }
-                check_store(rhs, compound, base_op, local->type, local->display,
-                            "'" + std::string(id->name) + "'", a->location, local->line, local->column);
+                const auto space = std::find(namespace_scopes_.begin(), namespace_scopes_.end(), scope_index);
+                const std::string spelled = space == namespace_scopes_.end() ? std::string(id->name)
+                    : std::string(namespace_walk_names_[static_cast<size_t>(space - namespace_scopes_.begin())]) + "::" + std::string(id->name);
+                check_store(rhs, compound, base_op, local->type, local->display, "'" + spelled + "'", a->location, declared_at{local->line, local->column});
                 if (!compound && same_type(local->type, rhs)) { store_proof = proof_same_type; }
                 if (compound) { stamp(a->static_operand_class, operand_class_of(local->type, rhs), operand_class_unknown); }   // the fused compound's typed row
                 return done(local->type);
@@ -6038,7 +9652,7 @@ private:
                         if (!ft.is_unknown()) {
                             check_store(rhs, compound, base_op, ft, declared_variable_type_name(hit.field),
                                         "field '" + std::string(id->name) + "'", a->location,
-                                        hit.foreign ? 0 : hit.field->location.line, hit.foreign ? 0 : hit.field->location.column);
+                                        hit.foreign ? declared_at{} : declared_at{hit.field->location});
                         }
                         return done(ft);
                     }
@@ -6046,13 +9660,21 @@ private:
                 }
                 if (hit.unresolved) { return done(rhs); }
             }
-            if (!id->global_qualified && !enclosing_namespace_member(id->name).empty()) { return done(rhs); }
+            if (!id->global_qualified) {
+                if (const std::string space = enclosing_namespace_member(id->name); !space.empty()) {
+                    // a namespace's top-level code stores to what the name reaches until the member's declaration has run
+                    const auto first = top_level_code() ? namespace_decls_.find(space + "::" + std::string(id->name)) : namespace_decls_.end();
+                    if ((first != namespace_decls_.end() && declared_after(first->second, a->location)) || !namespace_member_settled(space, id->name, a->location)) { return done(rhs); }
+                    const ctype declared = check_namespace_variable_store(space, id->name, rhs, compound, base_op, a->location);
+                    return done(declared.is_unknown() ? rhs : declared);
+                }
+            }
             std::string name(id->name);
             if (extra_global(name)) {
                 note_global_use(id->name);
                 ctype gt = program_scope_store_type(name);
                 if (gt.is_unknown()) { return done(rhs); }
-                check_store(rhs, compound, base_op, gt, ctype_name(gt), "'" + name + "'", a->location, 0, 0);
+                check_store(rhs, compound, base_op, gt, ctype_name(gt), "'" + name + "'", a->location, {});
                 return done(gt);
             }
             if (functions_.count(id->name) || find_sclass(id->name) || enums_.count(id->name) ||
@@ -6064,14 +9686,14 @@ private:
                 ctype gt = engine_global_type(name);
                 if (!gt.is_unknown()) {
                     check_store(rhs, compound, base_op, gt, ctype_name(gt),
-                                "'" + std::string(id->name) + "'", a->location, 0, 0);
+                                "'" + std::string(id->name) + "'", a->location, {});
                 }
                 return done(gt);   // engine globals: never proven (S3)
             }
             if (eng_.has_function(name) || engine_knows_name(name) || program_or_derived_name(id->name) || stale_field_context()) {
                 return done(rhs);
             }
-            undeclared(id->location, id->name);
+            undeclared(id->location, id->name, id->less_compared);
             return done(rhs);
         }
         if (target->get_type() == node_type::member_expr) {
@@ -6086,16 +9708,12 @@ private:
             const ctype read_type = infer_member(m, /*writing=*/true, &typed_field, &recv, &hit);
             // a shared_ptr<T> namespace variable admits a handle by its static pointee at load; other namespace stores
             // stay run-time checks under strict (spec: a_typed_namespace_store_is_checked_at_run_time_under_strict)
-            std::string qualified;
             if (!typed_field && m->is_static) {
-                const variable_decl* nv = nullptr;
-                if (const ctype nt = namespace_variable_type(m, &nv, &qualified); !nt.is_unknown()) {
-                    check_store(rhs, compound, base_op, nt, declared_variable_type_name(nv), "'" + qualified + "'", a->location,
-                                nv->location.line, nv->location.column);
-                    return nt;
+                if (const std::string path = member_path(m); !path.empty()) {
+                    if (const ctype nt = check_namespace_variable_store(path, m->member, rhs, compound, base_op, a->location); !nt.is_unknown()) { return nt; }
                 }
                 if (const var_entry* x = qualified_extern(m); x && !x->dynamic) {
-                    check_store(rhs, compound, base_op, x->type, x->display, "'" + qualified_spelling(m) + "'", a->location, x->line, x->column);
+                    check_store(rhs, compound, base_op, x->type, x->display, "'" + qualified_spelling(m) + "'", a->location, declared_at{x->line, x->column});
                     return x->type;
                 }
             }
@@ -6114,7 +9732,7 @@ private:
                 if (!ft.is_unknown()) {
                     check_store(rhs, compound, base_op, ft, declared_variable_type_name(typed_field),
                                 "field '" + std::string(typed_field->name) + "'", a->location,
-                                hit.foreign ? 0 : typed_field->location.line, hit.foreign ? 0 : typed_field->location.column);
+                                hit.foreign ? declared_at{} : declared_at{typed_field->location});
                 }
                 return recv.diagnostic_only ? result_type : ft;
             }
@@ -6124,7 +9742,9 @@ private:
         if (target->get_type() == node_type::binary_expr) {
             auto* subscript = static_cast<binary_expr*>(target);
             if (subscript->op.type == token_type::left_bracket) {
-                const ctype recv = declared_container_receiver(subscript->left.get(), infer(subscript->left.get()));
+                const ctype stored_in = infer(subscript->left.get());
+                function_subscripted(subscript, stored_in);
+                const ctype recv = declared_container_receiver(subscript->left.get(), stored_in);
                 const ctype key = infer(subscript->right.get());
                 if (recv.kind == ctype::map_k && !recv.tentative && key.kind == ctype::object_k && !key.tentative && !key.cls.empty()) { warn_identity_map_key(subscript, key.cls); }
                 check_map_subscript_key(subscript, recv, key);
@@ -6151,7 +9771,7 @@ private:
                     return stored;
                 }
                 const ctype element = container_value_type(recv);
-                if (compound && check_compound_operands(element, base_op, rhs, a->location, 0, 0)) { return element; }
+                if (compound && check_compound_operands(element, base_op, rhs, a->location, {})) { return element; }
                 const ctype stored = compound ? binary_result(element, base_op, rhs) : rhs;
                 const bool assigns = !compound && element.kind == ctype::object_k && !element.cls.empty() && assign_operator_accepts(element.cls, stored);
                 const auto issue = assigns ? std::string() : container_element_issue(stored, element.ti);
@@ -6162,6 +9782,7 @@ private:
             }
         }
         if (detail::reference_target(target)) {
+            narrow_end_roots(target, /*escape=*/true);
             // cast<T&>(e) (its operand already is a T), f() returning T&, a conditional of lvalues, an assignment: the store
             // checks against the referent's type; a call the checker resolves to by-value overloads only names no storage
             if (target->get_type() == node_type::call_expr && call_returns_by_value(static_cast<call_expr*>(target))) {
@@ -6174,7 +9795,7 @@ private:
             t.tentative = false;
             const std::string name = ctype_name(t);
             const bool spelled_cast = target->get_type() == node_type::cast_expr && !static_cast<cast_expr*>(target)->implicit_ref;
-            check_store(rhs, compound, base_op, t, name, spelled_cast ? "a cast<" + name + "&> target" : std::string("the reference"), a->location, 0, 0);
+            check_store(rhs, compound, base_op, t, name, spelled_cast ? "a cast<" + name + "&> target" : std::string("the reference"), a->location, {});
             return t;
         }
         non_lvalue_target(a->location, target);
@@ -6227,7 +9848,7 @@ private:
         };
         if (c->callee->get_type() == node_type::identifier_expr) {
             auto* id = static_cast<const identifier_expr*>(c->callee.get());
-            if (id->global_qualified || find_local(id->name) || class_ctx_) { return nullptr; }
+            if (id->global_qualified || find_local(id->name) || class_ctx_ || !enclosing_namespace_member(id->name).empty()) { return nullptr; }
             const auto it = functions_.find(id->name);
             if (it == functions_.end() || it->second.empty()) { return nullptr; }
             for (const auto* fn : it->second) { if (!admit(fn)) { return nullptr; } }
@@ -6261,7 +9882,7 @@ private:
     bool call_returns_by_value(const call_expr* c) {
         if (!c->callee || c->callee->get_type() != node_type::identifier_expr) { return false; }
         auto* id = static_cast<const identifier_expr*>(c->callee.get());
-        if (id->global_qualified || find_local(id->name) || class_ctx_) { return false; }
+        if (id->global_qualified || find_local(id->name) || class_ctx_ || !enclosing_namespace_member(id->name).empty()) { return false; }
         if (auto it = functions_.find(id->name); it != functions_.end()) {
             if (it->second.empty()) { return false; }
             for (const auto* fn : it->second) {
@@ -6285,18 +9906,19 @@ private:
     // `x op= rhs` is `x = T(x op rhs)` — so it checks exactly like plain assignment
     // of the operation's result. var targets keep the dynamic behavior (unchecked).
     const char* incdec_op_ = nullptr;   // the ++/-- spelling while checking its += 1 / -= 1 desugar
+    bool incdec_postfix_ = false;       // that desugar's form
     void check_store(const ctype& rhs, bool compound, token_type base_op, const ctype& target,
                      const std::string& target_display, const std::string& what,
-                     const source_location& loc, size_t decl_line, size_t decl_col) {
+                     const source_location& loc, const declared_at& declared) {
         if (target.is_unknown()) { return; }
         if (compound && incdec_op_ && target.kind == ctype::string_k) {
-            diag(diag_level::error, loc, std::string("cannot apply '") + incdec_op_ + "' to 'string'", decl_line, decl_col);
+            diag(diag_level::error, loc, std::string("cannot apply '") + incdec_op_ + "' to 'string'", declared);
             return;
         }
         if (compound && base_op == token_type::plus && target.kind == ctype::string_k && !rhs.is_unknown() &&
             rhs.kind != ctype::string_k && rhs.kind != ctype::char_k && rhs.kind != ctype::utf8_k && !eng_.has_function("+")) {
             // a string target appends text only (a char is text; string += int raises, unlike binary +)
-            diag(diag_level::error, loc, "cannot apply '+=' to 'string' and '" + ctype_name(rhs) + "'", decl_line, decl_col);
+            diag(diag_level::error, loc, "cannot apply '+=' to 'string' and '" + ctype_name(rhs) + "'", declared);
             return;
         }
         if (compound && !rhs.is_unknown() && target.kind != ctype::object_k) {   // a class target's operator decides
@@ -6305,26 +9927,47 @@ private:
             const auto integral = [](const ctype& t) { return t.kind == ctype::int_k || t.kind == ctype::char_k; };
             if (bitwise && (!integral(target) || !integral(rhs))) {
                 diag(diag_level::error, loc, std::string("cannot apply '") + bitwise + "' to '" + ctype_name(target) + "' and '" + ctype_name(rhs) + "'",
-                     decl_line, decl_col);
+                     declared);
                 return;
             }
         }
-        if (compound && check_compound_operands(target, base_op, rhs, loc, decl_line, decl_col)) { return; }
+        if (compound && target.kind == ctype::object_k &&
+            (incdec_op_ ? in_place_operator_may_take(target, incdec_op_, nullptr, incdec_postfix_)
+                        : in_place_operator_may_take(target, std::string(detail::binary_op_name(base_op)) + "=", &rhs, false))) {
+            return;   // the class's in-place operator runs on the object: nothing is stored
+        }
+        if (compound && check_compound_operands(target, base_op, rhs, loc, declared)) { return; }
         ctype stored = compound ? binary_result(target, base_op, rhs) : rhs;
-        if (assignable(stored, target)) { return; }
+        if (assignable(stored, target)) {
+            if (!compound) { warn_dynamic_handle_copy(rhs, target); }
+            return;
+        }
         if (!compound && target.kind == ctype::object_k && assign_operator_accepts(target.cls, stored)) { return; }
         diag(diag_level::error, loc, "cannot assign '" + ctype_name(stored) + "' to " + what +
-             " declared '" + target_display + "'" + assignment_detail(stored, target), decl_line, decl_col);
+             " declared '" + target_display + "'" + assignment_detail(stored, target), declared);
     }
 
     // `target = rhs` on a class-typed target runs a user operator=(rhs) ahead of the
-    // conversion ladder (both backends); a registered ancestor's operator= stays lenient.
+    // conversion ladder (both backends); a C++ class's bound "=" takes what its recorded signatures may take, any other
+    // registered operator= stays lenient.
     bool assign_operator_accepts(std::string_view cls, const ctype& src, int depth = 0) {
         if (depth > 32) { return true; }
         const sclass* c = find_sclass(cls);
         if (!c) {
             auto def = engine_class(cls);
-            return !def || !def->get_method(eng_.symbolize("="), false).is_invalid();
+            if (!def) { return true; }
+            const uint64_t assign_id = eng_.symbolize("=");
+            if (def->get_method(assign_id, false).is_invalid()) { return false; }
+            if (!def->is_cpp_class() || def->extended_ever()) { return true; }
+            const auto& table = def->cpp_method_overload_table();
+            const auto bound = table.find(assign_id);
+            if (bound == table.end()) { return true; }
+            const auto unary = bound->second.find(1);
+            if (unary == bound->second.end()) { return true; }
+            for (const auto& entry : unary->second) {
+                if (entry.param_types.size() != 1 || host_constructor_param_takes(src, entry.param_types[0])) { return true; }
+            }
+            return false;
         }
         if (auto m = c->methods.find("="); m != c->methods.end()) {
             const std::vector<ctype> one{src};
@@ -6454,7 +10097,10 @@ private:
 
     // null against a declared slot that never holds it (a store of null raises or converts there); handles and
     // functions hold null, and a call's container result is null when the body falls off its end
+    // a `?.` chain's own test (parser::null_chain_rest): `?.` over a value that is never null reads it as `.` does
+    const expression* null_chain_test_ = nullptr;
     void check_null_comparison(const binary_expr* b, const ctype& t, const expression* operand, const char* op) {
+        if (b == null_chain_test_) { return; }
         switch (t.kind) {
             case ctype::int_k: case ctype::float_k: case ctype::char_k: case ctype::bool_k: case ctype::string_k: case ctype::utf8_k: break;
             case ctype::array_k: case ctype::map_k: case ctype::math_k:
@@ -6557,22 +10203,20 @@ private:
         bool quiet = lw_quiet_level(cls, 0);
         if (quiet) {
             auto derives = [&](const class_decl* cd) { return lw_derives(cd, cls, 0); };
-            std::unordered_set<std::string_view> modeled;
             for (const auto& [name, c] : classes_) {
-                modeled.insert(name);
-                if (quiet && name != cls && derives(c.decl) && !lw_quiet_class(name)) { quiet = false; }
+                if (name != cls && derives(c.decl) && !lw_quiet_class(name)) { quiet = false; break; }
             }
+            std::unordered_set<std::string_view> asked;   // the program's classes the unit does not model, each asked once
             if (quiet && program_classes_) {
                 for (const auto& [name, cd] : *program_classes_) {
-                    if (!cd || modeled.count(cd->name)) { continue; }
-                    modeled.insert(cd->name);
+                    if (!cd || classes_.count(cd->name) || !asked.insert(cd->name).second) { continue; }
                     if (cd->name != cls && derives(cd.get()) && !lw_quiet_class(cd->name)) { quiet = false; break; }
                 }
             }
             if (quiet) {
                 if (auto def = engine_class(cls)) {
                     for (const auto& name : eng_.registered_class_names()) {
-                        if (modeled.count(name)) { continue; }
+                        if (classes_.count(name) || asked.count(name)) { continue; }
                         auto other = engine_class(name);
                         if (other && other.get() != def.get() && other->derives_from(def.get())) { quiet = false; break; }
                     }
@@ -7549,9 +11193,68 @@ private:
 
     // -------------------------------------------------------------- statements
 
+    // A statement of a list: an if or a loop that leaves the list on one outcome narrows the statements after it
+    void walk_listed(declaration* d) {
+        narrow_in_list_ = true;
+        walk_decl(d);
+        narrow_in_list_ = false;
+    }
+
+    // A string's truth is no question C++ lets a condition ask: the test is spelled
+    void check_condition_type(const expression* condition, const ctype& type) {
+        if (type.tentative || (type.kind != ctype::string_k && type.kind != ctype::utf8_k)) { return; }
+        const std::string name = condition->get_type() == node_type::identifier_expr ? std::string(static_cast<const identifier_expr*>(condition)->name) : std::string("s");
+        diag(diag_level::error, condition->location, "a string is not a condition: write !" + name + ".empty()");
+    }
+
+    JAI_NOINLINE void walk_while(while_stmt* w, bool in_list) {
+        const size_t mark = narrow_ended_.size();
+        check_condition_type(w->condition.get(), infer(w->condition.get()));
+        const size_t tested = narrow_ended_.size();
+        std::vector<narrow_fact> when_true, when_false;
+        narrow_conclude(w->condition.get(), mark, when_true, when_false);
+        const size_t held = narrow_facts_.size();
+        narrow_push(when_true);
+        walk_stmt(w->body.get());
+        narrow_pop(held);
+        narrow_after_loop(w->body.get(), in_list, mark, tested, when_false);
+    }
+    // After a loop its condition was false, unless a break left it; the body's own ends came before the last test
+    void narrow_after_loop(const statement* body, bool in_list, size_t mark, size_t tested, std::vector<narrow_fact>& when_false) {
+        if (!in_list || when_false.empty() || narrow_dry_ || narrow_breaks(body)) { return; }
+        std::erase_if(when_false, [&](const narrow_fact& f) {
+            for (size_t i = mark; i < tested && i < narrow_ended_.size(); ++i) { if (narrow_ended_[i].key == f.key) { return true; } }
+            return false;
+        });
+        narrow_push(when_false);
+    }
+
+    JAI_NOINLINE void walk_if(if_stmt* i, bool in_list) {
+        const size_t mark = narrow_ended_.size();
+        check_condition_type(i->condition.get(), infer(i->condition.get()));
+        std::vector<narrow_fact> when_true, when_false;
+        narrow_conclude(i->condition.get(), mark, when_true, when_false);
+        const size_t held = narrow_facts_.size();
+        narrow_push(when_true);
+        walk_stmt(i->then_statement.get());
+        narrow_pop(held);
+        narrow_push(when_false);
+        walk_stmt(i->else_statement.get());
+        narrow_pop(held);
+        if (!in_list || (when_true.empty() && when_false.empty())) { return; }
+        // one branch leaves (return, throw, break, continue): the statements after the if run only on the other outcome
+        const bool then_leaves = !narrow_completes(i->then_statement.get());
+        const bool else_leaves = i->else_statement && !narrow_completes(i->else_statement.get());
+        if (then_leaves == else_leaves) { return; }
+        std::vector<narrow_fact>& after = then_leaves ? when_false : when_true;
+        narrow_drop_ended(after, mark);
+        narrow_push(after);
+    }
+
     JAI_NOINLINE void walk_stmt(statement* s) {
         if (!s) { return; }
         stack_.guard(s->location);
+        const bool in_list = std::exchange(narrow_in_list_, false);
         mode_guard region(mode_stack_, s->check_mode_attr, /*scoped=*/false);
         switch (s->get_type()) {
             case node_type::expression_stmt:
@@ -7562,26 +11265,24 @@ private:
             case node_type::block_stmt: {
                 auto* b = static_cast<block_stmt*>(s);
                 mode_guard block(mode_stack_, leading_mode(b->declarations), /*scoped=*/true);
+                const size_t held = narrow_facts_.size();
                 scopes_.emplace_back();
-                for (auto& d : b->declarations) { walk_decl(d.get()); }
+                for (auto& d : b->declarations) { walk_listed(d.get()); }
                 scopes_.pop_back();
+                narrow_pop(held);
                 break;
             }
-            case node_type::if_stmt: {
-                auto* i = static_cast<if_stmt*>(s);
-                infer(i->condition.get());
-                walk_stmt(i->then_statement.get());
-                walk_stmt(i->else_statement.get());
+            case node_type::if_stmt:
+                walk_if(static_cast<if_stmt*>(s), in_list);
                 break;
-            }
             case node_type::while_stmt: {
                 auto* w = static_cast<while_stmt*>(s);
-                infer(w->condition.get());
-                walk_stmt(w->body.get());
+                if (narrow_wants_ahead(w)) { narrow_walk_ahead(nullptr, [&] { walk_while(w, false); }); }
+                walk_while(w, in_list);
                 break;
             }
             case node_type::for_stmt:
-                walk_for(static_cast<for_stmt*>(s));
+                walk_for(static_cast<for_stmt*>(s), in_list);
                 break;
             case node_type::range_for_stmt:
                 walk_range_for(static_cast<range_for_stmt*>(s));
@@ -7610,13 +11311,33 @@ private:
         }
     }
 
-    JAI_NOINLINE void walk_for(for_stmt* f) {
+    JAI_NOINLINE void walk_for(for_stmt* f, bool in_list) {
         scopes_.emplace_back();
         if (lw_on()) { lw_modes_[f] = region_mode(); }
         if (f->initializer) { walk_decl(f->initializer.get()); }
-        if (f->condition) { infer(f->condition.get()); }
-        if (f->update) { infer(f->update.get()); }
-        walk_stmt(f->body.get());
+        std::vector<narrow_event> ended;   // what the loop ends anywhere: the update runs after the body
+        const auto turns = [&](bool listed) {
+            const size_t mark = narrow_ended_.size();
+            if (f->condition) { infer(f->condition.get()); }
+            const size_t tested = narrow_ended_.size();
+            std::vector<narrow_fact> when_true, when_false;
+            narrow_conclude(f->condition.get(), mark, when_true, when_false);
+            const size_t held = narrow_facts_.size();
+            if (f->update) {
+                for (const narrow_fact& fact : when_true) {
+                    const bool kept = std::none_of(ended.begin(), ended.end(), [&](const narrow_event& ev) { return ev.key == fact.key; });
+                    if (kept) { narrow_push({fact}); }
+                }
+                infer(f->update.get());
+                narrow_pop(held);
+            }
+            narrow_push(when_true);
+            walk_stmt(f->body.get());
+            narrow_pop(held);
+            narrow_after_loop(f->body.get(), listed, mark, tested, when_false);
+        };
+        if (narrow_wants_ahead(f)) { ended = narrow_walk_ahead(nullptr, [&] { turns(false); }); }
+        turns(in_list);
         scopes_.pop_back();
     }
 
@@ -7625,7 +11346,9 @@ private:
         return t && t->base_type == script_value_type::jai_object_type && !t->type_name.empty() ? t : nullptr;
     }
     JAI_NOINLINE void walk_range_for(range_for_stmt* f) {
+        const size_t reads = narrow_reads_;
         const ctype container = enum_table(infer(f->container.get()));
+        const bool narrowed_container = narrow_reads_ != reads;
         if (f->binds_map_entry && !container.tentative && !container.is_unknown() && container.kind != ctype::map_k && container.kind != ctype::coroutine_k) {   // for (auto [k, v] : x)
             diag(diag_level::error, f->container->location, "a structured binding takes a map's entries, its key and value: cannot bind '" +
                  ctype_name(container) + "' to " + detail::map_entry_binding_spelling(*f));
@@ -7638,15 +11361,18 @@ private:
             elem = ctype_from_type_info(container.ti->element_type());
         } else if (container.kind == ctype::string_k) {
             elem = ctype::make(ctype::char_k);
+        } else if (container.kind == ctype::coroutine_k && container.yields) {
+            elem = ctype_from_type_info(container.yields);   // each yield converted to it; a bare yield hands out null
+            elem.tentative = true;
         }
         if (!f->element_type) { f->auto_spelled = true; }
         check_spelled_type(f->element_type.get(), f->location);
         if (f->auto_spelled && !f->auto_typed && semantic_walk() && container.kind != ctype::map_k) {
             f->auto_typed = true;   // an auto over elements without a static type is a var, decided once
-            if (elem.is_unknown()) { f->element_type = eng_.get_type_info_any(); }
+            if (elem.is_unknown() || container.kind == ctype::coroutine_k) { f->element_type = eng_.get_type_info_any(); }
         }
         const bool declared = f->element_type && f->element_type->base_type != script_value_type::jai_any_type && !f->auto_spelled;
-        stamp(f->element_conversion_free, !declared || (!elem.is_unknown() && same_type(ctype_from_type_info(f->element_type.get()), elem)), false);
+        stamp(f->element_conversion_free, !declared || (!narrowed_container && !elem.is_unknown() && same_type(ctype_from_type_info(f->element_type.get()), elem)), false);
         if (declared && !f->is_reference && !elem.is_unknown() && !assignable(elem, ctype_from_type_info(f->element_type.get()))) {
             const ctype slot = ctype_from_type_info(f->element_type.get());   // each element initializes the variable as a declaration would
             diag(diag_level::error, f->location, "cannot initialize '" + std::string(f->variable_name) + "' declared '" + f->element_type->canonical_name() +
@@ -7715,7 +11441,9 @@ private:
         if (loop_const && !entry.map_pair && !container.tentative) { entry.const_element = value_class_type(elem.ti); }
         if (entry.map_pair && container.ti && !container.tentative) { entry.pair_value = container.ti->value_type().get(); }
         warn_shadow("range-for variable", f->variable_name, f->location);
+        if (!entry.map_pair) { narrow_declare(entry, f); }
         scopes_.back().emplace(f->variable_name, std::move(entry));
+        if (narrow_wants_ahead(f->body.get())) { narrow_walk_ahead(f, [&] { walk_stmt(f->body.get()); }); }
         walk_stmt(f->body.get());
         scopes_.pop_back();
     }
@@ -7759,7 +11487,9 @@ private:
         }
         for (const auto& c : f->extra_containers) { infer(c.get()); }
         ++parallel_body_depth_;
+        narrow_frames_.push_back({scopes_.size() - 1, narrow_bound::alias});   // every worker shares the enclosing frame's variables
         walk_stmt(f->body.get());
+        narrow_frames_.pop_back();
         --parallel_body_depth_;
         scopes_.pop_back();
     }
@@ -7767,13 +11497,22 @@ private:
     JAI_NOINLINE void walk_try(try_stmt* t) {
         walk_stmt(t->try_block.get());
         scopes_.emplace_back();
+        const size_t held = narrow_facts_.size();
         if (!t->catch_var.empty()) {
             var_entry entry;
             entry.dynamic = true;
             warn_shadow("catch variable", t->catch_var, t->location);
-            scopes_.back().emplace(std::string_view(t->catch_var), std::move(entry));
+            narrow_declare(entry, t);
+            const auto caught = scopes_.back().emplace(std::string_view(t->catch_var), std::move(entry)).first;
+            if (t->clause_types.size() == 1 && !narrow_dry_) {   // catch (T e): the handler runs for a T alone
+                narrow_fact fact;
+                const ctype::kind_t kind = narrow_kind_name(t->clause_types[0]);
+                if (kind != ctype::unknown ? narrow_kind_fact(caught->second, kind, fact)
+                                           : narrow_class_fact(caught->second, scopes_.size() - 1, t->clause_types[0], {}, fact)) { narrow_push({fact}); }
+            }
         }
         walk_stmt(t->catch_block.get());
+        narrow_pop(held);
         scopes_.pop_back();
     }
 
@@ -7782,14 +11521,18 @@ private:
         for (auto& cs : sw->cases) {
             const ctype value = infer(cs->value.get());
             stamp(cs->static_operand_class, operand_class_of(condition, value), operand_class_unknown);
+            const size_t held = narrow_facts_.size();
             scopes_.emplace_back();
-            for (auto& st : cs->body) { walk_stmt(st.get()); }
+            for (auto& st : cs->body) { narrow_in_list_ = true; walk_stmt(st.get()); narrow_in_list_ = false; }
             scopes_.pop_back();
+            narrow_pop(held);
         }
         if (sw->default_case) {
+            const size_t held = narrow_facts_.size();
             scopes_.emplace_back();
-            for (auto& st : sw->default_case->body) { walk_stmt(st.get()); }
+            for (auto& st : sw->default_case->body) { narrow_in_list_ = true; walk_stmt(st.get()); narrow_in_list_ = false; }
             scopes_.pop_back();
+            narrow_pop(held);
         }
     }
 
@@ -7802,43 +11545,78 @@ private:
     }
 
     JAI_NOINLINE void check_return_impl(return_stmt* r, uint8_t& proof) {
-        const ctype value = r->value ? infer(r->value.get()) : ctype::make(ctype::null_k);
-        check_return_value(r, value, proof);
+        const size_t reads = narrow_reads_;
+        const type_info* declared = fn_stack_.empty() || fn_stack_.back().is_coroutine ? nullptr : fn_stack_.back().ret;
+        const ctype value = r->value ? infer_expecting(r->value.get(), declared) : ctype::make(ctype::null_k);
+        // the return proof has a reader with no run-time guard (parallel_transform's rewrite): a narrowed read stays out of it
+        narrow_derived_ = narrow_reads_ != reads;
+        std::vector<const call_expr*> calls;
+        const bool nothing = r->value_discarded && calls_nothing(r->value.get(), &calls);   // `return f();` in a body that declares no value
+        if (r->value && !nothing && !fn_stack_.empty()) { fn_stack_.back().gives_value = true; }
+        if (nothing && !fn_stack_.empty() && fn_stack_.back().dispatched) {
+            // a returned builtin in-place call is the use main reports, its twin named; a script function's nothing loads
+            for (const call_expr* call : calls) {
+                if (auto it = nothing_calls_.find(call); it != nothing_calls_.end() && !it->second.reason.empty() && it->second.used == it->second.reason) {
+                    diag(diag_level::error, call->location, it->second.used);
+                }
+            }
+        } else if (nothing && !fn_stack_.empty() && !fn_stack_.back().ret) {
+            auto& returns = fn_stack_.back().nothing_returns;
+            returns.insert(returns.end(), calls.begin(), calls.end());
+        }
+        check_return_value(r, nothing ? ctype::make(ctype::null_k) : value, proof, nothing);
+        if (narrow_derived_) { proof = proof_none; }
+        narrow_derived_ = false;
     }
 
     // An int coroutine's yield or return of a float the checker sees: the one store a coroutine's values are checked for at load
     void check_coroutine_value(const ctype& value, const source_location& loc, const char* verb) {
         if (fn_stack_.empty()) { return; }
         const fn_ctx& fn = fn_stack_.back();
-        if (!fn.is_coroutine || !fn.ret || fn.ret->base_type != script_value_type::jai_int_type || value.kind != ctype::float_k) { return; }
-        diag(diag_level::error, loc, std::string("cannot ") + verb + " 'float' from '" + std::string(fn.name) + "' declared to return 'int': " + float_to_int_fix,
-             fn.line, fn.column);
+        if (!fn.is_coroutine || !fn.ret) { return; }
+        const ctype declared = ctype_from_type_info(fn.ret);
+        if (declared.is_unknown() || declared.kind == ctype::null_k || value.is_unknown() || assignable(value, declared)) { return; }
+        diag(diag_level::error, loc, std::string("cannot ") + verb + " '" + ctype_name(value) + "' from '" + std::string(fn.name) + "' declared to return '" +
+             fn.ret->canonical_name() + "'" + assignment_detail(value, declared), fn.line, fn.column);
     }
 
-    JAI_NOINLINE void check_return_value(return_stmt* r, ctype value, uint8_t& proof) {
+    JAI_NOINLINE void check_return_value(return_stmt* r, ctype value, uint8_t& proof, bool nothing = false) {
+        const bool valued = r->value && !nothing;   // an arrow returning a call that returns nothing returns no value
         if (r->binds_reference) { report_mixed_reference_conditional(r->value.get()); }
         if (fn_stack_.empty()) { return; }
         const fn_ctx& fn = fn_stack_.back();
-        if (r->value && value.const_key && (r->binds_reference || handle_type(fn.ret))) {
+        if (valued && value.const_key && (r->binds_reference || handle_type(fn.ret))) {
             map_key_alias(r->location, r->value.get());
         }
         if (!fn.is_coroutine && !fn.ret) {
             fn_ctx& open = fn_stack_.back();
-            const uint8_t k = !r->value || r->binds_reference || value.tentative ? 0
+            const uint8_t k = !valued || r->binds_reference || value.tentative || narrow_derived_ ? 0
                             : value.kind == ctype::int_k ? (enum_value(value) ? 0 : 1) : value.kind == ctype::float_k ? 2 : value.kind == ctype::bool_k ? 3 : 0;
             if (k == 0 || (open.inferred_return != 0 && open.inferred_return != k)) { open.inferred_mixed = true; }
             else { open.inferred_return = k; }
+            open.returns_seen = true;
+            if (!valued || r->binds_reference || !names_a_value(value)) { open.returns_values = false; }
+            if (generics_live_) {
+                const bool typed = valued && !r->binds_reference && !narrow_derived_;
+                const type_info* yields = typed ? deduction_type(value, false) : nullptr;
+                const type_info* states = typed ? deduction_type(value, true) : nullptr;
+                if (!valued) { open.returns_nothing = true; }
+                else if (!yields || (open.returned && open.returned->canonical_name() != yields->canonical_name())) { open.returned_mixed = true; }
+                else { open.returned = yields; }
+                if (valued && (!states || (open.stated && open.stated->canonical_name() != states->canonical_name()))) { open.stated_mixed = true; }
+                else if (valued) { open.stated = states; }
+            }
         }
-        if (fn.is_coroutine) { check_coroutine_value(value, r->location, "return"); }
+        if (fn.is_coroutine && valued) { check_coroutine_value(value, r->location, "return"); }
         if (fn.is_coroutine || !fn.ret) { return; }   // coroutine returns/yields + auto: lenient
-        if (!r->value && requires_return_value(fn.ret)) {
+        if (!valued && requires_return_value(fn.ret)) {
             diag(diag_level::error, r->location, "'" + std::string(fn.name) + "' declared to return '" +
                  fn.ret->canonical_name() + "' returns no value here", fn.line, fn.column);
             return;
         }
-        if (fn.ret->base_type == script_value_type::jai_reference_type && r->value) {
+        if (fn.ret->base_type == script_value_type::jai_reference_type && valued) {
             const type_info* referent = fn.ret->element_type().get();
-            if (referent && !reference_type_compatible(value, ctype_from_type_info(referent))) {
+            if (referent && !reference_type_compatible(narrow_declared_view(value), ctype_from_type_info(referent))) {
                 diag(diag_level::error, r->location, "cannot return reference to '" + ctype_name(value) +
                     "' from '" + std::string(fn.name) + "' declared to return '" + fn.ret->canonical_name() + "'");
             }
@@ -7846,15 +11624,15 @@ private:
         }
         ctype ret = ctype_from_type_info(fn.ret);
         if (ret.is_unknown()) { return; }
-        if (r->value && !r->binds_reference && ret.kind != ctype::null_k && same_type(ret, value)) { proof = proof_same_type; }
+        if (valued && !r->binds_reference && ret.kind != ctype::null_k && same_type(ret, value)) { proof = proof_same_type; }
         if (ret.kind == ctype::null_k) {
-            if (r->value && value.kind != ctype::null_k && !value.is_unknown()) {
+            if (valued && value.kind != ctype::null_k && !value.is_unknown()) {
                 diag(diag_level::error, r->location, "cannot return a value from '" + std::string(fn.name) +
                      "' declared 'void'", fn.line, fn.column);
             }
             return;
         }
-        if (!r->value) {
+        if (!valued) {
             // a nullable result (a handle, a container) returns null here: warning severity, like falling off the end
             diag(diag_level::warning, r->location, "'" + std::string(fn.name) + "' declared to return '" +
                  fn.ret->canonical_name() + "' returns no value here (returns null)", fn.line, fn.column);
@@ -7864,6 +11642,8 @@ private:
             diag(diag_level::error, r->location, "cannot return '" + ctype_name(value) + "' from '" +
                  std::string(fn.name) + "' declared to return '" + fn.ret->canonical_name() + "'" + assignment_detail(value, ret),
                  fn.line, fn.column);
+        } else {
+            warn_dynamic_handle_copy(value, ret);
         }
     }
 
@@ -7876,6 +11656,7 @@ private:
             var_entry entry;
             entry.type = ctype::make(ctype::function_k);
             entry.dynamic = true;
+            entry.namespace_function = !namespace_scopes_.empty() && namespace_scopes_.back() == scopes_.size() - 1;
             scopes_.back().emplace(fn->name, std::move(entry));
         }
         walk_function(fn);
@@ -7904,6 +11685,7 @@ private:
             entry.type = ctype::make(ctype::function_k);
             entry.dynamic = true;
         } else if (x->type) {
+            report_unbound_instantiation(x->type.get(), x->location);
             entry.declared = x->type.get();
             entry.display = x->type->canonical_name();
             entry.type = ctype_from_type_info(x->type.get());
@@ -7941,21 +11723,55 @@ private:
             case node_type::variable_decl:
                 walk_variable_decl(static_cast<variable_decl*>(d));
                 break;
-            case node_type::function_decl:
-                walk_function_declaration(static_cast<function_decl*>(d));
+            case node_type::function_decl: {
+                auto* fn = static_cast<function_decl*>(d);
+                if (fn->instance_stamp != 0) {   // a generic's instance: its diagnostics say whose
+                    const generic_instance_decl* request = instance_request(*fn);
+                    if (unmade_instances_.count(request)) { break; }
+                    instance_scope scope(instance_ctx_, request);
+                    mode_guard declared(mode_stack_, instance_region_mode(request), /*scoped=*/true);
+                    walk_function_declaration(fn);
+                    break;
+                }
+                walk_function_declaration(fn);
                 break;
+            }
             case node_type::class_decl: {
                 auto* cd = static_cast<class_decl*>(d);
+                if (cd->method_instances) {
+                    walk_method_instances(cd);
+                    break;
+                }
+                if (cd->instance_stamp != 0) {
+                    const generic_instance_decl* request = class_instance_request(cd->name);
+                    if (unmade_instances_.count(request)) { break; }
+                    instance_scope scope(instance_ctx_, request);
+                    mode_guard declared(mode_stack_, instance_region_mode(request), /*scoped=*/true);
+                    if (!classes_.count(cd->name)) { collect_class(cd); }
+                    walk_class(cd);
+                    break;
+                }
                 if (!classes_.count(cd->name)) { collect_class(cd); }
                 walk_class(cd);
                 break;
             }
+            case node_type::generic_instance_decl:
+                walk_instance_request(static_cast<const generic_instance_decl*>(d));
+                break;
+            case node_type::generic_decl:
+                walk_generic(*static_cast<const generic_decl*>(d)->definition);
+                break;
             case node_type::namespace_decl: {
                 auto* n = static_cast<namespace_decl*>(d);
                 scopes_.emplace_back();
                 namespace_scopes_.push_back(scopes_.size() - 1);
                 namespace_walk_names_.push_back(n->name);
                 for (auto& inner : n->declarations) { walk_decl(inner.get()); }
+                for (const auto& [name, entry] : scopes_.back()) {
+                    if (!entry.dynamic && !entry.declared && !entry.is_reference && !entry.type.is_unknown() && entry.type.kind != ctype::function_k) {
+                        namespace_inferred_types_[std::string(n->name) + "::" + std::string(name)] = entry.type;
+                    }
+                }
                 namespace_walk_names_.pop_back();
                 namespace_scopes_.pop_back();
                 scopes_.pop_back();
@@ -7998,6 +11814,13 @@ private:
     }
 
     JAI_NOINLINE void walk_enum(enum_decl* e) {
+        // E::value reads the class of that name first, so no value of the enum could be named
+        if (scopes_.size() == 1 || (!namespace_scopes_.empty() && namespace_scopes_.back() == scopes_.size() - 1)) {
+            if (auto held = eng_.get_class_definition(std::string(e->name)); held && !held->is_script_class()) {
+                diag(diag_level::error, e->location, "cannot declare enum '" + std::string(e->name) +
+                     "': the host binds a C++ class of that name; give the enum another name", 0, 0, /*always_error=*/true);
+            }
+        }
         if (scopes_.size() > 1 && (namespace_scopes_.empty() || namespace_scopes_.back() != scopes_.size() - 1)) {
             warn_scoped_enum(e);
             var_entry entry;
@@ -8015,13 +11838,25 @@ private:
     void type_auto_slot(variable_decl* decl, const ctype& init) {
         if (!decl->auto_spelled || decl->auto_typed || !semantic_walk()) { return; }
         decl->auto_typed = true;
-        if (init.is_unknown() || init.kind == ctype::coroutine_k) {
+        if (init.is_unknown() || init.nullable_result) {
             decl->type = eng_.get_type_info_any();
+            decl->decl_fast_flags = variable_decl::classify_decl_fast(decl->type);
+        } else if (init.kind == ctype::coroutine_k) {
+            decl->type = eng_.get_type_info_coroutine(const_cast<type_info*>(init.yields));   // a handle carries no stamp for the run to lock to
             decl->decl_fast_flags = variable_decl::classify_decl_fast(decl->type);
         } else if (init.kind == ctype::float_k && decl->initializer && decl->initializer->get_type() == node_type::ternary_expr &&
                    last_mixed_ternary_.node == decl->initializer.get()) {
             decl->type = eng_.get_type_info_float();   // an int/float ternary is float (C++ common type): the chosen arm converts
             decl->decl_fast_flags = variable_decl::classify_decl_fast(decl->type);
+        } else if (!init.tentative && !init.diagnostic_only) {
+            switch (init.kind) {
+                case ctype::int_k: if (init.cls.empty()) { decl->inferred_type = eng_.get_type_info_int(); } break;
+                case ctype::float_k: decl->inferred_type = eng_.get_type_info_float(); break;
+                case ctype::bool_k: decl->inferred_type = eng_.get_type_info_bool(); break;
+                case ctype::char_k: decl->inferred_type = eng_.get_type_info_char(); break;
+                case ctype::string_k: decl->inferred_type = eng_.get_type_info_string(); break;
+                default: break;
+            }
         }
     }
 
@@ -8060,8 +11895,36 @@ private:
         if (!decl->type && !decl->function_spelling) { decl->auto_spelled = true; }
         check_spelled_type(decl->type.get(), decl->location);
         check_inline_redefinition(decl);
-        const ctype init = decl->initializer ? infer(decl->initializer.get()) : ctype{};
+        const size_t reads = narrow_reads_;
+        ctype init = decl->initializer ? infer_expecting(decl->initializer.get(), decl->auto_spelled ? nullptr : decl->type.get()) : ctype{};
+        const ctype read = init;
+        narrow_derived_ = narrow_reads_ != reads;
+        // a narrowing changes no declaration: an auto takes the type its initializer has by declaration
+        const bool inferred = !decl->function_spelling && (decl->auto_spelled || !decl->type ||
+            (decl->type->base_type == script_value_type::jai_shared_ptr_type && !decl->type->element_type()));
+        if (narrow_derived_ && inferred) { init = narrow_declared_type(decl->initializer.get()); }
         declare_variable(decl, init);
+        narrow_derived_ = false;
+        narrow_copy(decl, read);
+    }
+
+    ctype narrow_declared_type(expression* e) {
+        ctype result;
+        narrow_walk_ahead(nullptr, [&] { result = infer(e); });
+        return result;
+    }
+    // `auto y = x;` where x is narrowed: the copy holds what x holds
+    void narrow_copy(const variable_decl* decl, const ctype& read) {
+        if (narrow_dry_ || !read.narrowed || !decl->initializer || decl->initializer->get_type() != node_type::identifier_expr) { return; }
+        if (decl->type && decl->type->base_type == script_value_type::jai_reference_type) { return; }
+        size_t scope = 0;
+        const var_entry* made = find_local(decl->name, &scope);
+        if (!made || made->narrow_key != decl) { return; }
+        narrow_fact fact;
+        if (read.kind == ctype::object_k ? !narrow_class_fact(*made, scope, read.cls, {}, fact) : !narrow_kind_fact(*made, read.kind, fact)) { return; }
+        if (read.open) { fact.type.open = true; fact.type.tentative = true; }
+        if (made->dynamic && !made->is_reference) { fact.proof_only = true; }
+        narrow_push({fact});
     }
 
     JAI_NOINLINE void declare_variable(variable_decl* decl, ctype init) {
@@ -8070,6 +11933,9 @@ private:
         bool is_handle_decl = handle_type(decl->type.get());
         if (has_init) {
             if (is_reference_decl && !decl->is_const) { report_mixed_reference_conditional(decl->initializer.get()); }
+            if (is_reference_decl && !decl->is_const && (certainly_temporary(decl->initializer.get()) || rooted_in_temporary(decl->initializer.get()))) {
+                diag(diag_level::error, decl->initializer->location, std::string(detail::non_lvalue_reference_text_lower));
+            }
             if (init.const_key && (is_reference_decl || is_handle_decl)) {
                 map_key_alias(decl->location, decl->initializer.get());
             }
@@ -8108,6 +11974,7 @@ private:
             warn_shadow("local", decl->name, decl->location);
             if (lw_on()) { lw_opaque_locals_.insert(decl); }
             entry.shared_name = decl->is_inline;
+            if (!decl->is_static) { narrow_declare(entry, decl); }
             declare_local(decl->name, std::move(entry), decl->location, !decl->is_static);
             return;
         }
@@ -8147,16 +12014,19 @@ private:
                     binding_source = ctype_from_type_info(source->declared);
                 }
             }
+            binding_source = narrow_declared_view(binding_source);
             const bool reference_ok = is_reference_decl && reference_type_compatible(binding_source, entry.type);
             // a const T& binds a temporary T made from what a T declaration takes (C++ lifetime extension)
             const bool init_ok = is_reference_decl ? reference_ok || (decl->is_const && assignable(init, entry.type)) : assignable(init, entry.type);
-            stamp(decl->reference_admission_proven, is_reference_decl && has_init && reference_ok && !binding_source.is_unknown() &&
+            stamp(decl->reference_admission_proven, is_reference_decl && has_init && reference_ok && !narrow_derived_ && !binding_source.is_unknown() &&
                   !binding_source.tentative && binding_source.kind != ctype::null_k &&
                   binding_source.kind != ctype::object_k, false);   // a class binding checks at run time (a reload may change the chain)
             if (has_init && (!entry.dynamic || is_reference_decl) && !init_ok) {
                 diag(diag_level::error, decl->location, "cannot initialize '" + std::string(decl->name) +
                      "' declared '" + entry.display + "' with '" + ctype_name(binding_source) + "'" + assignment_detail(binding_source, entry.type));
                 // Recovery keeps the declared type; reference use remains conservative.
+            } else if (has_init && !is_reference_decl) {
+                warn_dynamic_handle_copy(init, entry.type);
             }
         } else if (has_init) {
             // auto with initializer: the initializer's static type, then enforced as that type; a var or unknown
@@ -8164,7 +12034,7 @@ private:
             // store, so a null init stays dynamic.
             init = numeric_ternary_type(decl->initializer.get(), init);
             entry.type = init;
-            entry.dynamic = init.is_unknown() || init.kind == ctype::null_k;
+            entry.dynamic = init.is_unknown() || init.kind == ctype::null_k || init.nullable_result;
             entry.display = ctype_name(init);
             type_auto_slot(decl, init);
             // A mixed-branch ternary has no single static type, so the auto is a var: say so where it reads like a typed slot
@@ -8184,6 +12054,9 @@ private:
         if (has_init && decl->slot_index != SIZE_MAX && decl->initializer->get_type() == node_type::lambda_expr && !is_reference_decl) {
             entry.lambda = static_cast<const lambda_expr*>(decl->initializer.get());
         }
+        if (has_init && decl->initializer->get_type() == node_type::lambda_expr && !is_reference_decl) {
+            entry.declared_lambda = static_cast<const lambda_expr*>(decl->initializer.get());
+        }
         if (decl->is_const && has_init && decl->initializer->get_type() == node_type::member_expr) {   // a const structured binding's value half
             auto* half = static_cast<const member_expr*>(decl->initializer.get());
             const var_entry* pair = half->member == "second" && half->object && half->object->get_type() == node_type::identifier_expr
@@ -8201,6 +12074,8 @@ private:
         }
         entry.shared_name = decl->is_inline;
         if (has_init && decl->auto_spelled && !entry.dynamic && !is_reference_decl) { entry.literal_elem = uniform_literal_element(decl->initializer.get()); }
+        if (!decl->is_static) { narrow_declare(entry, decl); }   // a static local is every call's
+        if (is_reference_decl && has_init && !decl->is_const) { narrow_end_roots(decl->initializer.get(), /*escape=*/true); }
         declare_local(decl->name, std::move(entry), decl->location, !decl->is_static);
     }
 
@@ -8231,7 +12106,7 @@ private:
         std::vector<capture_ctx> saved_captures;
         saved_captures.swap(capture_stack_);
         scopes_.emplace_back();
-        fn_ctx ctx{fn->return_type.get(), fn->is_coroutine, fn->name,
+        fn_ctx ctx{fn->return_type.get(), fn->is_coroutine, fn->shown_name(),
                    fn->location.line, fn->location.column};
         ctx.sees_fields = class_ctx_ != nullptr;
         ctx.is_static_method = fn->is_static;
@@ -8242,24 +12117,35 @@ private:
         const cdtor_ctx enclosing_cdtor = cdtor_ctx_;
         cdtor_ctx_ = is_ctor ? cdtor_ctx::construction
                    : (class_ctx_ && !fn->is_static && fn->name.size() > 1 && fn->name[0] == '~') ? cdtor_ctx::destruction : cdtor_ctx::none;
+        ctx.dispatched = class_ctx_ && !fn->is_static && !fn->return_type && !is_ctor;
         fn_stack_.push_back(std::move(ctx));
         mode_guard enclosing(mode_stack_, scoped_region_mode(), /*scoped=*/true, /*always=*/true);
         check_spelled_type(fn->return_type.get(), fn->location);
         lw_open_region();
+        narrow_frames_.push_back({scopes_.size() - 1, narrow_bound::alias});   // a named function captures nothing
+        const size_t narrowed = narrow_facts_.size();
         define_params(fn->parameters, fn->location, /*warn_field_shadows=*/!is_ctor);
         fn_stack_.back().in_ctor_initializers = true;
         for (const auto& init : fn->initializers) {
             for (const auto& arg : init.arguments) { infer(arg.get()); }
             if (is_ctor && init.target == "super" && init.arguments.empty()) { report_base_without_default(class_ctx_name_, fn->location); }
         }
+        if (is_ctor) { check_member_initializers(fn); }
         if (is_ctor) { check_base_initializers(fn); }
         fn_stack_.back().in_ctor_initializers = false;
         if (fn->body) {
             mode_guard body(mode_stack_, leading_mode(fn->body->declarations), /*scoped=*/true);
-            for (auto& d : fn->body->declarations) { walk_decl(d.get()); }
+            for (auto& d : fn->body->declarations) { walk_listed(d.get()); }
         }
+        narrow_pop(narrowed);
+        narrow_frames_.pop_back();
         check_falls_off_end(fn);
         lw_close_region(&fn->parameters, nullptr, fn->body.get());
+        if (!fn->return_type && !fn->is_coroutine && fn_stack_.back().returns_seen && fn_stack_.back().returns_values) { auto_value_returns_.insert(fn); }
+        if (!fn->return_type && !fn->is_coroutine && fn->body && !is_ctor && !(fn->name.size() > 1 && fn->name[0] == '~') && !fn_stack_.back().dispatched) {
+            std::string reason;
+            if (close_deduced_body(fn_stack_.back(), fn->body.get(), reason)) { nothing_functions_[fn] = reason; } else { nothing_functions_.erase(fn); }
+        }
         fn_stack_.pop_back();
         scopes_.pop_back();
         capture_stack_.swap(saved_captures);
@@ -8309,7 +12195,7 @@ private:
             ctype pt = ctype_from_type_info(p.type.get());
             if (p.default_value) {
                 report_default_naming_parameter(params, p, p.default_value.get());
-                ctype dv = infer(p.default_value.get());
+                ctype dv = infer_expecting(p.default_value.get(), p.is_reference ? nullptr : p.type.get());
                 if (!p.is_reference && !pt.is_unknown() && !assignable(dv, pt)) {
                     diag(diag_level::error, p.default_value->location,
                          "default value of '" + p.name + "' declared '" +
@@ -8342,6 +12228,7 @@ private:
                 entry.lw_handle = pt.kind == ctype::object_k;   // a by-value class parameter shares a handle argument's object
                 lw_register(entry, entry.dynamic ? ctype{} : pt, &p, p.name, lw_origin::parameter, entry.display, !p.is_const && !entry.lw_handle);
             }
+            narrow_declare(entry, &p);
             declare_local(p.name, std::move(entry), fn_loc);
         }
     }
@@ -8361,6 +12248,18 @@ private:
              "' in methods means the member; spell ::" + std::string(name) + " for the global");
     }
 
+    // The first base of cd that is bound final (dynamic_binder::final): empty when none is
+    std::string_view final_base(const class_decl* cd) {
+        for (std::string_view base : cd->base_classes) {
+            if (auto def = engine_class(base); def && def->is_final()) { return base; }
+        }
+        return {};
+    }
+    // A derivation from a final class is the declaration's one error, in the run time's words
+    void check_final_bases(const class_decl* cd) {
+        if (const std::string_view base = final_base(cd); !base.empty()) { diag(diag_level::error, cd->location, detail::final_base_text(cd->name, base)); }
+    }
+
     // A base class no unit, include, extern or host can bring is the definition's error, reported at load in the run time's
     // words so a module that would stop half-defined applies nothing
     void check_class_bases(const class_decl* cd) {
@@ -8368,7 +12267,8 @@ private:
         for (std::string_view base : cd->base_classes) {
             if (find_sclass(base) || engine_class(base) || base.find("::") != std::string_view::npos || global_var_names_.count(base) ||
                 engine_knows_name(std::string(base))) { continue; }
-            diag(diag_level::error, cd->location, "Base class '" + std::string(base) + "' not found");
+            const std::string unbound = eng_.unbound_instantiation_text(base);
+            diag(diag_level::error, cd->location, unbound.empty() ? "Base class '" + std::string(base) + "' not found" : unbound);
             return;
         }
         report_diamond(cd);
@@ -8426,7 +12326,7 @@ private:
         if (it == initializing_field_->unready.end() || it->second != field) { return; }
         const std::string read(field->name), initializing(initializing_field_->name);
         diag(diag_level::error, loc, "field initializer of '" + initializing + "' reads '" + read + "' before its initialization: fields initialize in declaration order" +
-             (read == initializing ? std::string() : "; declare '" + read + "' above '" + initializing + "'"), field->location.line, field->location.column);
+             (read == initializing ? std::string() : "; declare '" + read + "' above '" + initializing + "'"), field->location);
     }
 
     // A class that holds itself by value, directly, through other classes' value fields or through a base, never finishes
@@ -8466,7 +12366,12 @@ private:
     }
 
     void walk_class(const class_decl* cd) {
+        if (auto held = eng_.get_class_definition(std::string(cd->name)); held && !held->is_script_class()) {
+            diag(diag_level::error, cd->location, format_error_message(detail::k_host_class_name_taken, cd->name, cd->name));
+        }
+        for (const std::string_view base : cd->base_classes) { refuse_bare_generic_class(base, cd->location); }
         check_class_bases(cd);
+        check_final_bases(cd);
         report_value_cycle(cd);
         check_member_names(cd);
         auto it = classes_.find(cd->name);
@@ -8483,12 +12388,14 @@ private:
                                            f->name, cd->name, f->location);
                 if (!f->type && !f->function_spelling) { f->auto_spelled = true; }
                 check_spelled_type(f->type.get(), f->location);
-                if (f->initializer) {
+                const bool listed_value = !f->is_static && f->default_initialized && f->type && f->type->base_type == script_value_type::jai_object_type &&
+                                          every_constructor_initializes(it->second, f->name);
+                if (f->initializer && !listed_value) {
                     const cdtor_ctx enclosing_cdtor = std::exchange(cdtor_ctx_, f->is_static ? cdtor_ctx::none : cdtor_ctx::construction);
                     initializing_field initializing{f->name, {}};
                     if (!f->is_static) { initializing.unready = fields_from(cd, f); }
                     initializing_field_ = f->is_static ? nullptr : &initializing;
-                    ctype init = infer(f->initializer.get());
+                    ctype init = infer_expecting(f->initializer.get(), f->auto_spelled ? nullptr : f->type.get());
                     initializing_field_ = nullptr;
                     cdtor_ctx_ = enclosing_cdtor;
                     if (f->auto_spelled) { type_auto_slot(f, numeric_ternary_type(f->initializer.get(), init)); }   // an auto field: its initializer's static type
@@ -8498,6 +12405,8 @@ private:
                             diag(diag_level::error, f->location, "cannot initialize field '" +
                                  std::string(f->name) + "' declared '" + declared_variable_type_name(f) +
                                  "' with '" + ctype_name(init) + "'" + assignment_detail(init, ft));
+                        } else {
+                            warn_dynamic_handle_copy(init, ft);
                         }
                     }
                 }
@@ -8516,6 +12425,10 @@ private:
         class_ctx_name_ = prev_name;
     }
 
+    std::unordered_map<const lambda_expr*, ctype> lambda_results_;   // an undeclared lambda whose returns are one certain scalar kind
+    std::unordered_map<const lambda_expr*, const type_info*> lambda_return_types_;   // and the one type they yield, void for none (fn_ctx::returned)
+    std::unordered_map<const lambda_expr*, const type_info*> lambda_stated_return_types_;   // the one type they yield with declared results read (fn_ctx::stated)
+
     // An init-capture, or an explicit by-value capture of a program-scope name, holds a copy taken at creation:
     // the call reads that copy, never the name, so the body is not grafted at the call site
     bool lambda_copies_at_creation(const lambda_expr* l) {
@@ -8528,7 +12441,15 @@ private:
 
     JAI_NOINLINE void walk_lambda(lambda_expr* l) {
         check_lambda_captures(l);
+        // the body runs later and again: what it ends for a variable it captured is ended where the lambda is made
+        if (narrow_wants_ahead(l->body.get())) { narrow_walk_ahead(nullptr, [&] { walk_lambda_body(l); }); }
+        walk_lambda_body(l);
+    }
+
+    JAI_NOINLINE void walk_lambda_body(lambda_expr* l) {
         capture_stack_.push_back(capture_ctx{scopes_.size(), l});
+        narrow_frames_.push_back({scopes_.size(), l->default_capture == lambda_expr::capture_default::by_value ? narrow_bound::copy : narrow_bound::alias});
+        const size_t narrowed = narrow_facts_.size();
         // the body may run after the constructor or destructor that creates the lambda has returned
         const cdtor_ctx enclosing_cdtor = std::exchange(cdtor_ctx_, cdtor_ctx::none);
         struct restore_cdtor { cdtor_ctx& slot; cdtor_ctx was; ~restore_cdtor() { slot = was; } } restore{cdtor_ctx_, enclosing_cdtor};
@@ -8540,6 +12461,8 @@ private:
         lw_open_region();
         define_lambda_names(l);
         walk_stmt(l->body.get());
+        narrow_pop(narrowed);
+        narrow_frames_.pop_back();
         lw_close_region(&l->parameters, nullptr, l->body.get());
         close_lambda_scope(l);
     }
@@ -8578,7 +12501,13 @@ private:
         define_params(l->parameters, l->location);
         for (const auto& cap : l->captures) {
             if (!cap.initializer) {   // a named capture is the lambda's own copy of the variable, typed as it
-                if (var_entry* original = find_local(cap.name)) { scopes_.back().emplace(cap.name, *original); continue; }
+                if (var_entry* original = find_local(cap.name)) {
+                    var_entry own = *original;
+                    own.capture_alias = cap.by_reference;
+                    own.capture_copy = !cap.by_reference;
+                    scopes_.back().emplace(cap.name, std::move(own));
+                    continue;
+                }
                 if (!class_ctx_ || !detail::is_weak_this_capture(cap)) { continue; }
             }
             var_entry entry;
@@ -8594,6 +12523,19 @@ private:
             const fn_ctx& done = fn_stack_.back();
             const uint8_t kind = !l->return_type && !done.inferred_mixed && !has_includes_ ? done.inferred_return : uint8_t(0);
             stamp(l->inferred_return_kind, kind, uint8_t(0));
+            if (kind) { lambda_results_[l] = ctype::make(kind == 1 ? ctype::int_k : kind == 2 ? ctype::float_k : ctype::bool_k); }
+            else { lambda_results_.erase(l); }
+            std::string reason;
+            const bool deduced = !l->return_type || l->contextual_return;
+            if (deduced && (l->contextual_return ? !done.gives_value && !has_includes_ : close_deduced_body(done, l->body.get(), reason))) { nothing_lambdas_[l] = reason; }
+            else { nothing_lambdas_.erase(l); }
+            if (generics_live_) {   // no return of a value at all is a lambda that returns nothing
+                const bool unknown = l->return_type || done.returned_mixed || has_includes_ || (done.returned && done.returns_nothing);
+                if (unknown) { lambda_return_types_.erase(l); }
+                else { lambda_return_types_[l] = done.returned ? done.returned : eng_.get_type_info_void(); }
+                if (l->return_type || done.stated_mixed || has_includes_ || !done.stated || done.returns_nothing) { lambda_stated_return_types_.erase(l); }
+                else { lambda_stated_return_types_[l] = done.stated; }
+            }
         }
         fn_stack_.pop_back();
         scopes_.pop_back();
@@ -8650,15 +12592,16 @@ void static_checker::collect_names(const statement* node) {
         case node_type::function_decl: {
             auto* f = static_cast<const function_decl*>(node);
             collect_program_name(f->name);
-            note_program_decl(f->name, f->location);
+            if (f->instance_stamp == 0) { note_program_decl(f->name, f->location); }   // an instance is declared by the linker: its order rule is report_instance_before_declaration
             nested_scope body{collect_depth_};
             collect_names(f->body.get());
             break;
         }
         case node_type::class_decl: {
             auto* c = static_cast<const class_decl*>(node);
+            if (c->method_instances) { break; }
             collect_program_name(c->name);
-            note_program_decl(c->name, c->location);
+            if (c->instance_stamp == 0) { note_program_decl(c->name, c->location); }
             nested_scope members{collect_depth_};
             for (const auto& m : c->members) { collect_names(m.declaration.get()); }
             break;
@@ -8794,6 +12737,8 @@ void static_checker::collect_names_expr(const expression* e) {
             auto* a = static_cast<const assignment_expr*>(e);
             if (a->target && a->target->get_type() == node_type::identifier_expr) {
                 assigned_names_.insert(static_cast<const identifier_expr*>(a->target.get())->name);
+            } else if (a->target && a->target->get_type() == node_type::member_expr && static_cast<const member_expr*>(a->target.get())->is_static) {
+                rebindable_paths_.insert(qualified_spelling(static_cast<const member_expr*>(a->target.get())));
             }
             collect_names_expr(a->target.get());
             collect_names_expr(a->value.get());
@@ -8804,8 +12749,13 @@ void static_checker::collect_names_expr(const expression* e) {
             collect_names_expr(c->callee.get());
             const bool is_extend = c->callee->get_type() == node_type::identifier_expr &&
                                    static_cast<const identifier_expr*>(c->callee.get())->name == "extend";
+            const bool takes_values = value_taking_library_call(c);
             for (const auto& arg : c->arguments) {
                 collect_names_expr(arg.get());
+                if (arg && !takes_values && arg->get_type() == node_type::identifier_expr) { passed_names_.insert(static_cast<const identifier_expr*>(arg.get())->name); }
+                if (arg && !takes_values && arg->get_type() == node_type::member_expr && static_cast<const member_expr*>(arg.get())->is_static) {
+                    rebindable_paths_.insert(qualified_spelling(static_cast<const member_expr*>(arg.get())));
+                }
                 if (!is_extend || !arg) { continue; }
                 if (arg->get_type() == node_type::identifier_expr) {
                     extended_names_.insert(static_cast<const identifier_expr*>(arg.get())->name);
@@ -8886,6 +12836,14 @@ check_report run_static_check(engine& eng, const std::vector<declaration_ptr>& d
     return static_checker(eng, decls, extra_globals, opts).run();
 }
 
+std::string less_than_answers(engine& eng, const std::vector<declaration_ptr>& decls, const std::vector<std::string>& queries, check_options opts) {
+    opts.diagnostics = false;
+    opts.proofs = check_options::proofs_t::leave;
+    opts.outside = nullptr;
+    opts.generic_requests = nullptr;
+    return static_checker(eng, decls, nullptr, opts).less_answers(queries);
+}
+
 // KEEP-PARALLEL with static_checker::collect_scope_decls (same categories, flat spelling).
 void collect_unit_names(const std::vector<declaration_ptr>& decls, std::unordered_set<std::string>& out) {
     for (const auto& d : decls) {
@@ -8921,9 +12879,10 @@ void collect_unit_names(const std::vector<declaration_ptr>& decls, std::unordere
                 for (size_t pos = n->name.find("::"); pos != std::string_view::npos; pos = n->name.find("::", pos + 2)) {
                     out.emplace(n->name.substr(0, pos));
                 }
-                std::vector<declaration_ptr> qualified_members;   // its classes and nested namespaces carry qualified names
+                std::vector<declaration_ptr> qualified_members;   // its classes, enums and nested namespaces carry qualified names
                 for (const auto& member : n->declarations) {
-                    if (member && (member->get_type() == node_type::class_decl || member->get_type() == node_type::namespace_decl)) { qualified_members.push_back(member); }
+                    if (member && (member->get_type() == node_type::class_decl || member->get_type() == node_type::enum_decl ||
+                                   member->get_type() == node_type::namespace_decl)) { qualified_members.push_back(member); }
                 }
                 collect_unit_names(qualified_members, out);
                 collect_namespace_members(n, out);
@@ -8935,34 +12894,57 @@ void collect_unit_names(const std::vector<declaration_ptr>& decls, std::unordere
     }
 }
 
-void collect_unit_functions(const std::vector<declaration_ptr>& decls, const std::string& unit_path, program_function_map& out) {
-    for (auto& [name, units] : out) { units.erase(unit_path); }   // a re-gather replaces the unit's own entries, the names it dropped too
+// a namespace's functions and variables pool under their qualified names ("a::b::f"): a nested block's name is its full path
+static void pool_unit_functions(const std::vector<declaration_ptr>& decls, const std::string& space, const std::string& unit_path, program_function_map& out) {
     for (const auto& d : decls) {
         if (d && d->get_type() == node_type::function_decl) {
             auto fd = std::static_pointer_cast<const function_decl>(d);
-            out[std::string(fd->name)][unit_path].push_back(std::move(fd));
+            if (fd->instance_stamp != 0) { continue; }   // a generic's instance is each unit's own declaration
+            out[space + std::string(fd->name)][unit_path].push_back(std::move(fd));
+        } else if (d && d->get_type() == node_type::namespace_decl) {
+            auto* n = static_cast<const namespace_decl*>(d.get());
+            pool_unit_functions(n->declarations, std::string(n->name) + "::", unit_path, out);
+        }
+    }
+}
+
+void collect_unit_functions(const std::vector<declaration_ptr>& decls, const std::string& unit_path, program_function_map& out) {
+    for (auto& [name, units] : out) { units.erase(unit_path); }   // a re-gather replaces the unit's own entries, the names it dropped too
+    pool_unit_functions(decls, {}, unit_path, out);
+}
+
+static void pool_unit_globals(const std::vector<declaration_ptr>& decls, const std::string& space, const std::string& unit_path, program_global_map& out) {
+    for (const auto& d : decls) {   // every spelling counts toward "declared once": the lookup asks the one declaration for its type
+        if (d && d->get_type() == node_type::variable_decl) {
+            auto vd = std::static_pointer_cast<const variable_decl>(d);
+            out[space + std::string(vd->name)][unit_path].push_back(std::move(vd));
+        } else if (d && d->get_type() == node_type::namespace_decl) {
+            auto* n = static_cast<const namespace_decl*>(d.get());
+            pool_unit_globals(n->declarations, std::string(n->name) + "::", unit_path, out);
         }
     }
 }
 
 void collect_unit_globals(const std::vector<declaration_ptr>& decls, const std::string& unit_path, program_global_map& out) {
     for (auto& [name, units] : out) { units.erase(unit_path); }   // a re-gather replaces the unit's own entries, the names it dropped too
-    for (const auto& d : decls) {   // every spelling counts toward "declared once": the lookup asks the one declaration for its type
-        if (d && d->get_type() == node_type::variable_decl) {
-            auto vd = std::static_pointer_cast<const variable_decl>(d);
-            out[std::string(vd->name)][unit_path].push_back(std::move(vd));
+    pool_unit_globals(decls, {}, unit_path, out);
+}
+
+// a namespace's enum is named by its qualified spelling (ns::Name), as its classes are
+static void collect_enums_of(const std::vector<declaration_ptr>& decls, const std::string& unit_path, program_enum_map& out) {
+    for (const auto& d : decls) {
+        if (d && d->get_type() == node_type::enum_decl) {
+            auto ed = std::static_pointer_cast<const enum_decl>(d);
+            out[std::string(ed->name)][unit_path] = std::move(ed);
+        } else if (d && d->get_type() == node_type::namespace_decl) {
+            collect_enums_of(static_cast<const namespace_decl*>(d.get())->declarations, unit_path, out);
         }
     }
 }
 
 void collect_unit_enums(const std::vector<declaration_ptr>& decls, const std::string& unit_path, program_enum_map& out) {
     for (auto& [name, units] : out) { units.erase(unit_path); }   // a re-gather replaces the unit's own entries
-    for (const auto& d : decls) {
-        if (d && d->get_type() == node_type::enum_decl) {
-            auto ed = std::static_pointer_cast<const enum_decl>(d);
-            out[std::string(ed->name)][unit_path] = std::move(ed);
-        }
-    }
+    collect_enums_of(decls, unit_path, out);
 }
 
 // a namespace's class is named by its qualified spelling (ns::Name)
@@ -8971,6 +12953,7 @@ bool collect_unit_classes(const std::vector<declaration_ptr>& decls, program_cla
     for (const auto& d : decls) {
         if (!d) { continue; }
         if (d->get_type() == node_type::class_decl) {
+            if (static_cast<const class_decl*>(d.get())->method_instances) { continue; }   // a generic method's instances: no class of their own
             auto& slot = out[std::string(static_cast<const class_decl*>(d.get())->name)];
             if (slot != d) {
                 slot = std::static_pointer_cast<class_decl>(d);

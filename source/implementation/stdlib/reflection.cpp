@@ -1,11 +1,14 @@
 #include <jaiscript/stdlib/reflection.hpp>
 #include <jaiscript/core/engine.hpp>
+#include <jaiscript/core/class_registry.hpp>
 #include <jaiscript/detail/class_runtime.hpp>
 #include <jaiscript/detail/cast_kernel.hpp>
+#include <jaiscript/detail/type_name_key.hpp>
 #include <jaiscript/core/script_namespace.hpp>
 #include <jaiscript/core/execution_backend.hpp>
 #include <jaiscript/detail/environment.hpp>
 #include <jaiscript/detail/ast.hpp>
+#include <jaiscript/detail/generics.hpp>
 #include <jaiscript/properties/property_schema.hpp>
 #include <jaiscript/stdlib/io.hpp>
 #include <algorithm>
@@ -48,6 +51,12 @@ inline std::string semantic_type_name(const script_value& val, engine* eng) {
     return "unknown";
 }
 
+// The family's refusal of a class name; a spelling of a host template the host did not bind says what it binds
+[[noreturn]] inline void throw_unknown_class(engine* eng, const char* who, const std::string& name) {
+    const std::string unbound = detail::unbound_instantiation_text(*eng, name);
+    throw runtime_error(std::string("reflect::") + who + ": " + (unbound.empty() ? "unknown class '" + name + "'" : unbound));
+}
+
 // object | "Class" -> class_definition. Unknown class NAME throws the family error;
 // a non-class VALUE returns nullptr (callers decide whether that is an error).
 inline class_definition* resolve_class(engine* eng, const script_value& v,
@@ -58,9 +67,8 @@ inline class_definition* resolve_class(engine* eng, const script_value& v,
     if (d.is_string()) {
         const std::string name = d.as_string();
         auto def = detail::engine_access::get_class_definition(*eng, name);
-        if (!def) {
-            throw runtime_error(std::string("reflect::") + who + ": unknown class '" + name + "'");
-        }
+        if (!def) { def = detail::engine_access::get_class_definition(*eng, detail::registered_type_spelling(eng, name)); }
+        if (!def) { throw_unknown_class(eng, who, name); }
         return def.get();
     }
     if (d.is_object()) {
@@ -108,6 +116,24 @@ inline std::optional<uint64_t> known_symbol(engine* eng, std::string_view name) 
     return detail::engine_access::get_symbolizer(*eng)->find(name);
 }
 
+// The id of the method a class lists under `name` (detail::member_display_name) that `found` accepts: the name's own, else a
+// generic method's instance, declared under the name of the class that declares it, the nearest level first
+template <typename Found>
+std::optional<uint64_t> listed_method_symbol(engine* eng, const class_definition* def, std::string_view name, Found&& found, int depth = 0) {
+    if (depth == 0) {
+        if (detail::member_display_name(name).size() != name.size()) { return std::nullopt; }   // a name no class lists
+        if (const auto own = known_symbol(eng, name); own && found(*own)) { return own; }
+        if (name.find('<') == std::string_view::npos) { return std::nullopt; }
+    }
+    if (!def || depth > 64) { return std::nullopt; }
+    if (const auto declared = known_symbol(eng, def->get_name() + "::" + std::string(name)); declared && found(*declared)) { return declared; }
+    for (const auto& parent : def->get_parent_classes()) {
+        if (const auto inherited = listed_method_symbol(eng, parent.get(), name, found, depth + 1)) { return inherited; }
+    }
+    if (const auto cpp_base = def->get_cpp_base_class()) { return listed_method_symbol(eng, cpp_base.get(), name, found, depth + 1); }
+    return std::nullopt;
+}
+
 // The B-group doors. KEEP ALIGNED with interpreter::resolve_member_target — the ONE
 // object-shape resolution direct member syntax uses (class_instance wrappers, cpp_bound
 // holders, raw holders resolved by engine registration).
@@ -141,6 +167,22 @@ template <typename T>
     throw runtime_error(format_error_message(r.message(),
         detail::engine_access::get_symbolizer(*eng)->get_string(r.symbol_id()),
         detail::engine_access::get_symbolizer(*eng)->get_string(r.symbol_id2())));
+}
+
+// The constructor a class name that arrived as text reaches (the global the direct spelling Class(...) resolves); a_name
+// becomes the spelling the class is registered under
+inline script_value constructor_named(engine* eng, std::string& a_name, const char* who) {
+    const auto global = detail::engine_access::get_global_environment(*eng);
+    if (auto ctor = global->get(a_name); ctor && ctor.value().is_function()) { return std::move(ctor.value()); }
+    const std::string spelled = detail::registered_type_spelling(eng, a_name);
+    if (!spelled.empty() && spelled != a_name) {
+        if (auto ctor = global->get(spelled); ctor && ctor.value().is_function()) {
+            a_name = spelled;
+            return std::move(ctor.value());
+        }
+    }
+    if (const std::string waiting = detail::waiting_instance_text(*eng, a_name); !waiting.empty()) { throw runtime_error(std::string("reflect::") + who + ": " + waiting); }
+    throw_unknown_class(eng, who, a_name);
 }
 
 // Reflection reaches a script class's private constructors as it reaches its other private members
@@ -294,8 +336,8 @@ inline std::string declared_param_type_name(const parameter& p) {
 inline script_value params_array_for(engine* eng, const std::vector<parameter>& params) {
     auto arr = script_value::make_array(nullptr, eng);
     for (const auto& p : params) {
-        arr.as_array().push_back(make_param_entry(
-            eng, p.name, declared_param_type_name(p), p.default_value != nullptr));
+        arr.as_array().push_back(make_param_entry(   // operator++(int)'s marker has no name
+            eng, detail::unspellable_name(p.name) ? std::string() : p.name, declared_param_type_name(p), p.default_value != nullptr));
     }
     return arr;
 }
@@ -340,13 +382,13 @@ struct method_collector {
     std::vector<std::pair<std::tuple<std::string, int64_t, bool>, script_value>> entries;
     std::set<std::tuple<std::string, int64_t, bool>> seen;
 
-    void add(const std::string& name, int64_t arity, bool is_static,
+    void add(const std::string& name, uint64_t id, int64_t arity, bool is_static,
              const class_definition* level, script_value params) {
         std::tuple<std::string, int64_t, bool> key{name, arity, is_static};
         if (!seen.insert(key).second) { return; }
         std::string access = "public";
         access_level lvl = access_level::public_access;
-        if (level->find_nonpublic_declarer(detail::engine_access::get_symbolizer(*eng)->intern(name), lvl)) {
+        if (level->find_nonpublic_declarer(id, lvl)) {
             access = (lvl == access_level::private_access) ? "private" : "protected";
         }
         entries.emplace_back(std::move(key),
@@ -363,15 +405,15 @@ struct method_collector {
     }
 };
 
-// only_id = 0 enumerates everything; a member id filters to that name. Auto-accessors
+// An empty `only` enumerates everything; a name filters to the methods listed under it. Auto-accessors
 // and _get_/_set_ spellings are the PROPERTY surface (fields() owns them); a method
 // sharing the class's name is the constructor surface (construct() owns it).
 inline void collect_methods_of(engine* eng, const class_definition* def,
-                               method_collector& out, uint64_t only_id) {
+                               method_collector& out, std::string_view only) {
     auto* sym = detail::engine_access::get_symbolizer(*eng);
     auto surfaced = [&](uint64_t id, std::string& name_out) {
-        if (only_id && id != only_id) { return false; }
-        name_out = std::string(sym->get_string(id));
+        name_out = std::string(detail::member_display_name(sym->get_string(id)));
+        if (!only.empty() && name_out != only) { return false; }
         if (name_out.empty() || name_out == def->get_name()) { return false; }
         if (name_out.rfind("_get_", 0) == 0 || name_out.rfind("_set_", 0) == 0) { return false; }
         return true;
@@ -380,14 +422,14 @@ inline void collect_methods_of(engine* eng, const class_definition* def,
     for (const auto& [id, decls] : def->script_method_overloads()) {
         if (!surfaced(id, name)) { continue; }
         for (const auto& fd : decls) {
-            out.add(name, static_cast<int64_t>(fd->parameters.size()), false, def,
+            out.add(name, id, static_cast<int64_t>(fd->parameters.size()), false, def,
                     params_array_for(eng, fd->parameters));
         }
     }
     for (const auto& [id, decls] : def->script_static_method_overloads()) {
         if (!surfaced(id, name)) { continue; }
         for (const auto& fd : decls) {
-            out.add(name, static_cast<int64_t>(fd->parameters.size()), true, def,
+            out.add(name, id, static_cast<int64_t>(fd->parameters.size()), true, def,
                     params_array_for(eng, fd->parameters));
         }
     }
@@ -408,7 +450,7 @@ inline void collect_methods_of(engine* eng, const class_definition* def,
                             eng, "arg" + std::to_string(i++), cpp_param_type_name(eng, pt), false));
                     }
                 }
-                out.add(name, static_cast<int64_t>(arity), false, def, std::move(params));
+                out.add(name, id, static_cast<int64_t>(arity), false, def, std::move(params));
             }
         }
     }
@@ -417,20 +459,33 @@ inline void collect_methods_of(engine* eng, const class_definition* def,
         if (!surfaced(id, name) || !value.is_function()) { continue; }
         if (def->script_method_overloads().count(id) ||
             def->cpp_method_overload_table().count(id)) { continue; }
-        out.add(name, -1, false, def, script_value::make_array(nullptr, eng));
+        out.add(name, id, -1, false, def, script_value::make_array(nullptr, eng));
     }
     for (const auto& [id, value] : def->static_method_values()) {
         if (!surfaced(id, name) || !value.is_function()) { continue; }
         if (def->script_static_method_overloads().count(id)) { continue; }
-        out.add(name, -1, true, def, script_value::make_array(nullptr, eng));
+        out.add(name, id, -1, true, def, script_value::make_array(nullptr, eng));
     }
     for (const auto& parent : def->get_parent_classes()) {
-        if (parent) { collect_methods_of(eng, parent.get(), out, only_id); }
+        if (parent) { collect_methods_of(eng, parent.get(), out, only); }
     }
     if (auto cpp_base = def->get_cpp_base_class()) {
-        collect_methods_of(eng, cpp_base.get(), out, only_id);
+        collect_methods_of(eng, cpp_base.get(), out, only);
     }
 }
+
+// is_instance_of(x, "Class"): whether x holds an object of the class or of one derived from it. A named type, so a compiler can
+// tell the namespace still holds it (detail::library_instance_test_cell)
+struct instance_test {
+    engine* eng;
+    checked_result<script_value> operator()(const std::vector<script_value>& args) const {
+        expect_args(args, 2, "is_instance_of");
+        const script_value& named = args[1].is_reference() ? args[1].deref() : args[1];
+        if (!named.is_string()) { throw runtime_error("reflect::is_instance_of expects a value and a class name"); }
+        const class_definition* cls = resolve_class(eng, named, "is_instance_of");
+        return script_value(cls && detail::instance_of_class(args[0], cls->get_name(), eng), eng);
+    }
+};
 
 } // namespace reflect_detail
 
@@ -443,6 +498,56 @@ void register_reflection_functions(engine& eng_ref) {
         ns->variables[detail::engine_access::get_symbolizer(eng_ref)->intern(name)] =
             script_value::make_function(std::move(fn), eng);
     };
+
+    // Opaque host pointers (make_value(T*) on an UNREGISTERED
+    // type) are non-null/truthy to script but the engine cannot name them — this
+    // predicate is how scripts tell a registered/script object (true) from an opaque
+    // host-only pass-through token (false). All ordinary values answer true.
+    eng_ref.add_function("reflect::is_registered_type", [](const script_value& val) -> bool {
+        const script_value& d = val.is_reference() ? val.deref() : val;
+        if (d.raw_storage_index() == script_value::TYPEID_CPP_BOUND &&
+            !d.is_int() && !d.is_float() && !d.is_bool() && !d.is_char() && !d.is_string()) {
+            return false;
+        }
+        return true;
+    });
+
+    // The kind of a value (array); type_name is its full spelling (array<int>)
+    eng_ref.add_function("reflect::type_of", [eng = &eng_ref](const script_value& val) -> std::string {
+        switch (val.type()) {
+            case script_value_type::jai_null_type: return "null";
+            case script_value_type::jai_bool_type: return "bool";
+            case script_value_type::jai_int_type: {
+                const type_info* tag = val.deref().type_info_raw();
+                return tag && tag->is_enum ? tag->type_name : std::string("int");
+            }
+            case script_value_type::jai_float_type: return "float";
+            case script_value_type::jai_char_type: return "char";
+            case script_value_type::jai_string_type: return detail::engine_access::is_caught_runtime_error(*eng, val) ? "error" : "string";
+            case script_value_type::jai_utf8_string_type: return "utf8_string";
+            case script_value_type::jai_array_type: return "array";
+            case script_value_type::jai_map_type: return "map";
+            case script_value_type::jai_function_type: return "function";
+            // A typed null keeps the bare kind (its tag is a class, its value is not)
+            case script_value_type::jai_object_type:
+            case script_value_type::jai_shared_ptr_type:
+                return val.is_object() ? object_type_name(val) : "object";
+            case script_value_type::jai_reference_type: return "reference";
+            case script_value_type::jai_weak_ptr_type: return "weak_ptr";
+            case script_value_type::jai_vec2_type:
+            case script_value_type::jai_vec3_type:
+            case script_value_type::jai_vec4_type:
+            case script_value_type::jai_color_type:
+            case script_value_type::jai_ivec2_type:
+            case script_value_type::jai_ivec3_type: return math_type_name(val.type());
+            default: return "unknown";
+        }
+    });
+
+    constexpr auto any = script_value_type::jai_null_type;
+    auto& space = detail::engine_access::script_namespaces(eng_ref)[detail::engine_access::get_symbolizer(eng_ref)->intern("reflect")];
+    space->signatures[detail::engine_access::get_symbolizer(eng_ref)->intern("type_of")] = {1, 1, {any}, script_value_type::jai_string_type};
+    space->signatures[detail::engine_access::get_symbolizer(eng_ref)->intern("is_registered_type")] = {1, 1, {any}, script_value_type::jai_bool_type};
 
     add("type_name", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
         reflect_detail::expect_args(args, 1, "type_name");
@@ -490,8 +595,8 @@ void register_reflection_functions(engine& eng_ref) {
         if (!args[1].is_string()) { throw runtime_error("reflect::has_method expects a method name string"); }
         auto def = reflect_detail::resolve_class(eng, args[0], "has_method");
         if (!def) { return script_value(false, eng); }
-        const auto id = reflect_detail::known_symbol(eng, args[1].as_string());
-        return script_value(id && def->defines_method(*id), eng);
+        const auto id = reflect_detail::listed_method_symbol(eng, def, args[1].as_string(), [&](uint64_t m) { return def->defines_method(m); });
+        return script_value(id.has_value(), eng);
     });
 
     add("classes", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
@@ -515,14 +620,7 @@ void register_reflection_functions(engine& eng_ref) {
         return arr;
     });
 
-    // is_a(x, "Class"): instanceof for a class named at run time
-    add("is_a", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
-        reflect_detail::expect_args(args, 2, "is_a");
-        const script_value& named = args[1].is_reference() ? args[1].deref() : args[1];
-        if (!named.is_string()) { throw runtime_error("reflect::is_a expects a value and a class name"); }
-        const class_definition* cls = reflect_detail::resolve_class(eng, named, "is_a");
-        return script_value(cls && detail::instance_of_class(args[0], cls->get_name(), eng), eng);
-    });
+    add("is_instance_of", reflect_detail::instance_test{eng});
 
     add("generation", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
         reflect_detail::expect_args(args, 1, "generation");
@@ -650,13 +748,12 @@ void register_reflection_functions(engine& eng_ref) {
     add("invoke", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
         reflect_detail::expect_min_args(args, 2, "invoke");
         const std::string& name = reflect_detail::expect_name(args, 1, "invoke");
-        const auto known = reflect_detail::known_symbol(eng, name);
-        const uint64_t id = known ? *known : UINT64_MAX;
         std::vector<script_value> call_args(args.begin() + 2, args.end());
         const script_value& target = args[0].deref();
         if (target.is_string()) {   // class form: static method
             auto* def = reflect_detail::resolve_class(eng, target, "invoke");
-            script_value method = known ? def->get_static_method(id, false) : script_value::make_null(eng);
+            const auto known = reflect_detail::listed_method_symbol(eng, def, name, [&](uint64_t m) { return def->get_static_method(m, false).is_function(); });
+            script_value method = known ? def->get_static_method(*known, false) : script_value::make_null(eng);
             if (method.is_function()) {
                 return method.as_function()(call_args);
             }
@@ -667,7 +764,8 @@ void register_reflection_functions(engine& eng_ref) {
         if (!door.def) {
             throw runtime_error("reflect::invoke expects an object or class name");
         }
-        script_value dispatcher = known ? door.def->get_method(id, false) : script_value::make_invalid(eng);
+        const auto known = reflect_detail::listed_method_symbol(eng, door.def, name, [&](uint64_t m) { return door.def->get_method(m, false).is_function(); });
+        script_value dispatcher = known ? door.def->get_method(*known, false) : script_value::make_invalid(eng);
         if (!dispatcher.is_function()) {
             throw runtime_error("reflect::invoke: '" + door.def->get_name() +
                                 "' has no method '" + name + "'");
@@ -687,9 +785,8 @@ void register_reflection_functions(engine& eng_ref) {
                                 reflect_detail::semantic_type_name(target, eng) +
                                 " run on the value: wrap the call in a lambda ([&]() { ... })");
         }
-        const auto known = reflect_detail::known_symbol(eng, name);
-        const uint64_t id = known ? *known : UINT64_MAX;
-        script_value dispatcher = known ? door.def->get_method(id, false) : script_value::make_invalid(eng);
+        const auto known = reflect_detail::listed_method_symbol(eng, door.def, name, [&](uint64_t m) { return door.def->get_method(m, false).is_function(); });
+        script_value dispatcher = known ? door.def->get_method(*known, false) : script_value::make_invalid(eng);
         if (!dispatcher.is_function()) {
             throw runtime_error("reflect::bind: '" + door.def->get_name() + "' has no method '" + name + "'");
         }
@@ -706,25 +803,18 @@ void register_reflection_functions(engine& eng_ref) {
 
     add("construct", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
         reflect_detail::expect_min_args(args, 1, "construct");
-        const std::string& name = reflect_detail::expect_name(args, 0, "construct");
+        std::string name = reflect_detail::expect_name(args, 0, "construct");
         std::vector<script_value> call_args(args.begin() + 1, args.end());
-        // The same global the direct spelling Class(...) resolves
-        auto ctor = detail::engine_access::get_global_environment(*eng)->get(name);
-        if (!ctor || !ctor.value().is_function()) {
-            throw runtime_error(std::string("reflect::construct: unknown class '") + name + "'");
-        }
-        return reflect_detail::construct_through_reflection(eng, name, ctor.value(), call_args);
+        const script_value ctor = reflect_detail::constructor_named(eng, name, "construct");
+        return reflect_detail::construct_through_reflection(eng, name, ctor, call_args);
     });
 
     add("construct_shared", [eng](const std::vector<script_value>& args) -> checked_result<script_value> {
         reflect_detail::expect_min_args(args, 1, "construct_shared");
-        const std::string& name = reflect_detail::expect_name(args, 0, "construct_shared");
+        std::string name = reflect_detail::expect_name(args, 0, "construct_shared");
         std::vector<script_value> call_args(args.begin() + 1, args.end());
-        auto ctor = detail::engine_access::get_global_environment(*eng)->get(name);
-        if (!ctor || !ctor.value().is_function()) {
-            throw runtime_error(std::string("reflect::construct_shared: unknown class '") + name + "'");
-        }
-        auto result = reflect_detail::construct_through_reflection(eng, name, ctor.value(), call_args);
+        const script_value ctor = reflect_detail::constructor_named(eng, name, "construct_shared");
+        auto result = reflect_detail::construct_through_reflection(eng, name, ctor, call_args);
         if (!result) { return result; }
         script_value value = std::move(result.value());
         // `new Class(...)` semantics: shared_ptr is a TYPE MARKER, not storage — mark
@@ -748,7 +838,7 @@ void register_reflection_functions(engine& eng_ref) {
         auto* def = reflect_detail::resolve_class(eng, args[0], "methods");
         if (!def) { throw runtime_error("reflect::methods expects a class or class name"); }
         reflect_detail::method_collector out{eng};
-        reflect_detail::collect_methods_of(eng, def, out, 0);
+        reflect_detail::collect_methods_of(eng, def, out, {});
         return out.sorted_array();
     });
 
@@ -758,9 +848,7 @@ void register_reflection_functions(engine& eng_ref) {
         auto* def = reflect_detail::resolve_class(eng, args[0], "method_arguments");
         if (!def) { throw runtime_error("reflect::method_arguments expects a class or class name"); }
         reflect_detail::method_collector out{eng};
-        if (const auto known = reflect_detail::known_symbol(eng, name)) {
-            reflect_detail::collect_methods_of(eng, def, out, *known);
-        }
+        reflect_detail::collect_methods_of(eng, def, out, name);
         if (out.entries.empty()) {
             throw runtime_error("reflect::method_arguments: '" + def->get_name() +
                                 "' has no method '" + name + "'");
@@ -781,7 +869,7 @@ void register_reflection_functions(engine& eng_ref) {
         for (auto& [name_view, value] : detail::engine_access::get_global_environment(*eng)->get_all_variables()) {
             if (!value.is_function()) { continue; }
             std::string name{name_view};
-            if (name.find('#') != std::string::npos) { continue; }   // a builtin a desugaring calls (template#html): no script names it
+            if (name.find('#') != std::string::npos || name == parallel_for_stmt::k_counted_range) { continue; }   // a builtin a desugaring calls (template#html, a counted parallel_for's range): no script names it
             if (detail::engine_access::get_class_definition(*eng, name)) { continue; }   // constructors: classes() owns them
             names.insert(std::move(name));
         }
@@ -885,5 +973,17 @@ void register_reflection_functions(engine& eng_ref) {
 // shared_ptr / raw-pointer convenience, matching every other stdlib unit
 
 } // namespace stdlib
+
+const script_value* detail::library_instance_test_cell(engine& eng) {
+    auto& spaces = engine_access::script_namespaces(eng);
+    const auto space = spaces.find(engine_access::symbolize(eng, "reflect"));
+    if (space == spaces.end() || !space->second) { return nullptr; }
+    const uint64_t name = engine_access::symbolize(eng, "is_instance_of");
+    if (space->second->scope && space->second->scope->get_own_value_ptr(name)) { return nullptr; }
+    const auto entry = space->second->variables.find(name);
+    if (entry == space->second->variables.end() || entry->second.raw_storage_index() != script_value::TYPEID_FUNCTION) { return nullptr; }
+    return entry->second.unchecked_as_function().target<stdlib::reflect_detail::instance_test>() ? &entry->second : nullptr;
+}
+
 } // namespace jai
 

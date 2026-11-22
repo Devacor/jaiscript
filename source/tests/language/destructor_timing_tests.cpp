@@ -4,6 +4,7 @@
 #include <jaiscript/stdlib/stdlib.hpp>
 #include "../case_table.hpp"
 
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -420,6 +421,46 @@ public:
 
         // A user copy constructor builds every copy C++ copy-constructs; a prvalue initializing a slot and a returned own local are
         // elided; a base's copy constructor builds the base of a class that declares none; a throwing one leaves no object
+        // C++ overload resolution: one argument of the class, a value or what a shared_ptr<T> holds, picks the copy constructor (the
+        // declared one, else the implicit one) in every construction spelling; a prvalue of the class is the object itself (C++17)
+        test("a_single_argument_of_the_class_is_a_copy_or_the_prvalue_itself", [this]() {
+            expect_log(R"(
+                class P { string n = ""; P(string s) { n = s; } ~P() { LOG = LOG + "~" + n; } }
+                class Q { string n = ""; Q(string s) { n = s; } Q(const Q& o) { n = o.n + "'"; LOG = LOG + "c" + n; } ~Q() { LOG = LOG + "~" + n; } }
+                class R { var held = null; R(var v) { held = v; } }
+                class S { shared_ptr<S> parent; S() {} S(shared_ptr<S> p) { parent = p; } }
+                function f() -> void {
+                    P a = P("a"); shared_ptr<P> h = new P("h");
+                    P b = P(a); P c = P(h); auto d = new P(h); auto e = make_shared<P>(a); P g{h}; P t = P(P("t"));
+                    LOG = LOG + "|" + b.n + c.n + d.n + e.n + g.n + t.n + to_string(same_object(d, h)) + "|";
+                    Q q = Q("q"); shared_ptr<Q> qh = new Q("r"); Q q1 = Q(q); auto q2 = new Q(qh); Q q3 = Q(Q("t"));
+                    R r0 = R(1); R r1 = R(r0); auto root = new S(); auto child = new S(root);
+                    LOG = LOG + "|" + reflect::type_of(r1.held) + to_string(same_object(child.parent, root)) + "|";
+                }
+                f(); LOG;
+            )", "|ahhahtfalse|cq'cr'|inttrue|~t~r'~q'~r~q~t~h~a~h~h~a~h~a");
+        });
+
+        // this names the object, an lvalue (C++'s *this): a declaration and an assignment copy it; a T& return and a T& declaration
+        // bind it
+        test("this_is_copied_where_a_value_is_made_and_bound_where_a_reference_is", [this]() {
+            expect_log(R"(
+                class T {
+                    int n = 6;
+                    T bump() { T old = this; n += 1; return old; }
+                    T& self() { return this; }
+                    void through() { T& r = this; r.n += 10; }
+                    void into(T& out) { out = this; }
+                    ~T() { LOG = LOG + to_string(n) + ";"; }
+                }
+                function f() -> void {
+                    T t; T b = t.bump(); t.self().n += 1; t.through(); T o; t.into(o); o.n = 50;
+                    LOG = LOG + `${b.n} ${t.n}|`;
+                }
+                f(); LOG;
+            )", "6 18|50;6;18;");
+        });
+
         test("a_copy_constructor_builds_every_copy", [this]() {
             const std::string c = R"(class C { string n = ""; C(string s) { n = s; } C(const C& o) { if (o.n == "bad") { throw "x"; } n = o.n + "'"; LOG = LOG + "c" + n; } ~C() { LOG = LOG + "~" + n; } } )";
             expect_log(c + R"(
@@ -553,6 +594,219 @@ public:
                 )");
             }
             check_eq(std::string("2sn1"), log, "a host object's C++ destructor runs in reverse construction order without any script destructor");
+        });
+
+        test("a_receivers_destructor_runs_at_teardown_whatever_holds_it", [this]() {
+            // a program-scope value that holds an object (a bound method its receiver, a closure its capture, a method coroutine its
+            // receiver) dies at teardown in its turn, so the object's destructor runs once while the engine still runs script;
+            // TYPE is the class, as itself and as an instance of a generic class
+            struct holder { const char* what; const char* program; const char* held; };
+            static const holder holders[] = {
+                {"nothing", "TYPE kept; kept.name = \"kept\";", ""},
+                {"the instance", "TYPE kept; kept.name = \"kept\";", "kept"},
+                {"a closure over it", "TYPE kept; kept.name = \"kept\"; auto f = kept.getter();", "f"},
+                {"a bound method", "TYPE kept; kept.name = \"kept\"; auto f = reflect::bind(kept, \"get\");", "f"},
+                {"a bound method in a var", "TYPE kept; kept.name = \"kept\"; var f = reflect::bind(kept, \"get\");", "f"},
+                {"a bound method in a variable made before its receiver", "var f = null; TYPE kept; kept.name = \"kept\"; f = reflect::bind(kept, \"get\");", "f"},
+                {"a bound method in a function slot", "TYPE kept; kept.name = \"kept\"; function f = reflect::bind(kept, \"get\");", "f"},
+                {"a bound method in a typed function slot", "TYPE kept; kept.name = \"kept\"; function<int()> f = reflect::bind(kept, \"get\");", "f"},
+                {"a bound method the object makes of itself", "TYPE kept; kept.name = \"kept\"; auto f = kept.bound();", "f"},
+                {"a bound method that alone holds its receiver", "TYPE make() { TYPE made; made.name = \"kept\"; return made; } auto f = reflect::bind(make(), \"get\");", "f"},
+                {"a bound method of a handle", "auto kept = new TYPE(); kept.name = \"kept\"; auto f = reflect::bind(kept, \"get\");", "f"},
+                {"a reference to a bound method", "TYPE kept; kept.name = \"kept\"; auto bound = reflect::bind(kept, \"get\"); auto& f = bound;", "f"},
+                {"an array of bound methods", "TYPE kept; kept.name = \"kept\"; array<var> f = [reflect::bind(kept, \"get\"), reflect::bind(kept, \"get\")];", "f"},
+                {"a map of bound methods", "TYPE kept; kept.name = \"kept\"; map<string, var> f = {\"a\": reflect::bind(kept, \"get\")};", "f"},
+                {"a lambda that captured a bound method", "TYPE kept; kept.name = \"kept\"; auto bound = reflect::bind(kept, \"get\"); auto f = [bound]() { return bound(); };", "f"},
+                {"a field of another object", "class Keeper { var f = null; } TYPE kept; kept.name = \"kept\"; Keeper f; f.f = reflect::bind(kept, \"get\");", "f"},
+                {"a static", "class Keeper { static var f = null; } TYPE kept; kept.name = \"kept\"; Keeper::f = reflect::bind(kept, \"get\");", ""},
+                {"a typed static", "TYPE kept; kept.name = \"kept\"; class Keeper { static function<int()> f = reflect::bind(kept, \"get\"); }", ""},
+                {"a namespace variable", "namespace keep { var f = null; } TYPE kept; kept.name = \"kept\"; keep::f = reflect::bind(kept, \"get\");", ""},
+                {"a bound method called through its variable", "TYPE kept; kept.name = \"kept\"; auto f = reflect::bind(kept, \"get\"); f(); f();", "f"},
+                {"a bound method a function called through its parameter", "int call(function f) { return f(); } TYPE kept; kept.name = \"kept\"; call(reflect::bind(kept, \"get\"));", ""},
+                {"a bound method a function called through its var parameter", "int call(var f) { return f(); } TYPE kept; kept.name = \"kept\"; call(reflect::bind(kept, \"get\"));", ""},
+                {"a method coroutine, never started", "TYPE kept; kept.name = \"kept\"; auto f = kept.drain();", "f"},
+                {"a method coroutine, suspended", "TYPE kept; kept.name = \"kept\"; auto f = kept.drain(); f.next();", "f"},
+                {"a method coroutine, finished", "TYPE kept; kept.name = \"kept\"; auto f = kept.drain(); f.next(); f.next(); f.next();", "f"},
+            };
+            std::string wrong;
+            for (const char* declared : {"class Tracked { int v = 4; string name; ~Tracked() { note_end(name); } int get() { return v; } function getter() { return [this]() { return v; }; } "
+                                         "function bound() { return reflect::bind(this, \"get\"); } coroutine int drain() { yield v; yield v; return v; } }",
+                                         "class Tracked<T> { T v; string name; ~Tracked() { note_end(name); } T get() { return v; } function getter() { return [this]() { return v; }; } "
+                                         "function bound() { return reflect::bind(this, \"get\"); } coroutine T drain() { yield v; yield v; return v; } }"}) {
+                const std::string type = std::string_view(declared).find("<T>") != std::string_view::npos ? "Tracked<int>" : "Tracked";
+                for (const holder& h : holders) {
+                    for (const bool host_holds : {false, true}) {
+                        if (host_holds && !*h.held) { continue; }
+                        std::string program = h.program;
+                        for (size_t at = program.find("TYPE"); at != std::string::npos; at = program.find("TYPE", at)) { program.replace(at, 4, type); }
+                        std::string log;
+                        std::optional<held_value> held;
+                        {
+                            auto e = make_engine();
+                            jai::stdlib::register_all(*e);
+                            e->add_function("note_end", [&log](const std::string& text) { log += text + ";"; });
+                            e->execute(declared);
+                            e->execute(program);
+                            if (!log.empty()) { wrong += type + ", " + h.what + ": died while the program held it\n"; }
+                            if (host_holds) { held.emplace(e->get_variable(h.held)); }
+                        }
+                        if (log != "kept;") { wrong += type + ", " + h.what + (host_holds ? ", which the host holds too" : "") + ": the destructor log is '" + log + "'\n"; }
+                    }
+                }
+            }
+            check_eq(std::string(), wrong, "the object's destructor runs once at teardown");
+        });
+
+        test("a_called_bound_method_holds_its_receiver_no_longer_than_its_value", [this]() {
+            // the call of a bound method through a name keeps nothing of it: the receiver dies with the last value that binds it
+            const std::string res = R"(
+                class Res { string name = ""; Res(string n) { name = n; } ~Res() { LOG = LOG + name; } int get() { return 1; } }
+                int call(function f) { return f(); }
+                int call_var(var f) { return f(); }
+            )";
+            const std::pair<std::string, std::string> cases[] = {
+                {"function scope() -> void { Res r = Res(QrQ); call(reflect::bind(r, QgetQ)); } scope(); LOG = LOG + Q|Q; LOG;", "r|"},
+                {"function scope() -> void { Res r = Res(QrQ); call_var(reflect::bind(r, QgetQ)); } scope(); LOG = LOG + Q|Q; LOG;", "r|"},
+                {"function scope() -> void { Res r = Res(QrQ); auto f = reflect::bind(r, QgetQ); f(); } scope(); LOG = LOG + Q|Q; LOG;", "r|"},
+                {"function scope() -> void { auto r = new Res(QrQ); auto f = reflect::bind(r, QgetQ); f(); f(); } scope(); LOG = LOG + Q|Q; LOG;", "r|"},
+                {"function scope(string n) -> void { Res r = Res(n); call(reflect::bind(r, QgetQ)); } scope(QaQ); LOG = LOG + Q|Q; scope(QbQ); LOG = LOG + Q|Q; LOG;", "a|b|"},
+                {"var g = reflect::bind(new Res(QrQ), QgetQ); g(); g = null; LOG = LOG + Q|Q; LOG;", "r|"},
+                {"function scope() -> void { for (int i = 0; i < 3; ++i) { auto f = reflect::bind(Res(to_string(i)), QgetQ); f(); LOG = LOG + Q,Q; } } scope(); LOG;", ",0,1,2"},
+            };
+            check_each(cases, [&](const auto& c) {
+                std::string program = c.first;
+                for (char& ch : program) { if (ch == 'Q') { ch = '"'; } }
+                expect_log(res + program, c.second);
+            });
+        });
+
+        test("an_object_only_a_cycle_keeps_is_destroyed_at_teardown", [this]() {
+            // objects no variable names any more (a handle, a container, a closure or a bound method of their own keeps them) are
+            // destroyed with the engine: each destructor runs once while script still runs, the last constructed first, and an object
+            // only one member holds follows that member's object; TYPE is the class, as itself and as an instance of a generic class
+            struct shape { const char* what; const char* program; const char* log; };
+            static const shape shapes[] = {
+                {"a cycle of two", "auto a = new TYPE(\"a\"); auto b = new TYPE(\"b\"); a.other = b; b.other = a;", "b;a;"},
+                {"a cycle of three", "auto a = new TYPE(\"a\"); auto b = new TYPE(\"b\"); auto c = new TYPE(\"c\"); a.other = b; b.other = c; c.other = a;", "c;a;b;"},
+                {"an object that holds itself", "auto a = new TYPE(\"a\"); a.other = a;", "a;"},
+                {"two cycles", "auto a = new TYPE(\"a\"); a.other = a; auto b = new TYPE(\"b\"); b.other = b;", "b;a;"},
+                {"a cycle through an array", "auto a = new TYPE(\"a\"); a.kids.push(a); auto b = new TYPE(\"b\"); auto c = new TYPE(\"c\"); b.kids.push(c); c.kids.push(b);", "c;b;a;"},
+                {"a cycle through a map", "auto b = new TYPE(\"b\"); auto c = new TYPE(\"c\"); b.named[\"c\"] = c; c.named[\"b\"] = b;", "c;b;"},
+                {"a cycle through nested containers", "auto a = new TYPE(\"a\"); auto b = new TYPE(\"b\"); a.kids.push([{\"b\": b}]); b.named[\"a\"] = [a];", "b;a;"},
+                {"a cycle through a lambda capture", "auto a = new TYPE(\"a\"); a.act = [a]() { return a.name; };", "a;"},
+                {"a cycle through a bound method", "auto a = new TYPE(\"a\"); a.act = reflect::bind(a, \"get\");", "a;"},
+                {"a cycle through a coroutine frame", "auto a = new TYPE(\"a\"); a.act = a.steps(); a.act.next();", "a;"},
+                {"a cycle through a coroutine never started", "auto a = new TYPE(\"a\"); a.act = a.steps();", "a;"},
+                {"the members of an object that holds itself", "auto a = new TYPE(\"a\"); a.other = a; a.kids.push(new TYPE(\"kid\")); a.kids.push(new TYPE(\"last\")); a.named[\"m\"] = new TYPE(\"mapped\");",
+                 "a;mapped;last;kid;"},
+                {"an object two members of a cycle share", "auto a = new TYPE(\"a\"); auto b = new TYPE(\"b\"); auto shared = new TYPE(\"shared\"); a.other = b; b.other = a; a.kids.push(shared); b.kids.push(shared);",
+                 "shared;b;a;"},
+                {"an object made before the cycle that shares it", "auto shared = new TYPE(\"shared\"); auto a = new TYPE(\"a\"); auto b = new TYPE(\"b\"); a.other = b; b.other = a; a.kids.push(shared); b.kids.push(shared);",
+                 "b;a;shared;"},
+                {"a by-value member of an object that holds itself", "auto h = new Holder(); h.self = h;", "holder;inner;"},
+                {"a member's own member", "auto h = new Holder(); h.self = h; h.inner.kids.push(new TYPE(\"deep\"));", "holder;inner;deep;"},
+                {"a cycle a closure of a closure keeps", "auto a = new TYPE(\"a\"); auto inner = [a]() { return a.name; }; a.act = [inner]() { return inner(); };", "a;"},
+                {"a cycle beside a variable the program still names", "auto a = new TYPE(\"a\"); a.other = a; KEPT = new TYPE(\"kept\");", "kept;a;"},
+            };
+            std::string wrong;
+            for (const char* declared : {"class Node { string name; var other = null; array<var> kids; map<string, var> named; var act = null; Node(string n) { name = n; } "
+                                         "~Node() { note_end(name); } string get() { return name; } coroutine int steps() { yield 1; yield 2; return 3; } } "
+                                         "class Holder { Node inner = Node(\"inner\"); var self = null; ~Holder() { note_end(\"holder\"); } } var KEPT = null;",
+                                         "class Node<T> { T name; var other = null; array<var> kids; map<string, var> named; var act = null; Node(T n) { name = n; } "
+                                         "~Node() { note_end(name); } T get() { return name; } coroutine int steps() { yield 1; yield 2; return 3; } } "
+                                         "class Holder { Node<string> inner = Node<string>(\"inner\"); var self = null; ~Holder() { note_end(\"holder\"); } } var KEPT = null;"}) {
+                const std::string type = std::string_view(declared).find("<T>") != std::string_view::npos ? "Node<string>" : "Node";
+                for (const shape& s : shapes) {
+                    std::string program = s.program;
+                    for (size_t at = program.find("TYPE"); at != std::string::npos; at = program.find("TYPE", at)) { program.replace(at, 4, type); }
+                    std::string log;
+                    {
+                        auto e = make_engine();
+                        jai::stdlib::register_all(*e);
+                        e->add_function("note_end", [&log](const std::string& text) { log += text + ";"; });
+                        e->execute(declared);
+                        e->execute("void make() { " + program + " } make();");
+                        if (!log.empty()) { wrong += type + ", " + s.what + ": '" + log + "' died while the cycle held it\n"; }
+                        log.clear();
+                    }
+                    if (log != s.log) { wrong += type + ", " + s.what + ": the destructor log is '" + log + "', expected '" + s.log + "'\n"; }
+                }
+            }
+            check_eq(std::string(), wrong, "every destructor runs once at teardown, in its order");
+        });
+
+        test("a_destructor_at_teardown_finds_the_rest_of_its_cycle_whole", [this]() {
+            // every destructor of the objects teardown destroys runs before any of them loses a member: one reads another's fields
+            // and calls its methods whether or not that one's destructor already ran, and a destructor that lets go of the cycle
+            // itself destroys nothing twice
+            struct shape { const char* what; const char* declared; const char* program; const char* log; };
+            static const shape shapes[] = {
+                {"each reads the other",
+                 "class Peer { string name; int hp = 7; var other = null; Peer(string n) { name = n; } string hello() { return name + \"!\"; } "
+                 "~Peer() { note_end(name + \" sees \" + other.name + \" \" + to_string(other.hp) + \" \" + other.hello()); } }",
+                 "auto a = new Peer(\"a\"); auto b = new Peer(\"b\"); a.other = b; b.other = a;", "b sees a 7 a!;a sees b 7 b!;"},
+                {"each reads a typed member of the other",
+                 "class Peer { string name; array<int> scores = [1, 2]; map<string, int> ages = {\"x\": 3}; var other = null; Peer(string n) { name = n; } "
+                 "~Peer() { note_end(name + \" \" + to_string(other.scores.size()) + to_string(other.ages[\"x\"])); } }",
+                 "auto a = new Peer(\"a\"); auto b = new Peer(\"b\"); a.other = b; b.other = a;", "b 23;a 23;"},
+                {"a destructor writes the other",
+                 "class Peer { string name; int hits = 0; var other = null; Peer(string n) { name = n; } ~Peer() { other.hits += 1; note_end(name + to_string(hits)); } }",
+                 "auto a = new Peer(\"a\"); auto b = new Peer(\"b\"); a.other = b; b.other = a;", "b0;a1;"},
+                {"a destructor lets go of its cycle",
+                 "class Peer { string name; var other = null; Peer(string n) { name = n; } ~Peer() { note_end(name); other = null; } }",
+                 "auto a = new Peer(\"a\"); auto b = new Peer(\"b\"); a.other = b; b.other = a;", "b;a;"},
+                {"a destructor empties the container that holds the next object",
+                 "class Peer { string name; array<var> kids; Peer(string n) { name = n; } ~Peer() { note_end(name); kids.clear(); } }",
+                 "auto a = new Peer(\"a\"); auto b = new Peer(\"b\"); a.kids.push(b); b.kids.push(a);", "b;a;"},
+                {"a derived object's base destructor runs after its own, ahead of the next object",
+                 "class Base { string name; var other = null; ~Base() { note_end(\"base of \" + name); } } "
+                 "class Peer : Base { Peer(string n) { name = n; } ~Peer() { note_end(name); } }",
+                 "auto a = new Peer(\"a\"); auto b = new Peer(\"b\"); a.other = b; b.other = a;", "b;base of b;a;base of a;"},
+                {"a destructor that raises is reported and the rest still run",
+                 "class Peer { string name; var other = null; Peer(string n) { name = n; } ~Peer() { note_end(name); if (name == \"b\") { throw \"boom\"; } } }",
+                 "auto a = new Peer(\"a\"); auto b = new Peer(\"b\"); a.other = b; b.other = a;", "b;a;"},
+            };
+            std::string wrong;
+            for (const shape& s : shapes) {
+                std::string log;
+                std::string reported;
+                {
+                    auto e = make_engine();
+                    jai::stdlib::register_all(*e);
+                    e->add_function("note_end", [&log](const std::string& text) { log += text + ";"; });
+                    e->set_script_error_handler([&reported](const std::string& text) { reported += text; });
+                    e->execute(s.declared);
+                    e->execute(std::string("void make() { ") + s.program + " } make();");
+                    if (!log.empty()) { wrong += std::string(s.what) + ": '" + log + "' died while the cycle held it\n"; }
+                    log.clear();
+                }
+                if (log != s.log) { wrong += std::string(s.what) + ": the destructor log is '" + log + "', expected '" + s.log + "'\n"; }
+                const bool raises = std::string_view(s.declared).find("throw") != std::string_view::npos;
+                if (raises != (reported.find("boom") != std::string::npos)) { wrong += std::string(s.what) + ": reported '" + reported + "'\n"; }
+            }
+            check_eq(std::string(), wrong, "a destructor at teardown sees whole objects");
+        });
+
+        test("a_value_the_host_keeps_past_its_engine_was_destroyed_with_the_engine", [this]() {
+            // a plain script_value the host kept is the host's to drop, before the engine or after: the object it names is destroyed
+            // with the engine, once, and dropping the value afterwards runs nothing
+            std::string log;
+            std::optional<jai::script_value> kept;
+            std::optional<jai::script_value> cycle;
+            {
+                auto e = make_engine();
+                jai::stdlib::register_all(*e);
+                e->add_function("note_end", [&log](const std::string& text) { log += text + ";"; });
+                e->execute("class Node { string name; var other = null; Node(string n) { name = n; } ~Node() { note_end(name); } }");
+                kept.emplace(static_cast<const jai::script_value&>(e->execute("new Node(\"kept\");")));
+                cycle.emplace(static_cast<const jai::script_value&>(e->execute("auto a = new Node(\"a\"); auto b = new Node(\"b\"); a.other = b; b.other = a; a = null; b;")));
+                e->execute("b = null;");
+                check_eq(std::string(), log, "the host's values keep their objects alive");
+            }
+            check_eq(std::string("b;a;kept;"), log, "the engine destroys what the host still holds");
+            kept.reset();
+            cycle.reset();
+            check_eq(std::string("b;a;kept;"), log, "dropping the values after the engine runs nothing");
         });
 
         test("a_destructor_at_teardown_sees_the_functions_a_run_sees", [this]() {
@@ -737,7 +991,7 @@ public:
 
         test("assignment_keeps_the_object_references_and_handles_name", [this]() {
             expect_log(R"(
-                function f() -> string { Token x = Token("a"); Token& r = x; shared_ptr<Token> h = x; x = Token("b"); return r.name + h.name + to_string(same_object(h, x)); }
+                function f() -> string { shared_ptr<Token> h = new Token("a"); Token& x = cast<Token&>(h); Token& r = x; x = Token("b"); return r.name + h.name + to_string(same_object(h, x)); }
                 string out = f(); out + ":" + LOG;
             )", "bbtrue:bb");
             expect_log(R"(
@@ -752,18 +1006,18 @@ public:
         test("assignment_from_another_admitted_class_reclasses_the_object_in_place", [this]() {
             const std::pair<std::string, std::string> cases[] = {
                 {std::string(k_family) + R"(
-                function f() -> string { Base x = Base(); shared_ptr<Base> h = x; D2 s = D2(); s.a = 5; s.d2 = 6; x = s; LOG = LOG + "|";
-                    return to_string(x.a) + type_of(h) + to_string(same_object(h, x)) + to_string(cast<D2&>(x).d2); }
+                function f() -> string { Base x = Base(); Base& h = x; D2 s = D2(); s.a = 5; s.d2 = 6; x = s; LOG = LOG + "|";
+                    return to_string(x.a) + reflect::type_of(h) + to_string(same_object(h, x)) + to_string(cast<D2&>(x).d2); }
                 string out = f(); out + ":" + LOG;
             )", "5D2true6:|2B2B"},
                 {std::string(k_family) + R"(
-                function f() -> string { Base x = D1(); shared_ptr<Base> h = x; D2 s = D2(); s.a = 7; LOG = LOG + "|"; x = s; LOG = LOG + "|";
+                function f() -> string { Base x = D1(); Base& h = x; D2 s = D2(); s.a = 7; LOG = LOG + "|"; x = s; LOG = LOG + "|";
                     return to_string(x.a) + to_string(cast<D2&>(h).d2) + to_string(same_object(h, x)); }
                 string out = f(); out + ":" + LOG;
             )", "73true:|1t|2B2B"},
                 {std::string(k_family) + R"(
-                function f() -> string { Base x = D1(); shared_ptr<Base> h = x; Base b = Base(); b.a = 9; LOG = LOG + "|"; x = b; LOG = LOG + "|";
-                    string r = to_string(x.a) + type_of(h) + to_string(same_object(h, x));
+                function f() -> string { Base x = D1(); Base& h = x; Base b = Base(); b.a = 9; LOG = LOG + "|"; x = b; LOG = LOG + "|";
+                    string r = to_string(x.a) + reflect::type_of(h) + to_string(same_object(h, x));
                     try { int k = cast<D1&>(x).d1; r = r + "no"; } catch (e) { r = r + "!"; }
                     return r; }
                 string out = f(); out + ":" + LOG;
@@ -809,9 +1063,9 @@ public:
             expect_log(std::string(k_family) + R"(
                 [[warn_mode]]
                 class Other { int a = 1; Other() {} }
-                function f() -> string { Base x = Base(); shared_ptr<Base> h = x; var o = Other(); string r = "";
+                function f() -> string { Base x = Base(); Base& h = x; var o = Other(); string r = "";
                     try { x = o; r = "no"; } catch (e) { r = e; }
-                    return r + "|" + type_of(h) + to_string(same_object(h, x)); }
+                    return r + "|" + reflect::type_of(h) + to_string(same_object(h, x)); }
                 string out = f(); LOG = ""; out;
             )", "Cannot assign Other to 'x' (declared Base)|Basetrue");
         });
@@ -819,33 +1073,33 @@ public:
         test("every_by_value_slot_reclasses_in_place", [this]() {
             const std::string family = std::string(k_family);
             expect_log(family + R"(
-                function f() -> string { array<Base> a; a.push(Base()); shared_ptr<Base> h = a[0]; a[0] = D2(); return type_of(a[0]) + to_string(same_object(h, a[0])) + to_string(cast<D2&>(h).d2); }
+                function f() -> string { array<Base> a; a.push(Base()); Base& h = a[0]; a[0] = D2(); return reflect::type_of(a[0]) + to_string(same_object(h, a[0])) + to_string(cast<D2&>(h).d2); }
                 string out = f(); LOG = ""; out;
             )", "D2true3");
             expect_log(family + R"(
                 class Holder { Base b; }
-                function f() -> string { Holder o; shared_ptr<Base> h = o.b; o.b = D2(); return type_of(h) + to_string(same_object(h, o.b)) + to_string(cast<D2&>(o.b).d2); }
+                function f() -> string { Holder o; Base& h = o.b; o.b = D2(); return reflect::type_of(h) + to_string(same_object(h, o.b)) + to_string(cast<D2&>(o.b).d2); }
                 string out = f(); LOG = ""; out;
             )", "D2true3");
             expect_log(family + R"(
                 class S { static Base st; }
-                function f() -> string { shared_ptr<Base> h = S::st; S::st = D2(); return type_of(h) + to_string(same_object(h, S::st)) + to_string(cast<D2&>(S::st).d2); }
+                function f() -> string { Base& h = S::st; S::st = D2(); return reflect::type_of(h) + to_string(same_object(h, S::st)) + to_string(cast<D2&>(S::st).d2); }
                 string out = f(); LOG = ""; out;
             )", "D2true3");
             expect_log(family + R"(
-                function f() -> string { map<string, Base> m; m["k"] = Base(); shared_ptr<Base> h = m["k"]; m["k"] = D2(); return type_of(h) + to_string(same_object(h, m["k"])) + to_string(cast<D2&>(m["k"]).d2); }
+                function f() -> string { map<string, Base> m; m["k"] = Base(); Base& h = m["k"]; m["k"] = D2(); return reflect::type_of(h) + to_string(same_object(h, m["k"])) + to_string(cast<D2&>(m["k"]).d2); }
                 string out = f(); LOG = ""; out;
             )", "D2true3");
             expect_log(family + R"(
                 function put(Base& p) -> void { p = D2(); }
-                function f() -> string { Base x = Base(); shared_ptr<Base> h = x; Base& r = x; r = D1(); string first = type_of(h); put(x);
-                    return first + type_of(h) + to_string(same_object(h, x)); }
+                function f() -> string { Base x = Base(); Base& h = x; Base& r = x; r = D1(); string first = reflect::type_of(h); put(x);
+                    return first + reflect::type_of(h) + to_string(same_object(h, x)); }
                 string out = f(); LOG = ""; out;
             )", "D1D2true");
             expect_log(family + R"(
                 class Acc { int n = 0; Acc() {} Acc(int v) { n = v; } function operator+(Acc o) -> Acc { return Sum(n + o.n); } }
                 class Sum : Acc { int parts = 2; Sum(int v) { n = v; } }
-                function f() -> string { Acc x = Acc(1); shared_ptr<Acc> h = x; Acc two = Acc(2); x += two; return type_of(h) + to_string(h.n) + to_string(same_object(h, x)) + to_string(cast<Sum&>(x).parts); }
+                function f() -> string { Acc x = Acc(1); Acc& h = x; Acc two = Acc(2); x += two; return reflect::type_of(h) + to_string(h.n) + to_string(same_object(h, x)) + to_string(cast<Sum&>(x).parts); }
                 string out = f(); LOG = ""; out;
             )", "Sum3true2");
         });
@@ -855,7 +1109,7 @@ public:
                 [[warn_mode]]
                 function f() -> string { Base x = D1(); D1& r = cast<D1&>(x); string out = "";
                     try { var s = D2(); r = s; out = "no"; } catch (e) { out = e; }
-                    return out + "|" + type_of(x); }
+                    return out + "|" + reflect::type_of(x); }
                 string out = f(); LOG = ""; out;
             )", "Cannot assign D2 to 'r' (declared D1&)|D1");
         });
@@ -863,20 +1117,20 @@ public:
         test("field_element_map_and_static_stores_copy_assign", [this]() {
             expect_log(R"(
                 class Holder { Token t; }
-                function f() -> string { Holder o; shared_ptr<Token> h = o.t; o.t = Token("n"); LOG = LOG + "|"; return h.name + to_string(same_object(h, o.t)); }
+                function f() -> string { Holder o; Token& h = o.t; o.t = Token("n"); LOG = LOG + "|"; return h.name + to_string(same_object(h, o.t)); }
                 string out = f(); out + ":" + LOG;
             )", "ntrue:n|n");
             expect_log(R"(
-                function f() -> string { array<Token> a; Token p = Token("p"); a.push(p); shared_ptr<Token> h = a[0]; a[0] = Token("q"); LOG = LOG + "|"; return h.name + to_string(same_object(h, a[0])); }
+                function f() -> string { array<Token> a; Token p = Token("p"); a.push(p); Token& h = a[0]; a[0] = Token("q"); LOG = LOG + "|"; return h.name + to_string(same_object(h, a[0])); }
                 string out = f(); out + ":" + LOG;
             )", "qtrue:q|pq");
             expect_log(R"(
-                function f() -> string { map<string, Token> m; m["k"] = Token("m"); LOG = LOG + "/"; shared_ptr<Token> h = m["k"]; m["k"] = Token("n"); LOG = LOG + "|"; return h.name + to_string(same_object(h, m["k"])); }
+                function f() -> string { map<string, Token> m; m["k"] = Token("m"); LOG = LOG + "/"; Token& h = m["k"]; m["k"] = Token("n"); LOG = LOG + "|"; return h.name + to_string(same_object(h, m["k"])); }
                 string out = f(); out + ":" + LOG;
             )", "ntrue:/n|n");
             expect_log(R"(
                 class S { static Token st; }
-                function f() -> string { shared_ptr<Token> h = S::st; S::st = Token("s"); LOG = LOG + "|"; return h.name + to_string(same_object(h, S::st)); }
+                function f() -> string { Token& h = S::st; S::st = Token("s"); LOG = LOG + "|"; return h.name + to_string(same_object(h, S::st)); }
                 string out = f(); out + ":" + LOG;
             )", "strue:s|");
         });
@@ -895,16 +1149,76 @@ public:
         test("a_compound_assignment_copy_assigns_the_operator_result", [this]() {
             expect_log(R"(
                 class Acc { int n = 0; Acc(int v) { n = v; } ~Acc() { LOG = LOG + to_string(n); } function operator+(Acc o) -> Acc { return Acc(n + o.n); } }
-                function f() -> string { Acc x = Acc(1); shared_ptr<Acc> h = x; Acc two = Acc(2); x += two; LOG = LOG + "|"; return to_string(h.n) + to_string(same_object(h, x)); }
+                function f() -> string { Acc x = Acc(1); Acc& h = x; Acc two = Acc(2); x += two; LOG = LOG + "|"; return to_string(h.n) + to_string(same_object(h, x)); }
                 string out = f(); out + ":" + LOG;
             )", "3true:23|23");
+            // a declared operator+= (and ++, --) is what the compound calls, on the object in place: no temporary, nothing stored
+            // back, the expression its result; one that does not take the operand leaves a op= b as a = a op b
+            expect_log(R"(
+                class Acc {
+                    int n = 0;
+                    Acc(int v) { n = v; }
+                    ~Acc() { LOG = LOG + to_string(n) + ";"; }
+                    Acc operator+(Acc o) { LOG = LOG + "+"; return Acc(n + o.n); }
+                    Acc& operator+=(int k) { n += k; LOG = LOG + "i"; return this; }
+                    Acc& operator-=(int k) { n -= k; LOG = LOG + "d"; return this; }
+                    Acc& operator++() { n += 100; LOG = LOG + "p"; return this; }
+                    Acc operator++(int) { Acc old = Acc(n); n += 1000; LOG = LOG + "P"; return old; }
+                }
+                class Box { Acc a = Acc(7); void bump() { a += 1; } }
+                function twice(Acc& r) -> void { r += 2; r += 2; }
+                function f() -> string {
+                    Acc x = Acc(1); Acc& h = x;
+                    x += 2; ++x; auto& back = (x -= 1); back += 10; twice(x);
+                    auto old = x++; LOG = LOG + "|";
+                    array<Acc> xs = [Acc(5)]; xs[0] += 1; Box b; b.bump(); b.a += 1; var v = Acc(3); v += 1; h += 1;
+                    Acc two = Acc(2); x += two; LOG = LOG + "|";
+                    return `${h.n} ${same_object(h, x)} ${old.n} ${xs[0].n} ${b.a.n} ${v.n}`;
+                }
+                string out = f(); out + ":" + LOG;
+            )", "1119 true 116 6 9 4:ipdiiiP|iiiii+2;1119;|2;4;9;6;116;1119;");
         });
 
         test("a_var_slot_replaces_its_value", [this]() {
             expect_log(R"(
-                function f() -> string { var v = Token("a"); shared_ptr<Token> h = v; v = Token("b"); LOG = LOG + "|"; return h.name + v.name; }
+                function f() -> string { var v = Token("a"); shared_ptr<Token> h = make_shared<Token>(v); v = Token("b"); LOG = LOG + "|"; return h.name + v.name; }
                 string out = f(); out + ":" + LOG;
-            )", "ab:|ab");
+            )", "ab:a|ab");
+        });
+
+        // make_shared<T>(value) holds a copy, which dies with the handle, and the value dies with its scope
+        test("a_handle_made_from_a_value_leaves_the_value_its_scope", [this]() {
+            const std::pair<std::string, std::string> cases[] = {
+                {R"(
+                function f() -> string { shared_ptr<Token> keep = null; { Token x = Token("a"); shared_ptr<Token> h = make_shared<Token>(x); h.name = "c"; keep = h; LOG = LOG + "|"; } LOG = LOG + "|"; return keep.name; }
+                string out = f(); out + ":" + LOG;
+            )", "c:|a|c"},
+                {R"(
+                function f() -> void { Token x = Token("a"); { shared_ptr<Token> h = make_shared<Token>(x); h.name = "c"; } LOG = LOG + "|"; }
+                f(); LOG;
+            )", "c|a"},
+                {R"(
+                function f() -> void { shared_ptr<Token> h = make_shared<Token>("t"); LOG = LOG + "|"; }
+                f(); LOG;
+            )", "|t"},
+                {R"(
+                function f() -> void { array<shared_ptr<Token>> all; { Token x = Token("a"); all.push(make_shared<Token>(x)); all[0].name = "c"; } LOG = LOG + "|"; }
+                f(); LOG;
+            )", "a|c"},
+                {R"(
+                function f() -> void { map<string, shared_ptr<Token>> all; { Token x = Token("a"); all["k"] = make_shared<Token>(x); all["k"].name = "c"; } LOG = LOG + "|"; }
+                f(); LOG;
+            )", "a|c"},
+                {R"(
+                function f() -> void { var v = Token("a"); { auto h = dynamic_cast<Token>(v); h.name = "c"; } LOG = LOG + "|"; }
+                f(); LOG;
+            )", "c|a"},
+                {R"(
+                function f() -> void { Token x = Token("a"); if (dynamic_cast<Token>(x)) { LOG = LOG + "|"; } LOG = LOG + "|"; }
+                f(); LOG;
+            )", "||a"},
+            };
+            check_each(cases, [&](const auto& c) { expect_log(c.first, c.second); });
         });
 
         test("a_hot_reloaded_instance_copy_assigns_with_the_new_layout", [this]() {
@@ -912,7 +1226,7 @@ public:
             jai::stdlib::register_all(eng);
             eng->execute(std::string(k_prelude) + R"(
                 Token held = Token("x");
-                shared_ptr<Token> alias = held;
+                Token& alias = held;
             )");
             const std::string got = eng->execute(R"(
                 class Token { string name = ""; int hp = 7; Token() {} Token(string n) { name = n; } ~Token() { LOG = LOG + name; } }
@@ -930,13 +1244,13 @@ public:
             jai::stdlib::register_all(eng);
             eng->execute(std::string(k_prelude) + k_family + R"(
                 Base held = Base();
-                shared_ptr<Base> alias = held;
+                Base& alias = held;
                 held = D2();
             )");
             const std::string got = eng->execute(R"(
                 class D2 : Base { int d2 = 3; int extra = 5; D2() {} ~D2() { LOG = LOG + "2"; } }
                 LOG = "";
-                type_of(alias) + to_string(cast<D2&>(held).extra) + to_string(same_object(alias, held)) + ":" + LOG;
+                reflect::type_of(alias) + to_string(cast<D2&>(held).extra) + to_string(same_object(alias, held)) + ":" + LOG;
             )").as_string();
             check_eq(std::string("D25true:"), got);
         });
@@ -1180,7 +1494,7 @@ public:
             const std::vector<std::pair<std::string, std::string>> cases = {
                 {"class H : C, N { H() {} } H h;", "Class 'H' must construct base 'N': it has no default constructor"},
                 {"class H : C, N { } H h;", "Class 'H' must construct base 'N': it has no default constructor"},
-                {"class K : A { K() : C() {} }", "Class 'K' has no base 'C' to construct"},
+                {"class K : A { K() : C() {} }", "Class 'K' has no base or field 'C' to initialize"},
                 {"class L : A { L() : super(1), A(2) {} }", "Class 'L' constructs base 'A' twice"},
                 {"class M : A, C { M() : C(), C() {} }", "Class 'M' constructs base 'C' twice"},
             };
@@ -1509,6 +1823,64 @@ public:
                  "case:true count:1 untyped:true call:true body:true elem:true eloop:true continue:true subject:true param:true local:true ");
         });
 
+        // A call's arguments die after it pushed its result: a destructor that runs blocks, loops, calls, a caught throw or a
+        // coroutine step then runs above that result, and the evaluation around the call goes on with it
+        test("a_destructor_that_runs_code_while_a_call_releases_its_arguments", [this]() {
+            struct Scale { int weigh(const script_value&) const { return 3; } };
+            auto eng = make_engine();
+            jai::stdlib::register_all(eng);
+            eng->add_function("probe", [](const script_value&) { return std::string("p"); });
+            eng->add_function("probe", [](const script_value&, int a_n) { return std::string("q") + std::to_string(a_n); });
+            dynamic_binder<Scale>(*eng, "Scale").constructor<>().method("weigh", &Scale::weigh).build();
+            check_eq(std::string("<true><Busy><p><q2><3><true><true><true><5><7><m><m><2>|a3b3c3d3e3c3cs1f3g3h3i3j3"), eng->execute(R"(
+                string LOG = "";
+                class Busy {
+                    string tag = "";
+                    Busy(string t) { tag = t; }
+                    ~Busy() {
+                        int n = 0;
+                        for (int i = 0; i < 3; i++) { n += i; }
+                        while (n > 10) { n -= 1; }
+                        { int inner = n; LOG = LOG + tag + to_string(inner); }
+                    }
+                }
+                shared_ptr<Busy> make(string t) { return new Busy(t); }
+                int helper(int x) { int s = 0; for (int i = 0; i < x; i++) { s += i; } return s; }
+                class Caller { string tag = ""; Caller(string t) { tag = t; } ~Caller() { LOG = LOG + tag + to_string(helper(3)); } }
+                class Catcher { ~Catcher() { try { throw "x"; } catch (e) { LOG = LOG + "c"; } } }
+                coroutine int steps() { yield 1; yield 2; }
+                var gen = steps();
+                class Stepper { ~Stepper() { LOG = LOG + "s" + to_string(gen.next()); } }
+                class Num { int v = 4; int operator+(shared_ptr<Busy> b) { return v + 1; } }
+                class Keep { int k = 0; Keep(shared_ptr<Busy> b) { k = 7; } }
+                class Show { string show(shared_ptr<Busy> b) { return "m"; } }
+                Scale scale;
+                Num num;
+                Show sh;
+                var bound = reflect::bind(sh, "show");
+                string out = "<" + to_string(reflect::is_instance_of(make("a"), "Busy")) + ">";
+                out += "<" + reflect::type_name(make("b")) + ">";
+                out += "<" + probe(make("c")) + ">" + "<" + probe(make("d"), 2) + ">";
+                out += "<" + to_string(scale.weigh(make("e"))) + ">";
+                out += "<" + to_string(reflect::is_instance_of(new Caller("c"), "Caller")) + ">";
+                out += "<" + to_string(reflect::is_instance_of(new Catcher(), "Catcher")) + ">";
+                out += "<" + to_string(reflect::is_instance_of(new Stepper(), "Stepper")) + ">";
+                out += "<" + to_string(num + make("f")) + ">";
+                out += "<" + to_string(Keep(make("g")).k) + ">";
+                out += "<" + sh.show(make("h")) + ">" + "<" + bound(make("i")) + ">";
+                out += "<" + to_string(1 + helper(2) + reflect::type_name(make("j")).size() * 0) + ">";
+                out + "|" + LOG;
+            )").as_string());
+            // a destructor's uncaught throw reaches the call's caller
+            check_eq(std::string("caught boom tt"), eng->execute(R"(
+                string TRAIL = "";
+                class Thrower { ~Thrower() { for (int i = 0; i < 2; i++) { TRAIL = TRAIL + "t"; } throw "boom"; } }
+                string got = "";
+                try { got = "<" + reflect::type_name(new Thrower()) + ">"; } catch (e) { got = got + "caught " + e; }
+                got + " " + TRAIL;
+            )").as_string());
+        });
+
         test("a_destructor_class_declared_after_a_function_compiled_runs_on_time", [this]() {
             expect_outcome({R"(
                 string LOG = "";
@@ -1522,6 +1894,128 @@ public:
                 shared_ptr<Box> b = new Box(); b.t = new D(); f(b); b.t = new D(); g(b); b.t = new D(); k(b);
                 LOG;
             )"}, "<d>?<d><d>");
+        });
+        test("a_reference_never_reseats_and_never_owns_through_a_handle", [this]() {
+            // An insert or erase at or below an element reference's index moves the element it named (C++ invalidates it): the next
+            // use raises rather than naming the element now at that index. Append, reallocation and an in-place sort keep it. An
+            // erased map entry stays gone when its key comes back. A bound reference reached through a handle names its object without
+            // owning it: the object dies with its last owner, and the reference raises
+            const std::pair<std::string, std::string> cases[] = {
+                {R"(
+                array<int> v = [10, 20, 30];
+                int& below = v[2]; int& above = v[0]; int& at = v[1];
+                v.insert(1, 15); LOG = LOG + to_string(above) + "|";
+                try { LOG = LOG + to_string(below); } catch (e) { LOG = LOG + e; } LOG = LOG + "|";
+                array<int> w = [1, 2, 3]; int& w2 = w[2]; int& w1 = w[1];
+                w.remove(1);
+                try { LOG = LOG + to_string(w2); } catch (e) { LOG = LOG + e; } LOG = LOG + "|";
+                try { LOG = LOG + to_string(w1); } catch (e) { LOG = LOG + e; } LOG;
+            )", "10|Reference to a moved array element|Reference to a moved array element|Reference to a removed array element"},
+                {R"(
+                array<int> v = [3, 1, 2]; int& first = v[0];
+                for (int i = 0; i < 64; ++i) { v.push(9); }
+                v.sort(); LOG = LOG + to_string(first) + "|";
+                array<int> f = [1, 2, 3, 4]; int& last = f[3]; int& zero = f[0];
+                f.filter([](int x) { return x != 2; });
+                try { LOG = LOG + to_string(last); } catch (e) { LOG = LOG + e; } LOG = LOG + "|" + to_string(zero); LOG;
+            )", "1|Reference to a moved array element|1"},
+                {R"(
+                map<string, int> m = {"a": 1}; int& e = m["a"];
+                m.erase("a"); m["a"] = 77;
+                try { LOG = LOG + to_string(e); } catch (err) { LOG = LOG + err; } LOG;
+            )", "Reference to a removed map entry"},
+                {R"(
+                class Box { Token t = Token("t"); }
+                shared_ptr<Box> p = new Box();
+                Token& r = p.t;
+                p = null; LOG = LOG + "|";
+                try { LOG = LOG + r.name; } catch (e) { LOG = LOG + e; } LOG;
+            )", "t|Reference to a destroyed object"},
+                {R"(
+                shared_ptr<Token> p = new Token("p");
+                Token& r = p;
+                p = null; LOG = LOG + "|";
+                try { LOG = LOG + r.name; } catch (e) { LOG = LOG + e; } LOG;
+            )", "p|Reference to a destroyed object"},
+                {R"(
+                shared_ptr<Token> p = new Token("p");
+                function f(Token& t) -> void { p = null; LOG = LOG + "|"; try { LOG = LOG + t.name; } catch (e) { LOG = LOG + e; } }
+                f(p); LOG;
+            )", "p|Reference to a destroyed object"},
+                {R"(
+                class Pair { Token t = Token("e"); }
+                array<Pair> xs = [Pair()];
+                string& name = xs[0].t.name;
+                xs.clear(); LOG = LOG + "|";
+                try { LOG = LOG + name; } catch (e) { LOG = LOG + e; } LOG;
+            )", "e|Reference to a removed array element"},
+                // what keeps an object alive: the local a reference starts from, and a temporary for its full-expression
+                {R"(
+                class Box { Token t = Token("b"); }
+                function f() -> string& { Box local; return local.t.name; }
+                function g() -> void { auto& n = f(); LOG = LOG + n + "|"; }
+                g(); string read = (new Box()).t.name; LOG = LOG + "|" + read; LOG;
+            )", "b|bb|b"},
+            };
+            for (const auto& [program, expected] : cases) { expect_log(program, expected); }
+        });
+
+        test("a_reference_never_keeps_an_element_its_container_let_go", [this]() {
+            // C++: an element dies when its container removes it, replaces its storage or dies, whatever references name it; the
+            // reference is then gone (here it raises at its next use), and a reference into a local keeps that local alive
+            const std::pair<std::string, std::string> cases[] = {
+                // a removal destroys the element at the removal, a read through the reference first (its view) included
+                {R"(
+                array<Token> xs = [Token("a"), Token("b")];
+                Token& r = xs[0]; string seen = r.name;
+                xs.clear(); LOG = LOG + "|";
+                try { LOG = LOG + r.name; } catch (e) { LOG = LOG + "!"; } LOG;
+            )", "ba|!"},
+                {R"(
+                array<Token> xs = [Token("a"), Token("b"), Token("c")];
+                function f(Token& t) -> void { string seen = t.name; xs.pop(); LOG = LOG + "|"; try { LOG = LOG + t.name; } catch (e) { LOG = LOG + "!"; } }
+                f(xs[2]); xs.remove(0); LOG = LOG + "|"; xs.resize(0); LOG;
+            )", "c|!a|b"},
+                // assigning the container destroys its old elements then; references into them raise, a reappearing index included
+                {R"(
+                array<Token> xs = [Token("a")];
+                function f(Token& t) -> void { xs = [Token("n")]; LOG = LOG + "|"; try { LOG = LOG + t.name; } catch (e) { LOG = LOG + "!"; } }
+                f(xs[0]); LOG = LOG + xs[0].name; LOG;
+            )", "a|!n"},
+                {R"(
+                class Bag { array<Token> items; }
+                Bag bag; bag.items.push(Token("a"));
+                Token& r = bag.items[0];
+                bag.items = array<Token>(); LOG = LOG + "|";
+                try { LOG = LOG + r.name; } catch (e) { LOG = LOG + "!"; } LOG;
+            )", "aa|!"},
+                // an inner array its outer one removes dies with its elements (a pushed temporary is copied: its own death logs first)
+                {R"(
+                array<array<Token>> grid; grid.push(array<Token>()); grid[0].push(Token("a"));
+                Token& r = grid[0][0];
+                grid.clear(); LOG = LOG + "|";
+                try { LOG = LOG + r.name; } catch (e) { LOG = LOG + "!"; } LOG;
+            )", "aa|!"},
+                // a map assigned over or cleared destroys its entries; entry references raise
+                {R"(
+                map<string, Token> m; m["k"] = Token("k");
+                Token& e = m["k"];
+                m = map<string, Token>(); LOG = LOG + "|";
+                try { LOG = LOG + e.name; } catch (e2) { LOG = LOG + "!"; } LOG;
+            )", "k|!"},
+                // a temporary lives to the end of its full-expression, whatever references its reads make
+                {R"(
+                function make() -> array<Token> { array<Token> r = [Token("t")]; return r; }
+                string n = make()[0].name; LOG = LOG + "|" + n; LOG;
+            )", "t|t"},
+                // a reference a function returns into its own local keeps that local alive, as [&] does
+                {R"(
+                function f() -> Token& { array<Token> local = [Token("x")]; return local[0]; }
+                function g() -> void { auto& r = f(); LOG = LOG + r.name + "|"; }
+                g(); LOG;
+            )", "x|x"},
+            };
+            for (const auto& [program, expected] : cases) { expect_log(program, expected); }
         });
     }
 

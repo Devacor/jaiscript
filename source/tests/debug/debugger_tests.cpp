@@ -833,6 +833,7 @@ public:
                     text += " set v=" + attempt([&] { dbg.set_variable("v", eng->make_value(20)); return dbg.get_variable("v").to_string(); });
                 } else {
                     text += " set v=" + attempt([&] { dbg.set_variable("v", eng->make_value(7)); return std::string("7"); });
+                    text += " set v text=" + attempt([&] { dbg.set_variable("v", eng->make_value(std::string("oops"))); return std::string("set"); });
                     text += " nope=" + attempt([&] { dbg.set_variable("nope", eng->make_value(1)); return std::string("set"); });
                 }
                 return text;
@@ -844,6 +845,92 @@ public:
         script.join();
         result += "r=" + attempt([&] { return eng->get_variable("r").to_string(); }) + " g=" + attempt([&] { return eng->get_variable("g").to_string(); });
         result += " nope=" + attempt([&] { return eng->get_variable("nope").to_string(); }).substr(0, 5);
+        return result + script_error;
+    }
+
+    // the console takes what the method's own code takes: a generic method called through this or bare, a plain method called bare
+    std::string console_calls_in_a_generic_method(jai::backend_type type) {
+        auto eng = make_backend_engine(type);
+        auto& dbg = eng->debugger();
+        stop_waiter stops(dbg);
+        dbg.set_breakpoints("<script>", {3});
+        dbg.set_enabled(true);
+        const std::string src =
+            "class Box<T> {\n"                                                       // line 1
+            "    T item;\n"                                                          // line 2
+            "    T twice(T extra) { T sum = item + extra; return sum + sum; }\n"     // line 3 (breakpoint)
+            "    U tagged<U>(U tag) { U copy = tag; return copy; }\n"                // line 4
+            "}\n"                                                                    // line 5
+            "Box<int> b; b.item = 4;\n"                                              // line 6
+            "Box<string> s; s.item = \"a\";\n"                                       // line 7
+            "int r1 = b.twice(1);\n"                                                 // line 8
+            "string r2 = s.twice(\"b\");\n";                                         // line 9
+        std::string script_error;
+        std::thread script([&] {
+            try { eng->execute(src); } catch (const std::exception& e) { script_error = e.what(); }
+        });
+        auto attempt = [&](auto&& step) -> std::string {
+            try { return step(); } catch (const std::exception& e) { return std::string("error: ") + e.what(); }
+        };
+        std::string result;
+        for (int stop = 0; stop < 4; ++stop) {   // line 3 stops at both its statements, in Box<int> then in Box<string>
+            if (!stops.wait()) { result += "<no stop>"; break; }
+            auto seen = parked_read(dbg, [&] {
+                std::string text;
+                for (const char* expression : {"this.tagged<int>(7)", "tagged<int>(8)", "twice(extra)", "this.twice(extra)", "b.tagged<string>(\"q\")"}) {
+                    text += std::string(expression) + "=" + attempt([&] { return dbg.evaluate(expression, 0, debug::evaluation_mode::console).value; }) + " ";
+                }
+                return text;
+            });
+            result += (seen ? *seen : std::string("<no read>")) + "| ";
+            dbg.resume();
+        }
+        dbg.clear_breakpoints();
+        dbg.detach();
+        script.join();
+        return result + script_error;
+    }
+
+    // a `?.` chain's lambda is no frame of the debugger's list, as of a trace: the frames, their lines and their locals are the program's
+    std::string chain_frames_at_a_stop(jai::backend_type type) {
+        auto eng = make_backend_engine(type);
+        auto& dbg = eng->debugger();
+        stop_waiter stops(dbg);
+        dbg.set_breakpoints("<script>", {3});
+        dbg.set_enabled(true);
+        const std::string src =
+            "class W {\n"
+            "    int x = 1;\n"
+            "    int boom(int k) { int y = k + x; return y; }\n"                 // line 3 (breakpoint)
+            "}\n"
+            "class C { shared_ptr<W> w = make_shared<W>(); }\n"
+            "shared_ptr<C> mk() { return make_shared<C>(); }\n"
+            "int f(int q) {\n"
+            "    int r = mk()?.w.boom(q);\n"                                     // line 8
+            "    return r;\n"
+            "}\n"
+            "int out = f(4);\n";                                                 // line 11
+        std::string script_error;
+        std::thread script([&] {
+            try { eng->execute(src); } catch (const std::exception& e) { script_error = e.what(); }
+        });
+        std::string result;
+        if (stops.wait()) {
+            auto seen = parked_read(dbg, [&] {
+                std::string text;
+                const auto stack = read_stack(dbg);
+                for (size_t i = 0; i < stack.frames.size(); ++i) {
+                    text += (i ? " " : "") + stack.frames[i].name + ":" + std::to_string(stack.frames[i].line) + "(";
+                    for (size_t j = 0; j < stack.locals[i].size(); ++j) { text += (j ? "," : "") + stack.locals[i][j].name + "=" + stack.locals[i][j].value; }
+                    text += ")";
+                }
+                return text;
+            });
+            result = seen ? *seen : std::string("<no read>");
+        }
+        dbg.clear_breakpoints();
+        dbg.detach();
+        script.join();
         return result + script_error;
     }
 
@@ -1239,8 +1326,8 @@ public:
         });
         test("a_construction_stops_in_each_level_with_its_frames", [this]() {
             // each constructor's activation is a frame with its parameters, the level answering at its argument's or field's line
-            const std::string levels = "hook:2(v) B:12(y) <script>:16() | hook:2(v) A:5(x) B:12(y) <script>:16() | A:7(x) B:12(y) <script>:16() | "
-                                       "hook:2(v) B:11(y) <script>:16() | B:13(y) <script>:16() | ";
+            const std::string levels = "hook:2(v) B:12(this,y) <script>:16() | hook:2(v) A:5(this,x) B:12(this,y) <script>:16() | "
+                                       "A:7(this,x) B:12(this,y) <script>:16() | hook:2(v) B:11(this,y) <script>:16() | B:13(this,y) <script>:16() | ";
             check_eq(levels, construction_stops(jai::backend_type::interpreter), "interpreter");
             check_eq(levels, construction_stops(jai::backend_type::vm), "vm");
         });
@@ -1248,9 +1335,22 @@ public:
             const std::string interp = scoped_locals(jai::backend_type::interpreter);
             check_eq(interp, scoped_locals(jai::backend_type::vm), "the vm's locals table answers as the interpreter's scopes do");
             check_eq(std::string("f:9(v=2,x=3) <script>:15() globals(g,) v=2 x=3 g=5 set v=20 | "
-                                    "take:4(t=Token{n: \"tk\"}) f:12(v=1,x=3) <script>:15() globals(g,) t.n=\"tk\":string t.m=error: 't' has no field 'm' | "
-                                    "f:13(s=\"tk\",v=1,x=3) <script>:15() globals(g,) set v=7 nope=error: No variable 'nope' is in scope at this stop | "
+                                    "take:4(t=Token{n: \"tk\"}) f:12(v=1,x=3) <script>:15() globals(g,) t.n=\"tk\":string t.m=error: Token has no member 'm' | "
+                                    "f:13(s=\"tk\",v=1,x=3) <script>:15() globals(g,) set v=7 set v text=error: Cannot assign string to 'v' (declared int) "
+                                    "nope=error: No variable 'nope' is in scope at this stop | "
                                     "r=7 g=21 nope=error"), interp);
+        });
+        test("a_chain_lambda_is_no_frame_of_the_stop", [this]() {
+            const std::string want = "boom:3(k=4,this=W{x: 1}) f:8(q=4) <script>:11()";
+            check_eq(want, chain_frames_at_a_stop(jai::backend_type::interpreter), "interpreter");
+            check_eq(want, chain_frames_at_a_stop(jai::backend_type::vm), "vm");
+        });
+        test("the_console_calls_generic_and_bare_methods_in_a_method_frame", [this]() {
+            const std::string in_int = "this.tagged<int>(7)=7 tagged<int>(8)=8 twice(extra)=10 this.twice(extra)=10 b.tagged<string>(\"q\")=\"q\" | ";
+            const std::string in_string = "this.tagged<int>(7)=7 tagged<int>(8)=8 twice(extra)=\"abab\" this.twice(extra)=\"abab\" b.tagged<string>(\"q\")=\"q\" | ";
+            const std::string want = in_int + in_int + in_string + in_string;
+            check_eq(want, console_calls_in_a_generic_method(jai::backend_type::interpreter), "interpreter");
+            check_eq(want, console_calls_in_a_generic_method(jai::backend_type::vm), "vm");
         });
         test("keyword_named_members_in_frames_and_locals", [this]() {
             keyword_named_members_in_frames_and_locals(jai::backend_type::interpreter);

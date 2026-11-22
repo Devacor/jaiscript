@@ -2,7 +2,7 @@
 // MUS is a compact MIDI dialect: same note/controller model, 7-bit varlen
 // delays at 140Hz. Transcoding is pure byte work (MIDI division 70 at the
 // default 120bpm = 140 ticks/sec, so delays copy through unchanged); the
-// runner's Sound plays the track, looped. Tracks convert lazily to cached
+// runner's sound plays the track, looped. Tracks convert lazily to cached
 // .mid files.
 
 import "wad.jai";
@@ -117,16 +117,16 @@ function map_music(string mapname) -> string {
 }
 
 var MUSIC_CUR = "";
-var MUSIC_READY = {};         // track name -> its Sound (null = missing/failed)
+var MUSIC_READY = {};         // track name -> its sound (null = missing/failed)
 var MUSIC_SOUND = null;       // the track playing, looped
 
 function music_want(string name) -> void {
 	if (!SND_ON || MUSIC_CUR == name) { return; }
 	if (!MUSIC_READY.has(name)) {
 		var path = audio_cache_dir() + string::to_lower(name) + ".mid";
-		if (!file_exists(path)) {                    // bootstrap (or an earlier run) already transcoded it
+		if (!file::exists(path)) {                    // bootstrap (or an earlier run) already transcoded it
 			var mid = mus_midi_bytes(name);
-			if (mid == "" || !write_file(path, mid)) { path = ""; }
+			if (mid == "" || !file::write(path, mid)) { path = ""; }
 		}
 		MUSIC_READY[name] = path != "" ? load_sound(path) : null;
 	}

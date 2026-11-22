@@ -29,9 +29,19 @@ namespace jai::detail {
 
 	inline constexpr size_t k_constant_text_limit = 256;
 
-	// The texts a constant form can hold: a string literal; an identifier naming a const of the table; a ternary whose arms
-	// are constant forms (the condition is free); a + of constant forms; an array literal of them (each element a text).
-	// false for anything else, or for a form that spells more than k_constant_text_limit texts.
+	// `a::b::c` as the name it spells ("" when the expression is not names joined by ::)
+	inline std::string constant_qualified_name(const expression* e) {
+		if (!e || e->get_type() != node_type::member_expr) { return {}; }
+		auto* m = static_cast<const member_expr*>(e);
+		if (!m->is_static || !m->object) { return {}; }
+		std::string head = m->object->get_type() == node_type::identifier_expr ? std::string(static_cast<const identifier_expr*>(m->object.get())->name)
+		                                                                       : constant_qualified_name(m->object.get());
+		return head.empty() ? head : head + "::" + std::string(m->member);
+	}
+
+	// The texts a constant form can hold: a string literal; a name of a const of the table, bare or qualified by its namespace or
+	// class; a ternary whose arms are constant forms (the condition is free); a + of constant forms; an array literal of them
+	// (each element a text). false for anything else, or for a form that spells more than k_constant_text_limit texts.
 	inline bool constant_texts(const expression* e, const constant_table& consts, std::vector<std::string>& out, int depth = 0) {
 		if (!e || depth > 32) { return false; }
 		switch (e->get_type()) {
@@ -43,6 +53,12 @@ namespace jai::detail {
 			}
 			case node_type::identifier_expr: {
 				const auto found = consts.find(std::string(static_cast<const identifier_expr*>(e)->name));
+				if (found == consts.end() || found->second.empty()) { return false; }
+				out.insert(out.end(), found->second.begin(), found->second.end());
+				return out.size() <= k_constant_text_limit;
+			}
+			case node_type::member_expr: {
+				const auto found = consts.find(constant_qualified_name(e));
 				if (found == consts.end() || found->second.empty()) { return false; }
 				out.insert(out.end(), found->second.begin(), found->second.end());
 				return out.size() <= k_constant_text_limit;
@@ -87,7 +103,7 @@ namespace jai::detail {
 				case node_type::variable_decl: expr(static_cast<const variable_decl*>(node)->initializer.get()); break;
 				case node_type::function_decl: {
 					auto* f = static_cast<const function_decl*>(node);
-					for (const auto& init : f->initializers) { for (const auto& a : init.arguments) { expr(a.get()); } }
+					for (const auto& init : f->initializers) { for (const auto& a : init.arguments) { expr(a.get()); } expr(init.value.get()); }
 					stmt(f->body.get());
 					break;
 				}
@@ -174,6 +190,7 @@ namespace jai::detail {
 	inline void pending_constant_names(const expression* e, std::unordered_set<std::string>& out, int depth = 0) {
 		if (!e || depth > 32) { return; }
 		if (e->get_type() == node_type::identifier_expr) { out.emplace(static_cast<const identifier_expr*>(e)->name); }
+		if (std::string qualified = constant_qualified_name(e); !qualified.empty()) { out.emplace(std::move(qualified)); }
 		if (e->get_type() == node_type::ternary_expr) {
 			pending_constant_names(static_cast<const ternary_expr*>(e)->then_expression.get(), out, depth + 1);
 			pending_constant_names(static_cast<const ternary_expr*>(e)->else_expression.get(), out, depth + 1);
@@ -184,22 +201,36 @@ namespace jai::detail {
 
 	// A unit's const declarations into the table (and into every rule an argument already named them for)
 	inline void gather_constants(const std::vector<declaration_ptr>& decls, constant_table& consts, const constant_rule_map& rules) {
+		std::unordered_map<const statement*, std::string_view> owners;   // a namespace's variables and a class's statics: the name that qualifies them
 		walk_unit(decls, [&](const statement* s) {
+			if (s->get_type() == node_type::namespace_decl) {
+				auto* n = static_cast<const namespace_decl*>(s);
+				for (const auto& d : n->declarations) { owners.emplace(d.get(), n->name); }
+				return;
+			}
+			if (s->get_type() == node_type::class_decl) {
+				auto* c = static_cast<const class_decl*>(s);
+				for (const auto& m : c->members) { owners.emplace(m.declaration.get(), c->name); }
+				return;
+			}
 			if (s->get_type() != node_type::variable_decl) { return; }
 			auto* v = static_cast<const variable_decl*>(s);
 			if (!v->is_const || !v->initializer) { return; }
 			std::vector<std::string> texts;
 			if (!constant_texts(v->initializer.get(), consts, texts)) { return; }
-			const std::string name(v->name);
-			auto& slot = consts[name];
-			for (auto& text : texts) {
-				if (std::find(slot.begin(), slot.end(), text) == slot.end()) { slot.push_back(text); }
-			}
-			for (const auto& [key, list] : rules) {
-				for (constant_argument_rule* rule : list) {
-					if (rule->pending_names.count(name)) { rule->texts.insert(texts.begin(), texts.end()); }
+			const auto note = [&](const std::string& name) {
+				auto& slot = consts[name];
+				for (const auto& text : texts) {
+					if (std::find(slot.begin(), slot.end(), text) == slot.end()) { slot.push_back(text); }
 				}
-			}
+				for (const auto& [key, list] : rules) {
+					for (constant_argument_rule* rule : list) {
+						if (rule->pending_names.count(name)) { rule->texts.insert(texts.begin(), texts.end()); }
+					}
+				}
+			};
+			note(std::string(v->name));
+			if (const auto owner = owners.find(s); owner != owners.end()) { note(std::string(owner->second) + "::" + std::string(v->name)); }
 		}, [](const expression*) {});
 	}
 
@@ -212,8 +243,9 @@ namespace jai::detail {
 			const auto found = rules.find(constant_call_key(c));
 			if (found == rules.end()) { return; }
 			for (constant_argument_rule* rule : found->second) {
-				if (rule->index >= c->arguments.size()) { continue; }
-				const expression* argument = c->arguments[rule->index].get();
+				const size_t at = rule->index + c->type_argument_count;   // an index counts the value arguments
+				if (at >= c->arguments.size()) { continue; }
+				const expression* argument = c->arguments[at].get();
 				std::vector<std::string> texts;
 				if (constant_texts(argument, consts, texts)) { rule->texts.insert(texts.begin(), texts.end()); }
 				pending_constant_names(argument, rule->pending_names);

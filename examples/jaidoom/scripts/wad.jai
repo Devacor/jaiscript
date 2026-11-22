@@ -44,7 +44,7 @@ function game_root() -> string {
 	if (GAME_ROOT == "") {
 		array<string> roots = [parent_dir(root_script_dir()), root_script_dir(), bin_dir(), parent_dir(bin_dir())];
 		GAME_ROOT = roots[0];
-		for (auto r : roots) { if (dir_exists(r + "/wads")) { GAME_ROOT = r; break; } }
+		for (auto r : roots) { if (file::directory_exists(r + "/wads")) { GAME_ROOT = r; break; } }
 	}
 	return GAME_ROOT;
 }
@@ -52,7 +52,7 @@ function game_root() -> string {
 // Where downloads, the audio cache, saves and demos go: the game folder when a file can be
 // created there, the per-user data folder (app_data_dir) for a read-only install
 function data_root() -> string {
-	if (DATA_ROOT == "") { DATA_ROOT = writable_dir(game_root() + "/wads") ? game_root() : app_data_dir("JaiDOOM"); }
+	if (DATA_ROOT == "") { DATA_ROOT = file::ensure_writable_directory(game_root() + "/wads") ? game_root() : app_data_dir("JaiDOOM"); }
 	return DATA_ROOT;
 }
 function wad_dir() -> string { return data_root() + "/wads/"; }
@@ -61,9 +61,9 @@ function wad_dir() -> string { return data_root() + "/wads/"; }
 // the game folder's wads/, else the data folder's (where a download lands)
 function wad_path(string name) -> string {
 	string file = name.ends_with(".wad") ? name : name + ".wad";
-	if (file_exists(file)) { return file; }
+	if (file::exists(file)) { return file; }
 	string base = file_name(file);
-	if (file_exists(game_root() + "/wads/" + base)) { return game_root() + "/wads/" + base; }
+	if (file::exists(game_root() + "/wads/" + base)) { return game_root() + "/wads/" + base; }
 	return wad_dir() + base;
 }
 
@@ -81,8 +81,8 @@ function audio_cache_dir() -> string { return data_root() + "/cache/" + WAD_BASE
 // a name it repeats wins (doom's W_GetNumForName scans backward), so a PWAD's MAP01 or its
 // replaced textures take effect while everything it does not mention stays from the base.
 function wad_add(string path) -> bool {
-	if (!file_exists(path)) { return false; }
-	string more = read_file(path);
+	if (!file::exists(path)) { return false; }
+	string more = file::read(path);
 	if (more.size() < 12) { return false; }
 	binary::reader r = more.reader();
 	string id = r.text(4);
@@ -116,8 +116,8 @@ function map_list() -> array<string> {
 }
 
 function wad_load(string path) -> bool {
-	if (!file_exists(path)) { return false; }
-	WAD = read_file(path);
+	if (!file::exists(path)) { return false; }
+	WAD = file::read(path);
 	if (WAD.size() < 12) { return false; }
 	WAD_FILES = [path];
 	int slash = path.find_last_of("/\\");

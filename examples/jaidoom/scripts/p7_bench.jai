@@ -53,8 +53,8 @@ function main() -> int {
 	// knobs: `-- 200x140` sets the vid size, `-- serial` / `-- parallel` pins the blit path
 	int bw = 120;
 	int bh = 78;
-	for (int a = 0; a < ARGS.size(); ++a) {
-		var arg = ARGS[a];
+	for (int a = 0; a < args.size(); ++a) {
+		var arg = args[a];
 		if (arg == "serial") { BLIT_WORKERS = 0; }
 		else if (arg == "parallel") { BLIT_WORKERS = 1; }
 		else {
@@ -115,7 +115,7 @@ function main() -> int {
 	// (staged in the spawn corridor: the autopilot run ends wall-stuck, momentum dead)
 	P_X = 1056.0;
 	P_Y = -3550.0;
-	P_ANG = math::PI / 2.0;
+	P_ANG = math::pi / 2.0;
 	P_MOMX = 0.0;
 	P_MOMY = 0.0;
 	P_FLOORZ = SE_FLOORH[sector_at(P_X, P_Y)];

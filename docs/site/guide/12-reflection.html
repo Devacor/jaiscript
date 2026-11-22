@@ -41,7 +41,7 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 </div>
 </header>
 <div class="layout">
-<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Reflection: reflect::</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li class="current"><a href="../guide/12-reflection.html" aria-current="page">Reflection: reflect::</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li></ol></details></aside>
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Reflection: reflect::</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li class="current"><a href="../guide/12-reflection.html" aria-current="page">Reflection: reflect::</a><ol class="page-toc" data-page-toc></ol></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li><li><a href="../guide/21-generics.html">Generics</a></li></ol></details></aside>
 <script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
 var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>12</nav>
@@ -55,7 +55,8 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 </ul>
 <h2 id="ask-what-shape-is-this">Ask: what shape is this?<a class="hlink" href="#ask-what-shape-is-this" aria-label="link">&#8203;</a></h2>
 <div class="tablewrap"><table><thead><tr><th>Call</th><th>Answers</th></tr></thead><tbody>
-<tr><td><code>reflect::type_name(v)</code></td><td><code>type_of</code>, except that a typed container gives its canonical tag (<code>"array&lt;int&gt;"</code>, not <code>"array"</code>)</td></tr>
+<tr><td><code>reflect::type_of(v)</code></td><td>the kind: <code>"int"</code>, <code>"array"</code>, a class&#x27;s name, ...</td></tr>
+<tr><td><code>reflect::type_name(v)</code></td><td><code>reflect::type_of</code>, except that a typed container gives its canonical tag (<code>"array&lt;int&gt;"</code>, not <code>"array"</code>)</td></tr>
 <tr><td><code>reflect::fields(v)</code></td><td>one map per field: <code>name</code>, <code>type</code>, <code>kind</code>, <code>access</code>, <code>static</code>, <code>from</code> (the declaring class)</td></tr>
 <tr><td><code>reflect::methods(v)</code></td><td>one map <strong>per overload</strong>: <code>name</code>, <code>arity</code>, <code>static</code>, <code>access</code>, <code>from</code>, <code>params</code></td></tr>
 <tr><td><code>reflect::has_field(v, "name")</code>, <code>reflect::has_method(v, "name")</code></td><td>bool; both walk the inheritance chain</td></tr>
@@ -85,7 +86,7 @@ wound arity 2 (private) {&quot;default&quot;: true, &quot;name&quot;: &quot;crit
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Goblin { int hp = 10; float speed = 1.5; }
 
 function field_count(auto v) -&gt; int {
-    if (type_of(v) == "string") { return 0; }       // a string would be read as a class name
+    if (reflect::type_of(v) == "string") { return 0; }       // a string would be read as a class name
     return reflect::fields(v).size();
 }
 array&lt;var&gt; things = [Goblin(), "hello", 5, null];
@@ -104,7 +105,7 @@ null: 0
 <tr><td><code>reflect::construct("Class", args...)</code></td><td><code>Class(args)</code>: a value</td></tr>
 <tr><td><code>reflect::construct_shared("Class", args...)</code></td><td><code>new Class(args)</code>: a shared handle (<a href="03-value-semantics.html">Value Semantics</a>)</td></tr>
 </tbody></table></div>
-<p><code>reflect::bind(s, "wound")</code> gives the method as a callable that holds <code>s</code> (<a href="07-classes.html#methods-as-values">Classes</a>), and <code>reflect::call("ns::name", args...)</code> calls a function by name. Every rule: <a href="../reference/library.html#reflection-act">reflection calls</a>.</p>
+<p><code>reflect::bind(s, "wound")</code> gives the method as a callable that holds <code>s</code> (<a href="07-classes.html#methods-as-values">Classes</a>), and <code>reflect::call("ns::name", args...)</code> calls a function by name. A class name passed as text is matched without its whitespace, so <code>"Pair&lt;string,int&gt;"</code> and <code>"Pair&lt;string, int&gt;"</code> name one class. Every rule: <a href="../reference/library.html#reflection-act">reflection calls</a>.</p>
 <p><strong>Reflection ignores script access control, by design.</strong> <code>get</code>, <code>set</code>, <code>invoke</code>, <code>bind</code> and <code>construct</code> reach private members and private constructors, while direct syntax keeps enforcing <code>private</code>. <code>from_json</code> and <code>from_binary</code> likewise restore private state.</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Soldier {
     int hp = 10;
@@ -140,6 +141,8 @@ value 30, shared 9</code></pre></div>
 <tr><td><code>reflect::generation("Class")</code></td><td>a counter that moves whenever the class is redefined</td></tr>
 </tbody></table></div>
 <p>Functions, globals, host-bound classes and permissions are asked the same way: <a href="../reference/library.html#reflection-navigate">program-wide queries</a>.</p>
+<h3 id="type-values">Type values: <code>reflect::type</code><a class="hlink" href="#type-values" aria-label="link">&#8203;</a></h3>
+<p>A type argument (<a href="06-functions.html#type-arguments">Type arguments</a>) reaches its host function as a <code>reflect::type</code>: the type as the call spelled it. A script cannot construct one; a host function that hands it back answers it like any host object. <code>name()</code> and <code>to_string()</code> give the canonical spelling: <code>User</code>, <code>array&lt;User&gt;</code>, <code>map&lt;string,int&gt;</code>, <code>shared_ptr&lt;shop::Product&gt;</code>. A host receives it as a <code>const jai::script_type&amp;</code> (<a href="../embedding/17-host-api.html#type-arguments-host">Host API</a>).</p>
 <h2 id="hot-reload-ask-again">Hot reload: ask again<a class="hlink" href="#hot-reload-ask-again" aria-label="link">&#8203;</a></h2>
 <p><code>reflect::generation</code> is the cheap poll: a property grid re-reads <code>fields()</code> only when the number moved. The sample declares <code>Evolver</code> twice, which is legal because a class declared again at program scope replaces the class in place for every live instance (<a href="10-modules.html#program-scope-redeclarations">Program-scope redeclarations</a>); a reloaded file does that.</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Evolver { int a = 1; }
@@ -161,7 +164,7 @@ live instance has b? true</code></pre></div>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

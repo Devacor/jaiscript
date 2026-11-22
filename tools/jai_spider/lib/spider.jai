@@ -1,23 +1,24 @@
-// jai_spider's script surface, all under spider::: Request, Upload, the response helpers, Router and spin. Response is
-// the library's spider::Response, the class spider::catch answers too. The host imports this file before the app and
-// calls spider_host_serve once per request; the app hands its handler to spider::spin.
+// jai_spider's script surface, all under spider::: request, upload, the response helpers, router, spin and every.
+// A response is the library's spider::response, the class spider::catch answers too. The host imports this file and then
+// the app into a fresh engine for each request, and calls spider_host_serve once in it; the app hands its handler to
+// spider::spin. A task the app declares with spider::every runs the same way, through spider_host_run_task.
 //
-// The host functions it stands on: parse_cookies, parse_multipart, read_file and write_file;
+// The host functions it stands on: parse_cookies, parse_multipart, file::read and file::write;
 // web::parse_query is the web library's, crypto::random_hex the crypto library's.
 
 namespace spider {
 
-class Upload {
+class upload {
 	string name;            // the form field
 	string filename;        // as the browser sent it: a name to show, never a path to trust
 	string content_type;
 	string data;
 
 	int size() { return data.size(); }
-	bool save(string path) { return write_file(path, data); }
+	bool save(string path) { return file::write(path, data); }
 }
 
-class Request {
+class request {
 	string method;
 	string target;          // as it arrived: path and query, percent-encoded
 	string path;            // decoded, without the query
@@ -30,8 +31,8 @@ class Request {
 	map<string, string> cookies;
 	map<string, string> params;       // the route's :name and *name captures
 
-	Request() {}
-	Request(map<string, var> raw) {
+	request() {}
+	request(map<string, var> raw) {
 		method = raw["method"];
 		target = raw["target"];
 		path = raw["path"];
@@ -62,13 +63,13 @@ class Request {
 		return fields;
 	}
 
-	map<string, spider::Upload> files() {
-		map<string, spider::Upload> uploads;
+	map<string, spider::upload> files() {
+		map<string, spider::upload> uploads;
 		if (!is_multipart()) { return uploads; }
 		array<map<string, var>> parts = parse_multipart(body, header("content-type"));
 		for (auto part : parts) {
 			if (part["is_file"]) {
-				spider::Upload u;
+				spider::upload u;
 				u.name = part["name"];
 				u.filename = part["filename"];
 				u.content_type = part["content_type"];
@@ -82,30 +83,30 @@ class Request {
 	var json() { return from_json(body); }
 }
 
-spider::Response html(string text, int status = 200) {
-	spider::Response r = spider::Response(status, text);
+spider::response html(string text, int status = 200) {
+	spider::response r = spider::response(status, text);
 	r.header("Content-Type", "text/html; charset=utf-8");
 	return r;
 }
 
 // a page a template made (web::html), sent as it is
-spider::Response html(web::html page, int status = 200) { return spider::html(page.to_string(), status); }
+spider::response html(web::html page, int status = 200) { return spider::html(page.to_string(), status); }
 
-spider::Response plain_text(string text, int status = 200) {
-	spider::Response r = spider::Response(status, text);
+spider::response plain_text(string text, int status = 200) {
+	spider::response r = spider::response(status, text);
 	r.header("Content-Type", "text/plain; charset=utf-8");
 	return r;
 }
 
-spider::Response json(var value, int status = 200) {
-	spider::Response r = spider::Response(status, to_json(value));
+spider::response json(var value, int status = 200) {
+	spider::response r = spider::response(status, to_json(value));
 	r.header("Content-Type", "application/json");
 	return r;
 }
 
 // 303 sends a browser back with GET: the answer to a form POST
-spider::Response redirect(string url, int status = 303) {
-	spider::Response r = spider::Response(status);
+spider::response redirect(string url, int status = 303) {
+	spider::response r = spider::response(status);
 	r.header("Location", url);
 	return r;
 }
@@ -116,8 +117,8 @@ map<string, string> sent_files;
 
 // a file from disk, relative to the app's folder, streamed by the host; its Content-Type follows the extension unless
 // one is given
-spider::Response file(string path, string content_type = "") {
-	spider::Response r = spider::Response(200);
+spider::response file(string path, string content_type = "") {
+	spider::response r = spider::response(200);
 	string token = crypto::random_hex(16);
 	spider::sent_files[token] = path;
 	r.header("X-Sendfile", token);
@@ -125,19 +126,19 @@ spider::Response file(string path, string content_type = "") {
 	return r;
 }
 
-spider::Response not_found(string text = "Not Found") { return spider::plain_text(text, 404); }
+spider::response not_found(string text = "Not Found") { return spider::plain_text(text, 404); }
 
-// a handler may answer a Response, a string or a web::html (an HTML page), null (204) or any other value (JSON)
-spider::Response to_response(var result) {
-	if (result == null) { return spider::Response(204); }
-	string kind = type_of(result);
-	if (kind == "spider::Response") { return result; }
+// a handler may answer a spider::response, a string or a web::html (an HTML page), null (204) or any other value (JSON)
+spider::response to_response(var result) {
+	if (result == null) { return spider::response(204); }
+	string kind = reflect::type_of(result);
+	if (kind == "spider::response") { return result; }
 	if (kind == "string" || kind == "utf8_string") { return spider::html(result); }
 	if (kind == "web::html") { return spider::html(result.to_string()); }
 	return spider::json(result);
 }
 
-class Route {
+class route {
 	string method;
 	array<string> parts;
 	function handler;
@@ -172,12 +173,12 @@ bool match_parts(array<string> pattern, array<string> parts, map<string, string>
 
 // Routes match in the order they were added: "/posts/:id" captures one segment as params["id"], "/files/*rest" the
 // rest of the path. A HEAD request takes a GET route; a path that matches only other methods answers 405.
-class Router {
-	array<spider::Route> routes;
+class router {
+	array<spider::route> routes;
 	array<function> filters;
 
 	void add(string method, string pattern, function handler) {
-		spider::Route r;
+		spider::route r;
 		r.method = method;
 		r.parts = spider::split_path(pattern);
 		r.handler = handler;
@@ -193,7 +194,7 @@ class Router {
 	// a filter runs before every route: null lets the request through, anything else is the answer
 	void before(function filter) { filters.push(filter); }
 
-	spider::Response dispatch(spider::Request& req) {
+	spider::response dispatch(spider::request& req) {
 		for (auto& filter : filters) {
 			var early = filter(req);
 			if (early != null) { return spider::to_response(early); }
@@ -210,7 +211,7 @@ class Router {
 			allowed.push(r.method);
 		}
 		if (allowed.size() > 0) {
-			spider::Response r = spider::plain_text("Method Not Allowed", 405);
+			spider::response r = spider::plain_text("Method Not Allowed", 405);
 			r.header("Allow", allowed.join(", "));
 			return r;
 		}
@@ -218,11 +219,11 @@ class Router {
 	}
 }
 
-// The app's handler and its options; spin again (a reload re-runs the app's spin) to replace them
+// The app's handler and its options; a second spin replaces them
 function spun;
 map<string, var> spun_options;
 
-// handler(Request) answers every request that is not a file under the static root. options: budget (seconds a request
+// handler(spider::request) answers every request that is not a file under the static root. options: budget (seconds a request
 // may run, over --budget), max_body (bytes, over --max-body)
 void spin(function handler, map<string, var> options = {}) {
 	for (auto [key, value] : options) {
@@ -232,25 +233,56 @@ void spin(function handler, map<string, var> options = {}) {
 	spun_options = options;
 }
 
-// a Router spins as its dispatch: add the routes first, then spin it
-void spin(spider::Router routes, map<string, var> options = {}) {
-	spider::spin((spider::Request req) => routes.dispatch(req), options);
+// a router spins as its dispatch: add the routes first, then spin it
+void spin(spider::router routes, map<string, var> options = {}) {
+	spider::spin((spider::request req) => routes.dispatch(req), options);
 }
 
 // the plain names of spin
 void serve(function handler, map<string, var> options = {}) { spider::spin(handler, options); }
-void serve(spider::Router routes, map<string, var> options = {}) { spider::spin(routes, options); }
+void serve(spider::router routes, map<string, var> options = {}) { spider::spin(routes, options); }
+
+class task {
+	float seconds;
+	function run;
+}
+
+// The app's background tasks, in the order it declared them
+array<spider::task> tasks;
+
+// fn() runs every `seconds` in a fresh engine of its own, as a request does: first a period after the server starts,
+// then a period after each run starts, and never while its last run is still going. A failure is logged and the schedule
+// goes on; a run that returns false stops the task until the server restarts or its period is edited.
+void every(float seconds, function fn) {
+	if (!(seconds > 0.0)) { throw "spider::every: the period must be above 0 seconds, got " + to_string(seconds); }
+	spider::task t;
+	t.seconds = seconds;
+	t.run = fn;
+	spider::tasks.push(t);
+}
 
 }
 
-// the host's entries: the options the app spun with, and one request in, its response's parts out
+// the host's entries: the options the app spun with, its tasks' periods, a task's run, and one request in, its
+// response's parts out
 map<string, var> spider_host_options() { return spider::spun_options; }
+
+array<float> spider_host_tasks() {
+	array<float> periods;
+	for (auto& t : spider::tasks) { periods.push(t.seconds); }
+	return periods;
+}
+
+var spider_host_run_task(int index) {
+	if (index < 0 || index >= spider::tasks.size()) { return null; }
+	return spider::tasks[index].run();
+}
 
 map<string, var> spider_host_serve(map<string, var> raw) {
 	if (spider::spun == null) { throw "the app never handed a handler to spider::spin(handler)"; }
 	spider::sent_files = {};
-	spider::Request req = spider::Request(raw);
-	spider::Response resp = spider::to_response(spider::spun(req));
+	spider::request req = spider::request(raw);
+	spider::response resp = spider::to_response(spider::spun(req));
 	string token = resp.header("X-Sendfile");
 	string file = token == "" ? "" : spider::sent_files.get(token, "");
 	return {"status": resp.status, "headers": resp.headers, "cookies": resp.cookies, "body": resp.body, "file": file};

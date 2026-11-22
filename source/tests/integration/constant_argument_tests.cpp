@@ -67,6 +67,31 @@ public:
 					run_sql("SELECT " + COLUMNS + " FROM t", 0);)").as<std::string>());
 		});
 
+		test("a_const_of_a_namespace_or_a_class_is_a_constant_by_its_qualified_name", [this]() {
+			const std::string declared = R"(
+				namespace sql {
+					const string FIND = "SELECT 1";
+					const string MORE = FIND + " LIMIT 1";
+					string open = "SELECT 2";
+					namespace nested { const string DEEP = "SELECT 3"; }
+					string bare() { return run_sql(FIND, 0); }
+					string relative() { return run_sql(nested::DEEP, 0); }
+					Store store;
+				}
+				class Queries { static const string ALL = "SELECT 4"; }
+			)";
+			auto e = make_host();
+			check_eq(std::string("ran SELECT 1|ran SELECT 1 LIMIT 1|ran SELECT 3|ran SELECT 1|ran SELECT 3|ran SELECT 4|queried SELECT 1"), e->execute(declared + R"(
+				run_sql(sql::FIND, 0) + "|" + run_sql(sql::MORE, 0) + "|" + run_sql(sql::nested::DEEP, 0) + "|" + sql::bare() + "|" + sql::relative() + "|" +
+					run_sql(Queries::ALL, 0) + "|" + sql::store.query(sql::FIND);)").as<std::string>());
+			auto refused = make_host();
+			const std::string plain = load_error(*refused, declared + "run_sql(sql::open, 0);");
+			check_true(plain.find("argument 1 of 'run_sql' is not a constant") != std::string::npos, plain);
+			auto through = make_host();
+			const std::string receiver = load_error(*through, declared + "sql::store.query(sql::open);");
+			check_true(receiver.find("argument 1 of 'query' is not a constant") != std::string::npos, receiver);
+		});
+
 		test("the_checker_refuses_an_argument_that_is_not_a_constant", [this]() {
 			auto e = make_host();
 			const std::string text = load_error(*e, "string name = \"x\"; run_sql(\"SELECT * FROM t WHERE name = '\" + name + \"'\", 0);");

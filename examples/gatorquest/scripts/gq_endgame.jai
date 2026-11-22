@@ -133,10 +133,10 @@ void tour_shot(string dir, string name) {
 	}
 	render_frame(CV);
 	png_write_canvas(dir + "/" + name + ".png", 3);
-	write_file(dir + "/" + name + ".txt", sketch_frame(CV));
+	file::write(dir + "/" + name + ".txt", sketch_frame(CV));
 	string frame = compose_frame(CV);
 	TOUR_FRAME_HASH = mix32(TOUR_FRAME_HASH, text_checksum(frame));
-	write_file(dir + "/" + name + ".ans", frame);
+	file::write(dir + "/" + name + ".ans", frame);
 	print("  " + name);
 }
 
@@ -144,7 +144,7 @@ int run_tour() {
 	string dir = arg_value("out", data_root() + "/shots/tour");
 	string size = arg_value("screen", "200x56");
 	array<string> wh = size.split("x");
-	make_dirs(dir);
+	file::make_directories(dir);
 	TOUR_FRAME_HASH = 0;
 	sim_init(arg_value("seed", "1").to_int(1));
 	BOTS = [];
@@ -219,8 +219,8 @@ int run_tour() {
 	// hot reload in the running world: the live tweak file changes season twice and the world carries on
 	tour_clock(12);
 	tour_ticks(12);
-	make_dirs(dir + "/live");
-	write_file(dir + "/live/gq_live.jai", live_text("summer", 5, 16));
+	file::make_directories(dir + "/live");
+	file::write(dir + "/live/gq_live.jai", live_text("summer", 5, 16));
 	live_start(dir + "/live");
 	dev_start();
 	import_recheck_interval(0);

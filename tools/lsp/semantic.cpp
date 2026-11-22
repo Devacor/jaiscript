@@ -6,6 +6,9 @@
 #include <jaiscript/detail/builtin_methods.hpp>
 #include <jaiscript/detail/environment.hpp>
 #include <jaiscript/detail/math_intrinsics.hpp>
+#include <jaiscript/detail/type_name_key.hpp>
+
+#include <functional>
 
 namespace jai_lsp {
 
@@ -46,6 +49,55 @@ bool engine_instance_member(jai::engine& eng, const jai::class_definition& def, 
 	       def.is_static_field(id) || def.has_static_field(id) || def.has_static_method(id);
 }
 
+// The name the text wrote where the checker put the instance a call reaches in its place: largest<int> was largest, and a
+// method's instance Stack<int>::fold<string> was fold
+std::string_view written_name(std::string_view name) {
+	if (name.empty() || name.back() != '>') { return name; }
+	int depth = 0;
+	for (size_t i = name.size(); i-- > 0;) {
+		if (name[i] == '>') {
+			++depth;
+		} else if (name[i] == '<' && --depth == 0) {
+			name = name.substr(0, i);
+			break;
+		}
+	}
+	const size_t cut = name.rfind("::");
+	return cut == std::string_view::npos ? name : name.substr(cut + 2);
+}
+
+// `Pair<string, Stack<int>>` as the tokens from tokens[at] spell it, or false when they spell no type with arguments there
+bool spelled_instance(const std::vector<lex_token>& tokens, size_t at, std::string& out) {
+	using tt = jai::token_type;
+	if (at + 1 >= tokens.size() || tokens[at + 1].type != tt::less) { return false; }
+	out = std::string(tokens[at].lexeme);
+	int depth = 0;
+	for (size_t i = at + 1; i < tokens.size() && i < at + 256; ++i) {
+		const lex_token& t = tokens[i];
+		switch (t.type) {
+			case tt::less: ++depth; out += '<'; break;
+			case tt::greater:
+			case tt::right_angle: --depth; out += '>'; break;
+			case tt::right_shift:   // closes this one and the list around it
+				if (depth == 1) {
+					out += '>';
+					return true;
+				}
+				depth -= 2;
+				out += ">>";
+				break;
+			case tt::comma: out += ", "; break;
+			case tt::colon_colon: out += "::"; break;
+			default:
+				if (t.lexeme.empty() || (t.type != tt::identifier && !is_keyword(t.lexeme))) { return false; }
+				out += t.lexeme;
+				break;
+		}
+		if (depth <= 0) { return depth == 0; }
+	}
+	return false;
+}
+
 bool auto_spelled(const jai::type_info* t) {
 	if (!t) { return true; }
 	if (t->base_type == jai::script_value_type::jai_reference_type) { return t->type_params.empty() || !t->type_params[0]; }
@@ -69,7 +121,7 @@ uint32_t add_symbol(unit_model& m, symbol s) {
 	return index;
 }
 
-void build_unit_index(const std::vector<jai::declaration_ptr>& decls, const std::string& prefix, unit_index& out) {
+void build_unit_index(const std::vector<jai::declaration_ptr>& decls, const std::string& prefix, unit_index& out, const generic_view_map* views) {
 	for (const auto& d : decls) {
 		if (!d) { continue; }
 		switch (d->get_type()) {
@@ -98,11 +150,17 @@ void build_unit_index(const std::vector<jai::declaration_ptr>& decls, const std:
 				out.names[prefix + std::string(c->name)].push_back({c, symbol_kind::class_type, c->name});
 				if (!prefix.empty()) { out.names[std::string(c->name)].push_back({c, symbol_kind::class_type, c->name}); }
 				out.classes[std::string(c->name)] = c;
+				for (const auto& m : c->members) {
+					if (!views || !m.declaration || m.declaration->get_type() != jai::node_type::generic_decl) { continue; }
+					const auto& method = static_cast<const jai::generic_decl*>(m.declaration.get())->definition;
+					if (auto held = views->find(method.get()); held != views->end() && held->second.decl) { out.generics[held->second.decl] = method.get(); }
+				}
 				break;
 			}
 			case jai::node_type::enum_decl: {
 				auto* e = static_cast<const jai::enum_decl*>(d.get());
 				out.names[prefix + std::string(e->name)].push_back({e, symbol_kind::enum_type, e->name});
+			if (!prefix.empty()) { out.names[std::string(e->name)].push_back({e, symbol_kind::enum_type, e->name}); }
 				for (const auto& [vname, _] : e->values) { out.enum_values.emplace(std::string(vname), e); }
 				break;
 			}
@@ -114,9 +172,31 @@ void build_unit_index(const std::vector<jai::declaration_ptr>& decls, const std:
 				std::string_view seg = n->name;
 				if (size_t pos = seg.rfind("::"); pos != std::string_view::npos) { seg = seg.substr(pos + 2); }
 				out.names[full].push_back({n, symbol_kind::namespace_name, seg});
-				build_unit_index(n->declarations, full + "::", out);
+				build_unit_index(n->declarations, full + "::", out, views);
 				break;
 			}
+			case jai::node_type::generic_decl: {   // found as the class or function its view reads as
+				const auto& definition = static_cast<const jai::generic_decl*>(d.get())->definition;
+				const auto view = views ? views->find(definition.get()) : generic_view_map::const_iterator{};
+				if (!views || view == views->end() || !view->second.decl) { break; }
+				const jai::declaration* v = view->second.decl;
+				const std::string_view name = definition->name;
+				out.generics[v] = definition.get();
+				if (v->get_type() == jai::node_type::class_decl) {
+					out.names[prefix + std::string(name)].push_back({v, symbol_kind::class_type, name});
+					if (!prefix.empty()) { out.names[std::string(name)].push_back({v, symbol_kind::class_type, name}); }
+					out.classes[std::string(name)] = static_cast<const jai::class_decl*>(v);
+					for (const auto& m : static_cast<const jai::class_decl*>(v)->members) {   // its generic methods' views
+						if (!m.declaration || m.declaration->get_type() != jai::node_type::generic_decl) { continue; }
+						const auto& method = static_cast<const jai::generic_decl*>(m.declaration.get())->definition;
+						if (auto held = views->find(method.get()); held != views->end() && held->second.decl) { out.generics[held->second.decl] = method.get(); }
+					}
+				} else {
+					out.names[prefix + std::string(name)].push_back({v, symbol_kind::function, name});
+				}
+				break;
+			}
+
 			default:
 				break;
 		}
@@ -132,16 +212,98 @@ const unit_index& program_view::index_of(unit& u) {
 	unit_index& idx = *made;
 	u.index = made;
 	u.index_epoch = u.epoch;
-	build_unit_index(u.decls, "", idx);
+	build_unit_index(u.decls, "", idx, &u.generic_views);
 	if (!u.parse_ok && !u.good_decls.empty()) {   // what a failing parse lost stays findable
 		unit_index good;
-		build_unit_index(u.good_decls, "", good);
+		build_unit_index(u.good_decls, "", good, &u.generic_views);
 		for (auto& [name, entries] : good.names) { if (!idx.names.count(name)) { idx.names[name] = entries; } }
 		for (auto& [name, cd] : good.classes) { idx.classes.emplace(name, cd); }
 		for (auto& [name, e] : good.enum_values) { idx.enum_values.emplace(name, e); }
 		idx.namespaces.insert(good.namespaces.begin(), good.namespaces.end());
+		idx.generics.insert(good.generics.begin(), good.generics.end());
 	}
 	return idx;
+}
+
+// The instance classes the units' checks declared, through their namespaces: the current unit's first, since it declares
+// every instance its own text uses
+void program_view::index_instances() {
+	if (instances_indexed_) { return; }
+	instances_indexed_ = true;
+	std::function<void(const std::vector<jai::declaration_ptr>&, const std::string&)> gather = [&](const std::vector<jai::declaration_ptr>& decls, const std::string& prefix) {
+		for (const auto& d : decls) {
+			if (!d) { continue; }
+			if (d->get_type() == jai::node_type::namespace_decl) {
+				auto* n = static_cast<const jai::namespace_decl*>(d.get());
+				gather(n->declarations, std::string(n->name) + "::");
+			} else if (d->get_type() == jai::node_type::class_decl) {
+				auto* c = static_cast<const jai::class_decl*>(d.get());
+				for (const auto& m : c->members) {   // a generic method's instances, in the instance class or beside the class
+					if (!m.declaration || m.declaration->get_type() != jai::node_type::function_decl) { continue; }
+					auto* fn = static_cast<const jai::function_decl*>(m.declaration.get());
+					if (fn->instance_stamp != 0) { instance_functions_.emplace(std::string(fn->name), fn); }
+				}
+				if (c->instance_stamp == 0) { continue; }
+				const std::string qualified = prefix + std::string(c->name);
+				instances_.emplace(qualified, c);
+				instances_.emplace(jai::detail::type_name_key(qualified), c);
+				instances_.emplace(std::string(c->name), c);
+			} else if (d->get_type() == jai::node_type::function_decl) {
+				auto* fn = static_cast<const jai::function_decl*>(d.get());
+				if (fn->instance_stamp != 0) { instance_functions_.emplace(std::string(fn->name), fn); }
+			}
+		}
+	};
+	for (unit* u : units()) { gather(u->checked_decls, ""); }
+}
+
+const jai::class_decl* program_view::find_instance(std::string_view name) {
+	index_instances();
+	auto it = instances_.find(std::string(name));
+	if (it == instances_.end()) { it = instances_.find(jai::detail::type_name_key(name)); }
+	return it == instances_.end() ? nullptr : it->second;
+}
+
+const jai::function_decl* program_view::find_instance_function(std::string_view name) {
+	index_instances();
+	auto it = instance_functions_.find(std::string(name));
+	return it == instance_functions_.end() ? nullptr : it->second;
+}
+
+// A call the checker sent to an instance: the generic's symbol, showing the instance's signature
+uint32_t program_view::instance_call_symbol(unit_model& m, uint32_t generic, const jai::function_decl& instance) {
+	const std::string_view written = written_name(instance.name);
+	const std::string_view shown = instance.name.substr(static_cast<size_t>(written.data() - instance.name.data()));   // fold<string>
+	std::string key = m.symbols[generic].key + std::string(shown.substr(written.size()));   // the generic's key with the instance's arguments
+	if (auto it = m.by_key.find(key); it != m.by_key.end()) { return it->second; }
+	symbol s = m.symbols[generic];
+	s.key = std::move(key);
+	s.signatures = {function_signature(instance, shown, false).label};
+	s.detail = s.signatures.front();
+	s.type = type_text(instance.return_type.get());
+	return add_symbol(m, std::move(s));
+}
+
+const jai::detail::generic_definition* program_view::generic_of(const jai::declaration* d) {
+	if (!d) { return nullptr; }
+	if (unit* owner = unit_of_node(d)) {   // a view stands in its generic's file
+		const auto& idx = index_of(*owner);
+		if (auto it = idx.generics.find(d); it != idx.generics.end()) { return it->second; }
+	}
+	for (const auto& [definition, view] : current.instance_views) { if (view.decl == d) { return definition; } }
+	return nullptr;
+}
+
+const jai::declaration* program_view::view_of(const jai::generic_decl& g) {
+	for (unit* u : units()) {
+		if (auto it = u->generic_views.find(g.definition.get()); it != u->generic_views.end()) { return it->second.decl; }
+	}
+	return generic_view_of(ws.engine(), g.definition, current.instance_views).decl;
+}
+
+std::string program_view::shown_name(const jai::declaration* d, std::string_view name) {
+	const jai::detail::generic_definition* g = generic_of(d);
+	return g ? std::string(name) + generic_parameters_text(*g) : std::string(name);
 }
 
 std::vector<unit*> program_view::units() {
@@ -167,6 +329,10 @@ const jai::class_decl* program_view::find_class(std::string_view name) {
 		if (auto it = idx.classes.find(key); it != idx.classes.end()) { return it->second; }
 	}
 	if (auto it = prog.classes.find(key); it != prog.classes.end() && it->second) { return it->second.get(); }
+	if (const size_t open = key.find('<'); open != std::string::npos && open > 0) {   // an instance, else its generic's view
+		if (const jai::class_decl* made = find_instance(key)) { return made; }
+		return find_class(std::string_view(key).substr(0, open));
+	}
 	return nullptr;
 }
 
@@ -186,6 +352,10 @@ program_view::member_ref program_view::find_member(std::string_view cls, std::st
 			} else if (m.declaration->get_type() == jai::node_type::function_decl) {
 				auto* fn = static_cast<const jai::function_decl*>(m.declaration.get());
 				if (fn->name == member && fn->name != cd->name && (!want_static || fn->is_static)) { return {true, cd, fn, {}}; }
+			} else if (m.declaration->get_type() == jai::node_type::generic_decl) {
+				const auto& g = *static_cast<const jai::generic_decl*>(m.declaration.get());
+				if (g.definition->name != member || (want_static && !g.definition->is_static)) { continue; }
+				if (const jai::declaration* v = view_of(g)) { return {true, cd, v, {}}; }
 			}
 		}
 		for (auto base : cd->base_classes) {
@@ -261,7 +431,14 @@ std::optional<text_span> program_view::decl_span(const jai::declaration* node, s
 std::vector<std::string> program_view::method_signatures(const jai::class_decl* owner, std::string_view name, bool constructor) {
 	std::vector<std::string> out;
 	for (const auto& m : owner->members) {
-		if (!m.declaration || m.declaration->get_type() != jai::node_type::function_decl) { continue; }
+		if (!m.declaration) { continue; }
+		if (m.declaration->get_type() == jai::node_type::generic_decl) {
+			const auto& g = *static_cast<const jai::generic_decl*>(m.declaration.get());
+			const jai::declaration* v = g.definition->name == name ? view_of(g) : nullptr;
+			if (v) { out.push_back(function_signature(*static_cast<const jai::function_decl*>(v), std::string(name) + generic_parameters_text(*g.definition), constructor).label); }
+			continue;
+		}
+		if (m.declaration->get_type() != jai::node_type::function_decl) { continue; }
 		auto* fn = static_cast<const jai::function_decl*>(m.declaration.get());
 		if (fn->name == name) { out.push_back(function_signature(*fn, name, constructor).label); }
 	}
@@ -292,7 +469,7 @@ std::vector<std::string> program_view::host_signatures(const std::string& name) 
 }
 
 std::string program_view::class_detail(const jai::class_decl* cd) {
-	std::string d = (cd->nocopy ? "nocopy class " : "class ") + std::string(cd->name);
+	std::string d = (cd->nocopy ? "nocopy class " : "class ") + shown_name(cd, cd->name);
 	for (size_t i = 0; i < cd->base_classes.size(); ++i) {
 		d += i ? ", " : " : ";
 		d += cd->base_classes[i];
@@ -351,7 +528,7 @@ uint32_t program_view::global_symbol(unit_model& m, const std::string& qualified
 		case jai::node_type::function_decl: {
 			for (const auto& r : refs) {
 				if (r.owner == chosen->owner && r.entry->node->get_type() == jai::node_type::function_decl) {
-					s.signatures.push_back(function_signature(*static_cast<const jai::function_decl*>(r.entry->node), qualified, false).label);
+					s.signatures.push_back(function_signature(*static_cast<const jai::function_decl*>(r.entry->node), shown_name(r.entry->node, qualified), false).label);
 				}
 			}
 			s.detail = s.signatures.empty() ? qualified : s.signatures.front();
@@ -503,6 +680,17 @@ uint32_t program_view::host_symbol(unit_model& m, const std::string& name, symbo
 	return add_symbol(m, std::move(s));
 }
 
+// The written name of a generic class's instance: the generic's declaration, shown as the instance
+uint32_t program_view::instance_symbol(unit_model& m, const std::string& instance, const std::string& generic) {
+	std::string key = "g:" + instance;
+	if (auto it = m.by_key.find(key); it != m.by_key.end()) { return it->second; }
+	symbol s = m.symbols[global_symbol(m, generic)];
+	s.key = std::move(key);
+	s.instance = instance;
+	s.detail = "class " + instance;
+	return add_symbol(m, std::move(s));
+}
+
 uint32_t program_view::builtin_symbol(unit_model& m, std::string_view receiver, std::string_view member) {
 	std::string key = "b:" + std::string(receiver) + "." + std::string(member);
 	if (auto it = m.by_key.find(key); it != m.by_key.end()) { return it->second; }
@@ -528,10 +716,10 @@ void semantic_walker::run() {
 	}), m_.occurrences.end());
 }
 
-void semantic_walker::occur(text_span span, uint32_t sym, bool declaration) {
+void semantic_walker::occur(text_span span, uint32_t sym, bool declaration, std::string narrowed) {
 	if (sym >= m_.symbols.size()) { return; }
 	if (!span_spells(u_, span, m_.symbols[sym].name)) { return; }
-	m_.occurrences.push_back({span, sym, declaration});
+	m_.occurrences.push_back({span, sym, declaration, std::move(narrowed)});
 }
 
 void semantic_walker::push_scope(text_pos start, text_pos end) {
@@ -575,6 +763,7 @@ uint32_t semantic_walker::resolve_name(std::string_view name, bool global_only) 
 		for (size_t i = scopes_.size(); i-- > 0;) {
 			if (auto it = scopes_[i].find(key); it != scopes_[i].end()) { return it->second; }
 		}
+		if (const uint32_t* parameter = type_parameter(name)) { return *parameter; }
 		if (!class_stack_.empty()) {
 			auto r = view_.find_member(class_stack_.back(), name, false);
 			if (r.found) {
@@ -637,7 +826,29 @@ nav_type semantic_walker::type_of(const jai::expression* e) {
 		nav_type own = own_type(e);
 		if (own.known()) { t = own; }
 	}
+	t = through_parameters(t);
 	nav_memo_[e] = t;
+	return t;
+}
+
+const uint32_t* semantic_walker::type_parameter(std::string_view name) const {
+	for (size_t i = active_parameters_.size(); i-- > 0;) {
+		const auto& names = parameter_regions_[active_parameters_[i]].names;
+		if (auto it = names.find(std::string(name)); it != names.end()) { return &it->second; }
+	}
+	return nullptr;
+}
+
+// A value of a type parameter is what its bound makes it known to be, and nothing more without one
+nav_type semantic_walker::through_parameters(nav_type t) const {
+	if (t.kind != nav_type::object && t.kind != nav_type::class_ref) { return t; }
+	for (size_t i = active_parameters_.size(); i-- > 0;) {
+		const auto& bounds = parameter_regions_[active_parameters_[i]].bounds;
+		auto it = bounds.find(t.cls);
+		if (it == bounds.end()) { continue; }
+		if (!it->second.known()) { return {}; }
+		return t.kind == nav_type::class_ref ? nav_type::of_class(it->second.cls) : it->second;
+	}
 	return t;
 }
 
@@ -655,7 +866,7 @@ nav_type semantic_walker::own_type(const jai::expression* e) {
 			auto it = expr_symbol_.find(c->callee.get());
 			if (it == expr_symbol_.end()) { return {}; }
 			const symbol& s = m_.symbols[it->second];
-			if (s.kind == symbol_kind::class_type || s.kind == symbol_kind::host_class) { return nav_type::of_object(s.name); }
+			if (s.kind == symbol_kind::class_type || s.kind == symbol_kind::host_class || s.kind == symbol_kind::type_parameter) { return nav_type::of_object(s.name); }
 			if (s.kind == symbol_kind::function || s.kind == symbol_kind::method) {
 				auto t = symbol_type_.find(it->second);
 				return t == symbol_type_.end() ? nav_type{} : t->second;
@@ -737,6 +948,7 @@ void semantic_walker::walk_decl(const jai::declaration* d) {
 		case jai::node_type::variable_decl: walk_variable(static_cast<const jai::variable_decl*>(d)); break;
 		case jai::node_type::function_decl: walk_function(static_cast<const jai::function_decl*>(d)); break;
 		case jai::node_type::class_decl: walk_class(static_cast<const jai::class_decl*>(d)); break;
+		case jai::node_type::generic_decl: walk_generic(static_cast<const jai::generic_decl*>(d), nullptr); break;
 		case jai::node_type::namespace_decl: {
 			auto* n = static_cast<const jai::namespace_decl*>(d);
 			std::string full(n->name);
@@ -841,6 +1053,11 @@ void semantic_walker::walk_function_body(const jai::function_decl* fn) {
 	declare_params(fn->parameters, after_open_paren(start));
 	for (const auto& init : fn->initializers) {
 		for (const auto& arg : init.arguments) { walk_expr(arg.get()); }
+		if (init.kind != jai::constructor_initializer::kind_t::field || class_stack_.empty()) { continue; }
+		if (init.value) { walk_expr(init.value.get()); }
+		if (auto r = view_.find_member(class_stack_.back(), init.target, false); r.found) {   // a member initializer names its field
+			occur(name_span(init.location, init.target), view_.member_symbol(m_, r, init.target), false);
+		}
 	}
 	if (fn->body) { walk_decls(fn->body->declarations); }
 	fn_stack_.pop_back();
@@ -891,21 +1108,68 @@ void semantic_walker::walk_class(const jai::class_decl* cd) {
 			occur(name_span(f->location, f->name), s, true);
 		} else if (d->get_type() == jai::node_type::function_decl) {
 			auto* fn = static_cast<const jai::function_decl*>(d);
-			text_span fspan = name_span(fn->location, fn->name);
 			if (fn->name == cd->name) {
-				occur(fspan, cs, false);
+				occur(name_span(fn->location, fn->name), cs, false);
+				walk_function_body(fn);
 			} else {
-				program_view::member_ref r{true, cd, fn, {}};
-				uint32_t s = view_.member_symbol(m_, r, fn->name);
-				symbol_type_[s] = nav_from_type_info(fn->return_type.get());
-				occur(fspan, s, true);
+				walk_method(cd, fn);
 			}
-			walk_function_body(fn);
+		} else if (d->get_type() == jai::node_type::generic_decl) {
+			walk_generic(static_cast<const jai::generic_decl*>(d), cd);
 		} else {
 			walk_decl(d);
 		}
 	}
 	class_stack_.pop_back();
+}
+
+void semantic_walker::walk_method(const jai::class_decl* owner, const jai::function_decl* fn) {
+	program_view::member_ref r{true, owner, fn, {}};
+	uint32_t s = view_.member_symbol(m_, r, fn->name);
+	symbol_type_[s] = nav_from_type_info(fn->return_type.get());
+	occur(name_span(fn->location, fn->name), s, true);
+	walk_function_body(fn);
+}
+
+// A generic walks as its view, the class or function its text reads as, with its type parameters named where the text stands
+void semantic_walker::walk_generic(const jai::generic_decl* g, const jai::class_decl* owner) {
+	const jai::declaration* v = view_.view_of(*g);
+	if (!v) { return; }
+	const auto& definition = *g->definition;
+	type_parameter_region region;
+	region.start = definition.tokens.empty() ? pos_of(definition.location) : pos_of(definition.tokens.front().location);
+	if (!definition.tokens.empty()) {
+		const text_pos last = pos_of(definition.tokens.back().location);
+		region.end = {last.line, last.col + 1};
+	} else {
+		region.end = region.start;
+	}
+	for (const auto& p : definition.parameters) {
+		const text_span span = name_span(p.location, p.name);
+		const std::string bound = p.bound.empty() ? std::string() : spelled_tokens(p.bound);
+		symbol s;
+		s.key = "t:" + u_.path + "@" + std::to_string(span.start.line) + ":" + std::to_string(span.start.col) + ":" + std::string(p.name);
+		s.kind = symbol_kind::type_parameter;
+		s.name = std::string(p.name);
+		s.container = definition.qualified_name() + generic_parameters_text(definition);
+		s.detail = std::string(p.name) + (bound.empty() ? "" : " : " + bound);
+		s.path = u_.path;
+		s.span = span;
+		const uint32_t index = add_symbol(m_, std::move(s));
+		region.names[std::string(p.name)] = index;
+		region.bounds[std::string(p.name)] = bound.empty() ? nav_type{} : nav_type::of_object(bound);
+		occur(span, index, true);
+	}
+	parameter_regions_.push_back(std::move(region));
+	active_parameters_.push_back(parameter_regions_.size() - 1);
+	if (v->get_type() == jai::node_type::class_decl) {
+		walk_class(static_cast<const jai::class_decl*>(v));
+	} else if (owner) {
+		walk_method(owner, static_cast<const jai::function_decl*>(v));
+	} else {
+		walk_function(static_cast<const jai::function_decl*>(v));
+	}
+	active_parameters_.pop_back();
 }
 
 // The walks recurse with the tree; past the native stack's margin they leave the rest of a subtree unindexed
@@ -1033,15 +1297,28 @@ void semantic_walker::walk_expr(const jai::expression* e) {
 		case jai::node_type::identifier_expr: {
 			auto* id = static_cast<const jai::identifier_expr*>(e);
 			if (id->name == k_placeholder) { capture_scope(); return; }
-			uint32_t s = resolve_name(id->name, id->global_qualified);
+			const std::string_view written = written_name(id->name);
+			uint32_t s = resolve_name(written, id->global_qualified);
+			if (s != UINT32_MAX && written.size() != id->name.size() && m_.symbols[s].kind == symbol_kind::class_type) {
+				if (const jai::class_decl* made = view_.find_instance(id->name)) {
+					s = view_.instance_symbol(m_, std::string(made->name), std::string(written));
+					symbol_type_[s] = nav_type::of_class(made->name);
+				}
+			} else if (s != UINT32_MAX && written.size() != id->name.size() && m_.symbols[s].kind == symbol_kind::function) {
+				if (const jai::function_decl* made = view_.find_instance_function(id->name)) {
+					s = view_.instance_call_symbol(m_, s, *made);
+					symbol_type_[s] = nav_from_type_info(made->return_type.get());
+				}
+			}
 			if (s != UINT32_MAX) {
 				expr_symbol_[e] = s;
-				text_span span = name_span(id->location, id->name);
-				if (!span_spells(u_, span, id->name) && id->global_qualified) {
+				text_span span = name_span(id->location, written);
+				if (!span_spells(u_, span, written) && id->global_qualified) {
 					span.start.col += 2;
 					span.end.col += 2;
 				}
-				occur(span, s, false);
+				const auto checked = m_.types.find(e);
+				occur(span, s, false, checked != m_.types.end() && checked->second.narrowed ? checked->second.name : std::string());
 			}
 			break;
 		}
@@ -1114,34 +1391,39 @@ void semantic_walker::walk_member(const jai::member_expr* m) {
 }
 
 void semantic_walker::resolve_member_on(const nav_type& t, const jai::member_expr* m) {
-	text_span span = name_span(m->location, m->member);
+	const std::string_view member = written_name(m->member);
+	text_span span = name_span(m->location, member);
 	uint32_t s = UINT32_MAX;
 	switch (t.kind) {
 		case nav_type::object:
 		case nav_type::class_ref: {
-			auto r = view_.find_member(t.cls, m->member, t.kind == nav_type::class_ref);
+			auto r = view_.find_member(t.cls, member, t.kind == nav_type::class_ref);
 			if (r.found) {
-				s = view_.member_symbol(m_, r, m->member);
+				s = view_.member_symbol(m_, r, member);
 				if (!symbol_type_.count(s)) { symbol_type_[s] = view_.declared_type(r.decl); }
+				if (const jai::function_decl* made = member.size() != m->member.size() ? view_.find_instance_function(m->member) : nullptr) {
+					s = view_.instance_call_symbol(m_, s, *made);
+					symbol_type_[s] = nav_from_type_info(made->return_type.get());
+				}
 			} else if (t.kind == nav_type::class_ref) {
-				if (const jai::enum_decl* e = view_.find_enum(t.cls)) { s = view_.enum_value_symbol(m_, e, m->member); }
+				if (const jai::enum_decl* e = view_.find_enum(t.cls)) { s = view_.enum_value_symbol(m_, e, member); }
 			}
-			if (s == UINT32_MAX && !view_.class_known(t.cls)) { m_.unresolved_members.push_back({std::string(m->member), span}); }
+			if (s == UINT32_MAX && !view_.class_known(t.cls)) { m_.unresolved_members.push_back({std::string(member), span}); }
 			break;
 		}
 		case nav_type::enum_ref:
 			if (const jai::enum_decl* e = view_.find_enum(t.cls)) {
 				for (const auto& [vname, _] : e->values) {
-					if (vname == m->member) { s = view_.enum_value_symbol(m_, e, m->member); break; }
+					if (vname == member) { s = view_.enum_value_symbol(m_, e, member); break; }
 				}
 			}
 			break;
-		case nav_type::array: s = view_.builtin_symbol(m_, "array", m->member); break;
-		case nav_type::map: s = view_.builtin_symbol(m_, "map", m->member); break;
-		case nav_type::string: s = view_.builtin_symbol(m_, "string", m->member); break;
-		case nav_type::weak: s = view_.builtin_symbol(m_, "weak_ptr", m->member); break;
+		case nav_type::array: s = view_.builtin_symbol(m_, "array", member); break;
+		case nav_type::map: s = view_.builtin_symbol(m_, "map", member); break;
+		case nav_type::string: s = view_.builtin_symbol(m_, "string", member); break;
+		case nav_type::weak: s = view_.builtin_symbol(m_, "weak_ptr", member); break;
 		default:
-			m_.unresolved_members.push_back({std::string(m->member), span});
+			m_.unresolved_members.push_back({std::string(member), span});
 			break;
 	}
 	if (s != UINT32_MAX) {
@@ -1185,7 +1467,8 @@ bool semantic_walker::walk_static_path(const jai::member_expr* m) {
 		m_.capture_member_receiver = ns_path;
 		return true;
 	}
-	std::string q = ns_path + "::" + std::string(node->member);
+	const std::string_view written = written_name(node->member);
+	std::string q = ns_path + "::" + std::string(written);
 	uint32_t s = UINT32_MAX;
 	if (view_.has_top(q)) {
 		s = view_.global_symbol(m_, q);
@@ -1193,12 +1476,17 @@ bool semantic_walker::walk_static_path(const jai::member_expr* m) {
 			auto refs = view_.top_level(q);
 			symbol_type_[s] = refs.empty() ? nav_type{} : view_.declared_type(refs.front().entry->node);
 		}
+		const jai::function_decl* made = written.size() != node->member.size() && m_.symbols[s].kind == symbol_kind::function ? view_.find_instance_function(node->member) : nullptr;
+		if (made) {
+			s = view_.instance_call_symbol(m_, s, *made);
+			symbol_type_[s] = nav_from_type_info(made->return_type.get());
+		}
 	} else if (view_.host_namespace(ns_path)) {
 		s = view_.host_symbol(m_, q, symbol_kind::host_function);
 	}
 	if (s != UINT32_MAX) {
 		expr_symbol_[node] = s;
-		occur(name_span(node->location, node->member), s, false);
+		occur(name_span(node->location, written), s, false);
 	}
 	for (size_t i = ns_len; i < chain.size(); ++i) {
 		if (chain[i]->member == k_placeholder) {
@@ -1242,7 +1530,18 @@ void semantic_walker::type_name_pass() {
 			if (prev == jai::token_type::dot || prev == jai::token_type::arrow || prev == jai::token_type::question_dot || prev == jai::token_type::colon_colon) { continue; }
 		}
 		uint32_t s = UINT32_MAX;
-		if (view_.find_class(t.lexeme) || view_.find_enum(t.lexeme)) {
+		for (size_t r = parameter_regions_.size(); r-- > 0 && s == UINT32_MAX;) {   // a type parameter where its generic's text stands
+			const auto& region = parameter_regions_[r];
+			if (!(region.start <= t.pos && t.pos <= region.end)) { continue; }
+			if (auto it = region.names.find(std::string(t.lexeme)); it != region.names.end()) { s = it->second; }
+		}
+		std::string spelled;
+		const jai::class_decl* cd = s == UINT32_MAX ? view_.find_class(t.lexeme) : nullptr;
+		if (s != UINT32_MAX) {
+		} else if (cd && i + 1 < u_.tokens.size() && u_.tokens[i + 1].type == jai::token_type::less && view_.generic_of(cd) && spelled_instance(u_.tokens, i, spelled)) {
+			const jai::class_decl* made = view_.find_instance(spelled);
+			s = made ? view_.instance_symbol(m_, std::string(made->name), std::string(t.lexeme)) : view_.global_symbol(m_, std::string(t.lexeme));
+		} else if (cd || view_.find_enum(t.lexeme)) {
 			s = view_.global_symbol(m_, std::string(t.lexeme));
 		} else if (jai::detail::engine_access::get_class_definition(eng_, std::string(t.lexeme))) {
 			s = view_.host_symbol(m_, std::string(t.lexeme), symbol_kind::host_class);

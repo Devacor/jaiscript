@@ -62,7 +62,7 @@ function make_equipment(int floor) -> Item {
 	return item;
 }
 
-// the blade by the bones on floor 1: made by hand, so it costs the Rng nothing
+// the blade by the bones on floor 1: made by hand, so it costs the RNG nothing
 string LASTLIGHT_NAME = "Lastlight Fang";
 
 function make_lastlight() -> Item {

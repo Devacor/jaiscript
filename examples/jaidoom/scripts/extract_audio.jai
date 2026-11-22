@@ -5,9 +5,9 @@
 import "boot.jai";
 
 function main() -> int {
-	if (ARGS.size() == 0) { print("usage: jaiscript extract_audio.jai -- <wad> [<wad> ...]"); return 2; }
+	if (args.size() == 0) { print("usage: jaiscript extract_audio.jai -- <wad> [<wad> ...]"); return 2; }
 	int total = 0;
-	for (auto p : ARGS) {
+	for (auto p : args) {
 		int n = audio_extract_wad(wad_path(p));
 		if (n < 0) { print(`   cannot read ${p}`); continue; }
 		print(`   ${WAD_BASE}: ${n} sounds and songs -> ${audio_cache_dir()}`);

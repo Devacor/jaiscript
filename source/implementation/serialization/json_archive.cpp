@@ -2,7 +2,9 @@
 #include <jaiscript/detail/class_runtime.hpp>
 #include <jaiscript/detail/builtin_methods.hpp>
 #include <jaiscript/detail/math_values.hpp>
+#include <jaiscript/detail/coroutine_snapshot.hpp>
 #include <jaiscript/detail/text_hash.hpp>
+#include <jaiscript/detail/work_budget.hpp>
 #include <array>
 #include <charconv>     // std::to_chars for shortest round-trippable float output
 #include <cmath>
@@ -266,6 +268,8 @@ void json_archive_writer::write_value(const script_value& root) {
     const int depth_at_entry = json_depth_;
     begin_value(root, frames);
     script_value scratch(std::monostate{}, engine_ref_);
+    detail::work_meter work(counts_work_ ? engine_ref_ : nullptr);
+    size_t counted = out_.size();
     while (!frames.empty()) {
         const script_value* child = next_child(frames.back(), scratch);
         if (aborted_) [[unlikely]] {
@@ -273,6 +277,8 @@ void json_archive_writer::write_value(const script_value& root) {
             aborted_ = false;
             return;
         }
+        if (work.spend(1 + (out_.size() - counted) / detail::k_work_unit_bytes)) [[unlikely]] { work.throw_spent(); }
+        counted = out_.size();
         if (child) {
             begin_value(*child, frames);
         } else {
@@ -335,6 +341,10 @@ void json_archive_writer::begin_value(const script_value& given, std::vector<wri
         }
 
         case script_value_type::jai_object_type: {
+            if (const auto coroutine = detail::coroutine_of(value)) {
+                begin_coroutine(*coroutine, value, frames);
+                return;
+            }
             if (!engine_ref_) {
                 out_.append("null");
                 return;
@@ -359,6 +369,26 @@ void json_archive_writer::begin_value(const script_value& given, std::vector<wri
             write_leaf(value);
             return;
     }
+}
+
+void json_archive_writer::begin_coroutine(coroutine_handle& a_coroutine, const script_value& a_value, std::vector<write_frame>& frames) {
+    auto [id, is_new] = track_shared_ptr(&a_coroutine);
+    open_value('{');
+    write_value_key("$id", false);
+    append_json_integer(out_, id);
+    if (!is_new) {
+        close_value('}', false);
+        return;
+    }
+    std::vector<std::pair<std::string, script_value>> record = coroutine_fields(a_coroutine);
+    write_value_key("$type", true);
+    out_ += "\"coroutine\"";
+    write_value_key("$val", true);
+    open_value('{');
+    write_frame& f = frames.emplace_back(write_shape::fields, a_value);
+    f.fields = std::move(record);
+    f.coroutine = true;
+    open_coroutine_record(a_coroutine);
 }
 
 strong_ptr<class_instance> json_archive_writer::written_instance(const script_value& value) {
@@ -402,14 +432,18 @@ void json_archive_writer::begin_instance_members(const script_value& value, stro
     out_ += '"';
     write_value_key("$val", true);
     open_value('{');
+    const class_instance* in_place = comma ? nullptr : instance.get();
+    if (in_place) { open_written_instance(in_place); }
     if (class_def) {
         write_frame& f = frames.emplace_back(write_shape::instance, value);
         f.names = class_def->get_property_names();
         f.class_def = class_def;
         f.instance = std::move(instance);
+        f.written_in_place = in_place != nullptr;
     } else {
         // slot order: deterministic, close to declaration order
         write_frame& f = frames.emplace_back(write_shape::fields, value);
+        f.written_in_place = in_place != nullptr;
         instance->for_each_field([&](uint64_t field_id, const script_value& field_val) {
             f.fields.emplace_back(std::string(detail::engine_access::get_symbolizer(*engine_ref_)->get_string(field_id)), field_val);
         });
@@ -491,6 +525,8 @@ void json_archive_writer::end_frame(write_frame& f) {
         case write_shape::fields:
             close_value('}', f.first);
             close_value('}', false);
+            if (f.written_in_place) { close_written_instance(); }
+            if (f.coroutine) { close_coroutine_record(); }
             break;
     }
 }
@@ -618,6 +654,7 @@ void json_archive_writer::write_leaf(const script_value& val) {
             break;
 
         default:
+            refuse_function_in_coroutine(val);
             out_.append("null");
             break;
     }
@@ -636,7 +673,8 @@ void json_archive_writer::write_newline() {
         out_ += '\n';
     }
 }
-json_archive_reader::json_archive_reader(std::string_view json_string, engine* eng) : archive_reader_impl<json_archive_reader>(eng) {
+json_archive_reader::json_archive_reader(std::string_view json_string, engine* eng, bool count_work) :
+    archive_reader_impl<json_archive_reader>(eng), counts_work_(count_work) {
     if (!eng) {
         throw serialization_error("json_archive_reader requires a valid engine reference");
     }
@@ -1070,7 +1108,9 @@ script_value json_archive_reader::materialize(uint32_t idx) {
     };
     script_value leaf(std::monostate{}, eng);
     if (open(idx, leaf)) { return leaf; }
+    detail::work_meter work(counts_work_ ? eng : nullptr);
     for (;;) {
+        if (work.spend(1)) [[unlikely]] { work.throw_spent(); }
         frame& top = frames.back();
         const JNode& node = nodes_[top.node];
         if (top.next < node.u.agg.count) {
@@ -1123,7 +1163,11 @@ void json_archive_reader::push_container(JTag tag, size_t mark) {
 void json_archive_reader::parse_value_flat() {
     struct open_container { JTag tag; size_t mark; };
     std::vector<open_container> open;
+    detail::work_meter work(counts_work_ ? engine_ref_ : nullptr);
+    size_t counted = pos_;
     for (;;) {
+        if (work.spend(1 + (pos_ - counted) / detail::k_work_unit_bytes)) [[unlikely]] { work.throw_spent(); }
+        counted = pos_;
         skip_whitespace();
         if (pos_ >= json_.length()) {
             throw serialization_error("Unexpected end of JSON");

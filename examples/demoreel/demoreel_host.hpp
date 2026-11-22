@@ -1,5 +1,5 @@
 // demoreel shared host: the language-agnostic console shell. The host owns the VT console and
-// its output filter, key polling, frame timing/pacing, the xorshift64* Rng, every
+// its output filter, key polling, frame timing/pacing, the xorshift64* rng, every
 // command-line flag, and the harnesses (--smoke parity table with the FNV-1a
 // frame-stream hash, --perf per-scene timing, --bench, --capture, --reload-test).
 // A script_adapter supplies everything language-specific: runtime creation,
@@ -59,7 +59,7 @@ std::string locate_scenes_dir(const std::string& override_dir, const char* argv0
 
 // Deterministic xorshift64*: the only randomness the scenes may touch, so the reel
 // replays identically from a seed in every language. Bind this exact struct as the
-// script-visible "Rng" class (constructor (int seed); next roll chance nextf).
+// script-visible class (constructor (int seed); next roll chance nextf): seeded_rng in JaiScript, Rng in the ports.
 struct demo_rng {
 	uint64_t s;
 

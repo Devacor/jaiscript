@@ -141,6 +141,7 @@ template<typename T>
 void engine::bind_static_type() {
     if constexpr (has_static_type_v<T>) {
         if (is_type_registered(jai_static_type<T>::name)) {
+            refuse_script_class_name(jai_static_type<T>::name);
             reject_static_type_name_collision<T>(*this, jai_static_type<T>::name);
             return;
         }
@@ -149,6 +150,7 @@ void engine::bind_static_type() {
     else if constexpr (has_any_template_binder_v<T>) {
         auto type_name = template_binder_accessor<T>::type_name();
         if (is_type_registered(type_name)) {
+            refuse_script_class_name(type_name);
             reject_static_type_name_collision<T>(*this, type_name);
             return;
         }

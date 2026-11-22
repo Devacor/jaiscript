@@ -10,7 +10,7 @@ loot sends up a beam in its rarity's colour. Save any script mid-run and the gam
 without losing the run.
 
 The C++ host (`main.cpp`) is a thin console shell: raw keys, the console's size and colour depth,
-an alternate screen it restores on every exit, a seeded `Rng`, file IO for saves, a fingerprint
+an alternate screen it restores on every exit, a `seeded_rng`, file IO for saves, a fingerprint
 of each script file for the reload watcher, and the command-line flags as globals. Everything else is script: the raycaster, dungeon generation,
 combat, AI, items, saves and every screen. `scripts/crawler.jai` is the same host contract
 written in JaiScript, so the game also runs on the standalone runner with no C++ of its own.
@@ -133,7 +133,7 @@ down sum up what the floor gave and took.
 ## Effects
 
 Every turn's events leave marks in the view, drawn from what the rules did and never from the
-`Rng`. A hit puts its damage over the monster (larger and gold on a critical), a miss says MISS,
+`seeded_rng`. A hit puts its damage over the monster (larger and gold on a critical), a miss says MISS,
 and what happens to you rises low in the view (`-4`, `+10`, `+12 GOLD`, `DODGE`). Your melee
 blows slash across the target. The slain turn white-hot, drop apart texel by texel as they sink
 into the floor, and burst into sparks of their colour. Class skills fly: an ember bolt or a hex
@@ -186,7 +186,7 @@ that block it. North and south faces sit at 0.72 of the light.
 - **Walls** are 32x32 procedural textures, one per wardrobe: mossy brick, blood-streaked brick,
   violet blocks sprouting glowing mushrooms, riveted copper panels weeping orange, ash rock split
   by ember cracks, veined marble. Wall tiles pick variants from a coordinate hash (never the game
-  `Rng`): sconces with a two-frame flame, and skull niches.
+  `seeded_rng`): sconces with a two-frame flame, and skull niches.
 - **Floor and ceiling** are cast per pixel from the same rays: flagstones with puddles, bones,
   moss and the rune circle under the stairs; slabs crossed by timber beams above. Monsters that
   die leave blood on the flagstones for the rest of the floor.
@@ -208,7 +208,7 @@ color has been swallowed like everything else.
 `--smoke` hands the keys to an autopilot: it walks a breadth-first path to loot, the stairs or the
 boss, turning until its nose lines up, bumps into what blocks it, fires its skill down corridors
 and drinks when scared. The run folds its state (turn, floor, facing, position, vitals, gear
-count, every live monster and the `Rng`) into `STATE_HASH` after each turn:
+count, every live monster and the `seeded_rng`) into `STATE_HASH` after each turn:
 
 ```bash
 jai_crawler --smoke --seed 6 --turns 1500                                            # STATE_HASH: 2459230215
@@ -218,9 +218,9 @@ jai_crawler --smoke --seed 6 --turns 1500 --reload-every 100 --anim --screen 135
 Seed 6's pilot fights down to floor 8 and dies there to a Marrowmaw on turn 839; `--god --smoke
 --turns 3000 --seed 5` kills Vexadrach on turn 1008. With `--reload-every 100` the pilot reloads
 every script each hundred turns (its first try asks for a missing file and is refused) and plays
-the same game to the same hash. The runner's `Rng` is a bit-exact script twin of the host's, so
+the same game to the same hash. The runner's `seeded_rng` is a bit-exact script twin of the host's, so
 the shim prints the same hashes on `--backend=vm` and `--backend=interp`, and the `dump` frames
-hash alike on both. The screens and effects read the game but never the `Rng`, so drawing them
+hash alike on both. The screens and effects read the game but never the `seeded_rng`, so drawing them
 leaves the hash unchanged. `tools/ci/gates.sh crawler` checks both runs on the host (the second
 drawing every animation and the death page), the god-mode run down to the victory page, then three
 animated frame dumps on each backend: the cockpit at 135x37 with reloads, the forward view alone
@@ -230,7 +230,7 @@ parallel.
 ## Files
 
 ```
-main.cpp             the native host: console, keys, colour depth, Rng, file IO, flags
+main.cpp             the native host: console, keys, colour depth, seeded_rng, file IO, flags
 scripts/main.jai     imports, the live reload and its watcher, the entry point
 scripts/state.jai    the persistent globals (G, RNG, the pilot), left out of the reload
 scripts/util.jai     integer math, the grid, directions, weighted picks, the hashes

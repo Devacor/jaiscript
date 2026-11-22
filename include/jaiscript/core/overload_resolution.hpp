@@ -100,6 +100,26 @@ inline bool binary_operator_accepts(const class_definition* def, uint64_t name_i
     return bound && host_operator_accepts(*bound, arg);
 }
 
+// The chain's in-place operator `name_id` (a compound assignment's, ++ or --) is a candidate: the nearest script declaration has an
+// overload of that arity (the prefix form none, a compound one that takes the operand, the postfix form its int marker), or a host
+// class's binding does
+inline bool in_place_operator_accepts(const class_definition* def, uint64_t name_id, const script_value* operand) {
+    if (operand) { return binary_operator_accepts(def, name_id, *operand); }
+    for (const class_definition* c = def; c; c = c->get_parent().get()) {
+        const auto& overloads = c->script_method_overloads();
+        if (auto it = overloads.find(name_id); it != overloads.end()) {
+            for (const auto& d : it->second) {
+                if (arity_accepts(d->parameters, 0)) { return true; }
+            }
+            return false;
+        }
+    }
+    const script_value* bound = def ? def->method_ptr(name_id) : nullptr;
+    if (!bound || !bound->is_function()) { return false; }
+    const auto* dispatch = host_operator_dispatch(*bound);
+    return !dispatch || dispatch->overloads->find(0) != dispatch->overloads->end();
+}
+
 // other is a value of def's class or a subclass
 inline bool value_of_class(const class_definition* def, const script_value& other) {
     const script_value& d = other.deref();
@@ -301,7 +321,10 @@ inline auto score_overloads(const Range& overloads, Params&& params_of, const sc
                     if (instance) {
                         auto arg_class_def = instance->get_class_definition();
                         if (arg_class_def) {
-                            if (arg_class_def->get_name() == param.type->type_name) {
+                            if (arg_type == script_value_type::jai_object_type && (param.type->base_type == script_value_type::jai_shared_ptr_type ||
+                                                                                   param.type->base_type == script_value_type::jai_weak_ptr_type)) {
+                                convert_or_mismatch();   // a value is no handle: a shared_ptr<T> or weak_ptr<T> parameter takes none
+                            } else if (arg_class_def->get_name() == param.type->type_name) {
                                 if (arg_type == script_value_type::jai_shared_ptr_type &&
                                     param.type->base_type == script_value_type::jai_object_type) {
                                     // shared_ptr<T> -> T requires unwrapping, count as conversion
@@ -615,6 +638,7 @@ inline checked_result<const std::shared_ptr<function_decl>*> class_definition::r
 
 inline error_propagator class_definition::method_overload_miss(std::error_code ec, uint64_t name_id, const script_value* args, size_t argc) const {
     auto it = method_overloads_.find(name_id);
+    if (engine* eng = get_engine()) { name_id = detail::listed_member_id(*detail::engine_access::get_symbolizer(*eng), name_id); }   // the method as the class lists it
     if (ec == make_error_code(runtime_error_code::ambiguous_call) && it != method_overloads_.end()) {
         const auto verdict = score_declarations(it->second, args, argc, get_engine());
         if (verdict.rival) { return detail::ambiguous_call(name_id, (*verdict.best)->parameters, (*verdict.rival)->parameters, args, argc, get_engine()); }

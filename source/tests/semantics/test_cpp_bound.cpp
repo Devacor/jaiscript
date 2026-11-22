@@ -254,15 +254,15 @@ public:
             check_eq((int64_t)5, eng->execute("var m6 = {}; m6[bc] = 5; m6[100]").as_int(), "bound int as map key");
         });
 
-        test("pin_same_as_bound_aliases", [this]() {
+        test("pin_same_object_bound_aliases", [this]() {
             auto eng = jai::foundry::make_engine();
             script_int sharedInt = 7;
             eng->add_global_ref("sa", sharedInt);
             eng->add_global_ref("sb", sharedInt);
-            check_true(eng->execute("sa.same_as(sb)").as_bool(), "two aliases of one C++ int are same_as");
-            check_true(eng->execute("sa.same_as(7)").as_bool(), "bound same_as equal plain literal");
-            check_true(eng->execute("var pn7 = 7; sa.same_as(pn7)").as_bool(), "bound same_as equal plain var");
-            check_false(eng->execute("sa.same_as(8)").as_bool(), "bound same_as unequal int");
+            check_true(eng->execute("same_object(sa, sb)").as_bool(), "two aliases of one C++ int are the same object");
+            check_true(eng->execute("same_object(sa, 7)").as_bool(), "bound same_object equal plain literal");
+            check_true(eng->execute("var pn7 = 7; same_object(sa, pn7)").as_bool(), "bound same_object equal plain var");
+            check_false(eng->execute("same_object(sa, 8)").as_bool(), "bound same_object unequal int");
         });
 
         // A compound on a bound value stored AS an element/member/field
@@ -787,12 +787,12 @@ public:
             check_false(eng->execute("bop13 == null").as_bool(), "opaque bound != null (ruled)");
             check_true(eng->execute("bop13 == bop13").as_bool(), "opaque bound self-identity");
             jai::stdlib::register_all(*eng);
-            check_false(eng->execute("is_registered_type(bop13)").as_bool(),
-                        "is_registered_type false for opaque host tokens");
-            check_true(eng->execute("class Marker {} is_registered_type(Marker())").as_bool(),
-                       "is_registered_type true for script objects");
-            check_true(eng->execute("is_registered_type(42)").as_bool(),
-                       "is_registered_type true for ordinary values");
+            check_false(eng->execute("reflect::is_registered_type(bop13)").as_bool(),
+                        "reflect::is_registered_type false for opaque host tokens");
+            check_true(eng->execute("class Marker {} reflect::is_registered_type(Marker())").as_bool(),
+                       "reflect::is_registered_type true for script objects");
+            check_true(eng->execute("reflect::is_registered_type(42)").as_bool(),
+                       "reflect::is_registered_type true for ordinary values");
         });
     }
 };

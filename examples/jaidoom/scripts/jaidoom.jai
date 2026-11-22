@@ -272,7 +272,7 @@ function menu_build() -> void {
 	MENU_ITEMS.push("DEMOS");
 	MENU_ITEMS.push("OPTIONS");
 	if (MID_GAME) { MENU_ITEMS.push("SAVE GAME"); }
-	if (file_exists(data_path(SAVE_PATH))) { MENU_ITEMS.push("LOAD GAME"); }
+	if (file::exists(data_path(SAVE_PATH))) { MENU_ITEMS.push("LOAD GAME"); }
 	MENU_ITEMS.push("QUIT");
 }
 
@@ -320,7 +320,7 @@ string DEMO_LAST_NAME = "demo.json"; // record target + play prefill: zero-typin
 bool DEMO_MENU_ARMED = false; // skill-pick esc disarms a DEMOS-armed tape
 
 function cfg_save() -> void {
-	write_file(data_path(NET_CFG), to_json({"addr": NP_LAST_ADDR, "demo": DEMO_LAST_NAME, "pix": PIX_SETTING, "gamma": GAMMA,
+	file::write(data_path(NET_CFG), to_json({"addr": NP_LAST_ADDR, "demo": DEMO_LAST_NAME, "pix": PIX_SETTING, "gamma": GAMMA,
 		"smooth": SMOOTH}));
 }
 
@@ -330,8 +330,8 @@ function addr_save() -> void {
 }
 
 function addr_load() -> void {
-	if (!file_exists(data_path(NET_CFG))) { return; }
-	var cfg = from_json(read_file(data_path(NET_CFG)));
+	if (!file::exists(data_path(NET_CFG))) { return; }
+	var cfg = from_json(file::read(data_path(NET_CFG)));
 	if (cfg == null) { return; }
 	if (cfg.has("addr")) { NP_LAST_ADDR = "" + cfg["addr"]; }
 	if (cfg.has("demo")) { DEMO_LAST_NAME = "" + cfg["demo"]; }
@@ -421,7 +421,7 @@ function demo_name_key(string k) -> bool {
 		return false;
 	}
 	if (k == "enter") {
-		if (!file_exists(data_path(DEMO_NAME_EDIT))) { set_msg(`no demo ${DEMO_NAME_EDIT}`); return false; }
+		if (!file::exists(data_path(DEMO_NAME_EDIT))) { set_msg(`no demo ${DEMO_NAME_EDIT}`); return false; }
 		if (!demo_load(DEMO_NAME_EDIT)) { set_msg("not a demo file"); return false; }
 		DEMO_LAST_NAME = DEMO_NAME_EDIT;
 		cfg_save();
@@ -971,7 +971,7 @@ function selftest() -> int {
 		P_VIEWZ = P_FLOORZ + 41.0;
 		float offdir = -100.0;
 		for (int a1 = 0; a1 < 16 && offdir < -99.0; ++a1) {
-			float ang = a1 * math::TAU / 16.0;
+			float ang = a1 * math::tau / 16.0;
 			int pf = SE_FLOORH[sector_at(P_X + math::cos(ang) * 48.0, P_Y + math::sin(ang) * 48.0)];
 			if (P_FLOORZ - pf > 8) { offdir = ang; }
 		}
@@ -1018,7 +1018,7 @@ int FIRE_PIN = 120978818;     // the title fire's hash after flowtest's 90 tics 
 
 function flowtest() -> int {
 	int fails = 0;
-	int mload = file_exists(data_path(SAVE_PATH)) ? 1 : 0;      // a real save adds LOAD GAME
+	int mload = file::exists(data_path(SAVE_PATH)) ? 1 : 0;      // a real save adds LOAD GAME
 	GSTATE = 0;
 	title_draw();
 	menu_open();                                     // the any-key-at-title path
@@ -1099,7 +1099,7 @@ function flowtest() -> int {
 	addr_save();
 	NP_LAST_ADDR = "";
 	addr_load();
-	delete_file(data_path(NET_CFG));
+	file::remove(data_path(NET_CFG));
 	if (NP_LAST_ADDR != "192.168.7.3:28777") { fails = fails + 1; print(`FAIL net config round-trip (${NP_LAST_ADDR})`); }
 	lobby_draw("WAITING FOR PLAYER", "CO-OP ON E1M1", "ESC CANCELS");
 
@@ -1142,7 +1142,7 @@ function flowtest() -> int {
 	addr_save();
 	DEMO_LAST_NAME = "";
 	addr_load();
-	delete_file(data_path(NET_CFG));
+	file::remove(data_path(NET_CFG));
 	if (DEMO_LAST_NAME != "mytape.json") { fails = fails + 1; print(`FAIL demo name round-trip (${DEMO_LAST_NAME})`); }
 	menu_open();                                     // OPTIONS: the render mode flips and persists
 	for (int oi = 0; oi < MENU_ITEMS.size(); ++oi) { if (MENU_ITEMS[oi] == "OPTIONS") { MENU_SEL = oi; } }
@@ -1153,7 +1153,7 @@ function flowtest() -> int {
 	PIX_SETTING = "";
 	PIX_MODE = "";
 	addr_load();
-	delete_file(data_path(NET_CFG));
+	file::remove(data_path(NET_CFG));
 	if (PIX_SETTING != "sext" || PIX_MODE != "sext") { fails = fails + 1; print(`FAIL render mode round-trip (${PIX_SETTING})`); }
 	menu_key("esc");
 	if (MENU_MODE != 0) { fails = fails + 1; print("FAIL options esc"); }
@@ -1177,7 +1177,7 @@ function flowtest() -> int {
 	int mh1 = demo_state_hash();
 	int mfed = DEMO_TICS.size() / 6;
 	wi_start();                                      // level exit: the tape writes + disarms
-	if (DEMO_REC || DEMO_ARM != "" || !file_exists(data_path("jaidoom_menudemo.json"))) { fails = fails + 1; print("FAIL tape write at exit"); }
+	if (DEMO_REC || DEMO_ARM != "" || !file::exists(data_path("jaidoom_menudemo.json"))) { fails = fails + 1; print("FAIL tape write at exit"); }
 	player_reset();                                  // scramble, then replay from the menu
 	game_start_map("E1M3");
 	for (int ms0 = 0; ms0 < 8; ++ms0) { CMD_FWD = 50.0; game_tic(); }
@@ -1204,7 +1204,7 @@ function flowtest() -> int {
 	attract_end(true);                               // a key: the menu, never RESUME into the tape
 	if (ATTRACT || DEMO_PLAY || GSTATE != 1 || MENU_ITEMS.size() != 6 + mload) { fails = fails + 1; print("FAIL attract key to menu"); }
 	WIPE_TICS = 0;
-	delete_file(data_path("jaidoom_menudemo.json"));
+	file::remove(data_path("jaidoom_menudemo.json"));
 	DEMO_LAST_NAME = "demo.json";
 
 	// ---- cheats: the classic typed sequences through the rolling buffer ----
@@ -1330,7 +1330,7 @@ function flowtest() -> int {
 	game_start_map("E1M4");
 	for (int st3 = 0; st3 < 10; ++st3) { game_tic(); }
 	if (!game_load("jaidoom_savetest.json")) { fails = fails + 1; print("FAIL load"); }
-	delete_file(data_path("jaidoom_savetest.json"));
+	file::remove(data_path("jaidoom_savetest.json"));
 	if (GAME_MAP != "E1M1" || GAME_TIC != stic) { fails = fails + 1; print("FAIL map/tic restore"); }
 	if (P_X != sx || P_Y != sy || P_ANG != sang) { fails = fails + 1; print("FAIL player position exact restore"); }
 	if (P_HP != 61 || P_ARMOR != 33 || AMMO_SHELLS != 7 || !HAVE_SHOTGUN || P_KEYS != 3 || CUR_WEAPON != 3) {
@@ -1403,7 +1403,7 @@ function flowtest() -> int {
 	for (int dx0 = 0; dx0 < 10; ++dx0) { CMD_FWD = 50.0; game_tic(); }
 	CMD_FWD = 0.0; CMD_SIDE = 0.0; CMD_TURN = 0.0; CMD_USE = false; CMD_FIRE = false;
 	if (!demo_load("jaidoom_demotest.json")) { fails = fails + 1; print("FAIL demo load"); }
-	delete_file(data_path("jaidoom_demotest.json"));
+	file::remove(data_path("jaidoom_demotest.json"));
 	SKILL_BIT = DEMO_SKILL;
 	NIGHTMARE = DEMO_NM;
 	FAST_MONSTERS = DEMO_NM;
@@ -1508,8 +1508,8 @@ function flowtest() -> int {
 
 	float fov_live = FOV;
 	FOV = 123.0;
-	string tune_src = read_file(game_root() + "/scripts/tune.jai");
-	write_file(game_root() + "/scripts/tune.jai", tune_src);   // the same text, saved again: the next frame reloads it
+	string tune_src = file::read(game_root() + "/scripts/tune.jai");
+	file::write(game_root() + "/scripts/tune.jai", tune_src);   // the same text, saved again: the next frame reloads it
 	float recheck = import_recheck_interval();
 	import_recheck_interval(0.0);                    // imports look at their files every 200 ms; now, for the test
 	tune_poll();
@@ -1545,45 +1545,45 @@ function main() -> int {
 	bool want_shareware = true;
 	bool want_audio = true;
 	var demopath = "";
-	for (int i = 0; i < ARGS.size(); ++i) {
-		if (ARGS[i] == "selftest") { test = true; }
-		else if (ARGS[i] == "bootstrap") { bootstrap = true; }
-		else if (ARGS[i] == "--no-shareware") { want_shareware = false; }
-		else if (ARGS[i] == "--no-audio") { want_audio = false; }
-		else if (ARGS[i] == "--mute") { MUTE = true; }
-		else if (ARGS[i] == "uncapped") { UNCAPPED = true; SMOOTH = true; }
-		else if (ARGS[i] == "--truecolor") { HOST_TRUECOLOR = true; }
-		else if (ARGS[i] == "--256color") { HOST_TRUECOLOR = false; }
-		else if (ARGS[i] == "--pix" && i + 1 < ARGS.size()) {
-			PIX_MODE = ARGS[i + 1];
+	for (int i = 0; i < args.size(); ++i) {
+		if (args[i] == "selftest") { test = true; }
+		else if (args[i] == "bootstrap") { bootstrap = true; }
+		else if (args[i] == "--no-shareware") { want_shareware = false; }
+		else if (args[i] == "--no-audio") { want_audio = false; }
+		else if (args[i] == "--mute") { MUTE = true; }
+		else if (args[i] == "uncapped") { UNCAPPED = true; SMOOTH = true; }
+		else if (args[i] == "--truecolor") { HOST_TRUECOLOR = true; }
+		else if (args[i] == "--256color") { HOST_TRUECOLOR = false; }
+		else if (args[i] == "--pix" && i + 1 < args.size()) {
+			PIX_MODE = args[i + 1];
 			i = i + 1;
 			if (PIX_MODE != "half" && PIX_MODE != "sext") { print(`unknown --pix mode: ${PIX_MODE} (half|sext)`); return 2; }
 		}
-		else if (ARGS[i] == "flowtest") { flow = true; }
-		else if (ARGS[i] == "freedoom2") { path = "freedoom2"; }
-		else if (ARGS[i] == "record" && i + 1 < ARGS.size()) { DEMO_ARM = ARGS[i + 1]; i = i + 1; }
-		else if (ARGS[i] == "playdemo" && i + 1 < ARGS.size()) { demopath = ARGS[i + 1]; i = i + 1; }
-		else if (ARGS[i] == "host") {
+		else if (args[i] == "flowtest") { flow = true; }
+		else if (args[i] == "freedoom2") { path = "freedoom2"; }
+		else if (args[i] == "record" && i + 1 < args.size()) { DEMO_ARM = args[i + 1]; i = i + 1; }
+		else if (args[i] == "playdemo" && i + 1 < args.size()) { demopath = args[i + 1]; i = i + 1; }
+		else if (args[i] == "host") {
 			NP_QUEUE_MODE = "host";
-			if (i + 1 < ARGS.size() && ARGS[i + 1].to_int(0) > 0) { NP_QUEUE_PORT = ARGS[i + 1].to_int(28666); i = i + 1; }
+			if (i + 1 < args.size() && args[i + 1].to_int(0) > 0) { NP_QUEUE_PORT = args[i + 1].to_int(28666); i = i + 1; }
 		}
-		else if (ARGS[i] == "join" && i + 1 < ARGS.size()) {
+		else if (args[i] == "join" && i + 1 < args.size()) {
 			NP_QUEUE_MODE = "join";
-			NP_QUEUE_HOST = ARGS[i + 1];
+			NP_QUEUE_HOST = args[i + 1];
 			i = i + 1;
-			if (i + 1 < ARGS.size() && ARGS[i + 1].to_int(0) > 0) { NP_QUEUE_PORT = ARGS[i + 1].to_int(28666); i = i + 1; }
+			if (i + 1 < args.size() && args[i + 1].to_int(0) > 0) { NP_QUEUE_PORT = args[i + 1].to_int(28666); i = i + 1; }
 		}
-		else if (ARGS[i] == "coop") { NP_QUEUE_COOP = true; }
-		else if (ARGS[i].ends_with(".wad")) { if (path_given) { extra_wads.push(ARGS[i]); } else { path = ARGS[i]; path_given = true; } }
-		else if (ARGS[i].starts_with("E") || ARGS[i].starts_with("MAP")) { mapname = ARGS[i]; }
+		else if (args[i] == "coop") { NP_QUEUE_COOP = true; }
+		else if (args[i].ends_with(".wad")) { if (path_given) { extra_wads.push(args[i]); } else { path = args[i]; path_given = true; } }
+		else if (args[i].starts_with("E") || args[i].starts_with("MAP")) { mapname = args[i]; }
 	}
 	path = wad_path(path);
 	if (bootstrap) { return boot_run(false, want_shareware, want_audio) ? 0 : 1; }   // headless: play.bat/bootstrap.sh, CI
-	if (!file_exists(path) && !test && !flow) {                                    // first run: the game fetches its own data
+	if (!file::exists(path) && !test && !flow) {                                    // first run: the game fetches its own data
 		if (!boot_run(true, want_shareware, want_audio)) { return 1; }
-		if (!file_exists(path)) { print(`no WAD at ${path} (declined or failed); run again with -- bootstrap to retry`); return 1; }
+		if (!file::exists(path)) { print(`no WAD at ${path} (declined or failed); run again with -- bootstrap to retry`); return 1; }
 	}
-	if (!file_exists(path)) { print(`no WAD at ${path}: run jaidoom.jai -- bootstrap first`); return 1; }
+	if (!file::exists(path)) { print(`no WAD at ${path}: run jaidoom.jai -- bootstrap first`); return 1; }
 	if (!wad_load(path)) { print("wad_load failed"); return 1; }
 	for (auto extra : extra_wads) {
 		string ep = wad_path(extra);

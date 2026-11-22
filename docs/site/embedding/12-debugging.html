@@ -46,8 +46,10 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Embedding</a><span class="sep" aria-hidden="true">/</span>12</nav>
 <article class="chapter"><h1 id="debugging">Debugging<a class="hlink" href="#debugging" aria-label="link">&#8203;</a></h1>
-<p>Every engine carries a step debugger: breakpoints, pause, step, a call stack, and reads and writes of a stopped
-script's variables. A host drives it from C++ through <code>engine::debugger()</code>, or opens a port with
+<p>Every engine carries a step debugger: breakpoints (with conditions, hit counts and log messages), exception
+breakpoints, pause, step, the whole call stack with every frame's locals, values that expand to any depth, expressions
+evaluated in any frame, and writes of a stopped script's variables. A host drives it from C++ through
+<code>engine::debugger()</code>, or opens a port with
 <code>jai::debug::listen</code> so VS&nbsp;Code attaches over the Debug Adapter Protocol. The VS&nbsp;Code extension in
 <code>tools/vscode-jaiscript</code> supplies the attach type and syntax highlighting.</p>
 <div class="callout"><p><strong>Two things to know before you turn it on.</strong></p>
@@ -94,15 +96,49 @@ or anything that waits for input, not a script that finishes at once.</li>
   ]
 }</code></pre></div></li>
 <li><strong>Click in the gutter</strong> of a <code>.jai</code> file. When it stops you can step over, into and out,
-continue and pause.</li></ol>
+continue and pause. Step into enters a function, a lambda, a signal receiver or a coroutine at the statement it resumes;
+step out stops at the caller's next statement.</li></ol>
 <div class="tablewrap"><table><thead><tr><th>pane</th><th>shows</th></tr></thead><tbody>
-<tr><td>Call Stack</td><td>every frame, innermost first, named and located as an error's stack names it; the top level is last, as <code>&lt;script&gt;</code></td></tr>
-<tr><td>Locals</td><td>what is in scope at the frame's statement: the parameters and each local an enclosing block has already declared. An inner name hides an outer one.</td></tr>
+<tr><td>Call Stack</td><td>every frame, innermost first, named and located as an error's stack names it; the top level is last, as <code>&lt;script&gt;</code>. A script function a host function calls back sits above the frame that called the host; a resumed coroutine above its resumer; a callee the VM inlined is a frame of its own.</td></tr>
+<tr><td>Locals</td><td>what is in scope at the frame's statement, in every frame: the parameters and each local an enclosing block has already declared (an inner name hides an outer one), a closure's captures, <code>this</code> in a method, and at the top level its block-scoped names</td></tr>
 <tr><td>Globals</td><td>the program's own variables. Callables and what the host registered with <code>add_global</code> stay out.</td></tr>
-<tr><td>Watch, hover, Debug Console</td><td>a name and its <code>.field</code>, <code>[index]</code> and <code>["key"]</code> steps (<code>player.inventory[0]</code>). An operator or a call answers that it cannot be evaluated.</td></tr>
+<tr><td>a value's parts</td><td>a class object expands to its fields (a base's first), an array to its elements, a map to its entries, a handle or a live <code>weak_ptr</code> to its object's fields, to any depth; a large array or map pages. A null handle and a host (C++) object are leaves.</td></tr>
+<tr><td>Set Value</td><td>stores into a local, a global, a field, an element or a map entry as the script's own assignment would: the variable's declared type holds, and a refused store answers the script's text (<code>Cannot assign string to 'total' (declared int)</code>)</td></tr>
+<tr><td>Watch, hover</td><td>any expression, in the selected frame, that only reads: <a href="#evaluating">Evaluating expressions</a></td></tr>
+<tr><td>Debug Console</td><td>any statements, in the selected frame, which may assign and call</td></tr>
+<tr><td>Breakpoints</td><td>a condition, a hit count and a log message on each; exception breakpoints for thrown or uncaught errors: <a href="#breakpoint-options">Breakpoint options</a></td></tr>
 </tbody></table></div>
 <p>Each row carries its kind (<code>int</code>, <code>string</code>, <code>array</code>, <code>object</code>, ...); a string
 shows quoted, and a value's text stops after 1000 bytes.</p>
+<h3 id="evaluating">Evaluating expressions<a class="hlink" href="#evaluating" aria-label="link">&#8203;</a></h3>
+<p>An expression runs in the selected frame: its locals, its captures, <code>this</code> and the fields and methods it names bare in
+a method (a generic method's instance too, <code>tagged&lt;int&gt;(7)</code> or <code>this.tagged&lt;int&gt;(7)</code>, made for the
+class of the object the frame holds), then the program's names (<code>::name</code> reaches a global a local hides). It runs on the parked script
+thread through the engine, so its operators, conversions and errors are the script's own, on both backends.</p>
+<ul>
+<li><strong>Watch and hover only read.</strong> VS&nbsp;Code evaluates them at every stop, so an assignment, an increment,
+a lambda, a throw and a call of anything but a builtin that only reads (<code>xs.size()</code>, <code>array::sort(xs)</code>,
+<code>math::sqrt(d)</code>) are refused before anything runs: <code>A watch only reads: an assignment changes state
+(evaluate it in the Debug Console)</code>. Script code the expression would reach on its way (an operator a class
+defines, a getter, a constructor) is refused at its first statement, so nothing it would do happens:
+<code>A watch only reads: '+' would run script code (evaluate it in the Debug Console)</code>.</li>
+<li><strong>The Debug Console changes state.</strong> It runs statements (<code>xs.push(9); xs.size()</code>, <code>local
+= 100</code>, <code>bump()</code>) and writes a local or a field it changed back through that variable's own store rules.
+A name it declares lasts for that evaluation only.</li>
+<li><strong>An evaluation has a budget.</strong> One that runs past a second (<code>dbg.set_evaluation_budget</code>)
+stops with <code>The evaluation ran past its budget of 1000 ms</code>. An error inside one answers its text and leaves the
+stop as it was; no breakpoint fires and no step is taken inside it.</li>
+</ul>
+<h3 id="breakpoint-options">Breakpoint options<a class="hlink" href="#breakpoint-options" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>option</th><th>stops</th></tr></thead><tbody>
+<tr><td>Condition (<code>i == 4</code>)</td><td>only while the expression is true, evaluated as a watch is; a condition that fails stops and prints its error</td></tr>
+<tr><td>Hit Count</td><td>on the hits the count takes: <code>5</code> (the fifth), <code>&gt;= 5</code>, <code>&gt; 5</code>, <code>&lt;= 5</code>, <code>&lt; 5</code>, <code>% 4</code> (every fourth); hits count only once the condition held</td></tr>
+<tr><td>Log Message (<code>i={i} twice={twice}</code>)</td><td>never: it prints the message to the Debug Console, each <code>{expression}</code> as print shows its value (<code>{{</code> and <code>}}</code> are braces), and the script runs on</td></tr>
+<tr><td>Exception breakpoints: Thrown errors</td><td>where any error is raised, a run-time error or a <code>throw</code>, caught or not, with the throwing frame and its locals still on the stack</td></tr>
+<tr><td>Exception breakpoints: Uncaught errors</td><td>where an error no running <code>try</code> takes is raised</td></tr>
+</tbody></table></div>
+<p>An exception stop's reason is <code>exception</code> and its text the error's message, which VS&nbsp;Code shows with the
+stop (<code>exceptionInfo</code>). A rethrow (<code>throw;</code>) stops again where it rethrows.</p>
 <h3 id="attach-from-vs-code">Listening from your host<a class="hlink" href="#attach-from-vs-code" aria-label="link">&#8203;</a></h3>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">#include &lt;jaiscript/debug/connector.hpp&gt;
 
@@ -134,22 +170,33 @@ the last statement it stays unverified.</li>
 <tr><td><code>--debug</code></td><td>listen on 52477, or the next free port in steps of 10</td><td>listen on 52472 for the whole run</td></tr>
 <tr><td><code>--debug-port N</code> (runner: <code>--debug-port=N</code>)</td><td>listen, trying N first</td><td>listen on N</td></tr>
 <tr><td><code>--debug-wait</code></td><td></td><td>hold boot until you attach and press Enter, to catch start-up code</td></tr>
+<tr><td><code>--break=FILE:LINE</code>, <code>"--break=FILE:LINE if CONDITION"</code></td><td>each time the script reaches the line (while the condition holds), print the call stack and every frame's locals on stderr and run on; repeatable, without <code>--debug</code></td><td></td></tr>
+<tr><td><code>--dump-on-error</code></td><td>an error no script catch takes prints the call stack and every frame's locals on stderr where it is raised, before the error itself</td><td></td></tr>
 </tbody></table></div>
+<p>The two print flags are for agents and CI: nothing attaches, and a run reads as a log.</p>
+<div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain">$ jaiscript --dump-on-error main.jai
+uncaught error: Array index 5 out of bounds for array of size 2
+  at load_level (main.jai:3)
+      n = 5
+      sizes = [8, 16]
+  at start (main.jai:5)
+  at &lt;script&gt; (main.jai:7)
+jaiscript: Array index 5 out of bounds for array of size 2
+...</code></pre></div>
 <p>The crawler loads its scripts with <code>import</code>, so <code>scripts/*.jai</code> breakpoints bind. The demoreel
 normally runs one precompiled unit; under <code>--debug</code> it loads each scene with <code>execute_file</code> so
 <code>scenes/*.jai</code> breakpoints bind.</p>
-<h3 id="what-the-connector-doesn-t-do-and-what-to-use-instead">What the connector does not do<a class="hlink" href="#what-the-connector-doesn-t-do-and-what-to-use-instead" aria-label="link">&#8203;</a></h3>
-<div class="tablewrap"><table><thead><tr><th>not over the wire</th><th>use instead</th></tr></thead><tbody>
-<tr><td>editing a variable</td><td><code>dbg.set_variable</code> inside a <code>post_command</code> closure (<a href="#the-debugger-core-c-api">below</a>)</td></tr>
-<tr><td>conditional breakpoints, logpoints</td><td>an <code>if</code> in the script with the breakpoint inside it</td></tr>
-<tr><td>exception breakpoints</td><td>a breakpoint on the <code>throw</code>, on the failing call, or in a <code>catch</code></td></tr>
-<tr><td>evaluating an expression</td><td>a local that holds it; step past its declaration</td></tr>
+<h3 id="what-the-connector-doesn-t-do-and-what-to-use-instead">What the debugger does not do<a class="hlink" href="#what-the-connector-doesn-t-do-and-what-to-use-instead" aria-label="link">&#8203;</a></h3>
+<div class="tablewrap"><table><thead><tr><th>not done</th><th>use instead</th></tr></thead><tbody>
 <tr><td>breakpoints inside a running parallel body</td><td>a parallel region is atomic: a breakpoint on the <code>parallel_transform</code> line stops before the call and a step lands after the join. Call the body serially on one element to debug it.</td></tr>
+<tr><td>expanding a host (C++) object</td><td>a watch on the property you want (<code>door.width</code>)</td></tr>
 </tbody></table></div>
 <h2 id="without-a-debugger">Without a debugger<a class="hlink" href="#without-a-debugger" aria-label="link">&#8203;</a></h2>
 <p>The <a href="06-static-checking.html">strict checker</a> reports typed mistakes and undeclared names before anything
 runs. At run time a caught error carries <code>e.message</code>, <code>e.line</code>, <code>e.column</code> and
-<code>e.stack</code> (each frame <code>file:line</code>, innermost first, the innermost 64 kept):</p>
+<code>e.stack</code> (each frame <code>file:line</code>, innermost first, the innermost 64 kept). A frame stands at the statement
+it runs; one whose parameters are still binding stands at its first statement, and a constructor's, ahead of its body, at the
+constructor or at the initializer it evaluates:</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">function load_level(int n) {
     array&lt;int&gt; sizes = [8, 16];
     return sizes[n];
@@ -169,6 +216,15 @@ where: line 3, column 5
   at main.jai:7</code></pre></div>
 <p>A host gets the same from a failed <code>checked_result</code> through <code>eng-&gt;format_error(r)</code> and
 <code>eng-&gt;format_stack_trace()</code> (<a href="17-host-api.html#error-surfaces">Error surfaces</a>).</p>
+<p>A script reads where it is with <code>debug::stack()</code> and <code>debug::locals()</code>
+(<a href="../guide/05-control-flow.html#debug-stack-locals">Control Flow</a>), which cost only when called. A host has the
+whole picture at an uncaught error: <code>set_on_uncaught_error</code> runs on the script thread where such an error is
+raised, its frames still on the stack, and <code>dump()</code> prints them with their locals, the text
+<code>--dump-on-error</code> prints. It needs no session and costs nothing until the error.</p>
+<div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">auto&amp; dbg = eng-&gt;debugger();
+dbg.set_on_uncaught_error([&amp;](const std::string&amp; message) {
+    std::cerr &lt;&lt; "uncaught: " &lt;&lt; message &lt;&lt; "\n" &lt;&lt; dbg.dump();   // "  at f (file:line)" then "      name = value" lines
+});</code></pre></div>
 <h2 id="the-debugger-core-c-api">The controller (C++ API)<a class="hlink" href="#the-debugger-core-c-api" aria-label="link">&#8203;</a></h2>
 <p><code>eng-&gt;debugger()</code> returns the engine's <code>jai::debug::controller</code>
 (<code>jaiscript/debug/controller.hpp</code>), created on first use. It is the object the connector drives.</p>
@@ -196,11 +252,18 @@ std::thread script([&amp;] {
 dbg.post_command([&amp;] {                    // the closure runs on the parked script thread
     jai::script_value x = dbg.get_variable("x");   // 1
     // dbg.set_variable("x", eng-&gt;make_value(41));
-    auto row = dbg.evaluate("x");         // {name, value text, kind}
-    auto frames = dbg.list_frames();      // {name, file, line}, innermost first
+    auto row = dbg.evaluate("x + 1");     // {name, value text, kind, reference, ...}; a watch only reads
+    dbg.evaluate("x = 41", 0, jai::debug::evaluation_mode::console);   // the console may change state
+    auto frames = dbg.list_frames();      // {name, file, line}, innermost first, the frames e.stack lists
     auto locals = dbg.list_locals(0);     // the locals of frames[0]
     auto globals = dbg.list_globals();
+    auto parts = dbg.list_children(locals[0].reference);   // a value's fields, elements or entries
+    dbg.set_variable(dbg.locals_reference(0), "x", "7");   // as `x = 7;` in frames[0]
 });
+dbg.set_source_breakpoints("game.jai", {{12, "hp < 0", "", ""},            // line, condition,
+                                        {20, "", "% 10", ""},              // hit condition,
+                                        {31, "", "", "hp={hp}"}});         // log message (set_on_output)
+dbg.set_exception_breakpoints(true, false);   // stop where any error is raised (or only uncaught ones)
 
 dbg.step_into();   // next statement, any depth
 dbg.step_over();   // next statement at this depth or shallower
@@ -211,8 +274,13 @@ script.join();</code></pre></div>
 <div class="tablewrap"><table><thead><tr><th>call</th><th>where it may run</th></tr></thead><tbody>
 <tr><td>the first <code>engine::debugger()</code>, <code>set_on_stopped</code></td><td>before the script thread starts, or on it</td></tr>
 <tr><td><code>set_breakpoints</code>, <code>clear_breakpoints</code>, <code>set_enabled</code>, <code>resume</code>, <code>step_*</code>, <code>post_command</code>, <code>detach</code></td><td>any thread; set breakpoints from one thread at a time</td></tr>
-<tr><td><code>get_variable</code>, <code>set_variable</code>, <code>evaluate</code>, <code>list_frames</code>, <code>list_locals</code>, <code>list_globals</code></td><td>the parked script thread, inside a <code>post_command</code> closure</td></tr>
+<tr><td><code>set_source_breakpoints</code> (with conditions), <code>set_exception_breakpoints</code>, <code>set_evaluation_budget</code></td><td>any thread</td></tr>
+<tr><td><code>set_on_output</code>, <code>set_on_uncaught_error</code></td><td>before the script thread starts, or on it</td></tr>
+<tr><td><code>get_variable</code>, <code>set_variable</code>, <code>evaluate</code>, <code>list_frames</code>, <code>list_locals</code>, <code>list_globals</code>, <code>list_children</code>, <code>locals_reference</code>, <code>globals_reference</code></td><td>the parked script thread, inside a <code>post_command</code> closure</td></tr>
+<tr><td><code>dump</code></td><td>the script thread: at a stop, in a host function the script called, or in <code>on_uncaught_error</code></td></tr>
 </tbody></table></div>
+<p>A reference (<code>variable_info::reference</code>, <code>locals_reference</code>) names what it lists until the script
+resumes; an older one lists nothing.</p>
 <p><code>get_variable</code> and <code>set_variable</code> resolve a name as the stopped statement does: the innermost
 frame's locals, then its enclosing scopes (a closure's captures, the top level's blocks), then the program scope. A set
 obeys the variable's declared type. A name nothing in scope has throws; neither call declares a global.</p>
@@ -268,7 +336,7 @@ host. For diagnostics, completion and navigation see <a href="14-language-server
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

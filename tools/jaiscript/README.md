@@ -22,7 +22,7 @@ platform: an int outside that range exits with its low byte (`300` exits 44, `-1
 on Windows as on POSIX, so keep a result meant as an exit code in that range.
 
 - `include`/`import` resolve relative to the script's own directory.
-- Everything after `--` is the global `ARGS` (array of strings).
+- Everything after `--` is the global `args` (array of strings).
 - **Drag-drop a `.jai` file onto the exe works** — and when the console window is
   exclusively ours (drag-drop / double-click launch) the runner pauses on
   "press Enter to close" so the output is readable. `--pause` / `--no-pause` override.
@@ -54,7 +54,7 @@ jaiscript
 A persistent engine: globals, functions and classes accumulate across lines.
 
 ```
-JaiScript 0.5.4-beta - vm backend, stdlib loaded, budget off. :help for commands.
+JaiScript 0.6.0-beta - vm backend, stdlib loaded, budget off. :help for commands.
 jai> int hp = 100
 jai> hp - 58
 42
@@ -149,55 +149,58 @@ counts from 0.
 ## Environment the runner provides
 
 The full JaiScript stdlib is always registered (`jai::stdlib::register_all`): formatted
-`print` / `format` / `to_string` / `type_of`, math, `to_json` / `from_json`, container
+`print` / `format` / `to_string` / `reflect::type_of`, math, `to_json` / `from_json`, container
 helpers, the `random` type, `crypto::` (hashes such as `crypto::sha256(s)` and `crypto::sha256_file(path)`, HMAC,
-secure random bytes and password hashing; `crypto::sha256_file` needs the `filesystem` permission and raises `read_file`'s
+secure random bytes and password hashing; `crypto::sha256_file` needs the `filesystem` permission and raises `file::read`'s
 error below), and the opt-in `web::` library (`jai::stdlib::register_web`: `web::html_escape`, `web::url_encode`, `web::form_encode`,
-`web::parse_query`, `web::build_query`, `web::parse_url` and the rest), and the opt-in `spider::` HTTP client
+`web::parse_query`, `web::build_query`, `web::parse_url` and the rest), the opt-in `image::` module
+(`jai::stdlib::register_image`: `image::load`, `image::data` and the `image` class, in a build with `JAISCRIPT_ENABLE_IMAGE` on),
+and the opt-in `spider::` HTTP client
 (`jai::stdlib::register_spider`: `spider::catch(url[, options])`, also spelled `spider::get`, and
 `spider::sling(content, url[, options])`, also spelled `spider::post(url, content[, options])`, each answering a
-`spider::Response`) with the `network` permission granted and the transport of `tools/jaiscript/http_transport.hpp`:
+`spider::response`) with the `network` permission granted and the transport of `tools/jaiscript/http_transport.hpp`:
 WinHTTP on Windows, sockets elsewhere with HTTPS through OpenSSL when the build found it (plain HTTP otherwise);
 `JAISCRIPT_HTTP_TRANSPORT=socket` picks the socket transport on Windows. (A bare engine has far less, listed in the reference's "What a bare engine has"
 (`docs/site/reference/library.html#bare-engine`); the runner opts into everything.) On top, the host binds file IO so scripts can actually save things:
 
 ```
-read_file(path) -> string      write_file(path, text) -> bool   (creates missing folders)
-file_exists(path) -> bool      delete_file(path) -> bool
-move_file(from, to) -> bool    (replaces `to`; false when `from` is not a file)
-dir_exists(path) -> bool       make_dirs(path) -> bool           list_dir(path) -> array<string>
-writable_dir(path) -> bool     (creates the folder if missing, writes and removes a probe)
+file::read(path) -> string                     file::write(path, text) -> bool   (creates missing folders)
+file::exists(path) -> bool                     file::remove(path) -> bool
+file::move(from, to) -> bool                   (replaces `to`; false when `from` is not a file)
+file::directory_exists(path) -> bool           file::make_directories(path) -> bool
+file::list_directory(path) -> array<string>
+file::ensure_writable_directory(path) -> bool  (creates the folder if missing, writes and removes a probe)
 zip_entries(zip) -> array<string>  zip_extract(zip, entry, dest) -> bool   (CRC-32 verified)
 ```
 
-`move_file` is the last step of a safe save: write `save.tmp`, check it, then
-`move_file("save.tmp", "save.txt")`. On one volume the destination is replaced in a single
+`file::move` is the last step of a safe save: write `save.tmp`, check it, then
+`file::move("save.tmp", "save.txt")`. On one volume the destination is replaced in a single
 operation (`MoveFileEx` on Windows, `rename(2)` elsewhere), so a crash leaves the old file or
 the new one, never half of either; across volumes it copies, then removes the source. Every
 function above requires the engine's `filesystem` permission. A file's metadata (size, created and
-modified times) is the engine-core `file_data(path)` builtin, on every engine.
+modified times) is the engine-core `file::data(path)` builtin, on every engine.
 
-`read_file` returns the file's bytes exactly (binary mode: every byte value, NULs and `\r\n` as they
+`file::read` returns the file's bytes exactly (binary mode: every byte value, NULs and `\r\n` as they
 are; `""` for an existing empty file). A file that is missing or cannot be read raises a catchable
 error, `Cannot read file '<path>': <reason>`, the reason one of `not found`, `not a file` (a folder),
-`permission denied`, `cannot be opened` or `read failed`. Ask `file_data(path) != null` (or `file_exists(path)`)
-first when absence is expected, or catch the error; uncaught, it ends the run with the usual trace. `write_file` writes
+`permission denied`, `cannot be opened` or `read failed`. Ask `file::data(path) != null` (or `file::exists(path)`)
+first when absence is expected, or catch the error; uncaught, it ends the run with the usual trace. `file::write` writes
 the bytes exactly and answers `false` when it cannot.
 
 Where things are is not the host's to invent: every engine carries the location builtins
 (`resolve_path`, `current_script_dir`, `root_script_dir`, `executable_dir` with alias
 `bin_dir`, `app_data_dir`, `app_cache_dir`, `working_dir`, `parent_dir`, `file_name` and the
 `_path` twins; the guide's Modules chapter, "Where files are"). Loading walks the import
-ladder through `resolve_path`; saving picks an anchor and asks `writable_dir` whether it can
+ladder through `resolve_path`; saving picks an anchor and asks `file::ensure_writable_directory` whether it can
 take a file. A script dropped onto the executable therefore runs the same from any working
 directory. JaiDoom chooses the folder above `scripts/` when it is writable and
 `app_data_dir("JaiDOOM")` otherwise.
 
-The host also binds `Download`, an asynchronous download the script polls from its own loop,
-the same shape as the `NetChannel` binding (`tools/jaiscript/fetch.hpp`):
+The host also binds `download`, an asynchronous download the script polls from its own loop,
+the same shape as the `net_channel` binding (`tools/jaiscript/fetch.hpp`):
 
 ```
-auto d = Download();
+auto d = download();
 d.start(url, path)          // http or https; false with d.error() set when it cannot begin
 while (!d.pump()) { ... }   // d.received(), d.total() (-1 until known), d.fraction()
 d.success()  d.error()  d.cancel()
@@ -215,7 +218,7 @@ addresses (loopback left out), which is what a player hosting a game tells the o
 reads `COLORTERM` (`truecolor` or `24bit`), and on Windows `WT_SESSION` (Windows Terminal), to
 choose between 24-bit colour and the 256-colour palette.
 
-The strings after `--` are the global `ARGS`.
+The strings after `--` are the global `args`.
 
 ## Ctrl+C
 

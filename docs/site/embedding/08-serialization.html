@@ -48,14 +48,14 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 <article class="chapter"><h1 id="serialization">Serialization<a class="hlink" href="#serialization" aria-label="link">&#8203;</a></h1>
 <p>JaiScript serializes at two layers that share one wire vocabulary.</p>
 <ul id="which-layer-to-use">
-<li><strong>Script archives</strong> write a script value: the builtins <code>to_json</code> / <code>from_json</code>, <code>to_binary</code> / <code>from_binary</code> and <code>to_base64</code> / <code>from_base64</code>. Use them for script gameplay state.</li>
+<li><strong>Script archives</strong> write a script value: the builtins <code>to_json</code> / <code>from_json</code>, <code>to_binary</code> / <code>from_binary</code> (<code>base64_encode(to_binary(v))</code> for text). Use them for script gameplay state.</li>
 <li><strong>C++ archives</strong> write a host type as JSON or compact binary (<code>jai::to_json</code>, <code>jai::from_json&lt;T&gt;</code>, <code>jai::to_binary</code> and siblings). They dispatch like Cereal, to a member or free <code>serialize</code> / <code>save</code> / <code>load</code>, or to the <code>JAI_PROPERTY</code> fields of a <code>property_owner</code>. Use them for host objects, editor documents and network payloads.</li>
 </ul>
 <p>The rules that govern both:</p>
 <ul>
 <li><strong>Binding a class for scripting does not make it archivable.</strong> The C++ archives need a <code>serialize</code> / <code>save</code> / <code>load</code> or <code>JAI_PROPERTY</code> fields. A <a href="02-dynamic-binder.html">dynamic_binder</a> chain adds the class&#x27;s name for the script archives, and a <code>jai::registrar</code> around it adds the identity <a href="#smart-pointers-polymorphism-graphs">polymorphic saves</a> need.</li>
 <li><strong>Data is found by name</strong>, so adding or removing a field needs no migration code (<a href="#versions-and-missing-fields">Versions and missing fields</a>).</li>
-<li><strong>A load converts or fails; it runs no payload text.</strong> A script field takes a loaded value as <code>=</code> would assign it, and a C++ field that cannot hold a value fails the load (<a href="#security-posture-untrusted-payloads">Security posture</a>).</li>
+<li><strong>A load converts; it runs no payload text.</strong> A script field takes a loaded value as <code>=</code> would assign it. A value it cannot take keeps the field's constructed value under <code>from_json(text)</code> and <code>from_binary</code>, and fails the load under <code>from_json&lt;T&gt;</code> (<a href="#script-side-to-json-from-json">below</a>). A C++ field that cannot hold a value fails the load (<a href="#security-posture-untrusted-payloads">Security posture</a>).</li>
 <li><strong>Handles keep their sharing.</strong> An object is written once, at its first reference, and later references carry its id (<a href="#wire-formats">Wire formats</a>).</li>
 <li><strong>The layout is not frozen before 1.0.</strong> Data saved by one 0.x release is not promised to load in the next (<a href="../stability.html">Stability</a>). Within one release JSON and binary hold the same data, and binary is little-endian on every platform, so a save made on one machine loads on another.</li>
 </ul>
@@ -73,11 +73,11 @@ var j = to_json(p);
 print(j);
 
 var q = from_json(j);          // reconstructs a Player via the $type discriminator
-print(type_of(q.hp) + " " + to_string(q.hp) + ", " + q.name);
+print(reflect::type_of(q.hp) + " " + to_string(q.hp) + ", " + q.name);
 
 // A float payload landing in an int field: the load converts, it does not trust.
 var r = from_json("{\"$type\": \"Player\", \"$val\": {\"hp\": 7.9, \"speed\": 2, \"name\": \"clone\"}}");
-print(type_of(r.hp) + " " + to_string(r.hp) + ", " + type_of(r.speed));
+print(reflect::type_of(r.hp) + " " + to_string(r.hp) + ", " + reflect::type_of(r.speed));
 
 // Plain values and containers round-trip too.
 var m = from_json(to_json({"a": [1, 2.5, "three", true, null]}));
@@ -88,15 +88,33 @@ int 7, float
 {&quot;a&quot;:[1,2.5,&quot;three&quot;,true,null]}</code></pre></div>
 <p>The payload said <code>"hp": 7.9</code> and the field is declared <code>int</code>, so the load truncated it as <code>cast&lt;int&gt;</code> does (any other value converts as <code>=</code> would, and <code>var</code> fields stay dynamic). <code>to_json(v, n)</code> pretty-prints with <code>n</code> spaces per level. The guide&#x27;s <a href="../guide/09-containers-strings.html#json">JSON</a> section gives every shape (<code>$type</code> / <code>$val</code> for an instance, <code>$char</code>, <code>$map</code> for non-string keys, the <a href="#wire-formats">handle shapes</a>). What a host should know on top:</p>
 <ul>
-<li>A known <code>$type</code> is constructed as <code>Name()</code> would construct it, then the payload writes its fields in declaration order (base first). A constructor that throws fails the <code>from_json</code> call with that error.</li>
-<li>An unknown <code>$type</code> is data, not an error: the load yields a plain <code>map</code> with both keys intact. So is a malformed tag (<code>{"$char": 300}</code>, a <code>$map</code> whose entries are not pairs).</li>
-<li>A <code>null</code> loads into a handle field as <code>= null</code> stores it. A weak pointer whose object nothing else in the save holds loads expired. An id the save never wrote fails with <code>Invalid shared_ptr ID: 4</code>.</li>
-<li>Floats round-trip at full precision (<code>-0.0</code> keeps its sign). JSON cannot spell an infinity or a NaN, so <code>to_json</code> writes <code>null</code>; <code>to_base64</code> / <code>from_base64</code> keep the exact bits.</li>
+<li>A known <code>$type</code> is constructed as <code>Name()</code> would construct it, then the payload writes its fields in declaration order (base first). The name is matched whatever its spacing (<code>"Duo&lt;int,string&gt;"</code> loads a <code>Duo&lt;int, string&gt;</code>) and written as the class is registered. A constructor that throws fails the <code>from_json</code> call with that error.</li>
+<li>A saved value its field cannot take (the field was retyped since the save, the save holds an object of another class) converts as hot reload's retype does, or the field keeps its constructed value, and the load goes on; with reporting on, each is a row of the <a href="07-hot-reload.html#reload-reports">reload report</a>. <code>from_json&lt;T&gt;</code> keeps nothing in a saved value's place: the same member fails the load with <code>from_json: field 'hp' of 'Player' is int, not string</code>, whether or not its object is written with a <code>$type</code>, at any depth of the document (<a href="../guide/06-functions.html#type-arguments">Type arguments</a>). The rule is that load&#x27;s own: code the load runs (a constructor, a setter, <code>post_load</code>) starts from the archive&#x27;s rule, so a load that code starts, from script or through a C++ archive, follows the rule of its own entry.</li>
+<li>An unknown <code>$type</code> is data, not an error: the load yields a plain <code>map</code> with both keys intact. So is a malformed tag (<code>{"$char": 300}</code>, a <code>$map</code> whose entries are not pairs). Where <code>from_json&lt;T&gt;</code> needs a class, an unknown <code>$type</code> is the load's error: <code>from_json: the JSON is Playr, not Player</code>.</li>
+<li>A <code>null</code> loads into a handle field, a <code>function</code> field or a <code>var</code> field as <code>= null</code> stores it. A field of any other declared type holds no null: it keeps its constructed value like any saved value it cannot take (a <code>bool</code> field takes <code>false</code>, as <code>=</code> converts it), and <code>from_json&lt;T&gt;</code> fails with <code>from_json: field 'hp' of 'Player' is int and cannot be null</code>. A weak pointer whose object nothing else in the save holds loads expired. An id the save never wrote fails with <code>Invalid shared_ptr ID: 4</code>.</li>
+<li>Floats round-trip at full precision (<code>-0.0</code> keeps its sign). JSON cannot spell an infinity or a NaN, so <code>to_json</code> writes each as a tagged value <code>from_json</code> reads back (<code>{"$float": "nan"}</code>, <code>"inf"</code>, <code>"-inf"</code>); <code>to_binary</code> / <code>from_binary</code> keep the exact bits.</li>
 <li>A payload nests as deep as memory allows. Only a host record type&#x27;s own recursion is bounded, by the host thread&#x27;s stack or <code>JAI_MAX_HOST_RECORD_DEPTH</code> = 1024 records.</li>
 <li>Trailing garbage is rejected, an invalid unicode escape is a serialization error, and a lone surrogate becomes the replacement character.</li>
+<li>A coroutine handle saves as the paused coroutine it is, and loads paused at the same <code>yield</code>, in this engine or in another running the same code (<a href="#coroutines">below</a>). A function value does not save: <code>to_json</code> writes <code>null</code> for one, <code>to_binary</code> raises.</li>
+</ul>
+<h3 id="coroutines">Paused coroutines<a class="hlink" href="#coroutines" aria-label="link">&#8203;</a></h3>
+<p>A handle is written as a shared handle whose object is the coroutine&#x27;s record, so copies of a handle share one coroutine after a load: <code>{"$id": N, "$type": "coroutine", "$val": {...}}</code> at its first handle, <code>{"$id": N}</code> after. The interpreter and the VM write the same text and the same bytes, and each loads what the other wrote.</p>
+<div class="tablewrap"><table><thead><tr><th>Record member</th><th>Holds</th></tr></thead><tbody>
+<tr><td><code>function</code>, <code>kind</code>, <code>code</code></td><td>The function&#x27;s name (<code>Class::name</code> for a method, <code>ns::name</code> in a namespace), whether it is a <code>function</code>, a <code>method</code> or a <code>static</code> method, and a fingerprint of its code. A load fails when the loading program has no such function or its code differs.</td></tr>
+<tr><td><code>state</code></td><td><code>created</code> (with <code>args</code>), <code>suspended</code>, <code>completed</code> (with <code>result</code>) or <code>failed</code></td></tr>
+<tr><td><code>at</code>, <code>locals</code>, <code>loops</code>, <code>switches</code></td><td>A suspended coroutine&#x27;s <code>yield</code> by its number in the function, the locals in scope there in declaration order, each range-for around it (what it walks and where it is), and each enclosing switch&#x27;s subject</td></tr>
+<tr><td><code>owner</code> or <code>this</code></td><td>A method coroutine&#x27;s receiver: the count of objects being saved in place around the handle out to the receiver, else a shared handle to it</td></tr>
+</tbody></table></div>
+<ul>
+<li><strong>A save is exact or it fails.</strong> A coroutine that cannot be rebuilt exactly raises <code>Cannot save coroutine &#x27;name&#x27;: reason</code> and writes nothing; the guide lists the reasons (<a href="../guide/08-coroutines.html#saving">Saving</a>).</li>
+<li><strong>A load checks the record before it builds anything</strong>: the function and its code, the <code>yield</code>, the count and the declared type of every local, each loop&#x27;s place. A record that does not fit raises <code>Cannot load coroutine &#x27;name&#x27;: reason</code> and leaves no coroutine behind.</li>
+<li><strong>A load runs no script for a frame.</strong> The values in it are loaded as any saved value is; the body runs again at the next <code>next()</code>, under that call&#x27;s budget.</li>
+<li><strong>From C++</strong> the same holds for any archive of a script value that holds a handle, and <code>jai::coroutine_handle</code> gains nothing: a host saves a coroutine by saving the value.</li>
+<li>A run suspended at <code>sleep</code> (<code>engine::start</code>) is a native stack, not a coroutine handle, and does not save.</li>
+<li><strong>A copy agrees with a save and a load.</strong> Copying a script value (a script assignment, <code>script_value::clone()</code>) gives every method coroutine it holds by value whose receiver is an object it holds by value a frame of its own, bound to the copy of that object, and rebinds the lambdas and bound methods bound to such an object the same way. The copy reads the frame as a save does and rebuilds it as a load does, without the bytes: <code>T b = a;</code> and <code>T b = from_binary(to_binary(a));</code> give the same <code>b</code>. A copy also takes what a save cannot write: lambdas, and a coroutine in one element of an array or a map whose object is another element (the save raises <code>its receiver is saved by value elsewhere in the same save</code>). A coroutine a save would refuse for its own state is left in the copy as a handle that raises <code>Cannot resume coroutine 'name': it was not copied with its object: reason</code>.</li>
 </ul>
 <h3 id="saving-game-state-to-a-file">Saving game state to a file<a class="hlink" href="#saving-game-state-to-a-file" aria-label="link">&#8203;</a></h3>
-<p>File access belongs to the host: the standalone runner provides <code>write_file</code>, <code>read_file</code> and <code>file_exists</code>, and an embedding host registers its own. <code>app_data_dir(name)</code> answers the platform&#x27;s per-user data folder.</p>
+<p>File access belongs to the host: the standalone runner provides <code>file::write</code>, <code>file::read</code> and <code>file::exists</code>, and an embedding host registers its own. <code>app_data_dir(name)</code> answers the platform&#x27;s per-user data folder.</p>
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Hero { string name = "ada"; int gold = 0; array&lt;string&gt; bag = []; }
 class SaveGame { int version = 1; Hero hero; map&lt;string, bool&gt; flags; }
 
@@ -104,9 +122,9 @@ SaveGame game;
 game.hero.gold = 120;
 game.hero.bag.push("lantern");
 game.flags["met_the_raccoon"] = true;
-write_file("save1.json", to_json(game, 2));
+file::write("save1.json", to_json(game, 2));
 
-SaveGame loaded = from_json(read_file("save1.json"));
+SaveGame loaded = from_json(file::read("save1.json"));
 print(loaded.hero.name, " ", loaded.hero.gold, " ", loaded.hero.bag[0], " ", loaded.flags["met_the_raccoon"]);</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">ada 120 lantern true</code></pre></div>
 <p>A field added to the class after a save loads with its initializer. A field like <code>version</code> lets a loader convert older files explicitly.</p>
@@ -186,7 +204,7 @@ loaded: troll hp=40 loot=2</code></pre></div>
 <li><strong>A load</strong> reads the keys the record holds into a default-constructed object, or into the one a pointer load constructs. A key the record lacks keeps the constructor&#x27;s value and a key the class no longer binds is skipped. An accessor pair reads over its getter&#x27;s value and hands the result to its setter. The binding&#x27;s <code>.post_load_hook</code> then runs, as it does after a script-side load.</li>
 <li><strong>The archive&#x27;s engine holds the binding.</strong> An archive whose engine does not bind the class throws where the save or load reaches one (<a href="#dispatch-priority-cereal-style-provide-either-serialize-or-save-load">the run-time routes</a>).</li>
 <li><strong>A route of the class&#x27;s own wins</strong>: a member or free <code>serialize</code>, <code>save</code> or <code>load</code>, or <code>property_owner</code>. A class that declares one of those members where <code>jai::access</code> cannot reach it is the compile error below, never a binding record. A hand-written route writes what it writes and nothing of the binding, except a <code>property_owner</code>&#x27;s (<a href="#bound-properties-of-a-property-owner">below</a>).</li>
-<li><strong>Polymorphism.</strong> A polymorphic class bound this way takes its <code>$type</code> from its binding&#x27;s name in the archive&#x27;s engine, and <code>.base_class&lt;B&gt;()</code> records the edge a <code>shared_ptr&lt;B&gt;</code> load checks, so no registrar is needed (<a href="02-dynamic-binder.html#serialized">dynamic_binder</a>). A <code>jai::registrar</code> name is the one every engine shares.</li>
+<li><strong>Polymorphism.</strong> A polymorphic class bound this way takes its <code>$type</code> from its binding&#x27;s name in the archive&#x27;s engine, and <code>.base_class&lt;B&gt;()</code> records the edge a <code>shared_ptr&lt;B&gt;</code> load checks, so no registrar is needed (<a href="02-dynamic-binder.html#serialized">dynamic_binder</a>). A <code>jai::registrar</code> name is the one every engine shares. A load matches a <code>$type</code> whatever its spacing; a save writes the registered name.</li>
 <li><strong>Inside script values</strong> the same object saves through the same bindings: <code>to_json(boss)</code> in script writes <code>{"$type": "Enemy", "$val": {...}}</code>, and a load builds an <code>Enemy</code> again.</li>
 </ul>
 <h3 id="bound-properties-of-a-property-owner">Bound properties of a property_owner<a class="hlink" href="#bound-properties-of-a-property-owner" aria-label="link">&#8203;</a></h3>
@@ -318,7 +336,7 @@ std::shared_ptr&lt;Actor&gt; boss = std::make_shared&lt;Monster&gt;(&quot;Troll&
 auto json = jai::to_json(*eng, boss);                 // &quot;$type&quot;: &quot;Monster&quot;
 auto back = jai::from_json&lt;std::shared_ptr&lt;Actor&gt;&gt;(*eng, json);   // a Monster again</code></pre></div>
 <p>A C++ pointer load constructs through <code>load_and_construct</code> or the default constructor; the chain&#x27;s <code>.post_load_hook(...)</code> and <code>.deserialization_factory(...)</code> serve bound objects inside script values (<a href="#versions-and-missing-fields">Versions</a>).</p>
-<p><strong>Signal connections ride save files.</strong> Named script-text receivers on a signal property serialize with their object. Load with the engine (<code>jai::from_json&lt;std::shared_ptr&lt;T&gt;&gt;(*eng, json)</code>; the reader's engine is the one they run on, and a context argument is only for host data such as a services object) and they re-arm, firing on the next emit. Function-object receivers (script lambdas, C++ callbacks) are runtime-only and skipped without error. The <a href="02-dynamic-binder.html#serialized">binder chapter</a> shows the round-trip.</p>
+<p><strong>Signal connections ride save files.</strong> A signal property saves its named receivers with their object: a script function by its name, a bound method by its object&#x27;s archive reference and its name, and a <code>connect_source</code> lambda or a text receiver as source. Load with the engine (<code>jai::from_json&lt;std::shared_ptr&lt;T&gt;&gt;(*eng, json)</code>; the reader&#x27;s engine is the one they run on, and a context argument is only for host data such as a services object) and they re-arm once the archive has loaded, firing on the next emit. Plain lambdas, C++ callbacks and unnamed receivers are runtime-only. A saved receiver the load cannot connect fails it, naming the receiver, unless the engine skips unknown receivers (<a href="10-signals-properties.html#connections-that-save">Connections that save</a>). The <a href="02-dynamic-binder.html#serialized">binder chapter</a> shows the round-trip.</p>
 <h3 id="migrating-from-cereal">Migrating from Cereal<a class="hlink" href="#migrating-from-cereal" aria-label="link">&#8203;</a></h3>
 <p><code>CEREAL_NVP</code> becomes <code>JAI_NVP</code>, <code>friend class cereal::access</code> becomes <code>friend jai::access</code>, <code>CEREAL_REGISTER_TYPE</code> becomes a <code>jai::registrar</code> or a <code>property_owner</code> base, and <code>serialize</code> / <code>save</code> / <code>load</code> keep their shape. These archives do not read Cereal&#x27;s format, so existing files are loaded once with Cereal and saved with JaiScript (<a href="../bridges/04-from-cereal.html">From Cereal</a>).</p>
 <h3 id="security-posture-untrusted-payloads">Security posture (untrusted payloads)<a class="hlink" href="#security-posture-untrusted-payloads" aria-label="link">&#8203;</a></h3>
@@ -329,14 +347,14 @@ auto back = jai::from_json&lt;std::shared_ptr&lt;Actor&gt;&gt;(*eng, json);   //
 </ul>
 <p id="saved-receivers-are-script">Two things in a payload do reach code:</p>
 <ul>
-<li><strong>Saved signal receivers are script.</strong> A <code>JAI_SIGNAL</code> saves its script-text receivers as source, and a load re-arms them: each runs as an <code>execute</code> of that text, in the engine&#x27;s global scope with every API the host registered, the next time its signal fires. Load objects with signal properties only from a trusted source, or into an engine that runs untrusted script under the <a href="05-safety-rails.html#putting-it-together-running-untrusted-script">safety rails</a>.</li>
+<li><strong>Saved source receivers are script.</strong> A signal saves a <code>connect_source</code> lambda and a text receiver as source, and a load re-arms them: each runs as an <code>execute</code> of that text, in the engine&#x27;s global scope with every API the host registered, the next time its signal fires. Load objects whose signals hold one only from a trusted source, or disable <code>jai::permissions::source_receivers</code> on the loading engine: a load then arms none (it fails, or with <code>skip_unknown_receivers</code> leaves them out). A function or method receiver is a name a load looks up, never code: it connects only a function the loading program declares, or a method of an object the same archive holds.</li>
 <li><strong>A payload chooses which of the engine&#x27;s classes a load constructs.</strong> A <code>$type</code> naming a class the engine defines runs that class&#x27;s own code, never code the payload supplies: a script class&#x27;s zero-argument constructor, field initializers, the setters of the properties written and its <code>post_load</code>; a hybrid&#x27;s field initializers and <code>post_load</code>; a C++ type&#x27;s <code>load_and_construct</code> or default constructor and its <code>load</code>.</li>
 </ul>
 <nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/07-hot-reload.html"><span>&larr; previous</span>Hot Reload</a><a class="next" rel="next" href="../embedding/09-coroutine-hosting.html"><span>next &rarr;</span>Coroutine Hosting</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

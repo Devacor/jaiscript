@@ -50,7 +50,8 @@ namespace jai::vm {
             const constructor_initializer* delegation = nullptr;
             std::vector<chunk::ctor_step> steps;                        // one per base in declaration order (or the delegation's level)
             std::vector<const constructor_initializer*> initializers;   // each step's initializer (null: default-constructed)
-            std::vector<std::pair<uint64_t, expression_ptr>> fields;    // the level's own field initializers, evaluated
+            struct field_step { uint64_t field_id; expression_ptr value; bool listed; };   // listed: a member initializer, which reads the parameters
+            std::vector<field_step> fields;                             // the level's own fields the prologue evaluates, in declaration order
             bool literal_fields = false;                                // the level's chain is literal: op_ctor_literals stamps them instead
             std::unordered_map<uint64_t, uint32_t> name_slots;
             std::shared_ptr<ast_node> origin;                           // the constructor: where a step without arguments stands
@@ -230,6 +231,16 @@ namespace jai::vm {
         std::vector<loop_context> loops_;
         callable_context callable_;
         size_t scope_depth_ = 0;
+        // a coroutine body: its yields' numbers, and what the constructs open around the code being compiled keep on the
+        // frame's stacks (chunk::yield_site)
+        std::unordered_map<const yield_expr*, uint32_t> yield_numbers_;
+        std::vector<chunk::resume_step> resume_steps_;
+        void open_resume_step(chunk::resume_step::kind a_kind, size_t a_ip = 0) {
+            if (!yield_numbers_.empty()) { resume_steps_.push_back({a_kind, static_cast<uint32_t>(a_ip)}); }
+        }
+        void close_resume_step() {
+            if (!yield_numbers_.empty()) { resume_steps_.pop_back(); }
+        }
         const ast_node* current_stmt_ = nullptr;
         // Register-file temps: expression temporaries are frame slots above the parser's
         // local_count (LIFO within one expression tree); compile_callable raises the
@@ -272,6 +283,7 @@ namespace jai::vm {
         // fallback) and the result slot's name
         const block_stmt* callable_body_ = nullptr;
         std::vector<const block_stmt*> graft_bodies_;   // the grafts being compiled, outermost first: a leaf inside one grafts too (one level), never one of them again
+        uint32_t graft_debug_site_ = 0;   // 1 + the inline site whose grafted body compiles: its locals are its frame's (chunk::debug_local::graft)
         bool inlining_off_ = false;
         size_t graft_nesting_ = 0;       // compile_hoist's own nesting: grafts compiled inside a graft (its body, its parameters)
         size_t graft_tree_nodes_ = 0;    // the nodes cloned for the outermost graft being compiled and every graft inside it
@@ -405,6 +417,10 @@ namespace jai::vm {
         uint32_t string_target_site_for(const expression_ptr& target);
         bool try_emit_fused_index_store_shape(binary_expr* sub, const expression_ptr& value, bool no_result, uint32_t string_site, uint32_t compound = k_invalid_u32);
         bool try_emit_fused_push(const std::shared_ptr<call_expr>& call);
+        bool try_emit_instance_test(const std::shared_ptr<call_expr>& call);
+        const script_value* reserved_namespace_cell(const member_expr* member) const;
+        uint32_t namespace_cell_row(const std::shared_ptr<member_expr>& member, const script_value* cell);
+        bool namespace_callee(const call_expr* call) const;
         // Branch-position condition: &&/|| thread straight to conditional jumps (no bool
         // materialization; each comparison pairs into fused_cmp_jump). Falsy control lands
         // on the collected jumps — the caller patches them to the else/exit target.

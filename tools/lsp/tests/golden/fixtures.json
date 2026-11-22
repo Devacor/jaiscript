@@ -33,13 +33,18 @@
   "array",
   "auto",
   "blue",
+  "bool",
   "class",
+  "dynamic_cast",
   "enum",
+  "file",
   "for",
   "green",
   "h",
   "hp",
+  "if",
   "import",
+  "inspect",
   "int",
   "jai",
   "make_party",
@@ -52,6 +57,7 @@
   "run",
   "s",
   "shade",
+  "static",
   "string",
   "this",
   "to_string",
@@ -157,6 +163,19 @@
    }
   },
   "uri": "program/lib.jai"
+ },
+ "definition.namespace_fn_other_file": {
+  "range": {
+   "end": {
+    "character": 8,
+    "line": 4
+   },
+   "start": {
+    "character": 5,
+    "line": 4
+   }
+  },
+  "uri": "namespace/shop.jai"
  },
  "diagnostics.edit_breaks": [
   {
@@ -275,7 +294,9 @@
    "source": "jaiscript"
   }
  ],
+ "diagnostics.less_than.use": [],
  "diagnostics.main": [],
+ "diagnostics.namespace.shelf": [],
  "highlight.local_sum": [
   {
    "kind": 3,
@@ -445,6 +466,22 @@
    }
   }
  },
+ "hover.namespace_field_other_file": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\nint shop::Item.price\n```\n\nfield of `shop::Item` - declared in `shop.jai:4`"
+  },
+  "range": {
+   "end": {
+    "character": 26,
+    "line": 5
+   },
+   "start": {
+    "character": 21,
+    "line": 5
+   }
+  }
+ },
  "hover.namespace_fn": {
   "contents": {
    "kind": "markdown",
@@ -458,6 +495,22 @@
    "start": {
     "character": 18,
     "line": 15
+   }
+  }
+ },
+ "hover.narrowed": {
+  "contents": {
+   "kind": "markdown",
+   "value": "```jaiscript\nvar who\n```\n\nparameter of `inspect`; narrowed here to `Hero`"
+  },
+  "range": {
+   "end": {
+    "character": 5,
+    "line": 28
+   },
+   "start": {
+    "character": 2,
+    "line": 28
    }
   }
  },
@@ -500,6 +553,19 @@
     "start": {
      "character": 10,
      "line": 11
+    }
+   },
+   "uri": "program/main.jai"
+  },
+  {
+   "range": {
+    "end": {
+     "character": 22,
+     "line": 27
+    },
+    "start": {
+     "character": 18,
+     "line": 27
     }
    },
    "uri": "program/main.jai"
@@ -985,6 +1051,19 @@
       "start": {
        "character": 10,
        "line": 17
+      }
+     }
+    },
+    {
+     "newText": "mend",
+     "range": {
+      "end": {
+       "character": 10,
+       "line": 28
+      },
+      "start": {
+       "character": 6,
+       "line": 28
       }
      }
     }

@@ -21,6 +21,42 @@ public:
 	}
 
 	void forge_tests() override {
+		// A reference declared narrower than its slot (over a var, through a downcast, a derived reference into a base slot) names
+		// the slot and sees what a store puts there, but its type holds: once the slot holds another type its next use raises.
+		// A reference as wide as its slot, or var&/auto&, takes whatever the slot holds
+		test("a_narrower_reference_raises_once_its_slot_holds_another_type", [this]() {
+			auto eng = make_engine();
+			jai::stdlib::register_all(eng);
+			const std::string classes = "[[warn_mode]];\n"
+				"class Animal { string say() { return \"...\"; } }\n"
+				"class Dog : Animal { string say() override { return \"woof\"; } string fetch() { return \"ball\"; } }\n"
+				"class Cat : Animal { string say() override { return \"meow\"; } }\n";
+			check_eq(std::string("Reference to a 'Dog' now names a 'Cat'|Reference to a 'Dog' now names a 'Cat'|Reference to a 'Dog' now names an 'int'|"
+			                     "Reference to an 'int' now names a 'string'|Reference to a 'Dog' now names a 'Cat'"), run(*eng, classes + R"(
+				string log = "";
+				var v = Dog(); Dog& d = v; v = Cat();
+				try { log = log + d.say(); } catch (e) { log = log + e; }
+				Animal a = Dog(); Dog& d2 = dynamic_cast<Dog&>(a); a = Cat();
+				try { log = log + "|" + d2.fetch(); } catch (e) { log = log + "|" + e; }
+				var w = Dog(); Dog& d3 = w; w = 5;
+				try { log = log + "|" + d3.say(); } catch (e) { log = log + "|" + e; }
+				var n = 1; int& i = n; n = "text";
+				try { log = log + "|" + to_string(i + 1); } catch (e) { log = log + "|" + e; }
+				var z = Dog(); Dog& d5 = z; z = Cat();
+				try { d5 = Dog(); } catch (e) { log = log + "|" + e; }
+				log;
+			)"));
+			check_eq(std::string("woof|meow|5|meow|woof|2"), run(*eng, classes + R"(
+				var s = Dog(); Dog& d4 = s; s = Dog();
+				Animal b = Dog(); Animal& r = b; b = Cat();
+				var x = Dog(); var& vr = x; x = 5;
+				var y = Dog(); auto& ar = y; y = Cat();
+				Dog dd; Animal& wide = dd;
+				var n = 1; int& i = n; n = 2;
+				d4.say() + "|" + r.say() + "|" + to_string(vr) + "|" + ar.say() + "|" + wide.say() + "|" + to_string(i);
+			)"));
+		});
+
 		test("element_reference_across_a_reallocating_push", [this]() {
 			auto eng = make_engine();
 			jai::stdlib::register_all(eng);
@@ -86,14 +122,15 @@ public:
 			)"));
 		});
 
-		test("field_reference_keeps_its_owner_through_a_dropped_last_handle", [this]() {
+		test("field_reference_raises_once_its_owners_last_handle_drops", [this]() {
+			// a reference names the field without owning what a handle reached: the object dies with its last handle, at the drop
 			auto eng = make_engine();
 			jai::stdlib::register_all(eng);
-			check_eq(std::string("7|in:Nout:"), run(*eng, R"(
+			check_eq(std::string("Reference to a destroyed object|Nin:out:"), run(*eng, R"(
 				string LOG = "";
 				class Node { int v = 0; ~Node() { LOG = LOG + "N"; } }
 				class Box { shared_ptr<Node> n = null; }
-				function drop_then_write(int& r, Box& b) -> string { b.n = null; LOG = LOG + "in:"; r = 7; return to_string(r); }
+				function drop_then_write(int& r, Box& b) -> string { b.n = null; LOG = LOG + "in:"; try { r = 7; } catch (e) { return e; } return to_string(r); }
 				function f() -> string { Box b = Box(); b.n = new Node(); string s = drop_then_write(b.n.v, b); LOG = LOG + "out:"; return s; }
 				string got = f();
 				got + "|" + LOG;

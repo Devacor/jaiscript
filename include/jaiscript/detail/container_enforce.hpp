@@ -36,6 +36,8 @@ namespace jai::detail {
 	bool shared_element_admits(const script_value& v, const type_info_ptr& element_type, engine* eng);
 	// a shared handle into a weak_ptr<T> element: the declaration's row (C++: weak = shared), the handle downgrades
 	bool weak_element_takes_shared(const script_value& v, const type_info_ptr& element_type, engine* eng);
+	// a weak pointer into a weak_ptr<T> element: one to T or a subclass (detail::weak_handle_admits)
+	bool weak_element_admits(const script_value& v, const type_info_ptr& element_type, engine* eng);
 	checked_result<script_value> weak_element_from_shared(const script_value& v, engine* eng);
 	// The class a tag names for the subclass walk: a handle tag's pointee, else the tag itself
 	inline uint64_t class_tag_id(const type_info& t) {
@@ -45,9 +47,24 @@ namespace jai::detail {
 	// engine.cpp: the instance's own class tag, for a copy stored under a var tag (null = none)
 	type_info_ptr object_element_own_tag(const script_value& v, engine* eng);
 
+	// A weak pointer as a text names it: the weak_ptr<T> of the class of the object it still reaches. Its own tag names the
+	// handle it was made from (a loaded $ref's reads weak_ptr<shared_ptr<T>>, a type no script writes), so an expired pointer
+	// is read through that handle to its class, and one with no class to name is a bare weak_ptr
+	inline std::string weak_pointer_spelling(const script_value& v) {
+		if (auto reached = v.get_weak_ptr().lock(); reached && !reached->type_name().empty()) { return "weak_ptr<" + std::string(reached->type_name()) + ">"; }
+		const type_info_ptr& tag = v.get_type_info();
+		const type_info* pointee = tag && tag->base_type == script_value_type::jai_weak_ptr_type ? tag->element_type().get() : nullptr;
+		while (pointee && (pointee->base_type == script_value_type::jai_shared_ptr_type || pointee->base_type == script_value_type::jai_weak_ptr_type)) {
+			pointee = pointee->element_type().get();
+		}
+		const bool named = pointee && !pointee->type_name.empty() && pointee->base_type != script_value_type::jai_any_type;
+		return named ? "weak_ptr<" + std::string(pointee->type_name) + ">" : std::string("weak_ptr");
+	}
+
 	// The source spelling of every element and key text: the payload's type, never a var tag
 	inline std::string container_value_type_name(const script_value& val) {
 		const script_value& v = val.is_reference() ? val.deref() : val;
+		if (v.raw_storage_index() == script_value::TYPEID_WEAK_PTR) { return weak_pointer_spelling(v); }
 		auto info = v.get_type_info();
 		if (info && (info->base_type == script_value_type::jai_shared_ptr_type || info->base_type == script_value_type::jai_weak_ptr_type)) {
 			return info->canonical_name();
@@ -127,6 +144,7 @@ namespace jai::detail {
 			if (target_type == script_value_type::jai_shared_ptr_type && !element_type->type_name.empty()) {
 				return shared_element_admits(actual_element, element_type, eng);
 			}
+			if (target_type == script_value_type::jai_weak_ptr_type) { return weak_element_admits(actual_element, element_type, eng); }
 			return true;
 		}
 		// A live instance stores into a shared_ptr<T> element the way it
@@ -375,7 +393,8 @@ namespace jai::detail {
 			return script_value(std::string(1, actual_element.unchecked_as_char()), eng);
 		}
 		if (target_type == script_value_type::jai_shared_ptr_type && elem_type == script_value_type::jai_object_type) {
-			return actual_element;   // the handle rows' store: the object travels as the handle, its own tag
+			if (const std::string held = value_for_handle_slot(actual_element); !held.empty()) { refuse_value_into_handle(held); }   // as in C++
+			return clone_for_assignment(actual_element);
 		}
 		if (is_math_type(target_type) && is_math_type(elem_type)) {
 			if (math::narrows(elem_type, target_type)) { return byte_element_mismatch_error(eng, actual_element, *element_type); }   // a host store arrives unchecked
@@ -396,6 +415,11 @@ namespace jai::detail {
 		}
 
 		return actual_element.clone_element();
+	}
+
+	// convert_container_element of a value the caller owns: an argument, a temporary, a copy it just made
+	inline checked_result<script_value> convert_owned_element(engine* eng, const script_value& element, const type_info_ptr& element_type) {
+		return convert_container_element(eng, element, element_type);
 	}
 
 	// A replacing element store: a prvalue class instance (uniquely held) moves in and is the stored object, carrying its
@@ -721,6 +745,9 @@ namespace jai::detail {
 						out.expected = target_type->canonical_name();
 						return out;
 					}
+					if (target_elem_base == script_value_type::jai_shared_ptr_type) {   // a class value never becomes a handle element
+						if (const std::string held = value_for_handle_slot(actual); !held.empty()) { refuse_value_into_handle(held); }
+					}
 					if (actual.type() != target_elem_base &&
 					    (target_elem_base == script_value_type::jai_int_type ||
 					     target_elem_base == script_value_type::jai_float_type ||
@@ -744,6 +771,7 @@ namespace jai::detail {
 				out.value = std::move(value);
 				return out;
 			}
+			const bool source_dies = !src->is_typed() && uniquely_held(value);   // a literal's elements are the copies it already made
 			script_value rebuilt = script_value::make_array(element_type, eng);
 			auto& dest = *rebuilt.get_array_storage();
 			dest.reserve(count);
@@ -756,7 +784,7 @@ namespace jai::detail {
 					dest.push(std::move(element));
 					continue;
 				}
-				auto converted = convert_container_element(eng, src->get(i, eng), element_type);
+				auto converted = source_dies ? convert_owned_element(eng, src->values()[i], element_type) : convert_container_element(eng, src->get(i, eng), element_type);
 				if (!converted) {
 					out.error = converted.error_value();
 					return out;
@@ -786,6 +814,9 @@ namespace jai::detail {
 				if (!key_open && !map_key_kind_admits(actual_key.type(), map_key_kind(*key_type))) { return &actual_key; }
 				const script_value& actual = entry.second.is_reference() ? entry.second.deref() : entry.second;
 				if (!value_open && !container_element_compatible(actual, value_type, eng)) { return &actual; }
+				if (value_type && value_type->base_type == script_value_type::jai_shared_ptr_type) {   // a class value never becomes a handle entry
+					if (const std::string held = value_for_handle_slot(actual); !held.empty()) { refuse_value_into_handle(held); }
+				}
 				return nullptr;
 			};
 			// the checks are pure: they run in the index's order, and only a failure walks the keys in order for the first one
@@ -830,11 +861,12 @@ namespace jai::detail {
 				out.value = std::move(value);
 				return out;
 			}
+			const bool source_dies = uniquely_held(value);
 			script_value rebuilt = script_value::make_map(key_type, value_type, eng);
 			auto& dest = rebuilt.get_map_storage();
 			for (const auto& entry : entries) {
 				const script_value& actual_key = entry.first.is_reference() ? entry.first.deref() : entry.first;
-				auto converted = convert_container_element(eng, entry.second, value_type);
+				auto converted = source_dies ? convert_owned_element(eng, entry.second, value_type) : convert_container_element(eng, entry.second, value_type);
 				if (!converted) {
 					out.error = converted.error_value();
 					return out;

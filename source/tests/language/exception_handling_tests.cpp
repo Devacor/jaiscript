@@ -8,6 +8,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 
 using namespace jai::foundry;
 
@@ -179,7 +180,7 @@ public:
             script_value result = engine->execute("try { throw 42; } catch (e) { return e; }");
             check_eq(result.is_int(), true);
             check_eq(result.as<int>(), 42);
-            check_eq(std::string("int true 43 42"), engine->execute("try { throw 42; } catch (e) { return type_of(e) + \" \" + to_string(e == 42) + \" \" + to_string(e + 1) + \" \" + to_string(e); }").as_string());
+            check_eq(std::string("int true 43 42"), engine->execute("try { throw 42; } catch (e) { return reflect::type_of(e) + \" \" + to_string(e == 42) + \" \" + to_string(e + 1) + \" \" + to_string(e); }").as_string());
         });
 
         test("catch_clauses_take_a_thrown_value_by_type_and_a_run_time_error_by_kind", [this]() {
@@ -192,12 +193,12 @@ public:
                 "string which(var thrower) {\n"
                 "    try { thrower(); }\n"
                 "    catch (Other o) { return \"other\"; }\n"
-                "    catch (Oops o) { return \"oops \" + to_string(o.code) + \" \" + type_of(o); }\n"
+                "    catch (Oops o) { return \"oops \" + to_string(o.code) + \" \" + reflect::type_of(o); }\n"
                 "    catch (int n) { return \"int \" + to_string(n + 1); }\n"
                 "    catch (string s) { return \"string \" + s; }\n"
                 "    catch (array<int> a) { return \"array \" + to_string(a.size()); }\n"
                 "    catch (error e) { return \"error \" + e.kind + \": \" + e.message; }\n"
-                "    catch (e) { return \"all \" + type_of(e); }\n"
+                "    catch (e) { return \"all \" + reflect::type_of(e); }\n"
                 "    return \"none\";\n"
                 "}\n";
             const std::vector<std::pair<std::string, std::string>> cases = {
@@ -216,19 +217,19 @@ public:
                  "error type: Cannot initialize 'n' (declared int) with string|error container: Cannot pop from empty array"},
                 {"print(which(() => { return to_char(999); }));", "error host: to_char expects 0..255, got 999"},
                 // the catch-all's variable is the thrown value; a value with a node also answers its place while the handler runs
-                {"try { throw {\"k\": 5}; } catch (e) { print(type_of(e), \" \", e[\"k\"], \" \", e.line); }", "map 5 17"},
-                {"try { throw [1, 2]; } catch (e) { print(type_of(e), \" \", e.size(), \" \", e[1], \" \", e.line); }", "array 2 2 17"},
-                {"try { throw Oops(); } catch (e) { print(type_of(e), \" \", e.code, \" \", e.line, \" \", e.message, \" \", e, \" \", e.value.code, \" \", e.stack.size()); }", "Oops 7 17 oops! oops! 7 1"},
-                {"try { throw \"s\"; } catch (e) { print(type_of(e), \" \", e, \" \", e.line, \" \", e.value); }", "string s 17 s"},
-                {"try { var v = [1]; v[9]; } catch (e) { print(type_of(e), \" \", e, \"|\", e.kind, \" \", e.kind == error_kind::bounds, \" \", e.line, \" \", e.value); }",
+                {"try { throw {\"k\": 5}; } catch (e) { print(reflect::type_of(e), \" \", e[\"k\"], \" \", e.line); }", "map 5 17"},
+                {"try { throw [1, 2]; } catch (e) { print(reflect::type_of(e), \" \", e.size(), \" \", e[1], \" \", e.line); }", "array 2 2 17"},
+                {"try { throw Oops(); } catch (e) { print(reflect::type_of(e), \" \", e.code, \" \", e.line, \" \", e.message, \" \", e, \" \", e.value.code, \" \", e.stack.size()); }", "Oops 7 17 oops! oops! 7 1"},
+                {"try { throw \"s\"; } catch (e) { print(reflect::type_of(e), \" \", e, \" \", e.line, \" \", e.value); }", "string s 17 s"},
+                {"try { var v = [1]; v[9]; } catch (e) { print(reflect::type_of(e), \" \", e, \"|\", e.kind, \" \", e.kind == error_kind::bounds, \" \", e.line, \" \", e.value); }",
                  "error Array index 9 out of bounds for array of size 1|bounds true 17 null"},
-                {"try { var v = [1]; v[9]; } catch (e) { string m = e; print(type_of(m), \" \", m.size(), \" \", e + \"!\"); }", "string 47 Array index 9 out of bounds for array of size 1!"},
+                {"try { var v = [1]; v[9]; } catch (e) { string m = e; print(reflect::type_of(m), \" \", m.size(), \" \", e + \"!\"); }", "string 47 Array index 9 out of bounds for array of size 1!"},
                 // a thrown number answers .value and .message through its catch variable, a lambda's copy of it included
                 {"int h() { try { throw 3; } catch (e) { var f = [=]() { return e.value * 2; }; return f() + e.value; } return 0; } print(h());\ntry { throw 2.5; } catch (e) { print(e.message + \"!\", \" \", e.value); }", "9\n2.5! 2.5"},
                 // the variable is the thrown instance: no copy is made, and a write reaches e.value
                 {"try { throw Counted(); } catch (Counted c) { c.n = 5; print(copies, \" \", c.n); }\ntry { throw Counted(); } catch (const Counted& c) { print(copies, \" \", c.n); }\n"
                  "try { throw Counted(); } catch (e) { e.n = 9; print(copies, \" \", e.value.n); }", "0 5\n0 1\n0 9"},
-                {"try { throw new Oops(); } catch (Oops o) { print(o.code, \" \", type_of(o)); }", "7 Oops"},
+                {"try { throw new Oops(); } catch (Oops o) { print(o.code, \" \", reflect::type_of(o)); }", "7 Oops"},
                 // no clause takes it: the error goes on to the next handler from where it was raised
                 {"void typed_only() { try { throw \"nope\"; } catch (int n) { print(\"int\"); } }\ntry { typed_only(); } catch (e) { print(\"propagated \", e, \" \", e.line); }", "propagated nope 17"},
                 // a try none of whose clauses takes the error is passed without entering a handler: the stack is the raise's
@@ -263,7 +264,7 @@ public:
                 "    outer();\n"                                                          // 7
                 "} catch (err) {\n"                                                       // 8
                 "    var copy = err;\n"                                                   // 9
-                "    info = err + \"|\" + err.message + \"|\" + to_string(err.line) + \"|\" + err.stack.join(\",\") + \"|\" + type_of(err) + \":\" + err.kind +\n"
+                "    info = err + \"|\" + err.message + \"|\" + to_string(err.line) + \"|\" + err.stack.join(\",\") + \"|\" + reflect::type_of(err) + \":\" + err.kind +\n"
                 "           \"|\" + to_string(err == \"Array index 5 out of bounds for array of size 1\") + \"|\" + to_string(err.value == null) +\n"
                 "           \"|\" + to_string(copy.line) + \"|\" + to_string(err.file == \"" + path + "\") + \"|\" + to_string(err.column > 0);\n"
                 "    string made = err + \"\";\n"
@@ -433,6 +434,62 @@ public:
                 failure_text(*engine, ("int at = " + std::to_string(at) + ";\n" + aggregate).c_str());
                 check_eq(std::string(shapes[at - 1]), trace_shape(*engine), at == 1 ? "a throw from a call" : "a run-time error of its own");
             }
+        });
+
+        test("a_declaration_that_fails_at_load_traces_its_own_statement", [this]() {
+            // each member of a namespace block is a statement of its own: a failing class, variable or function stands at its line,
+            // whatever ran before it in the block, and a static's initializer at its own line, as a field's does
+            const std::string prelude = "int boom() { throw \"boom\"; } var text() { return \"s\"; }\n";   // line 1
+            const std::filesystem::path dir = jai::foundry::test_temp_directory();
+            { std::ofstream(dir / "trace_declaring.jai") << "namespace shop { int tax(int p) { return p + 1; } }\n"; }
+            { std::ofstream(dir / "trace_again.jai") << "int q = 1;\nnamespace shop {\n    class K { int k = 1; }\n    int a = 1;\n    int tax(int p) { return 0; }\n}\n"; }
+            { std::ofstream(dir / "trace_nested.jai") << "namespace shop {\n    namespace inner { int a = 1; }\n    int tax(int p) { return 0; }\n}\n"; }
+            check_each(std::vector<std::pair<std::string, std::string>>{
+                {"namespace shop {\n    int a = 1;\n    class Crate : Item { int both() { return 1; } }\n}\n", "<script>:4"},
+                {"namespace shop {\n    int a = 1;\n    int b = boom();\n}\n", "boom:1|<script>:4"},
+                {"namespace shop {\n    class K { int k = 1; }\n    int b =\n        boom();\n}\n", "boom:1|<script>:4"},
+                {"namespace shop {\n    int a = 1;\n    namespace inner {\n        int c = 2;\n        int b = boom();\n    }\n}\n", "boom:1|<script>:6"},
+                {"namespace shop {\n    int a = 1;\n    namespace inner {\n        int c = 2;\n        class Crate : Item { }\n    }\n}\n", "<script>:6"},
+                {"namespace shop {\n    int a = 1;\n    class K {\n        static int s =\n            boom();\n    }\n}\n", "boom:1|<script>:6"},
+                {"int a = 1;\nclass K {\n    static int s =\n        boom();\n}\n", "boom:1|<script>:5"},
+                // what the class's declaration raises after an initializer ran stands at the class
+                {"namespace shop {\n    int a = 1;\n    class K {\n        static int ok = a + 1;\n        static int s =\n            text();\n    }\n}\n", "<script>:4"},
+                {"int z = 0; namespace shop { int a = 1; class Crate : Item { } }\n", "<script>:2"},
+                {"int z = 0; namespace shop { int a = 1; int b = boom(); }\n", "boom:1|<script>:2"},
+                // a function another file's block declared: the redefinition stands at the function, in the importing frame's file
+                {"import \"trace_declaring.jai\";\nimport \"trace_again.jai\";\n", "<script>:5|<script>:3"},
+                {"import \"trace_declaring.jai\";\nvoid load() {\n    import \"trace_nested.jai\";\n}\nload();\n", "<script>:3|load:4|<script>:6"},
+            }, [&](const auto& c) {
+                auto engine = make_engine();
+                engine->add_include_path(dir.string());
+                check_true(!failure_text(*engine, (prelude + c.first).c_str()).empty(), "the load fails");
+                check_eq(c.second, trace_shape(*engine));
+            });
+            for (const char* file : {"trace_declaring.jai", "trace_again.jai", "trace_nested.jai"}) { std::filesystem::remove(dir / file); }
+        });
+
+        // An error raised when no run is in flight (a function the host calls, a destructor at teardown) stands in no top-level
+        // statement: its script frame names none, and reads nothing of a run whose jaibite the host has since dropped
+        test("an_error_outside_a_run_names_no_statement_of_an_earlier_one", [this]() {
+            for (const bool dropped : {false, true}) {
+                auto engine = make_engine();
+                std::optional<jai::jaibite> bite;
+                bite.emplace(engine->jaibite("int risky(int x) { return 10 / x; }" + std::string(1, char(10)) + "int last = 1;" + std::string(1, char(10)) + "last;"));
+                check_eq(int64_t(1), bite->execute().as_int());
+                if (dropped) { bite.reset(); }
+                auto result = engine->get_variable("risky").as_function()({engine->make_value(int64_t{0})});
+                check_false(bool(result), "the call fails");
+                const auto trace = engine->last_stack_trace();
+                check_false(trace.empty());
+                check_eq(std::string("<script>"), trace.back().function);
+                check_eq(size_t(0), trace.back().line, "the script frame stands at no statement");
+            }
+            auto engine = make_engine();
+            std::optional<jai::jaibite> bite;
+            bite.emplace(engine->jaibite("class Late { int n = 0; ~Late() { int z = 0; n = 1 / z; } } Late keep; 1;"));
+            check_eq(int64_t(1), bite->execute().as_int());
+            bite.reset();
+            engine.reset();   // the destructor raises at teardown, after the bite's statements are gone
         });
 
         test("top_level_throw_captures_script_frame", [this]() {
@@ -1129,6 +1186,307 @@ public:
                 got = e.what();
             }
             check_eq(std::string("argfail"), got);
+        });
+
+        // An error a throw's operand raises is the error that propagates: its value, its type for a typed clause, and nothing
+        // reported as lost on the way (the interpreter threw null in its place)
+        test("an_error_raised_by_a_throw_operand_propagates_unchanged", [this]() {
+            const char* prelude = R"jai(
+                int f() { throw "in f"; }
+                bool fb() { throw "in fb"; }
+                var fv() { throw "in fv"; }
+                int id(int a) { return a; }
+                class Err { string m; Err(string a) { m = a; } }
+                int typed() { throw Err("typed"); }
+                class Thrower {
+                    int m() { throw "in m"; }
+                    Thrower operator+(Thrower o) { throw "in +"; }
+                    int operator[](int i) { throw "in []"; }
+                    int operator()(int i) { throw "in ()"; }
+                    string to_string() { throw "in to_string"; }
+                }
+                class CtorThrows { CtorThrows() { throw "in ctor"; } }
+                class Noisy { string n; Noisy(string a) { n = a; } ~Noisy() { print("~", n); } }
+                var xs = [1, 2, 3];
+                int zero = 0;
+                Thrower t;
+            )jai";
+            const std::pair<const char*, const char*> cases[] = {
+                {"try { throw f(); } catch (e) { print(e); }", "in f"},
+                {"try { throw throw \"a\"; } catch (e) { print(e); }", "a"},
+                {"try { throw throw throw \"deep\"; } catch (e) { print(e); }", "deep"},
+                {"try { throw f() + 1; } catch (e) { print(e); }", "in f"},
+                {"try { throw -f(); } catch (e) { print(e); }", "in f"},
+                {"try { throw !fb(); } catch (e) { print(e); }", "in fb"},
+                {"try { throw fb() && true; } catch (e) { print(e); }", "in fb"},
+                {"try { throw false || fb(); } catch (e) { print(e); }", "in fb"},
+                {"try { throw fv() ?? 3; } catch (e) { print(e); }", "in fv"},
+                {"try { throw (zero == 0 ? f() : 2); } catch (e) { print(e); }", "in f"},
+                {"try { throw id(f()); } catch (e) { print(e); }", "in f"},
+                {"try { throw [f()]; } catch (e) { print(e); }", "in f"},
+                {"try { throw {\"k\": f()}; } catch (e) { print(e); }", "in f"},
+                {"try { throw `x${f()}`; } catch (e) { print(e); }", "in f"},
+                {"try { throw cast<float>(f()); } catch (e) { print(e); }", "in f"},
+                {"var l = []() { throw \"in lambda\"; }; try { throw l(); } catch (e) { print(e); }", "in lambda"},
+                {"try { throw t.m(); } catch (e) { print(e); }", "in m"},
+                {"try { throw t + t; } catch (e) { print(e); }", "in +"},
+                {"try { throw t[1]; } catch (e) { print(e); }", "in []"},
+                {"try { throw t(1); } catch (e) { print(e); }", "in ()"},
+                {"try { throw t; } catch (e) { print(e); }", "in to_string"},
+                {"try { throw CtorThrows(); } catch (e) { print(e); }", "in ctor"},
+                {"try { throw typed(); } catch (Err e) { print(\"Err \", e.m); } catch (e) { print(\"untyped \", e); }", "Err typed"},
+                {"try { throw typed(); } catch (int e) { print(\"int\"); } catch (string e) { print(\"string\"); } catch (e) { print(\"any \", e.m); }", "any typed"},
+                {"try { throw xs[99]; } catch (e) { print(e); }", "Array index 99 out of bounds for array of size 3"},
+                {"try { throw 1 / zero; } catch (e) { print(e); }", "Division by zero"},
+                {"[[warn_mode]] try { throw undefined_name; } catch (e) { print(e); }", "Undefined variable 'undefined_name'"},
+                {"void g() { Noisy a(\"a\"); throw f(); } try { g(); } catch (e) { print(e); }", "~a\nin f"},
+                {"void g() { try { f(); } catch (e) { Noisy b(\"b\"); throw fb(); } } try { g(); } catch (e) { print(e); }", "~b\nin fb"},
+                {"void g() { try { throw f(); } catch (int e) { print(\"int\"); } } try { g(); } catch (e) { print(e); }", "in f"},
+                {"void g() { try { f(); } catch (e) { throw e + fv(); } } try { g(); } catch (e) { print(e); }", "in fv"},
+            };
+            check_each(cases, [&](const auto& c) {
+                auto engine = make_engine();
+                std::string reported;
+                engine->set_script_error_handler([&](const std::string& text) { reported += text; });
+                check_eq(std::string(c.second), printed_output(*engine, std::string(prelude) + c.first));
+                check_eq(std::string(), reported);
+            });
+        });
+
+        // Uncaught, the operand's error leaves execute as raised: its text, its raise site, its stack
+        test("an_uncaught_error_of_a_throw_operand_keeps_its_raise_site", [this]() {
+            const std::tuple<const char*, const char*, const char*> cases[] = {
+                {"int f() { throw \"in f\"; }\nthrow f();\n", "in f", "f:1|<script>:2"},
+                {"int f() { throw \"in f\"; }\nvoid g() {\n    throw f() + 1;\n}\ng();\n", "in f", "f:1|g:3|<script>:5"},
+                {"\nthrow throw \"a\";\n", "a", "<script>:2"},
+                {"var xs = [1];\nvoid g() {\n    throw xs[9];\n}\ng();\n", "Array index 9 out of bounds for array of size 1", "g:3|<script>:5"},
+            };
+            check_each(cases, [&](const auto& c) {
+                auto engine = make_engine();
+                check_eq(std::string(std::get<1>(c)), failure_text(*engine, std::get<0>(c)));
+                check_eq(std::string(std::get<2>(c)), trace_shape(*engine));
+            });
+            auto engine = make_engine();
+            check_eq(std::string("1|3"), engine->execute(
+                "int f() { throw \"in f\"; }\n"
+                "void g() { throw f(); }\n"
+                "var shape = \"\"; try { g(); } catch (e) { shape = `${e.line}|${e.stack.size()}`; }\n"
+                "shape\n").as_string());
+        });
+
+        // What reads an operand stops when the operand raises: no constructor runs on a null argument, no loop reads its
+        // condition after its initializer or update failed, no case is compared, and the operand's error is the one caught
+        test("a_raising_operand_stops_the_statement_that_reads_it", [this]() {
+            const char* prelude = R"jai(
+                int f() { throw "T"; }
+                var fv() { throw "TV"; }
+                bool side(string s) { print("side ", s); return true; }
+                class Loose { var a; var b; Loose(var x, var y) { a = x; b = y; print("Loose ran"); } }
+                class Typed { string n; Typed(string a) { n = a; print("Typed ran"); } }
+                class Agg { int a = 0; int b = 0; }
+                var xs = [1, 2];
+                int zero = 0;
+            )jai";
+            const std::pair<const char*, const char*> cases[] = {
+                {"try { var l = Loose(f(), 1); } catch (e) { print(e); }", "T"},
+                {"try { Loose l(f(), 1); } catch (e) { print(e); }", "T"},
+                {"try { var l = make_shared<Loose>(f(), 1); } catch (e) { print(e); }", "T"},
+                {"try { Typed t(fv()); } catch (e) { print(e); }", "TV"},
+                {"try { var t = make_shared<Typed>(fv()); } catch (e) { print(e); }", "TV"},
+                {"try { var w = weak_ptr<Typed>(fv()); } catch (e) { print(e); }", "TV"},
+                {"try { Agg a{f(), 1}; } catch (e) { print(e); }", "T"},
+                {"try { var a = Agg{1, f()}; } catch (e) { print(e); }", "T"},
+                {"try { auto [a, b] = fv(); } catch (e) { print(e); }", "TV"},
+                {"try { for (int i = f(); i < 3; ++i) { print(\"body\"); } } catch (e) { print(e); }", "T"},
+                {"try { for (var i = fv(); side(\"cond\"); ) { print(\"body\"); } } catch (e) { print(e); }", "TV"},
+                {"try { for (int i = 0; side(\"cond\"); i += f()) { print(\"body\"); } } catch (e) { print(e); }", "side cond\nbody\nT"},
+                {"try { for (int i = 0; side(\"cond\"); i += 1 / zero) { print(\"body\"); } } catch (e) { print(e); }", "side cond\nbody\nDivision by zero"},
+                {"try { for (int i = 0; side(\"cond\"); i = xs[9]) { print(\"body\"); } } catch (e) { print(e); }",
+                 "side cond\nbody\nArray index 9 out of bounds for array of size 2"},
+                {"[[warn_mode]] try { switch (f()) { default: nosuch; } } catch (e) { print(e); }", "T"},
+                {"[[warn_mode]] try { switch (f()) { case nosuch: break; } } catch (e) { print(e); }", "T"},
+                {"try { switch (zero) { case f(): print(\"matched\"); break; default: print(\"default\"); } } catch (e) { print(e); }", "T"},
+                {"try { parallel_for (auto& x : fv()) { x = 1; } } catch (e) { print(e); }", "TV"},
+                {"try { var v = include(fv()); } catch (e) { print(e); }", "TV"},
+                {"coroutine int g() { int x = yield f(); print(\"resumed\"); yield x; } try { auto c = g(); print(c.next()); } catch (e) { print(e); }", "T"},
+                {"coroutine int g() { yield f(); print(\"resumed\"); yield 2; } try { auto c = g(); print(c.next()); } catch (e) { print(e); }", "T"},
+                {"coroutine int g() { try { int x = yield f(); yield x; } catch (e) { print(\"in g \", e); yield 5; } yield 6; } auto c = g(); print(c.next(), c.next(), c.done());",
+                 "in g T\n56false"},
+                {"class Money { Money(int a) { throw \"conv\"; } } coroutine Money g() { var v = 5; try { var x = yield v; print(\"resumed\"); } catch (e) { print(\"in g \", e); } } "
+                 "auto c = g(); print(c.next()); print(c.done());", "in g conv\nnull\ntrue"},
+                {"bool lt(int i) { print(\"cond \", i); return i < 2; } coroutine int g() { for (int i = 0; lt(i); i = (yield i) ?? i + 1) { print(\"body \", i); } } "
+                 "for (int v : g()) { print(\"got \", v); }", "cond 0\nbody 0\ngot 0\ncond 1\nbody 1\ngot 1\ncond 2"},
+            };
+            check_each(cases, [&](const auto& c) {
+                auto engine = make_engine();
+                std::string reported;
+                engine->set_script_error_handler([&](const std::string& text) { reported += text; });
+                check_eq(std::string(c.second), printed_output(*engine, std::string(prelude) + c.first));
+                check_eq(std::string(), reported);
+            });
+        });
+
+        // A default argument or an argument's conversion that raises is the call's error: nothing more binds, no instruction of the
+        // callee runs (the VM ran its first one on a null parameter), and nothing is reported as lost
+        test("an_error_raised_while_parameters_bind_runs_nothing_of_the_callee", [this]() {
+            const char* prelude = R"jai(
+                int counter = 0;
+                int f() { throw "T"; }
+                class Err { string m; Err(string a) { m = a; } }
+                int ft() { throw Err("typed"); }
+                class Tag { string n; Tag(string a) { n = a; print("+", n); } ~Tag() { print("~", n); } }
+                Tag mk(string n) { return Tag(n); }
+                int bump() { ++counter; return counter; }
+                var xs = [1, 2];
+                int zero = 0;
+                class Money { int v = 0; Money(int a) { if (a < 0) { throw "conv"; } v = a; ++counter; } }
+                class Copied { int v = 0; Copied() { } Copied(const Copied& o) { throw "copy"; } }
+                int d_ret(int a = f()) { return a; }
+                int d_decl(int a = f()) { int b = a; return b; }
+                int d_add(int a = f()) { return a + 1; }
+                void d_inc(int a = f()) { ++counter; }
+                void d_compound(int a = f()) { counter += 1; }
+                void d_idx(int a = xs[99]) { ++counter; }
+                void d_div(int a = 1 / zero) { ++counter; }
+                void d_host(int a = host_raise()) { ++counter; }
+                void d_two(Tag t = mk("first"), int a = f()) { ++counter; }
+                void d_later(int a = f(), int b = bump()) { ++counter; }
+                void d_typed(int a = ft()) { ++counter; }
+                class C {
+                    void m(int a = f()) { ++counter; }
+                    int ret(int a = f()) { return a; }
+                    static void s(int a = f()) { ++counter; }
+                }
+                class K { int v = bump(); K(int a = f()) { ++counter; } ~K() { print("~K"); } }
+                T gen<T>(T a = f()) { ++counter; return a; }
+                coroutine int co(int a = f()) { ++counter; yield a; }
+                int tail(int n, int a = f()) { ++counter; return n; }
+                int tail_caller() { return tail(1); }
+                int leaf(int a = f()) { return a + 1; }
+                int leaf_caller() { return leaf() + 1; }
+                void c_inc(Money m) { ++counter; }
+                int c_read(Money m) { return m.v; }
+                void c_two(Money a, Money b) { ++counter; }
+                void c_copy(Copied c) { ++counter; }
+                void c_cref(const Money& m) { ++counter; }
+                int c_tail(int n, Money m) { if (n == 0) { return 0; } ++counter; return c_tail(n - 1, -1); }
+                coroutine int c_co(Money m) { ++counter; yield 1; }
+                void run(function body) {
+                    counter = 0;
+                    try { body(); print("no throw ", counter); }
+                    catch (Err e) { print("Err ", e.m, " ", counter); }
+                    catch (e) { print(e, " ", counter); }
+                }
+            )jai";
+            const std::pair<const char*, const char*> cases[] = {
+                {"run([]() { d_ret(); });", "T 0"},
+                {"run([]() { d_decl(); });", "T 0"},
+                {"run([]() { d_add(); });", "T 0"},
+                {"run([]() { d_inc(); });", "T 0"},
+                {"run([]() { d_compound(); });", "T 0"},
+                {"run([]() { d_idx(); });", "Array index 99 out of bounds for array of size 2 0"},
+                {"run([]() { d_div(); });", "Division by zero 0"},
+                {"run([]() { d_host(); });", "host boom 0"},
+                {"run([]() { d_two(); });", "+first\n~first\nT 0"},
+                {"run([]() { d_later(); });", "T 0"},
+                {"run([]() { d_typed(); });", "Err typed 0"},
+                {"run([]() { C c; c.m(); });", "T 0"},
+                {"run([]() { C c; print(c.ret()); });", "T 0"},
+                {"run([]() { C::s(); });", "T 0"},
+                {"run([]() { K k; });", "T 0"},
+                {"run([]() { var k = K(); });", "T 0"},
+                {"run([]() { var k = make_shared<K>(); });", "T 0"},
+                {"run([]() { var l = [](int a = f()) { ++counter; }; l(); });", "T 0"},
+                {"run([]() { int z = 3; var l = [z](int a = f()) { ++counter; return z; }; l(); });", "T 0"},
+                {"run([]() { gen<int>(); });", "T 0"},
+                {"run([]() { auto c = co(); print(\"made\"); c.next(); });", "made\nT 0"},
+                {"run([]() { for (int v : co()) { print(v); } });", "T 0"},
+                {"run([]() { function g = d_inc; g(); });", "T 0"},
+                {"run([]() { var g = d_inc; g(); });", "T 0"},
+                {"run([]() { tail_caller(); });", "T 0"},
+                {"run([]() { leaf_caller(); });", "T 0"},
+                {"run([]() { for (int i = 0; i < 3; ++i) { d_inc(); } });", "T 0"},
+                {"run([]() { var g = [](int a = leaf()) { ++counter; }; g(); });", "T 0"},
+                {"run([]() { c_inc(-1); });", "conv 0"},
+                {"run([]() { print(c_read(-1)); });", "conv 0"},
+                {"run([]() { c_two(-1, 5); });", "conv 0"},
+                {"run([]() { c_two(5, -1); });", "conv 1"},
+                {"run([]() { Copied c; c_copy(c); });", "copy 0"},
+                {"run([]() { c_cref(-1); });", "conv 0"},
+                {"run([]() { c_tail(3, 1); });", "conv 2"},
+                {"run([]() { auto c = c_co(-1); c.next(); });", "conv 0"},
+                {"try { d_inc(); } catch (e) { print(e, \" \", counter); }", "T 0"},
+                {"try { C c; c.m(); } catch (e) { print(e, \" \", counter); }", "T 0"},
+                {"try { c_inc(-1); } catch (e) { print(e, \" \", counter); }", "conv 0"},
+            };
+            check_each(cases, [&](const auto& c) {
+                auto engine = make_engine();
+                engine->add_function("host_raise", []() -> int { throw std::runtime_error("host boom"); });
+                std::string reported;
+                engine->set_script_error_handler([&](const std::string& text) { reported += text; });
+                check_eq(std::string(c.second), printed_output(*engine, std::string(prelude) + c.first));
+                check_eq(std::string(), reported);
+            });
+        });
+
+        // Uncaught, such an error keeps the callee's frame, standing at its first statement (a constructor's at the constructor), on every backend
+        test("an_error_raised_while_parameters_bind_keeps_the_callee_frame", [this]() {
+            const char* prelude =
+                "int f() { throw \"T\"; }\n"
+                "int rt() { var xs = [1]; return xs[9]; }\n"
+                "class Money { Money(int a) { throw \"conv\"; } }\n";
+            const std::tuple<const char*, const char*, const char*> cases[] = {
+                {"int g(\n  int a = f()\n) {\n  int b = a;\n  return b;\n}\ng();\n", "T", "f:1|g:7|<script>:10"},
+                {"int g(\n  int a = throw \"D\"\n) {\n  return a;\n}\ng();\n", "D", "g:7|<script>:9"},
+                {"int g(\n  int a = rt()\n) {\n  return a;\n}\ng();\n", "Array index 9 out of bounds for array of size 1", "rt:2|g:7|<script>:9"},
+                {"int g(\n  int a = 1,\n  int b = f()\n) {\n  return a;\n}\nvoid h() {\n  g();\n}\nh();\n", "T", "f:1|g:8|h:11|<script>:13"},
+                {"class C {\n  int m(\n    int a = f()\n  ) {\n    return a;\n  }\n}\nC c;\nc.m();\n", "T", "f:1|m:8|<script>:12"},
+                {"class C {\n  static int s(\n    int a = f()\n  ) {\n    return a;\n  }\n}\nC::s();\n", "T", "f:1|s:8|<script>:11"},
+                {"class K {\n  K(\n    int a = f()\n  ) {\n    print(a);\n  }\n}\nK k;\n", "T", "f:1|K:5|<script>:11"},
+                {"var l = [](\n  int a = f()\n) {\n  return a;\n};\nl();\n", "T", "f:1|<lambda>:7|<script>:9"},
+                {"coroutine int co(\n  int a = f()\n) {\n  yield a;\n}\nauto c = co();\nc.next();\n", "T", "f:1|co:7|<script>:10"},
+                {"coroutine int co(\n  int a = throw \"D\"\n) {\n  yield a;\n}\nauto c = co();\nc.next();\n", "D", "co:7|<script>:10"},
+                {"void g(\n  Money m\n) {\n  print(1);\n}\ng(5);\n", "conv", "Money:3|g:7|<script>:9"},
+                {"int t(int n,\n  int a = f()\n) {\n  return n;\n}\nint tc() {\n  return t(1);\n}\ntc();\n", "T", "f:1|t:7|tc:10|<script>:12"},
+            };
+            check_each(cases, [&](const auto& c) {
+                auto engine = make_engine();
+                check_eq(std::string(std::get<1>(c)), failure_text(*engine, (std::string(prelude) + std::get<0>(c)).c_str()));
+                check_eq(std::string(std::get<2>(c)), trace_shape(*engine));
+            });
+        });
+
+        // A run-time error raised by the binding itself (the default's own expression, the argument's conversion) keeps the callee's
+        // frame as a throw there does, uncaught and in the caught value's stack
+        test("an_error_the_binding_raises_keeps_the_callee_frame", [this]() {
+            const char* prelude =
+                "var xs = [1];\n"
+                "var text = \"s\";\n"
+                "class Money { int v = 0; Money(int a) { v = a; } }\n";
+            const char* index_text = "Array index 9 out of bounds for array of size 1";
+            const std::tuple<const char*, const char*, const char*> cases[] = {
+                {"int g(\n  int a = xs[9]\n) {\n  return a;\n}\ng();\n", index_text, "g:7|<script>:9"},
+                {"int g(\n  int a\n) {\n  return a;\n}\ng(text);\n", "Cannot pass string to parameter 'a' of 'g' (declared int)", "g:7|<script>:9"},
+                {"int g(\n  int a = 1,\n  int b = xs[9]\n) {\n  return a;\n}\nvoid h() {\n  g();\n}\nh();\n", index_text, "g:8|h:11|<script>:13"},
+                {"class C {\n  int m(\n    int a = xs[9]\n  ) {\n    return a;\n  }\n}\nC c;\nc.m();\n", index_text, "m:8|<script>:12"},
+                {"class C {\n  static int s(\n    int a = xs[9]\n  ) {\n    return a;\n  }\n}\nC::s();\n", index_text, "s:8|<script>:11"},
+                {"var l = [](\n  int a = xs[9]\n) {\n  return a;\n};\nl();\n", index_text, "<lambda>:7|<script>:9"},
+                {"coroutine int co(\n  int a = xs[9]\n) {\n  yield a;\n}\nauto c = co();\nc.next();\n", index_text, "co:7|<script>:10"},
+                {"Money m(text);\n", "Cannot pass string to parameter 'a' of 'Money' (declared int)", "Money:3|<script>:4"},
+                {"class Q {\n  Q() {\n  }\n}\nclass R : Q {\n  R(int a) {\n    print(a);\n  }\n}\nR r(text);\n",
+                 "Cannot pass string to parameter 'a' of 'R' (declared int)", "R:9|<script>:13"},
+                {"class Q {\n  Q(int a) {\n  }\n}\nclass R : Q {\n  R(int a)\n    : Q(\n      a) {\n    print(a);\n  }\n}\nR r(text);\n",
+                 "Cannot pass string to parameter 'a' of 'R' (declared int)", "R:9|<script>:15"},
+                {"int t(int n,\n  int a = xs[9]\n) {\n  return n;\n}\nint tc() {\n  return t(1);\n}\ntc();\n", index_text, "t:7|tc:10|<script>:12"},
+            };
+            check_each(cases, [&](const auto& c) {
+                auto engine = make_engine();
+                check_eq(std::string(std::get<1>(c)), failure_text(*engine, (std::string(prelude) + std::get<0>(c)).c_str()));
+                check_eq(std::string(std::get<2>(c)), trace_shape(*engine));
+            });
+            auto engine = make_engine();
+            check_eq(std::string("2"), printed_output(*engine, std::string(prelude) +
+                "int g(int a = xs[9]) { return a; }\nvoid h() { g(); }\ntry { h(); } catch (e) { print(e.stack.size() - 1); }\n"));
         });
 
         // Regression: caught typed-return conversion error left the callee frame/env and

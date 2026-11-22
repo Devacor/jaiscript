@@ -72,7 +72,7 @@ build/bin/jaiscript_tests
 ```
 
 That builds everything: the library, the test suite, the differential fuzzer, the runner, the
-language server, the web application host `jai_spider` (which uses a system SQLite or downloads a pinned one at configure time), the gate
+language server, the web application host `jai_spider` (which compiles the SQLite kept in `tools/jai_spider/third_party/sqlite`), the gate
 watchdog `jai_gate_run`, the three example games and the embedding quickstart's host
 (`embed_quickstart`). Binaries land in `build/bin/`, the library in `build/lib/`.
 
@@ -207,11 +207,12 @@ ON when JaiScript is the top-level project and OFF when it is added to another p
 | `JAISCRIPT_BUILD_TESTS` | top-level | The Foundry test suite (`jaiscript_tests`) and the fuzzer (`jaiscript_fuzz`) |
 | `JAISCRIPT_BUILD_RUNNER` | top-level | The standalone runner / REPL (`jaiscript_runner`, binary `jaiscript`) |
 | `JAISCRIPT_BUILD_LSP` | top-level | The language server `jaiscript_lsp` the VS Code extension launches |
-| `JAISCRIPT_BUILD_SPIDER` | top-level | `jai_spider`, the web application host, and its SQLite: a system SQLite 3.37+ if CMake finds one, else the pinned amalgamation downloaded at configure time (`JAI_SPIDER_SQLITE_ZIP` / `JAI_SPIDER_SQLITE_DIR` for offline builds; `tools/jai_spider/README.md`) |
+| `JAISCRIPT_BUILD_SPIDER` | top-level | `jai_spider`, the web application host, and its SQLite, compiled from the amalgamation in `tools/jai_spider/third_party/sqlite` |
 | `JAISCRIPT_BUILD_EXAMPLES` | top-level | `jai_gloom`, `jai_crawler`, `jai_demoreel`, and in a top-level build `embed_quickstart` (the embedding quickstart's host) |
 | `JAISCRIPT_INTERPRETER` | top-level | `jaiscript_interpreter`, the library plus the tree-walking interpreter, which the suite, the fuzzer, the runner and `jai_spider` link. OFF: they link `jaiscript`, and the interpreter is not compiled at all |
 | `JAISCRIPT_INSTALL` | top-level | The install rules and the `JaiScript` CMake package (`find_package(JaiScript)`) |
 | `JAISCRIPT_ENABLE_DEBUGGER` | ON | Compiles the DAP-over-TCP debug listener. Turn it OFF for shipping or mobile builds and no socket code is compiled in at all |
+| `JAISCRIPT_ENABLE_IMAGE` | ON | Compiles the `image::` module (`stdlib::register_image`: the in-house PNG, JPEG and GIF codecs and the resampler). The option defines `JAISCRIPT_ENABLE_IMAGE` for the library; without that definition the module's translation units (`source/implementation/stdlib/image*.cpp`) are empty, so a host that compiles `source/jaiscript.cpp` or the implementation files itself gets the module only by defining it, and a build without it carries none of the codecs (calling `register_image` is then a link error). A host that links the static library and never calls `register_image` links none of it either way |
 | `JAISCRIPT_ENABLE_BENCHMARKS` | OFF | Adds the performance suites to `jaiscript_tests` (see below) |
 | `JAISCRIPT_NATIVE_ARCH` | OFF | `-march=native` for Release. Faster; the binary stops being portable |
 | `JAISCRIPT_ENABLE_LTO` | OFF | `-flto` for GCC/Clang Release builds |
@@ -338,7 +339,7 @@ cmake --install build-jai
 ```
 
 ```cmake
-find_package(JaiScript 0.5 CONFIG REQUIRED)          # -DCMAKE_PREFIX_PATH=/opt/jaiscript
+find_package(JaiScript 0.6 CONFIG REQUIRED)          # -DCMAKE_PREFIX_PATH=/opt/jaiscript
 target_link_libraries(my_game PRIVATE JaiScript::jaiscript)
 ```
 

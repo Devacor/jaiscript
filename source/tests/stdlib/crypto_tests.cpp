@@ -39,7 +39,7 @@ public:
 			check_eq(std::string("2c8d07cd986f58eb210bd800133d6645c7340c59865377c8ea431cebca0b3113"), es("crypto::sha256(\"\\x00\\xFF\\x00\");"));
 			check_eq(std::string("4a99557e4033c3539de2eb65472017cad5f9557f7a0625a09f1c3f6e2ba69c4c 4a99557e4033c3539de2eb65472017cad5f9557f7a0625a09f1c3f6e2ba69c4c"),
 				es("crypto::sha256(utf8_string(\"\xC3\xA9\")) + \" \" + crypto::sha256(\"\xC3\xA9\");"));
-			check_eq(std::string("string"), es("type_of(crypto::sha256(\"a\"));"));
+			check_eq(std::string("string"), es("reflect::type_of(crypto::sha256(\"a\"));"));
 		});
 
 		test("sha512_matches_the_nist_vectors_at_every_block_boundary", [this, es]() {
@@ -139,8 +139,8 @@ public:
 
 		test("equals_compares_length_and_every_byte", [this, es]() {
 			check_eq(std::string("true false false false true true"),
-				es("`${crypto::equals(\"abc\", \"abc\")} ${crypto::equals(\"abc\", \"abd\")} ${crypto::equals(\"ab\", \"abc\")} "
-				   "${crypto::equals(\"\\x00a\", \"\\x00b\")} ${crypto::equals(\"\", \"\")} ${crypto::equals(utf8_string(\"\xC3\xA9\"), \"\xC3\xA9\")}`;"));
+				es("`${crypto::constant_time_equals(\"abc\", \"abc\")} ${crypto::constant_time_equals(\"abc\", \"abd\")} ${crypto::constant_time_equals(\"ab\", \"abc\")} "
+				   "${crypto::constant_time_equals(\"\\x00a\", \"\\x00b\")} ${crypto::constant_time_equals(\"\", \"\")} ${crypto::constant_time_equals(utf8_string(\"\xC3\xA9\"), \"\xC3\xA9\")}`;"));
 		});
 
 		test("random_bytes_and_random_int_come_from_the_operating_system", [this, es, caught]() {
@@ -220,7 +220,7 @@ public:
 			check_eq(std::string("crypto::random_bytes expects an int count"), caught("var c = \"x\"; crypto::random_bytes(c);"));
 			auto engine = make_engine();
 			stdlib::register_all(*engine);
-			for (const char* source : {"crypto::sha256(5);", "crypto::sha256();", "crypto::md5(\"a\", \"b\");", "int n = crypto::sha1(\"a\");", "crypto::equals(\"a\");",
+			for (const char* source : {"crypto::sha256(5);", "crypto::sha256();", "crypto::md5(\"a\", \"b\");", "int n = crypto::sha1(\"a\");", "crypto::constant_time_equals(\"a\");",
 			                           "crypto::password_hash(\"x\", \"y\");", "crypto::random_int(1);", "crypto::sha256_file(1.5);"}) {
 				bool rejected = false;
 				try { engine->execute(source); } catch (const std::exception&) { rejected = true; }
@@ -259,10 +259,10 @@ public:
 				array<string> texts = [];
 				for (int i = 0; i < 3000; ++i) { texts.push(`<${i}> & '${i}'`); }
 				array<string> serial = [];
-				for (auto t : texts) { serial.push(crypto::sha256(t) + crypto::hmac_sha512("k", t) + crypto::md5(t) + to_string(crypto::equals(t, "x"))); }
-				var parallel = parallel_transform(texts, [](string t) { return crypto::sha256(t) + crypto::hmac_sha512("k", t) + crypto::md5(t) + to_string(crypto::equals(t, "x")); });
+				for (auto t : texts) { serial.push(crypto::sha256(t) + crypto::hmac_sha512("k", t) + crypto::md5(t) + to_string(crypto::constant_time_equals(t, "x"))); }
+				var parallel = parallel_transform(texts, [](string t) { return crypto::sha256(t) + crypto::hmac_sha512("k", t) + crypto::md5(t) + to_string(crypto::constant_time_equals(t, "x")); });
 				array<string> looped = texts;
-				parallel_for (auto& t : looped) { t = crypto::sha256(t) + crypto::hmac_sha512("k", t) + crypto::md5(t) + to_string(crypto::equals(t, "x")); }
+				parallel_for (auto& t : looped) { t = crypto::sha256(t) + crypto::hmac_sha512("k", t) + crypto::md5(t) + to_string(crypto::constant_time_equals(t, "x")); }
 				array<int> sizes = [0, 0, 0, 0, 0, 0, 0, 0];
 				parallel_for (auto& n : sizes) { n = crypto::random_bytes(8).size() + crypto::random_int(0, 0); }
 				`${to_string(to_json(parallel) == to_json(serial))} ${to_string(to_json(looped) == to_json(serial))} ${sizes.join(",")}`;)";

@@ -192,20 +192,16 @@ namespace jai::detail {
 
         // A reference binds this expression (an argument, a reference declaration's initializer, a cast<T&> operand, a
         // reference return): a member over a base only evaluation names (a computed subscript, a string key) reads as a
-        // reference. A math component does wherever a reference may bind; where one surely binds (place_read_field: a
-        // declaration, a cast<T&>, a return) every member of the chain does, so a field reads as its FIELD reference. A structural
-        // chain binds at the bind point instead (detail/ref_lvalue.hpp resolve_ref_lvalue).
-        static void stamp_place_read(expression* e, uint8_t mode = member_expr::place_read_component) {
+        // reference, every member of the chain, so a field reads as its FIELD reference and a math component as its COMPONENT
+        // reference (a by-value parameter's binding reads the value through it). A structural chain binds at the bind point
+        // instead (detail/ref_lvalue.hpp resolve_ref_lvalue).
+        static void stamp_place_read(expression* e) {
             while (e && e->get_type() == node_type::member_expr) {
                 auto* m = static_cast<member_expr*>(e);
                 if (m->is_static || m->null_safe || m->is_arrow || !m->object) return;
                 const node_type t = m->object->get_type();
                 if (t == node_type::identifier_expr || t == node_type::this_expr || is_ref_bindable_lvalue(e)) return;
-                if (mode != member_expr::place_read_field) {
-                    if (math::any_component_name(m->member) && !m->place_read) { m->place_read = mode; }
-                    return;
-                }
-                m->place_read = mode;
+                m->place_read = member_expr::place_read_field;
                 e = m->object.get();
             }
         }
@@ -330,7 +326,7 @@ namespace jai::detail {
                     return;
                 case node_type::cast_expr:
                     walk_expr(static_cast<cast_expr*>(e)->operand.get(), false);   // cast<T&> needs the mint
-                    if (static_cast<cast_expr*>(e)->by_reference) { stamp_place_read(static_cast<cast_expr*>(e)->operand.get(), member_expr::place_read_field); }
+                    if (static_cast<cast_expr*>(e)->by_reference) { stamp_place_read(static_cast<cast_expr*>(e)->operand.get()); }
                     return;
                 default:
                     return;   // literal/identifier/this/super: leaves
@@ -387,7 +383,7 @@ namespace jai::detail {
                 case node_type::return_stmt:
                     walk_expr(static_cast<return_stmt*>(s)->value.get(), scalar_return && !static_cast<return_stmt*>(s)->binds_reference,
                               static_cast<return_stmt*>(s)->binds_reference);
-                    if (static_cast<return_stmt*>(s)->binds_reference) { stamp_place_read(static_cast<return_stmt*>(s)->value.get(), member_expr::place_read_field); }
+                    if (static_cast<return_stmt*>(s)->binds_reference) { stamp_place_read(static_cast<return_stmt*>(s)->value.get()); }
                     return;
                 case node_type::try_stmt: {
                     auto* t = static_cast<try_stmt*>(s);
@@ -432,7 +428,7 @@ namespace jai::detail {
                     // decls bind their initializer and compile via the decl_ref ops.
                     auto* d = static_cast<variable_decl*>(s);
                     walk_expr(d->initializer.get(), hard_scalar(d->type), d->type && d->type->base_type == script_value_type::jai_reference_type);
-                    if (d->type && d->type->base_type == script_value_type::jai_reference_type) { stamp_place_read(d->initializer.get(), member_expr::place_read_field); }
+                    if (d->type && d->type->base_type == script_value_type::jai_reference_type) { stamp_place_read(d->initializer.get()); }
                     return;
                 }
                 case node_type::function_decl: {

@@ -43,7 +43,7 @@ INTRO_SUPPORT_RE = re.compile(r"^\s*(?:with|and|plus|then)\s+`([A-Za-z0-9_./-]+\
 INTRO_SUPPORT_RE2 = re.compile(r"`([A-Za-z0-9_./-]+\.(?:jai|spider))`\s*:\s*$")
 LABEL_FILE_RE = re.compile(r"(?:jaiscript|template)\s*[—–·-]+\s*([A-Za-z0-9_./-]+\.(?:jai|spider))\s*$")
 HOST_LABEL_RE = re.compile(r"host|sketch|cap above|registration|needs the", re.I)
-REF_RE = re.compile(r'\b(?:import|include|template|scoped_template)\s*\(?\s*"([^"]+)"')
+REF_RE = re.compile(r'\b(?:import|include|template|untrusted_template)\s*\(?\s*"([^"]+)"')
 
 
 class Extractor(HTMLParser):
@@ -199,6 +199,7 @@ def expected_shows_error(expected):
 
 LISTING_PREFIX_RE = re.compile(r"^(?:jaiscript: )?(?:[\w./<>\\-]+\.(?:jai|spider)|script|<script>|<sample>[\\/][\w.]+):(\d+:\d+)")
 FRAME_RE = re.compile(r"\((?:[^()]*\.jai|<script>):(\d+)\)")
+INSTANTIATED_RE = re.compile(r"(instantiated at )(?:\S*\.(?:jai|spider)|<script>):(\d+:\d+)")   # a generic instance's note
 
 
 def canon(line):
@@ -207,6 +208,7 @@ def canon(line):
     l = re.sub(r"^jaiscript: ", "", l)
     l = LISTING_PREFIX_RE.sub(r"FILE:\1", l)
     l = FRAME_RE.sub(r"(FILE:\1)", l)
+    l = INSTANTIATED_RE.sub(r"\1FILE:\2", l)
     return l
 
 

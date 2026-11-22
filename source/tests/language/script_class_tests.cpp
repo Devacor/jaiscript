@@ -1,6 +1,7 @@
 #include <jaiscript/testing/foundry.hpp>
 #include <jaiscript/core/engine.hpp>
 #include <jaiscript/core/dynamic_binder.hpp>
+#include <jaiscript/detail/foreign_keyword.hpp>
 #include <jaiscript/stdlib/stdlib.hpp>
 #include "../case_table.hpp"
 #include <array>
@@ -13,6 +14,29 @@ public:
     script_class_tests() : suite("Script Class Tests") {}
     
     void forge_tests() override {
+        // A reference names storage it does not hold, so it is never a field or an element: the parse says which handle to hold
+        test("a_reference_is_never_a_field_or_an_element", [this]() {
+            auto e = make_engine();
+            auto diagnosed = [&](const std::string& src) {
+                std::string all;
+                try {
+                    for (const auto& d : e->check(src).diagnostics) { all += d.message + "\n"; }
+                } catch (const std::exception& ex) { all = ex.what(); }
+                return all;
+            };
+            const std::string h = "class H { int hp = 0; }\nH g;\n";
+            const std::string handles = "A reference cannot be a field: hold a shared_ptr<H> (owning) or a weak_ptr<H> (observing)";
+            check_true(diagnosed(h + "class C { H& r; }").find(handles) != std::string::npos, diagnosed(h + "class C { H& r; }"));
+            check_true(diagnosed(h + "class C { const H& r = g; }").find(handles) != std::string::npos, "a const reference field");
+            check_true(diagnosed("class C { var& r; }").find("A reference cannot be a field: hold the value itself, or a shared_ptr<T> to the object that owns it") !=
+                       std::string::npos, diagnosed("class C { var& r; }"));
+            check_true(diagnosed("array<int&> xs;").find("A reference cannot be an element: hold the int itself, or a shared_ptr<T> to the object that owns it") !=
+                       std::string::npos, diagnosed("array<int&> xs;"));
+            check_true(diagnosed(h + "map<string, H&> m;").find("A reference cannot be an element: hold a shared_ptr<H> (owning) or a weak_ptr<H> (observing)") !=
+                       std::string::npos, diagnosed(h + "map<string, H&> m;"));
+            check_true(diagnosed(h + "class C { H& get() { return g; } }").empty(), "a reference-returning method stays a method");
+        });
+
         test("class_typed_reference_declaration_aliases_the_object", [this]() {
             // `Base& b = derived;` at statement level is a reference declaration on both
             // backends (it parsed as bitwise-and plus an assignment to an undeclared name):
@@ -1011,7 +1035,7 @@ public:
             check_eq(std::string("CBA"), result.as_string());
         });
 
-        test("instanceof_tests_the_run_time_class", [this]() {
+        test("dynamic_cast_answers_by_the_run_time_class", [this]() {
             struct HostBase { int id = 1; };
             struct HostDerived : HostBase { int extra = 2; };
             const auto engine_with_host = [] {
@@ -1033,15 +1057,16 @@ public:
             )";
             auto e = engine_with_host();
             check_eq(std::string(
-                "Unit:TFFF Hero:TTFF Paladin:TTTF smiteCleric:TFFT |TTTFTF|TTFF|FFFFFFFFF|TTT|TTTF|TF|"
-                "reflect::is_a: unknown class 'Nope'|TTFF"),
+                "Unit:TFFF Hero:TTFF Paladin:TTTF smite:Paladin Cleric:TFFT |TTTFTFT|TTFF|FFFFFFFFF|smite1 4|Cannot cast 'Hero' to 'Paladin&'|Cannot cast 'null' to 'Hero&'|"
+                "Cannot cast 'int' to 'Hero&'|TTTF1|TF|reflect::is_instance_of: unknown class 'Nope'|7TTFF"),
                 e->execute(classes + R"(
                     string flag(bool b) { return b ? "T" : "F"; }
                     string out;
                     array<shared_ptr<Unit>> party = [new Unit(), new Hero(), new Paladin(), new Cleric()];
                     for (auto u : party) {
-                        out += type_of(u) + ":" + flag(u instanceof Unit) + flag(u instanceof Hero) + flag(u instanceof Paladin) + flag(u instanceof Healer) + " ";
-                        if (u instanceof Paladin) { out += cast<Paladin&>(u).smite(); }
+                        out += reflect::type_of(u) + ":" + flag(dynamic_cast<Unit>(u) != null) + flag(dynamic_cast<shared_ptr<Hero>>(u) != null) +
+                               flag(dynamic_cast<Paladin>(u) != null) + flag(dynamic_cast<Healer>(u) != null) + " ";
+                        if (auto knight = dynamic_cast<Paladin>(u)) { out += knight.smite() + ":" + reflect::type_of(knight) + " "; }
                     }
                     // a value, a reference, a var, a null handle, a live and an expired weak handle
                     Paladin p;
@@ -1051,28 +1076,35 @@ public:
                     weak_ptr<Unit> live = party[2];
                     weak_ptr<Unit> dead;
                     { shared_ptr<Unit> gone = new Hero(); dead = gone; }
-                    out += "|" + flag(p instanceof Hero) + flag(r instanceof Paladin) + flag(v instanceof Unit) + flag(none instanceof Hero) + flag(live instanceof Hero) + flag(dead instanceof Unit);
-                    // a namespace's class, and the class named at run time
+                    out += "|" + flag(dynamic_cast<Hero>(p) != null) + flag(dynamic_cast<Paladin>(r) != null) + flag(dynamic_cast<Unit>(v) != null) +
+                           flag(dynamic_cast<Hero>(none) != null) + flag(dynamic_cast<Hero>(live) != null) + flag(dynamic_cast<Unit>(dead) != null) +
+                           flag(same_object(dynamic_cast<Paladin>(party[2]), party[2]));
+                    // a namespace's class, and the test by a name given at run time
                     game::Boss boss;
-                    out += "|" + flag(boss instanceof game::Boss) + flag(boss instanceof Unit) + flag(boss instanceof Hero) + flag(reflect::is_a(p, "Healer"));
-                    // a var that holds no object is no instance, and never an error
+                    out += "|" + flag(dynamic_cast<game::Boss>(boss) != null) + flag(reflect::is_instance_of(boss, "Unit")) + flag(reflect::is_instance_of(boss, "Hero")) +
+                           flag(reflect::is_instance_of(p, "Healer"));
+                    // a var that holds no object names none, and never an error
                     var things = [null, 5, 2.5, "s", [1], {"a": 1}, [](){ return 1; }, math::vec2(1, 2), Dir::north];
                     out += "|";
-                    for (var t : things) { out += flag(t instanceof Unit || reflect::is_a(t, "Unit")); }
-                    // a relational operator: tighter than && and ==, looser than a unary's operand
-                    out += "|" + flag(!(p instanceof Healer)) + flag(p instanceof Hero && v instanceof Paladin) + flag(true == p instanceof Unit);
+                    for (var t : things) { out += flag(dynamic_cast<Unit>(t) != null || reflect::is_instance_of(t, "Unit")); }
+                    // the reference form is cast<T&>: the object itself, or the cast's error
+                    dynamic_cast<Unit&>(p).hp = 4;
+                    out += "|" + dynamic_cast<Paladin&>(r).smite() + to_string(dynamic_cast<Hero&>(party[1]).hp) + " " + to_string(p.hp);
+                    try { dynamic_cast<Paladin&>(party[1]); } catch (err) { out += "|" + err; }
+                    try { dynamic_cast<Hero&>(none); } catch (err) { out += "|" + err; }
+                    try { var five = 5; dynamic_cast<Hero&>(five); } catch (err) { out += "|" + err; }
                     // host classes by the bases their binders name, a script class over one, and a host object in a var
                     HostDerived hd; var held = hd; Squire squire;
-                    out += "|" + flag(hd instanceof HostBase) + flag(held instanceof HostDerived) + flag(squire instanceof HostBase) + flag(held instanceof Unit);
-                    // a parallel body may ask
-                    array<Hero> heroes = [Hero(), Hero()];
-                    array<int> answers = [0, 0];
-                    parallel_for (int i = 0; i < 2; i++) { answers[i] = heroes[i] instanceof Unit ? 1 : 0; }
-                    out += "|" + flag(answers[0] + answers[1] == 2) + flag(reflect::is_a(5, "Unit"));
-                    try { reflect::is_a(p, "Nope"); } catch (err) { out += "|" + err; }
-                    class Holder { int instanceof = 3; }
+                    out += "|" + flag(dynamic_cast<HostBase>(hd) != null) + flag(dynamic_cast<HostDerived>(held) != null) +
+                           flag(dynamic_cast<HostBase>(squire) != null) + flag(dynamic_cast<Unit>(held) != null) + to_string(dynamic_cast<HostBase&>(squire).id);
+                    out += "|" + flag(reflect::is_instance_of(5, "Unit") == false) + flag(reflect::is_instance_of(none, "Hero"));
+                    try { reflect::is_instance_of(p, "Nope"); } catch (err) { out += "|" + err; }
+                    // each word alone is an ordinary name
+                    class Holder { int instanceof = 3; int dynamic_cast = 4; }
                     Holder holder;
-                    out += "|" + flag(holder.instanceof == 3) + flag(reflect::is_a(squire, "HostDerived")) + flag(reflect::is_a("Hero", "Unit")) + flag(reflect::is_a(none, "Hero"));
+                    int dynamic_pointer_cast = 0;
+                    out += "|" + to_string(holder.instanceof + holder.dynamic_cast + dynamic_pointer_cast) + flag(reflect::is_instance_of(squire, "HostDerived")) +
+                           flag(reflect::is_instance_of(squire, "HostBase")) + flag(reflect::is_instance_of("Hero", "Unit")) + flag(reflect::is_instance_of(dead, "Unit"));
                     out;
                 )").as_string());
             const auto load_error = [&](const std::string& code) {
@@ -1080,15 +1112,294 @@ public:
                 try { fresh->execute(classes + "Hero h; int n = 5;\n" + code); } catch (const std::exception& ex) { return std::string(ex.what()); }
                 return std::string("loaded");
             };
-            check_true(load_error("bool b = h instanceof Nope;").find("error: unknown type 'Nope'") != std::string::npos);
-            check_true(load_error("bool b = h instanceof int;").find("error: 'instanceof' tests a class, and 'int' is a builtin type: compare type_of(x) == \"int\"") != std::string::npos);
-            check_true(load_error("bool b = h instanceof Dir;").find("error: 'instanceof' tests a class, and 'Dir' is an enum: compare the value with one of its values (x == Dir::value)") != std::string::npos);
-            check_true(load_error("bool b = n instanceof Unit;").find("error: 'instanceof Unit' is always false: the operand is 'int', never an object of a class") != std::string::npos);
-            check_true(load_error("bool b = h instanceof;").find("error: expected a class name after 'instanceof'") != std::string::npos);
-            check_eq(std::string("loaded"), load_error("bool up = h instanceof Unit; bool down = h instanceof Paladin; bool side = h instanceof Healer; h instanceof Hero;"));
-            auto warned = engine_with_host()->check(classes + "Hero h; bool side = h instanceof Healer;");
+            const auto refuses = [&](const std::string& code, const std::string& text) {
+                const std::string error = load_error(code);
+                check_true(error.find(text) != std::string::npos, code + " -> " + error);
+            };
+            const std::string forms = "error: dynamic_cast takes a class: dynamic_cast<T>(e) is e as a shared_ptr<T>, null when it is no T, and dynamic_cast<T&>(e) is the reference";
+            refuses("auto b = dynamic_cast<Nope>(h);", "error: unknown type in cast: 'Nope'");
+            refuses("auto b = dynamic_cast<int>(n);", forms);
+            refuses("auto b = dynamic_cast<var>(h);", forms);
+            refuses("auto b = dynamic_cast<array<Hero>>(h);", forms);
+            refuses("auto b = dynamic_cast<shared_ptr<Hero>&>(h);", forms);
+            refuses("auto b = dynamic_cast<Dir>(h);", "error: dynamic_cast<Dir> names a class, and 'Dir' is an enum: cast<Dir>(n) converts an int that is one of its values");
+            refuses("auto b = dynamic_cast<Unit>(n);", "error: dynamic_cast<Unit> is always null: the operand is 'int', never an object of a class");
+            refuses("dynamic_cast<Unit&>(n).hp = 2;", "error: dynamic_cast<Unit&> always raises: the operand is 'int', never an object of a class");
+            refuses("auto b = dynamic_pointer_cast<Hero>(h);", std::string("error: ") + std::string(detail::foreign_word_text(detail::foreign_word::dynamic_pointer_cast_call)));
+            check_eq(std::string("loaded"), load_error("bool up = dynamic_cast<Unit>(h) != null; if (dynamic_cast<Paladin>(h)) { } dynamic_cast<Unit&>(h); bool same = dynamic_cast<shared_ptr<Hero>>(h) != null;"));
+            auto warned = engine_with_host()->check(classes + "Hero h; if (dynamic_cast<Healer>(h)) { }");
             check_eq((size_t)1, warned.diagnostics.size());
-            check_true(!warned.has_errors() && warned.diagnostics[0].message == "'instanceof Healer' is false for every 'Hero' but one whose class derives from 'Healer' too", warned.format(""));
+            check_true(!warned.has_errors() && warned.diagnostics[0].message == "dynamic_cast<Healer> is null for every 'Hero' but one whose class derives from 'Healer' too", warned.format(""));
+        });
+
+        // The VM answers reflect::is_instance_of(x, "T") with a literal name in place: each answer and error is the call's
+        test("an_instance_test_by_a_literal_name_answers_as_the_call_does", [this]() {
+            struct HostBase { int id = 1; };
+            struct HostDerived : HostBase { int extra = 2; };
+            auto e = make_engine();
+            jai::stdlib::register_all(*e);
+            dynamic_binder<HostBase>(*e, "HostBase").constructor<>().property("id", &HostBase::id).build();
+            dynamic_binder<HostDerived>(*e, "HostDerived").constructor<>().base_class<HostBase>().property("extra", &HostDerived::extra).build();
+            e->execute(R"JAI(
+                class Unit { int hp = 1; }
+                class Hero : Unit { }
+                class Squire : HostDerived { }
+                namespace game { class Boss : Unit { } }
+                string flag(bool b) { return b ? "T" : "F"; }
+                string probe(var x) {
+                    string out = flag(reflect::is_instance_of(x, "Unit")) + flag(reflect::is_instance_of(x, "Hero")) + flag(reflect::is_instance_of(x, "game::Boss")) +
+                                 flag(reflect::is_instance_of(x, "HostBase")) + flag(reflect::is_instance_of(x, " Hero "));
+                    try { out += flag(reflect::is_instance_of(x, "Late")); } catch (err) { out += "(" + err + ")"; }
+                    return out;
+                }
+                string sweep() {
+                    shared_ptr<Unit> none = null;
+                    weak_ptr<Unit> gone;
+                    { shared_ptr<Unit> held = new Hero(); gone = held; }
+                    var things = [Unit(), Hero(), game::Boss(), HostDerived(), Squire(), none, gone, 5, "Hero"];
+                    string out;
+                    for (var x : things) { out += probe(x) + " "; }
+                    return out;
+                }
+                var asked(var x) { return reflect::is_instance_of(x, "Hero"); }
+                string stand_in(var x, string name) { return "script:" + name; }
+                Hero first;
+            )JAI");
+            const std::string unknown = "(reflect::is_instance_of: unknown class 'Late')";
+            check_eq("TFFFF" + unknown + " TTFFT" + unknown + " TFTFF" + unknown + " FFFTF" + unknown + " FFFTF" + unknown + " FFFFF" + unknown + " FFFFF" + unknown +
+                     " FFFFF" + unknown + " FFFFF" + unknown + " ", e->execute("sweep()").as_string());
+            // the sites compiled before the class existed, and before it was redefined without its base (its objects follow the definition)
+            e->execute("class Late : Hero { }");
+            check_eq(std::string("TTFFTT TTFFTF"), e->execute("probe(Late()) + \" \" + probe(first)").as_string());
+            e->execute("class Hero { int mana = 2; }");
+            check_eq(std::string("FTFFTF FTFFTF FTFFTT"), e->execute("probe(Hero()) + \" \" + probe(first) + \" \" + probe(Late())").as_string());
+            // the name bound again by the host: its function is the one called, with the operand and the text
+            check_true(e->execute("asked(first)").as_bool());
+            e->add_global("reflect::is_instance_of", e->get_variable("stand_in"));
+            check_eq(std::string("script:Hero"), e->execute("asked(first)").as_string());
+            e->add_function("reflect::is_instance_of", [](int a_operand, std::string a_name) { return a_name + ":" + std::to_string(a_operand); });
+            check_eq(std::string("Hero:7"), e->execute("asked(7)").as_string());
+        });
+
+        // A handle never aliases a value slot: every way a class value becomes a handle copies it, a temporary is the handle's object, a
+        // handle stays shared, and a handle-form cast over a declared class value is a test or a load error
+        test("a_handle_never_aliases_a_value_slot", [this]() {
+            const std::string classes = R"(
+                class Dog { string name = "d"; int copies = 0; Dog() {} Dog(const Dog& o) { name = o.name; copies = o.copies + 1; }
+                    shared_ptr<Dog> me() { return shared_from_this(); }
+                    var weak_me() { return weak_from_this(); }
+                    shared_ptr<Dog> own() { shared_ptr<Dog> s = this; return s; } }
+                class Pup : Dog { int bones = 1; }
+                class Kennel { shared_ptr<Dog> star = null; Dog resident; array<shared_ptr<Dog>> pack; }
+                string OUT = "";
+            )";
+            const auto fresh = [this] {
+                auto e = make_engine();
+                jai::stdlib::register_all(*e);
+                return e;
+            };
+            // each body runs at the top level and inside a function, where the VM reads locals from their slots
+            const std::pair<const char*, const char*> rows[] = {
+                {"Dog d; shared_ptr<Dog> h = make_shared<Dog>(d); h.name = \"x\"; OUT = `${d.name} ${h.name} ${h.copies}`;", "d x 1"},
+                {"Dog d; shared_ptr<auto> h = make_shared<Dog>(d); h.name = \"x\"; OUT = `${d.name} ${h.name}`;", "d x"},
+                {"Pup p; shared_ptr<Dog> h = make_shared<Pup>(p); h.name = \"x\"; OUT = `${p.name} ${reflect::type_of(h)}`;", "d Pup"},
+                {"shared_ptr<Dog> h = make_shared<Dog>(); OUT = to_string(h.copies);", "0"},
+                {"shared_ptr<Dog> a = new Dog(); shared_ptr<Dog> b = a; b.name = \"x\"; OUT = `${a.name} ${same_object(a, b)}`;", "x true"},
+                {"Dog d; var v = d; shared_ptr<Dog> h = make_shared<Dog>(v); h.name = \"x\"; OUT = `${v.name} ${h.name}`;", "d x"},
+                {"shared_ptr<Dog> a = new Dog(); var v = a; shared_ptr<Dog> h = v; h.name = \"x\"; OUT = a.name;", "x"},
+                {"Dog d; Dog& r = d; shared_ptr<Dog> h = make_shared<Dog>(r); h.name = \"x\"; OUT = d.name;", "d"},
+                {"const Dog c; shared_ptr<Dog> h = make_shared<Dog>(c); h.name = \"x\"; OUT = c.name;", "d"},
+                {"array<Dog> ds; ds.push(Dog()); shared_ptr<Dog> h = make_shared<Dog>(ds[0]); h.name = \"x\"; OUT = ds[0].name;", "d"},
+                {"Kennel k; shared_ptr<Dog> h = make_shared<Dog>(k.resident); h.name = \"x\"; OUT = k.resident.name;", "d"},
+                {"Dog d; shared_ptr<Dog> h = make_shared<Dog>(true ? d : d); h.name = \"x\"; OUT = d.name;", "d"},
+                {"shared_ptr<Dog> a = new Dog(); auto h = a.own(); h.name = \"x\"; OUT = a.name;", "x"},
+                {"Dog d; array<shared_ptr<Dog>> all; all.push(make_shared<Dog>(d)); all[0].name = \"x\"; OUT = `${d.name} ${all[0].copies}`;", "d 1"},
+                {"array<shared_ptr<Dog>> all; all.push(make_shared<Dog>()); OUT = to_string(all[0].copies);", "0"},
+                {"array<Dog> ds; ds.push(Dog()); array<shared_ptr<Dog>> all; all.push(make_shared<Dog>(ds[0])); all[0].name = \"x\"; OUT = ds[0].name;", "d"},
+                {"Dog d; array<shared_ptr<Dog>> all = [new Dog()]; all[0] = make_shared<Dog>(d); all[0].name = \"x\"; OUT = d.name;", "d"},
+                {"Dog d; array<shared_ptr<Dog>> all; all.insert(0, make_shared<Dog>(d)); all[0].name = \"x\"; OUT = d.name;", "d"},
+                {"Dog d; array<shared_ptr<Dog>> all = [make_shared<Dog>(d)]; all[0].name = \"x\"; OUT = `${d.name} ${all[0].copies}`;", "d 1"},
+                {"Dog d; map<string, shared_ptr<Dog>> all; all[\"k\"] = make_shared<Dog>(d); all[\"k\"].name = \"x\"; OUT = d.name;", "d"},
+                {"Dog d; map<string, shared_ptr<Dog>> all = {\"k\": make_shared<Dog>(d)}; all[\"k\"].name = \"x\"; OUT = `${d.name} ${all[\"k\"].copies}`;", "d 1"},
+                {"Dog d; Kennel k; k.star = make_shared<Dog>(d); k.star.name = \"x\"; OUT = d.name;", "d"},
+                {"Dog d; Kennel k; k.pack.push(make_shared<Dog>(d)); k.pack[0].name = \"x\"; OUT = d.name;", "d"},
+                {"array<Dog> ds; ds.push(Dog()); for (Dog h : ds) { h.name = \"x\"; OUT = h.name; } OUT = OUT + ds[0].name;", "xd"},
+                // what the checker cannot call a value is judged when the line runs
+                {"Dog d; var v = d; int was = v.copies; auto h = dynamic_cast<Dog>(v); h.name = \"x\"; OUT = `${v.name} ${h.name} ${h.copies - was}`;", "d x 1"},
+                {"Dog d; var v = d; int was = v.copies; auto h = cast<shared_ptr<Dog>>(v); h.name = \"x\"; OUT = `${v.name} ${h.copies - was}`;", "d 1"},
+                {"Dog d; Dog& r = d; auto h = dynamic_cast<Dog>(r); h.name = \"x\"; OUT = d.name;", "d"},
+                {"array<Dog> ds; ds.push(Dog()); auto h = dynamic_cast<Dog>(ds[0]); h.name = \"x\"; OUT = ds[0].name;", "d"},
+                {"shared_ptr<Dog> a = new Dog(); var v = a; auto h = dynamic_cast<Dog>(v); h.name = \"x\"; OUT = a.name;", "x"},
+                {"shared_ptr<Dog> a = new Pup(); auto h = cast<shared_ptr<Pup>>(a); h.name = \"x\"; OUT = a.name;", "x"},
+                {"shared_ptr<Dog> a = new Dog(); weak_ptr<Dog> w = a; auto h = dynamic_cast<Dog>(w); h.name = \"x\"; OUT = a.name;", "x"},
+                {"auto h = dynamic_cast<Dog>(Dog()); OUT = `${reflect::type_of(h)} ${h.copies}`;", "Dog 0"},
+                // read for its truth the cast is the test: it copies nothing
+                {"Dog d; if (dynamic_cast<Dog>(d)) { d.name = \"x\"; } OUT = `${d.name} ${d.copies}`;", "x 0"},
+                {"Dog s = Pup(); OUT = !dynamic_cast<Pup>(s) ? \"no\" : \"yes\";", "yes"},
+                {"Dog d; bool b = dynamic_cast<Dog>(d) && d.copies == 0; OUT = to_string(b);", "true"},
+                {"Dog d; OUT = `${dynamic_cast<Dog>(d) != null} ${null == dynamic_cast<Pup>(d)}`;", "true true"},
+                {"Dog d; OUT = to_string(dynamic_cast<Dog>(d) ? 1 : 2);", "1"},
+                {"Dog d; int n = 0; while (dynamic_cast<Dog>(d) && n < 2) { n += 1; } OUT = `${n} ${d.copies}`;", "2 0"},
+                {"Dog d; var v = d; int was = v.copies; if (dynamic_cast<Dog>(v)) { v.name = \"x\"; } OUT = `${v.name} ${v.copies - was}`;", "x 0"},
+                {"shared_ptr<Dog> a = new Dog(); auto s = a.me(); s.name = \"x\"; OUT = `${a.name} ${a.weak_me().expired()}`;", "x false"},
+            };
+            for (const auto& row : rows) {
+                check_eq(std::string(row.second), fresh()->execute(classes + row.first + "\nOUT;").as_string(), row.first);
+                check_eq(std::string(row.second), fresh()->execute(classes + "void run() { " + row.first + " }\nrun(); OUT;").as_string(), row.first);
+            }
+            // a class value never becomes a handle on its own, as in C++: the load refuses what it sees, the run time a var path
+            const std::string into_handle_refused = "a Dog value does not become a handle: make_shared<Dog>(value) copies it into a new one";
+            for (const char* form : {"Dog d; shared_ptr<Dog> h = d;", "shared_ptr<Dog> h = Dog();", "shared_ptr<Dog> h = new Dog(); Dog d; h = d;",
+                                     "Dog d; array<shared_ptr<Dog>> all; all.push(d);", "Dog d; map<string, shared_ptr<Dog>> all; all[\"k\"] = d;",
+                                     "Dog d; Kennel k; k.star = d;", "void take(shared_ptr<Dog> h) {} Dog d; take(d);",
+                                     "shared_ptr<Dog> give() { Dog d; return d; }"}) {
+                std::string all;
+                try { for (const auto& d : fresh()->check(classes + form).diagnostics) { all += d.message + "\n"; } } catch (const std::exception& ex) { all = ex.what(); }
+                check_true(all.find(into_handle_refused) != std::string::npos, std::string(form) + " -> " + all);
+            }
+            check_eq(std::string("A Dog value does not become a handle: make_shared<Dog>(value) copies it into a new one"),
+                     fresh()->execute("[[warn_mode]];\n" + classes + "Dog d; var v = d; try { shared_ptr<Dog> h = v; } catch (e) { OUT = e; }\nOUT;").as_string(),
+                     "the run time refuses a var path");
+            check_eq((int64_t)2, fresh()->execute(classes + "int bump() { Dog s = Pup(); if (dynamic_cast<Pup>(s)) { s.bones += 1; return s.bones; } return 0; } bump();").as_int(),
+                     "the test narrows the slot, and a write reaches it");
+            // a constructor new or make_shared runs builds the handle's object: a handle made from its `this` shares it
+            const std::string registry = R"(
+                array<shared_ptr<Ent>> REG;
+                shared_ptr<Ent> LAST = null;
+                void keep(shared_ptr<Ent> e) { LAST = e; }
+                class Ent { int n = 0; shared_ptr<Ent> self = null; Ent() { REG.push(this); self = this; keep(this); auto same = shared_from_this(); same.n = 1; } }
+            )";
+            check_eq(std::string("1|5|6|7|true|8"), fresh()->execute(registry + R"(
+                auto e = new Ent(); string out = to_string(e.n);
+                REG[0].n = 5; out += "|" + to_string(e.n);
+                e.self.n = 6; out += "|" + to_string(e.n);
+                LAST.n = 7; out += "|" + to_string(e.n) + "|" + to_string(same_object(e, REG[0]) && same_object(e, LAST));
+                auto m = make_shared<Ent>(); REG[1].n = 8; out += "|" + to_string(m.n);
+                e.self = null; m.self = null; out;
+            )").as_string(), "this in a constructor new runs is the handle's object");
+            check_eq(std::string("3|4"), fresh()->execute(R"(
+                class Late { int n = 0; Late() { LATE.push(this); LATE_MAP["k"] = this; } }
+                array<shared_ptr<Late>> LATE;
+                map<string, shared_ptr<Late>> LATE_MAP;
+                auto x = new Late(); LATE[0].n = 3; string out = to_string(x.n); LATE_MAP["k"].n = 4; out + "|" + to_string(x.n);
+            )").as_string(), "a program-scope container declared below the constructor shares the handle's object");
+            const auto refusal = [&](const std::string& body) {
+                try { fresh()->execute(classes + body); } catch (const std::exception& ex) { return std::string(ex.what()); }
+                return std::string("loaded");
+            };
+            const auto names_both = [](const std::string& cast, const std::string& operand, const std::string& cls) {
+                return cast + ": '" + operand + "' is a class value, and a handle never aliases one; test it with if (dynamic_cast<" + cls + ">(" + operand +
+                       ")), or take a reference with dynamic_cast<" + cls + "&>(" + operand + ")";
+            };
+            const std::pair<const char*, std::string> refused[] = {
+                {"Dog d; auto h = dynamic_cast<shared_ptr<Dog>>(d);", names_both("dynamic_cast<Dog>(d)", "d", "Dog")},
+                {"Dog d; auto h = dynamic_cast<Dog>(d);", names_both("dynamic_cast<Dog>(d)", "d", "Dog")},
+                {"Dog a; Dog d = dynamic_cast<Dog>(a);", names_both("dynamic_cast<Dog>(a)", "a", "Dog")},
+                {"Dog d; auto h = cast<shared_ptr<Dog>>(d);", names_both("cast<shared_ptr<Dog>>(d)", "d", "Dog")},
+                {"Dog d; if (auto h = dynamic_cast<Dog>(d)) { }", names_both("dynamic_cast<Dog>(d)", "d", "Dog")},
+                {"void take(var x) { } Dog d; take(dynamic_cast<Dog>(d));", names_both("dynamic_cast<Dog>(d)", "d", "Dog")},
+                {"var give(Dog d) { return dynamic_cast<Dog>(d); }", names_both("dynamic_cast<Dog>(d)", "d", "Dog")},
+                {"Dog d; string n = dynamic_cast<Dog>(d).name;", names_both("dynamic_cast<Dog>(d)", "d", "Dog")},
+                {"Kennel k; auto h = dynamic_cast<Dog>(k.resident);", names_both("dynamic_cast<Dog>(k.resident)", "k.resident", "Dog")},
+                {"Dog d; d.me();", "shared_from_this() needs an object reached through a shared_ptr, and this one is a class value"},
+                {"Dog d; d.weak_me();", "weak_from_this() needs an object reached through a shared_ptr, and this one is a class value"},
+                {"class Early { Early() { auto s = shared_from_this(); } } Early e;", "shared_from_this() needs an object reached through a shared_ptr, and this one is a class value"},
+                // `this` into a handle on a class value raises; a copy would be another object
+                {"Dog d; d.own();", "'this' becomes a handle only on an object reached through a shared_ptr, and this one is a class value"},
+                {"array<shared_ptr<Ent>> REG; class Ent { Ent() { REG.push(this); } } Ent e;", "'this' becomes a handle only on an object reached through a shared_ptr, and this one is a class value"},
+                {"class Ent { shared_ptr<Ent> self = null; Ent() { self = this; } } Ent e;", "'this' becomes a handle only on an object reached through a shared_ptr, and this one is a class value"},
+                // the slot's declared type decides, wherever the program declares it (here below the class that stores into it)
+                {"class Late { Late() { LATE.push(this); } } array<shared_ptr<Late>> LATE; Late l;", "'this' becomes a handle only on an object reached through a shared_ptr, and this one is a class value"},
+                {"class LateMap { LateMap() { LATE_MAP[\"k\"] = this; } } map<string, shared_ptr<LateMap>> LATE_MAP; LateMap m;", "'this' becomes a handle only on an object reached through a shared_ptr, and this one is a class value"},
+                {"class LateSlot { LateSlot() { LATE_SLOT[0] = this; } } array<shared_ptr<LateSlot>> LATE_SLOT = [null]; LateSlot s;", "'this' becomes a handle only on an object reached through a shared_ptr, and this one is a class value"},
+                {"class LateInsert { LateInsert() { LATE_INSERT.insert(0, this); } } array<shared_ptr<LateInsert>> LATE_INSERT; LateInsert s;", "'this' becomes a handle only on an object reached through a shared_ptr, and this one is a class value"},
+            };
+            for (const auto& row : refused) { check_true(refusal(row.first).find(row.second) != std::string::npos, row.first); }
+        });
+
+        test("a_passed_test_narrows_the_variable_until_something_can_change_it", [this]() {
+            const std::string classes = R"(
+                class Unit { int hp = 1; string tag() { return "unit"; } }
+                class Hero : Unit { int mana = 5; string tag() override { return "hero"; } }
+                class Paladin : Hero { int faith = 7; }
+                class Rogue : Unit { int stealth = 2; }
+                string who(Hero h) { return h.tag() + to_string(h.mana); }
+                void touch() { }
+            )";
+            const std::string narrowed = classes + R"(
+                int direct(Unit u) { if (reflect::is_instance_of(u, "Hero")) { Hero h = u; return u.mana + h.mana; } return 0; }
+                int handle(shared_ptr<Unit> u) { if (!dynamic_cast<Paladin>(u)) { return -1; } return u.faith; }
+                int chained(var v) { return dynamic_cast<shared_ptr<Hero>>(v) && v.mana > 1 ? v.mana : 0; }
+                int either(Unit u) { if (!dynamic_cast<Hero>(u) || u.mana < 0) { return 0; } return u.mana; }
+                int otherwise(Unit u) { if (!(reflect::is_instance_of(u, "Hero"))) { return 0; } else { return u.mana; } }
+                int looped(array<shared_ptr<Unit>> xs) { int t = 0; for (auto x : xs) { if (!dynamic_cast<Hero>(x)) { continue; } t += x.mana; } return t; }
+                int walked(shared_ptr<Unit> u) { int n = 0; while (dynamic_cast<shared_ptr<Paladin>>(u)) { n += u.faith; u = new Unit(); } return n; }
+                int stepped(shared_ptr<Unit> u) { int n = 0; for (; reflect::is_instance_of(u, "Hero"); u = new Unit()) { n += u.mana; } return n; }
+                int kinds(var x) { if (reflect::type_of(x) == "int") { return x + 1; } if (reflect::type_of(x) != "string") { return 0; } return x.size(); }
+                int typed(var v) { try { throw v; } catch (Hero e) { return e.mana; } return 0; }
+                int caught(var v) { try { return typed(v); } catch (err) { return 0; } }
+                int reflected(Unit u) { if (reflect::is_instance_of(u, "Paladin")) { return u.faith; } return 0; }
+                int referred(Unit& u) { if (reflect::is_instance_of(u, "Hero")) { return u.mana; } return 0; }
+                int snapshot(shared_ptr<Unit> u) { if (reflect::is_instance_of(u, "Hero")) { auto f = [u]() { return u.mana; }; u = new Unit(); return f(); } return 0; }
+                string passed(Unit u) { if (reflect::is_instance_of(u, "Hero")) { return who(u); } return "-"; }
+                int both(var v) { if (reflect::is_instance_of(v, "Hero") && reflect::is_instance_of(v, "Rogue")) { return v.mana + v.stealth; } return 3; }
+                int copied(shared_ptr<Unit> u) { if (dynamic_cast<Hero>(u)) { auto c = u; return c.mana; } return 0; }
+                int declared(shared_ptr<Unit> u) { if (auto h = dynamic_cast<Hero>(u)) { return h.mana; } return 0; }   // the declared name has the cast's type
+                void keep(shared_ptr<Unit>& r, Unit& v) { }
+                int bound(shared_ptr<Unit> u, Unit w) { if (reflect::is_instance_of(u, "Hero") && reflect::is_instance_of(w, "Hero")) { int m = u.mana + w.mana; keep(u, w); shared_ptr<Unit>& a = u; return m; } return 0; }   // a reference binds the variable as declared
+                int compared(var x) { if (reflect::type_of(x) == "int") { return x == "5" || x == null ? 1 : 0; } return 2; }   // a var keeps its run-time comparisons
+                Paladin p;
+                `${direct(Hero())} ${direct(Unit())} ${handle(new Paladin())} ${handle(new Hero())} ${chained(Hero())} ${chained(5)} ${either(Hero())} ${either(Rogue())} ` +
+                `${otherwise(Paladin())} ${looped([new Hero(), new Unit(), new Paladin()])} ${walked(new Paladin())} ${stepped(new Hero())} ${kinds(41)} ${kinds("four")} ${kinds(2.5)} ` +
+                `${caught(Paladin())} ${caught(3)} ${reflected(Paladin())} ${referred(p)} ${snapshot(new Hero())} ${passed(Paladin())} ${passed(Unit())} ${both(Hero())} ${copied(new Paladin())} ${compared(5)} ${bound(new Hero(), Paladin())} ${declared(new Paladin())}`;
+            )";
+            const std::string expected = "10 0 7 -1 5 0 5 0 5 10 7 5 42 4 0 5 0 7 5 5 hero5 - 3 5 0 10 5";
+            auto e = make_engine();
+            jai::stdlib::register_all(*e);
+            auto rep = e->check(narrowed);
+            check_eq((size_t)0, rep.diagnostics.size(), rep.format(narrowed));
+            check_eq(expected, e->execute(narrowed).as_string());
+            auto unproven = make_engine();
+            jai::stdlib::register_all(*unproven);
+            unproven->type_proofs(false);
+            check_eq(expected, unproven->execute(narrowed).as_string());
+            // every way the variable may change ends the narrowing: the member is the declared class's again, a load error
+            const std::vector<std::string> ended = {
+                "int f(Unit u) { if (reflect::is_instance_of(u, \"Hero\")) { u = Unit(); return u.mana; } return 0; }",
+                "void poke(shared_ptr<Unit>& r) { r = new Unit(); } int f(shared_ptr<Unit> u) { if (reflect::is_instance_of(u, \"Hero\")) { poke(u); return u.mana; } return 0; }",
+                "int f(shared_ptr<Unit> u) { if (reflect::is_instance_of(u, \"Hero\")) { auto g = [&]() { u = new Unit(); }; g(); return u.mana; } return 0; }",
+                "int f(shared_ptr<Unit> u) { auto g = [&]() { u = new Unit(); }; if (reflect::is_instance_of(u, \"Hero\")) { g(); return u.mana; } return 0; }",
+                "int f(shared_ptr<Unit> u) { if (reflect::is_instance_of(u, \"Hero\")) { auto g = [&]() { return u.mana; }; return g(); } return 0; }",
+                "int f(shared_ptr<Unit> u) { if (reflect::is_instance_of(u, \"Hero\")) { auto g = [&]() { auto h = [=]() { return u.mana; }; return h(); }; return g(); } return 0; }",
+                "int f(shared_ptr<Unit> u) { int t = 0; if (reflect::is_instance_of(u, \"Hero\")) { for (int i = 0; i < 2; i++) { t += u.mana; u = new Unit(); } } return t; }",
+                "int f(shared_ptr<Unit> u) { int t = 0; while (t < 2) { if (reflect::is_instance_of(u, \"Hero\")) { t += 1; } t += u.mana; } return t; }",
+                "int f(shared_ptr<Unit> u) { if (reflect::is_instance_of(u, \"Hero\")) { shared_ptr<Unit>& a = u; a = new Unit(); return u.mana; } return 0; }",
+                "int f(shared_ptr<Unit> u) { if (reflect::is_instance_of(u, \"Hero\")) { u.reset(); return u.mana; } return 0; }",
+                "int f(Unit& u) { if (reflect::is_instance_of(u, \"Hero\")) { touch(); return u.mana; } return 0; }",
+                "int f(Unit u) { if (reflect::is_instance_of(u, \"Hero\")) { } return u.mana; }",
+                "int f(Unit u) { return reflect::is_instance_of(u, \"Hero\") ? 0 : u.mana; }",
+                "int f(Unit u, bool ok) { if (reflect::is_instance_of(u, \"Hero\") || ok) { return u.mana; } return 0; }",
+                "int f(Unit u) { if (!(reflect::is_instance_of(u, \"Hero\"))) { return u.mana; } return 0; }",
+                "class Holder { Unit slot = Hero(); int f() { if (reflect::is_instance_of(slot, \"Hero\")) { return slot.mana; } return 0; } }",
+                "shared_ptr<Unit> G = new Hero(); int f() { if (reflect::is_instance_of(G, \"Hero\")) { return G.mana; } return 0; }",
+                "int f(array<Unit> xs) { if (reflect::is_instance_of(xs[0], \"Hero\")) { return xs[0].mana; } return 0; }",
+            };
+            for (const auto& body : ended) {
+                auto fresh = make_engine();
+                jai::stdlib::register_all(*fresh);
+                const std::string program = classes + body;
+                auto found = fresh->check(program);
+                check_true(found.has_errors() && found.diagnostics.size() == 1 && found.diagnostics[0].message.find("no member '") == 0, found.format(program));
+            }
+            // under [[warn_mode]] the same programs run: the run time's own member read decides, on both backends alike
+            auto warned = make_engine();
+            jai::stdlib::register_all(*warned);
+            check_eq(std::string("5|Unit has no member 'mana'|5"), warned->execute("[[warn_mode]];\n" + classes + R"(
+                string t(function f) { string r = ""; try { r = `${f()}`; } catch (err) { r = err; } return r; }
+                int f(shared_ptr<Unit> u) { auto g = [&]() { u = new Unit(); }; if (reflect::is_instance_of(u, "Hero")) { int before = u.mana; g(); return u.mana; } return 0; }
+                int k(var v) { if (reflect::is_instance_of(v, "Hero")) { return v.mana; } return 0; }
+                t([]() { return k(Hero()); }) + "|" + t([]() { return f(new Hero()); }) + "|" + t([]() { return k(Paladin()); });
+            )").as_string());
         });
 
         test("diamond_inheritance_should_fail", [this]() {
@@ -1127,7 +1438,7 @@ public:
 
         // `new T(args)` is pure sugar for shared_ptr<T>(args) construction:
         // same new_expr, same tagging, reference semantics opt-in. A 'var'
-        // decl keeps the shared_ptr marker (var p = new P() IS shared_ptr<P> p = P()).
+        // decl keeps the shared_ptr marker (var p = new P() IS shared_ptr<P> p = make_shared<P>()).
         test("new_keyword_shared_ptr_sugar_basics", [this]() {
             const char* src = R"(
                 class P { int x = 3; P() { x = 3; } P(int v) { x = v; } }
@@ -1149,7 +1460,7 @@ public:
         });
 
         test("new_keyword_matches_shared_ptr_spelling", [this]() {
-            // new P() and shared_ptr<P>(...) are the same expression: same type_of,
+            // new P() and shared_ptr<P>(...) are the same expression: same reflect::type_of,
             // same sharing behavior, brace form included
             const char* src = R"(
                 class P { int x = 1; P() { x = 1; } }
@@ -1160,7 +1471,7 @@ public:
                 aliasA.x = 10;
                 var aliasB = b;
                 aliasB.x = 20;
-                (type_of(a) == type_of(b) ? "same" : "diff") + "|" + to_string(a.x)
+                (reflect::type_of(a) == reflect::type_of(b) ? "same" : "diff") + "|" + to_string(a.x)
                     + "|" + to_string(b.x) + "|" + to_string(braced.x);
             )";
             for (bool use_vm : {false, true}) {
@@ -1518,20 +1829,20 @@ public:
                 e->execute(R"(
                     class Foo { int x = 1; }
                     class Bar { int y = 2; }
-                    shared_ptr<Foo> a = Foo();
-                    shared_ptr<Bar> b = Bar();
+                    shared_ptr<Foo> a = make_shared<Foo>();
+                    shared_ptr<Bar> b = make_shared<Bar>();
                 )");
                 check_eq((int64_t)1, e->execute("a.x").as_int());
                 check_eq((int64_t)2, e->execute("b.y").as_int());
                 // Typed shared_ptr decls ENFORCE the pointee
                 // class - wrong-class value init and wrong-class sp-aliasing both
                 // error; upcasts (script chains) stay legal; null stays assignable.
-                check_throws([&]() { e->execute("shared_ptr<Bar> wrong = Foo();"); });
+                check_throws([&]() { e->execute("shared_ptr<Bar> wrong = make_shared<Foo>();"); });
                 check_throws([&]() { e->execute("shared_ptr<Bar> wrong2 = a;"); });   // aliasing a shared_ptr<Foo>
                 e->execute(R"(
                     class Base { int bv = 5; }
                     class Derived : Base { int dv = 6; }
-                    shared_ptr<Base> up1 = Derived();
+                    shared_ptr<Base> up1 = make_shared<Derived>();
                     var d = new Derived();
                     shared_ptr<Base> up2 = d;
                     shared_ptr<Base> nul = null;
@@ -1545,7 +1856,7 @@ public:
         test("shared_ptr_auto_decl_infers_then_enforces", [this]() {
             // shared_ptr<auto>: the pointee is INFERRED from the
             // initializer's exact class, then enforced exactly like the explicit
-            // spelling - construct-and-share, handle sharing, upcast-on-reassign,
+            // spelling - a temporary as the handle's object, handle sharing, upcast-on-reassign,
             // wrong-class errors, and null-after-establishment all mirror shared_ptr<T>.
             for (bool use_vm : {false, true}) {
                 auto e = jai::foundry::make_default_engine();
@@ -1554,7 +1865,7 @@ public:
                     class Foo { int x = 1; }
                     class Bar { int y = 2; }
                     shared_ptr<auto> a = new Foo();      // infer from new
-                    shared_ptr<auto> b = Foo();          // construct-and-share (mirrors shared_ptr<Foo> b = Foo())
+                    shared_ptr<auto> b = make_shared<Foo>();          // the temporary is the object (mirrors shared_ptr<Foo> b = make_shared<Foo>())
                     shared_ptr<auto> c = a;              // infer from a shared_ptr variable
                     var arr = [new Foo()];
                     shared_ptr<auto> d = arr[0];         // infer from an element read
@@ -1577,9 +1888,9 @@ public:
                 e->execute(R"(
                     class Base { int bv = 5; }
                     class Derived : Base { int dv = 6; }
-                    shared_ptr<auto> up = Base();
+                    shared_ptr<auto> up = make_shared<Base>();
                     up = new Derived();
-                    shared_ptr<auto> down = Derived();
+                    shared_ptr<auto> down = make_shared<Derived>();
                 )");
                 check_eq((int64_t)5, e->execute("up.bv").as_int());
                 check_throws([&]() { e->execute("down = Base();"); });
@@ -1611,7 +1922,7 @@ public:
             // meaning something different inside angle brackets would muddy the ladder.
             // The error teaches the two real spellings.
             for (bool use_vm : {false, true}) {
-                for (const char* src : { "class Foo { int x = 1; } shared_ptr<var> p = Foo();",
+                for (const char* src : { "class Foo { int x = 1; } shared_ptr<var> p = make_shared<Foo>();",
                                          "shared_ptr<var> n = null;",
                                          "function f(shared_ptr<var> a) { return a; }" }) {
                     auto e = jai::foundry::make_default_engine();
@@ -1705,10 +2016,11 @@ public:
                 // ...and the var stays dynamic after a value rebind - it accepts a handle again
                 e->execute("pv = new Bar();");
                 check_eq((int64_t)2, e->execute("pv.y").as_int());
-                // TYPED tier UNCHANGED: value-rhs still auto-unwraps INTO the held handle
-                // (same-class copies fields into the shared object; cross-class errors)
-                e->execute("shared_ptr<Foo> tu = new Foo(); shared_ptr<Foo> tualias = tu; auto tsrc = Foo(); tsrc.x = 7; tu = tsrc;");
-                check_eq((int64_t)7, e->execute("tualias.x").as_int());   // typed reaches THROUGH the handle
+                // TYPED tier: a class value never becomes a handle, as in C++ (make_shared<Foo>(value) is the copy; Foo& through
+                // the handle assigns into the shared object)
+                check_throws([&]() { e->execute("shared_ptr<Foo> tu = new Foo(); auto tsrc = Foo(); tu = tsrc;"); });
+                e->execute("shared_ptr<Foo> tu2 = new Foo(); shared_ptr<Foo> tualias = tu2; auto tsrc2 = Foo(); tsrc2.x = 7; Foo& into = tu2; into = tsrc2;");
+                check_eq((int64_t)7, e->execute("tualias.x").as_int());   // the reference reaches THROUGH the handle
                 check_throws([&]() { e->execute("shared_ptr<Foo> tf2 = new Foo(); tf2 = Bar();"); });
                 // typed handle-rhs still enforces; auto copies of a var handle
                 // re-lock to the plain spelling (infer-then-enforce)
@@ -1783,7 +2095,7 @@ public:
                 {"var p = new C(); var a = p; p.reset(new C()); to_string(p.v) + \" \" + to_string(a.v) + \" \" + to_string(same_object(p, a))", "1 1 false"},
                 {"shared_ptr<C> p = new C(); shared_ptr<C> q = fresh(7); p.reset(q); to_string(same_object(p, q)) + \" \" + to_string(p.v)", "true 7"},
                 {"shared_ptr<C> p = new C(); p.reset(make_shared<C>()); to_string(p.v)", "1"},
-                {"shared_ptr<C> p = new C(); p.reset(new D()); type_of(p)", "D"},
+                {"shared_ptr<C> p = new C(); p.reset(new D()); reflect::type_of(p)", "D"},
                 {"shared_ptr<C> p = new C(); shared_ptr<C> n = null; p.reset(n); to_string(p == null)", "true"},
                 {"shared_ptr<C> p = new C(); p.reset(null); to_string(p == null)", "true"},
                 {"shared_ptr<C> p = null; p.reset(fresh(4)); to_string(p.v)", "4"},
@@ -2281,6 +2593,187 @@ public:
             check_true(v[2].as<std::string>().find("field 'x'") != std::string::npos, "the field's own conversion text: " + v[2].as<std::string>());
             check_eq(std::string("No constructor of 'H' takes (int)"), v[3].as<std::string>(), "a private field: not an aggregate");
             check_eq(std::string("No constructor of 'Derived' takes (int, int)"), v[4].as<std::string>(), "a base with a constructor: not an aggregate");
+        });
+
+        // a call that ends without a value yields null whatever it was called on: only a constructor's call yields its object
+        auto nulls = [this](const script_value& r, size_t count, const std::string& what) {
+            const auto& v = r.as_array();
+            check_eq(count, v.size(), what + " (count)");
+            for (size_t i = 0; i < v.size(); ++i) { check_true(v[i].is_null(), what + ": result " + std::to_string(i) + " is " + v[i].to_string()); }
+        };
+
+        test("a_method_that_ends_without_a_value_yields_null", [this, nulls]() {
+            auto e = make_engine();
+            stdlib::register_all(*e);
+            nulls(e->execute(R"(
+                class C {
+                    int n = 1;
+                    void m() {}
+                    void early() { return; }
+                    var v() {}
+                    auto a() {}
+                    function f() {}
+                    void g<T>(T x) {}
+                    void operator()(int k) { n = k; }
+                }
+                class D : C { void m() override {} }
+                class Box<T> { T held; void put(T x) { held = x; } }
+                var through(C& c) { return c.m(); }
+                C c; var any = c; D d; Box<int> box;
+                shared_ptr<C> p = make_shared<C>(); shared_ptr<C> pd = make_shared<D>(); weak_ptr<C> w = p; var made = new C();
+                var kept = c.m();
+                return [kept, c.m(), any.m(), c.early(), c.v(), c.a(), c.f(), c.g<int>(1), c.g("s"), box.put(3), p.m(), pd.m(), w.lock().m(),
+                        made.m(), through(d), c(4), true ? c.m() : c.m(), false ? c.m() : c.m()];
+            )"), 18, "a typed, var, generic, handle and base receiver");
+            check_true(e->execute("c.m()").is_null(), "the host reads null from a program that ends in the call");
+            check_eq((int64_t)4, e->execute("c.n").as_int(), "operator() ran on its object");
+        });
+
+        test("a_method_that_returns_nothing_yields_null_inside_a_class", [this, nulls]() {
+            auto e = make_engine();
+            nulls(e->execute(R"(
+                class Other { int o = 1; void m() {} }
+                class C {
+                    int n = 1;
+                    void m() {}
+                    array<var> inside() { return [m(), this.m()]; }
+                    array<var> beside_a_lambda(Other x) { var bump = [&]() { n += 1; }; bump(); return [m(), x.m()]; }
+                    array<var> in_a_try(Other x) { try { return [m(), x.m()]; } catch (e) { return [e]; } }
+                    array<var> in_a_loop(Other x) { array<var> out; for (int i = 0; i < 2; ++i) { out.push(x.m()); } return out; }
+                }
+                class D : C { void m() override {} array<var> up() { return [super::m(), m()]; } }
+                C c; D d; Other o;
+                array<var> all = c.inside();
+                all.concat(c.beside_a_lambda(o)); all.concat(c.in_a_try(o)); all.concat(c.in_a_loop(o)); all.concat(d.up());
+                return all;
+            )"), 10, "bare, through this and super, and on another object");
+        });
+
+        test("a_path_of_a_method_that_reaches_its_end_yields_null", [this, nulls]() {
+            auto e = make_engine();
+            auto r = e->execute(R"(
+                [[warn_mode]]
+                class Part { int p = 2; }
+                class C {
+                    int n = 1;
+                    var pick(bool p) { if (p) { return 1; } }
+                    auto deduced(bool p) { if (p) { return 1; } }
+                    var down(int d) { if (d > 0) { return down(d - 1); } }
+                    var guarded() { try { n += 1; } catch (e) { } }
+                    Part part() { }
+                    shared_ptr<Part> handle() { }
+                    array<int> list() { }
+                }
+                var pick(bool p) { if (p) { return 1; } }
+                C c;
+                return [[pick(true), c.pick(true), c.deduced(true)],
+                        [pick(false), c.pick(false), c.deduced(false), c.down(3), c.guarded(), c.part(), c.handle(), c.list()]];
+            )");
+            const auto& v = r.as_array();
+            for (const script_value& returned : v[0].as_array()) { check_eq((int64_t)1, returned.as_int(), "the returning path"); }
+            nulls(v[1], 8, "as a function's does");
+        });
+
+        test("a_function_or_lambda_called_in_a_method_yields_null_when_it_returns_nothing", [this, nulls]() {
+            auto e = make_engine();
+            nulls(e->execute(R"(
+                void nothing() {}
+                var call(function f) { return f(); }
+                class C {
+                    int n = 1;
+                    auto later() { return nothing(); }
+                    array<var> run() {
+                        var free = nothing;
+                        return [later(), free(), call(nothing), call([]() { }), call([&]() { n = 2; }), call([this]() { n = 3; }), call(() => nothing())];
+                    }
+                    function plain() { return []() { }; }
+                    function capturing() { return [this]() { n = 4; }; }
+                }
+                C c;
+                array<var> all = c.run();
+                all.concat([c.later(), call(c.plain()), call(c.capturing())]);
+                return all;
+            )"), 10, "a deduced method returning the call, a function value and a lambda");
+            check_eq((int64_t)4, e->execute("c.n").as_int(), "each lambda ran");
+        });
+
+        test("a_method_that_returns_nothing_yields_null_through_a_bound_value_and_a_callback", [this, nulls]() {
+            auto e = make_engine();
+            stdlib::register_all(*e);
+            nulls(e->execute(R"(
+                class C { int n = 1; void m() {} void take(int x) {} var fold(var sum, int x) {} }
+                C c; array<int> xs = [1, 2];
+                var bound = reflect::bind(c, "m");
+                var take = reflect::bind(c, "take");
+                array<var> all = [bound(), reflect::invoke(c, "m"), reflect::invoke(c, "take", 1), xs.reduce(reflect::bind(c, "fold"), 0)];
+                all.concat(array::map(xs, (int x) => c.take(x))); all.concat(array::map(xs, take));
+                all.concat(parallel_transform(xs, (int x) => c.take(x)));
+                return all;
+            )"), 10, "reflect::bind, reflect::invoke and a builtin that reads its callback's result");
+            auto called = e->get_variable("bound").as_function()({});
+            check_true(called && called.value().is_null(), "the host calls the bound method");
+        });
+
+        test("a_method_that_returns_nothing_reads_as_null_in_an_error", [this]() {
+            auto e = make_engine();
+            auto r = e->execute(R"(
+                namespace shop { class Till { int n = 1; void ring() {} int total() { return rung; } } }
+                shop::Till till;
+                var rung = till.ring();
+                var any = till;
+                array<var> out;
+                try { out.push(`${till.total()}`); } catch (e) { out.push(e); }
+                try { out.push(`${any.ring().n}`); } catch (e) { out.push(e); }
+                try { rung.n = 5; out.push(`${till.n}`); } catch (e) { out.push(e); }
+                return out;
+            )");
+            const auto& v = r.as_array();
+            check_eq(std::string("Cannot return null from 'total' (declared -> int)"), v[0].as<std::string>(), "a typed return of the result");
+            check_eq(std::string("Cannot access 'n' on null ('ring(...)' returned null)"), v[1].as<std::string>(), "a member read on the result");
+            check_eq(std::string("Cannot assign to 'n' on null ('rung' is null)"), v[2].as<std::string>(), "a member store through the result");
+        });
+
+        test("a_constructor_call_yields_its_object_and_an_operator_what_it_returns", [this, ints, nulls]() {
+            struct Host { int id = 5; };
+            auto e = make_engine();
+            stdlib::register_all(*e);
+            dynamic_binder<Host>(*e, "Host").constructor<>().property("id", &Host::id).build();
+            ints(e->execute(R"(
+                class P { int a = 1; P() { a = 2; } P(int v) { a = v; if (v > 5) { return; } a = v + 1; } }
+                class Q : P { int b = 0; Q() : super(7) { b = 1; } Q(int x) : this() { b = x; } }
+                class R : P { int r = 3; }
+                class Plain { int x = 4; }
+                class Over : Host { int extra = 6; Over() : super() {} }
+                P p; P copy = p; var make = P; shared_ptr<P> h = make_shared<P>(4); var n = new Q(6); Q q; array<P> ps = [P(), P(1)];
+                return [p.a, P(3).a, P(9).a, q.a, q.b, Q(5).a, Q(5).b, R().a, R().r, h.a, n.a, n.b, make(2).a, Plain().x, Plain{9}.x, ps[1].a,
+                        copy.a, reflect::construct("P", 8).a, reflect::construct_shared("Q").b, Over().id, Over().extra];
+            )"), {2, 4, 9, 7, 1, 7, 5, 2, 3, 5, 7, 6, 3, 4, 9, 2, 2, 8, 1, 5, 6}, "every construction, one ended by a bare return included");
+            ints(e->execute(R"(
+                class Tally {
+                    int n = 0;
+                    Tally& operator+=(int k) { n += k; return this; }
+                    Tally& operator++() { n += 1; return this; }
+                    Tally operator++(int) { Tally old = this; n += 1; return old; }
+                    Tally& operator=(int k) { n = k; return this; }
+                    Tally& self() { return this; }
+                }
+                Tally t; t += 5; ++t; Tally before = t++; array<Tally> all = [t]; all[0] += 10;
+                return [t.n, before.n, all[0].n, (t += 1).n, (++t).n, (t = 3).n, t.self().n];
+            )"), {7, 6, 17, 8, 9, 3, 3}, "an operator or a method that returns this");
+            auto r = e->execute(R"(
+                class Quiet {
+                    int n = 0;
+                    void operator+=(int k) { n += k; }
+                    void operator++() { n += 1; }
+                    void operator=(int k) { n = k; }
+                }
+                Quiet s; s += 5; ++s; array<Quiet> some = [s]; some[0] += 10;
+                var added = (s += 1); var stepped = ++s; var assigned = (s = 2);
+                return [[added, stepped], [s.n, some[0].n, assigned.n]];
+            )");
+            const auto& v = r.as_array();
+            nulls(v[0], 2, "an in-place operator that returns nothing");
+            ints(v[1], {2, 16, 2}, "it changed its object, and an assignment yields its target");
         });
     }
 };

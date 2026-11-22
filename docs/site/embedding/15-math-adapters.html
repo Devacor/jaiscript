@@ -96,7 +96,7 @@ jai::dynamic_binder&lt;Body&gt;(*eng, &quot;Body&quot;)
     .property(&quot;path&quot;, &amp;Body::path)
     .method(&quot;moved&quot;, &amp;Body::moved);</code></pre></div>
 <div class="codeblock cb-jai" data-host="math adapter registration (vec_types.h, scale / nudge / neighbor / faded / make_path / path_length)" data-sample="math-functions"><span class="cb-label">jaiscript (with the host above)</span><pre><code class="lang-jai">var p = scale(math::vec3(1, 2, 3), 2);
-print(p, " ", type_of(p));
+print(p, " ", reflect::type_of(p));
 
 math::vec3 v = math::vec3(1, 2, 3);
 nudge(v);
@@ -106,7 +106,7 @@ print(neighbor(math::ivec2(4, 7)), " ", neighbor(math::vec2(4.9, 7.2)));   // a 
 print(faded(math::color(1, 0, 0)));
 
 var path = make_path(3);
-print(path.join(" "), " ", type_of(path[0]));
+print(path.join(" "), " ", reflect::type_of(path[0]));
 array&lt;math::vec3&gt; pts = [math::vec3(1, 2, 3), math::vec3(4, 5, 6)];
 print(path_length(pts));
 
@@ -121,7 +121,7 @@ No overload of 'scale' takes (int, int)</code></pre></div>
 <div class="tablewrap"><table><thead><tr><th>C++ signature</th><th>what crosses</th></tr></thead><tbody>
 <tr><td><code>T</code>, <code>const T&amp;</code> parameter</td><td>the script vector, converted as a typed slot of that math type converts: a <code>vec2</code> reaches an <code>ivec2</code> parameter truncated toward zero. A scalar or a vector of other dimensions finds no overload.</td></tr>
 <tr><td><code>T&amp;</code> parameter</td><td>the callee's final value is written back into the script lvalue (a variable, a field, an element, a bound C++ member), as every host <code>T&amp;</code> does (<a href="01-embedding-quickstart.html">Embedding Quickstart</a>). A temporary is passed as a copy.</td></tr>
-<tr><td><code>T</code> return</td><td>arrives as the math type (<code>type_of</code> says <code>math::vec3</code>)</td></tr>
+<tr><td><code>T</code> return</td><td>arrives as the math type (<code>reflect::type_of</code> says <code>math::vec3</code>)</td></tr>
 <tr><td><code>std::vector&lt;T&gt;</code> by value or returned</td><td>converts from and to the packed <code>array&lt;math::vec3&gt;</code> buffer</td></tr>
 <tr><td><code>std::vector&lt;T&gt;&amp;</code></td><td>the callee's result is written back</td></tr>
 <tr><td><code>const std::vector&lt;T&gt;&amp;</code></td><td>rejected at compile time: it would bind a converted copy</td></tr>
@@ -138,7 +138,7 @@ No overload of 'scale' takes (int, int)</code></pre></div>
 b.pos = math::vec3(1, 2, 3);
 b.pos.x += 4;                          // a component store reaches the C++ member
 b.tint.g = 0.5;
-print(b.pos, " ", type_of(b.pos), " ", b.tint);
+print(b.pos, " ", reflect::type_of(b.pos), " ", b.tint);
 print(b.moved(math::vec3(1, 1, 1)));
 
 math::vec3 copy = b.pos;               // a read is a copy
@@ -174,7 +174,7 @@ auto watch = marker-&gt;velocity.on_change.connect([&amp;](const game::Vec3&amp;
 eng-&gt;add_global(&quot;marker&quot;, eng-&gt;make_object(marker));
 
 eng-&gt;execute(R&quot;(
-    print(type_of(marker.position), &quot; &quot;, marker.tint);
+    print(reflect::type_of(marker.position), &quot; &quot;, marker.tint);
     marker.position = math::vec3(1, 2, 3);
     marker.position.x += 4;
     marker.velocity.y = 2;
@@ -198,7 +198,7 @@ std::cout &lt;&lt; v.to_string() &lt;&lt; &quot; -&gt; &quot; &lt;&lt; back.x &l
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

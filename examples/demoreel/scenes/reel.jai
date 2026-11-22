@@ -20,7 +20,7 @@ class Scene {
 		w = w_;
 		h = h_;
 		seed = seed_;
-		rng = Rng(seed_);
+		rng = seeded_rng(seed_);
 		pal = Palette();
 		build();
 	}
@@ -371,7 +371,7 @@ class Reel {
 	void ensure_noise() {
 		int n = pw * ph;
 		if (flash_noise.size() == n) { return; }
-		var noise_rng = Rng(seed + 977);
+		var noise_rng = seeded_rng(seed + 977);
 		flash_noise = [];
 		ring = [];
 		for (int i = 0; i < n; ++i) {

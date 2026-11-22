@@ -156,6 +156,18 @@ public:
 				}
 			}
 		});
+		test("the_engine_alive_probe_is_not_held_to_the_programs_budget", [this]() {
+			// a descheduled probe outran the 0.1 s budget on a loaded machine and read as a dead engine on one backend
+			fuzz::program p;
+			p.segments.push_back("1 + 1;");
+			for (bool vm : { false, true }) {
+				fuzz::run_config cfg;
+				cfg.use_vm = vm;
+				cfg.budget_seconds = 1e-9;
+				const fuzz::run_outcome out = fuzz::run_program(p, cfg);
+				check_true(out.budget_hit && out.alive, vm ? "vm" : "interpreter");
+			}
+		});
 		test("call_args_band_seeds_no_new_divergence", [this]() {
 			// every program carries the call-argument band: element reads of different typed arrays as the arguments of one kept call
 			// in a counted loop (a block's copied read resolving another argument's array diverged in 239 of 500 band seeds)

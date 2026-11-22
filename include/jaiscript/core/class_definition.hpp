@@ -59,14 +59,18 @@ namespace detail {
         std::shared_ptr<class_definition> def;
         void operator()(class_instance* ptr) const noexcept;
     };
-    // The object block: a destructor class's pin on its definition, the instance's strong_ptr
-    // control block and instance (an object value's holder itself), then the cells. The strong family's last weak reference
-    // frees the block through one of two deallocators, and which one it is says whether the pin is there.
+    // The object block: a destructor class's pin on its definition and its birth among its engine's
+    // destructor instances, the instance's strong_ptr control block and instance (an object value's holder itself), then the
+    // cells. The strong family's last weak reference frees the block through one of two deallocators, and which one it is says
+    // whether the pin and the birth are there.
     struct object_block {
-        static constexpr size_t pin_bytes = sizeof(std::shared_ptr<class_definition>);
+        static constexpr size_t pin_bytes = sizeof(std::shared_ptr<class_definition>) + sizeof(uint64_t);
         inline static void release(control_block_base* cb) noexcept;
         inline static void release_pinned(control_block_base* cb) noexcept;
         inline static std::shared_ptr<class_definition>* definition_pin(control_block_base* cb) noexcept;
+        // When the instance was made (engine::next_destructor_instance_birth): the engine's teardown destroys the survivors in
+        // the reverse of it. Null for an allocation without the pin; 0 until a parallel region's join registers its instance
+        inline static uint64_t* birth(control_block_base* cb) noexcept;
     };
 }
 
@@ -285,14 +289,19 @@ public:
     // The C++ object's address (owning or not); null without one. A raw read - no handle copies - for member resolution.
     inline void* cpp_object_pointer() const;
 
-    inline strong_ptr<class_instance> deep_copy() const;
     // One level of a deep copy (script_value::clone_level); past detail::k_inline_copy_depth its fields and then its end
     // (finish_deep_copy_level) are steps on the work list
     inline strong_ptr<class_instance> deep_copy_level(detail::deep_copy_work& work, unsigned depth) const;
     // The end of an instance's copy, after its fields: its C++ object, then the copy joins its class's live instances
     inline void finish_deep_copy_level(class_instance& copy, bool overflow) const;
+    // The copy every class takes: its members' copies and nothing else
+    inline strong_ptr<class_instance> copy_members_level(detail::deep_copy_work& work, unsigned depth) const;
+    // deep_copy_level for a class whose copy takes care (class_definition::copy_care): a user copy constructor builds it, or
+    // its value tree can hold a callable and the copy is watched. The outermost watched copy that met a closure or a
+    // coroutine bound to an instance binds the copy's own to the copy (detail/copy_rebind.hpp)
+    inline strong_ptr<class_instance> deep_copy_with_care(detail::deep_copy_work& work, unsigned depth, uint8_t care) const;
+    inline void end_watched_copy(class_instance& copy, detail::deep_copy_work& work) const;
 
-    inline void copy_fields_from(const class_instance& other);
 
     // The C++ object behind the instance (a bound class's instance, a script class over a bound base, an extended
     // object): never a field, so no script name reaches it; the bound members reach it through the class
@@ -459,7 +468,7 @@ private:
     // A null, int, float, char or bool cell is its bytes: the copy constructor writes exactly the tag, the engine and the payload
     inline field_cell make_trivial_cell(const script_value& v);
     // Store WITHOUT reference write-through (the old map's raw insert_or_assign shape:
-    // copy_fields_from and lazy-default materialization replace a held reference value
+    // lazy-default materialization replace a held reference value
     // itself); returns the stored cell. set_field_unchecked keeps write-through.
     inline script_value& materialize_field(uint64_t id, script_value&& v);
     inline void rehome_overflow_fields();
@@ -546,6 +555,23 @@ public:
     uint64_t method_epoch() const { return method_epoch_; }
     unit_stamp unit() const { return unit_; }
     void set_unit(unit_stamp unit) { unit_ = unit; }
+    // a generic's instance: the stamp of the definition it was declared from (class_decl::instance_stamp), 0 for any other class
+    uint64_t generic_stamp() const { return generic_stamp_; }
+    void set_generic_stamp(uint64_t stamp) { generic_stamp_ = stamp; }
+    // The instances of this class's generic methods (detail/generics.hpp), by name: each joins the class after its declaration,
+    // from a unit that calls it, and a redefinition of the class holds them still (detail::declare_script_class). A name holds
+    // one instance per generic method that takes its type arguments, each an overload of the name.
+    struct generic_method_instance {
+        uint64_t stamp = 0;
+        std::shared_ptr<function_decl> ast;
+        std::shared_ptr<environment> env;
+        access_level access = access_level::public_access;
+    };
+    const std::unordered_map<uint64_t, std::vector<generic_method_instance>>& generic_method_instances() const { return generic_method_instances_; }
+    // the instance takes the place of the name's instance of the same parameter list (its generic declared again), else it is another overload
+    void hold_generic_method_instance(uint64_t name_id, generic_method_instance instance);
+    inline void drop_method_overloads(uint64_t name_id, bool is_static);   // a name's script overloads, ahead of its redefinition
+    inline void set_nonpublic_member(uint64_t member_id, access_level level);
     inline void bump_method_epoch();
 
     // Field-shape epoch: moves only when a field's facts can change - field set, declared types,
@@ -657,6 +683,12 @@ public:
     // Reflection enumeration (reflect::methods / method_arguments): this class's OWN
     // tables — script overload sets (AST decls carry names/types/defaults), the typed
     // C++ overload table, and the raw method-value maps for names in neither
+    // a class whose instances can be a paused coroutine's receiver: it or a parent declares a coroutine method
+    bool declares_coroutine_method() const {
+        if (coroutine_methods_) { return true; }
+        for (const auto& parent : parent_classes_) { if (parent && parent->declares_coroutine_method()) { return true; } }
+        return false;
+    }
     const auto& script_method_overloads() const { return method_overloads_; }
     const auto& script_static_method_overloads() const { return static_method_overloads_; }
     const auto& cpp_method_overload_table() const { return cpp_method_overloads_; }
@@ -722,6 +754,14 @@ public:
     // A move of a value of this class runs a user copy constructor (the chain's, or a by-value field's through its own
     // fields); a container field moves its storage
     bool value_tree_runs_copy_constructor() const;
+    // A value of this class can hold a function or a coroutine by value: a field of it, of a subclass or of a by-value field's
+    // class is untyped, a function or a container of either (a copy of a class that cannot never looks for one to rebind)
+    bool value_tree_holds_callable() const;
+    // What a copy of an instance of this class takes beyond its members' copies: copy_care_constructor, a user copy
+    // constructor builds it; copy_care_watch, its value tree can hold a callable. The one fact a copy asks: 0 is the
+    // memberwise copy and nothing else
+    static constexpr uint8_t copy_care_watch = 1, copy_care_constructor = 2;
+    uint8_t copy_care() const;
     // C++ destruction of a dying instance from `level` down: the level's destructor body, its own fields in reverse
     // declaration order, then its bases in reverse order
     inline void destroy_chain(class_instance* instance, const class_definition* level) const;
@@ -735,6 +775,14 @@ public:
                               std::vector<detail::release_action>& actions, const class_definition* constructed = nullptr) const;
     script_value take_field_for_destroy(class_instance* instance, uint64_t field) const;
     void run_destructor_body(class_instance* instance, const class_definition* level, const script_value& body) const;
+    // Engine teardown, while script still runs: the destructors of the instances still alive (what a reference cycle or the
+    // host keeps), each once and no member taken. The last made goes first, as its death would run it: each level's body, then
+    // the instances that level's members alone hold, the members last declared first. An instance one member alone holds waits
+    // for that member's instance, and a ring of such holders starts at its last made. `survivors` pins every instance alive at
+    // the call and gains the ones a member leads to; the caller keeps them pinned until release_survivor_members
+    static void run_surviving_destructors(engine& eng, std::vector<strong_ptr<class_instance>>& survivors);
+    // Engine teardown, once no script can run: the instance gives up its members, which ends the cycle that kept it alive
+    static void release_survivor_members(class_instance& instance) noexcept;
     // The same question for a declared type (null, var and unknown kinds can hold anything)
     bool type_tree_runs_destructor(const type_info_ptr& t, std::vector<const class_definition*>& in_progress, uint8_t mode = 0) const;
 
@@ -1072,6 +1120,10 @@ public:
     // the declared result (dynamic_binder::strict_signatures)
     bool strict_signatures() const { return strict_signatures_; }
     void set_strict_signatures(bool v) { strict_signatures_ = v; }
+    // A host class no script class derives from (dynamic_binder::final): the checker refuses the derivation at load, and the class
+    // declaration when it runs, on both backends
+    bool is_final() const { return final_; }
+    void set_final(bool v) { final_ = v; }
     // A host class's direct call lane for a bound method (the vm's exec_call_method): the same body on the receiver's
     // C++ object, reached without minting a bound method. It declines (false) any argument shape it does not take,
     // and the ordinary call runs instead; what it throws raises as the ordinary call's would.
@@ -1322,6 +1374,7 @@ private:
     bool auto_registered_ = false;
     bool cpp_backed_ = false;
     bool strict_signatures_ = false;
+    bool final_ = false;
     std::unordered_map<uint64_t, native_entry> native_methods_;
     std::unordered_set<uint64_t> native_lane_names_;   // names a binding without a lane withdrew
     std::unordered_map<uint64_t, std::shared_ptr<native_overload_set>> native_overload_sets_;
@@ -1341,6 +1394,7 @@ private:
     std::unordered_map<uint64_t, std::vector<size_t>> method_arities_;
     std::unordered_map<uint64_t, cpp_overloads_by_arity> cpp_method_overloads_;
     std::unordered_map<uint64_t, std::vector<std::shared_ptr<function_decl>>> method_overloads_;
+    bool coroutine_methods_ = false;
 
     struct overload_cache_key {
         uint64_t name_id;
@@ -1394,7 +1448,8 @@ private:
     mutable std::atomic<bool> field_slots_current_{false};   // re-walk the chain on next query
     mutable std::atomic_flag field_slots_building_;
     mutable bool destructor_tree_cached_ = false;
-    mutable uint8_t copy_facts_ = 0;   // in the destructor fact's padding: the class keeps its layout
+    mutable uint16_t copy_facts_ = 0;   // in the destructor fact's padding: the class keeps its layout
+    mutable uint8_t copy_care_ = 0;     // copy_care's answer while copy_facts_ holds copy_fact_care
     mutable uint64_t destructor_tree_epoch_ = UINT64_MAX;
     mutable script_value null_field_value_;
     mutable uint64_t to_bool_memo_epoch_ = UINT64_MAX;
@@ -1426,6 +1481,8 @@ private:
     // See method_epoch(): per-call-site inline-cache validity stamp
     uint64_t method_epoch_ = 1;
     unit_stamp unit_{};   // the unit and execution of the class declaration: field initializers resolve in it
+    uint64_t generic_stamp_ = 0;
+    std::unordered_map<uint64_t, std::vector<generic_method_instance>> generic_method_instances_;
     uint64_t field_shape_epoch_ = 1;   // see field_shape_epoch()
 
     // Destructor probe memo (see create_instance): valid while dtor_memo_epoch_
@@ -1477,12 +1534,13 @@ private:
     mutable uint64_t handle_slots_epoch_ = 0;
     type_info* handle_type_ = nullptr;
     bool flat_field_type(const type_info_ptr& t, std::vector<const class_definition*>& in_progress, bool host_values = false) const;
-    // mode 0: a destructor runs; 1: a destructor or a user copy constructor; 2: a user copy constructor
+    // mode 0: a destructor runs; 1: a destructor or a user copy constructor; 2: a user copy constructor; 3: the tree can
+    // hold a function or a coroutine (copy_fact's mode 4 is the chain's copy constructor or mode 3)
     bool value_tree_runs_destructor_impl(std::vector<const class_definition*>& in_progress, uint8_t mode = 0) const;
     const class_definition* find_copy_constructor_level() const;
     // the copy facts known under destructor_tree_epoch_ (copy_fact_* bits): a known bit, then its answer
-    static constexpr uint8_t copy_fact_tree = 1, copy_fact_ctor_tree = 4, copy_fact_level = 16;
-    bool copy_fact(uint8_t fact, uint8_t mode) const;
+    static constexpr uint16_t copy_fact_tree = 1, copy_fact_ctor_tree = 4, copy_fact_level = 16, copy_fact_callable = 64, copy_fact_care = 256;
+    bool copy_fact(uint16_t fact, uint8_t mode) const;
 
     inline void recompute_property_getters(const std::unordered_map<uint64_t, script_value>& new_methods, engine* engine_ref);
 

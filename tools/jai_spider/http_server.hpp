@@ -1,10 +1,12 @@
 #pragma once
 // HTTP/1.1 over the runner's non-blocking sockets: one thread, one poll loop, any number of connections reading and
-// writing at once, and one request at a time handed to the handler (the script thread). Keep-alive, pipelining,
-// Content-Length and chunked request bodies, Expect: 100-continue, HEAD, and files streamed from disk in slices.
-// Limits: the request head (64 KiB), the body (2 MiB by default), the time a request may take to arrive and a
-// response to leave (30 s) and the open connections (512). A connection holds one response at a time: the next
-// request is read once the last response has left, so a client that never reads cannot pile responses up.
+// writing at once. Each complete request goes to the handler on the loop's thread, which answers it there or keeps it
+// and answers it later from any thread (complete), so the loop moves bytes while the answers are made elsewhere.
+// Keep-alive, pipelining, Content-Length and chunked request bodies, Expect: 100-continue, HEAD, and files streamed
+// from disk in slices. Limits: the request head (64 KiB), the body (2 MiB by default), the time a request may take to
+// arrive and a response to leave (30 s) and the open connections (512). A connection holds one request at a time: the
+// next is read once the last response has left, so pipelined answers go out in order and a client that never reads
+// cannot pile responses up.
 #include "../jaiscript/net_socket.hpp"
 #include "http_text.hpp"
 
@@ -17,6 +19,8 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -88,12 +92,27 @@ inline http_response plain_response(int status, std::string text) {
 	return result;
 }
 
+// A request the handler kept to answer later: http_server::complete(ticket, response) answers it
+class http_ticket {
+public:
+	http_ticket() = default;
+
+private:
+	friend class http_server;
+	explicit http_ticket(void* a_connection) : connection_(a_connection) {}
+	void* connection_ = nullptr;
+};
+
 class http_server {
 public:
-	using handler_type = std::function<http_response(const http_request&)>;
+	// the response now, or nullopt: the handler kept the request (it may move from it) and answers it through complete
+	using handler_type = std::function<std::optional<http_response>(http_request&, http_ticket)>;
 	using clock = std::chrono::steady_clock;
 
-	explicit http_server(http_limits limits) : limits_(limits) {}
+	explicit http_server(http_limits limits) :
+		limits_(limits),
+		max_body_(limits.max_body_bytes) {
+	}
 	http_server(const http_server&) = delete;
 	http_server& operator=(const http_server&) = delete;
 	~http_server() { close_all(); }
@@ -127,29 +146,52 @@ public:
 		socklen_t length = sizeof(bound);
 		::getsockname(listener_, reinterpret_cast<sockaddr*>(&bound), &length);
 		bound_port_ = ntohs(bound.sin_port);
+		if (!open_wake(error)) {
+			close_all();
+			return false;
+		}
 		return true;
 	}
 
 	int port() const { return bound_port_; }
 
-	// the largest request body from the next request read on
-	void max_body(size_t a_bytes) { limits_.max_body_bytes = a_bytes; }
-	size_t max_body() const { return limits_.max_body_bytes; }
+	// the largest request body from the next request read on; any thread may set it
+	void max_body(size_t a_bytes) { max_body_.store(a_bytes); }
+	size_t max_body() const { return max_body_.load(); }
 
 	// told of every request the server answers itself (400, 413, 431, 503, ...): the peer, the status and why
 	void on_rejected(std::function<void(const std::string&, int, const std::string&)> callback) { rejected_ = std::move(callback); }
 
+	// answers a request the handler kept, from any thread; the loop sends it on its next turn
+	void complete(http_ticket a_ticket, http_response a_response) {
+		{
+			std::lock_guard<std::mutex> hold(finished_lock_);
+			finished_.emplace_back(a_ticket, std::move(a_response));
+		}
+		const char byte = 1;
+		::send(wake_send_, &byte, 1, 0);
+	}
+
 	// runs until stop is raised or a response asks the server to stop; the handler runs on this thread
 	void run(const std::atomic<bool>& stop, const handler_type& handler) {
 		std::vector<pollfd> polled;
+		std::vector<connection*> polled_connections;
 		while (!stop.load() && !stopping_after_flush_done()) {
 			polled.clear();
+			polled_connections.clear();
 			polled.push_back(pollfd{listener_, POLLIN, 0});
+			polled.push_back(pollfd{wake_receive_, POLLIN, 0});
 			for (auto& c : connections_) {
 				short events = 0;
-				if (c->closing || (!c->busy_writing() && !inbox_full(*c))) { events |= POLLIN; }
-				if (c->busy_writing()) { events |= POLLOUT; }
+				if (c->in_flight) {
+					if (!c->closing && !inbox_full(*c)) { events |= POLLIN; }   // a client that hangs up meanwhile is noticed
+				} else {
+					if (c->closing || (!c->busy_writing() && !inbox_full(*c))) { events |= POLLIN; }
+					if (c->busy_writing()) { events |= POLLOUT; }
+				}
+				if (events == 0 || c->dead) { continue; }
 				polled.push_back(pollfd{c->sock, events, 0});
+				polled_connections.push_back(c.get());
 			}
 #ifdef _WIN32
 			int ready = ::WSAPoll(polled.data(), static_cast<ULONG>(polled.size()), 100);
@@ -158,17 +200,19 @@ public:
 #endif
 			const auto now = clock::now();
 			if (ready > 0 && (polled[0].revents & POLLIN)) { accept_pending(now); }
-			for (size_t i = 1; i < polled.size(); ++i) {
-				connection& c = *connections_[i - 1];
+			if (ready > 0 && (polled[1].revents & POLLIN)) { drain_wake(); }
+			for (size_t i = 2; i < polled.size(); ++i) {
+				connection& c = *polled_connections[i - 2];
 				const short revents = polled[i].revents;
 				if (revents & (POLLIN | POLLHUP | POLLERR)) { read_from(c, now); }
 				if (!c.dead && (revents & POLLOUT)) { write_to(c, now); }
 			}
+			take_finished(now);
 			for (auto& c : connections_) {
 				if (!c->dead) { advance(*c, handler, now); }
 				if (!c->dead && c->busy_writing()) { write_to(*c, now); }
-				if (!c->dead && now > c->deadline) { c->dead = true; }
-				if (!c->dead && c->closing && !c->busy_writing() && !c->shut_down) {
+				if (!c->dead && !c->in_flight && now > c->deadline) { c->dead = true; }
+				if (!c->dead && c->closing && !c->in_flight && !c->busy_writing() && !c->shut_down) {
 					// a lingering close: end our side, then drain until the client closes, so unread request bytes
 					// cannot turn the close into a reset that loses the response
 #ifdef _WIN32
@@ -180,12 +224,16 @@ public:
 					c->deadline = now + std::chrono::seconds(2);
 				}
 			}
+			// a connection whose request is out stays until its answer comes back, so the ticket never dangles
 			std::erase_if(connections_, [](const std::unique_ptr<connection>& c) {
-				if (c->dead) { jai_runner::net_close_socket(c->sock); }
-				return c->dead;
+				if (c->dead && c->sock != net_bad_socket) {
+					jai_runner::net_close_socket(c->sock);
+					c->sock = net_bad_socket;
+				}
+				return c->dead && !c->in_flight;
 			});
 		}
-		close_all();
+		close_connections();
 	}
 
 private:
@@ -211,6 +259,9 @@ private:
 		bool shut_down = false;          // our side has ended; reading until the client's side ends
 		bool dead = false;
 		bool continue_sent = false;
+		bool in_flight = false;          // the handler kept the request: its answer comes through complete
+		bool head_only = false;          // the request in hand is a HEAD
+		bool keep_alive = true;          // and its connection may serve another
 
 		bool busy_writing() const { return outbox_sent < outbox.size() || file_remaining > 0; }
 		size_t unsent() const { return outbox.size() - outbox_sent; }
@@ -224,12 +275,68 @@ private:
 		return true;
 	}
 
-	void close_all() {
-		for (auto& c : connections_) { jai_runner::net_close_socket(c->sock); }
+	// the connections and the listener; the wake sockets stay until the server goes, since a worker may still complete
+	void close_connections() {
+		for (auto& c : connections_) {
+			if (c->sock != net_bad_socket) { jai_runner::net_close_socket(c->sock); }
+		}
 		connections_.clear();
 		if (listener_ != net_bad_socket) {
 			jai_runner::net_close_socket(listener_);
 			listener_ = net_bad_socket;
+		}
+	}
+
+	void close_all() {
+		close_connections();
+		for (net_socket* s : {&wake_receive_, &wake_send_}) {
+			if (*s != net_bad_socket) {
+				jai_runner::net_close_socket(*s);
+				*s = net_bad_socket;
+			}
+		}
+		std::lock_guard<std::mutex> hold(finished_lock_);
+		finished_.clear();
+	}
+
+	// complete wakes the poll through a loopback datagram: WSAPoll takes sockets only, so a pipe or an event cannot
+	bool open_wake(std::string& error) {
+		wake_receive_ = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		wake_send_ = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		sockaddr_in address{};
+		address.sin_family = AF_INET;
+		address.sin_port = 0;
+		::inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
+		socklen_t length = sizeof(address);
+		if (wake_receive_ == net_bad_socket || wake_send_ == net_bad_socket
+				|| ::bind(wake_receive_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0
+				|| ::getsockname(wake_receive_, reinterpret_cast<sockaddr*>(&address), &length) != 0
+				|| ::connect(wake_send_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
+			error = "cannot open the loopback socket that wakes the network loop";
+			return false;
+		}
+		jai_runner::net_set_nonblocking(wake_receive_);
+		jai_runner::net_set_nonblocking(wake_send_);
+		return true;
+	}
+
+	void drain_wake() {
+		char discard[256];
+		while (::recv(wake_receive_, discard, sizeof(discard), 0) > 0) {}
+	}
+
+	// the answers complete handed in since the last turn, each queued on its connection
+	void take_finished(clock::time_point now) {
+		std::vector<std::pair<http_ticket, http_response>> taken;
+		{
+			std::lock_guard<std::mutex> hold(finished_lock_);
+			taken.swap(finished_);
+		}
+		for (auto& [ticket, response] : taken) {
+			connection& c = *static_cast<connection*>(ticket.connection_);
+			c.in_flight = false;
+			if (c.dead) { continue; }
+			finish(c, std::move(response), now);
 		}
 	}
 
@@ -282,7 +389,7 @@ private:
 				continue;
 			}
 			if (got == 0 || !jai_runner::net_would_block()) {
-				if (c.busy_writing()) { c.closing = true; } else { c.dead = true; }
+				if (c.busy_writing() || (got == 0 && c.in_flight)) { c.closing = true; } else { c.dead = true; }
 			}
 			break;
 		}
@@ -324,7 +431,7 @@ private:
 	}
 
 	// unread bytes past one whole request (head and body) wait in the socket: a pipelining client is read as it is answered
-	bool inbox_full(const connection& c) const { return c.inbox.size() - c.scan >= limits_.max_head_bytes + limits_.max_body_bytes + 65536; }
+	bool inbox_full(const connection& c) const { return c.inbox.size() - c.scan >= limits_.max_head_bytes + max_body() + 65536; }
 
 	void reject(connection& c, int status, const std::string& why) {
 		if (rejected_) { rejected_(c.remote, status, why); }
@@ -333,9 +440,10 @@ private:
 		c.inbox.clear();
 	}
 
-	// parses what has arrived and answers each complete request, one at a time, while nothing is left to send
+	// parses what has arrived and hands each complete request to the handler, one at a time, while nothing is left to
+	// send and no answer is awaited
 	void advance(connection& c, const handler_type& handler, clock::time_point now) {
-		while (!c.closing && !c.busy_writing()) {
+		while (!c.closing && !c.busy_writing() && !c.in_flight) {
 			if (c.state == phase::head && !parse_head(c)) { return; }
 			if (c.closing) { return; }
 			if (c.state == phase::body_length) {
@@ -356,19 +464,27 @@ private:
 				c.inbox.erase(0, c.scan);
 				c.scan = 0;
 			}
-			http_response response = handler(c.request);
-			const bool keep = c.request.keep_alive && !response.close;
-			if (response.stop_server) { stop_requested_ = true; }
-			queue_response(c, std::move(response), c.request.is_head(), !keep);
-			if (!keep) {
-				c.closing = true;
+			c.head_only = c.request.is_head();
+			c.keep_alive = c.request.keep_alive;
+			std::optional<http_response> response = handler(c.request, http_ticket(&c));
+			if (!response) {
+				c.in_flight = true;
 				return;
 			}
-			c.request = http_request{};
-			c.state = phase::head;
-			c.continue_sent = false;
-			c.deadline = now + timeout();
+			finish(c, std::move(*response), now);
 		}
+	}
+
+	// sends the answer to the request in hand and makes ready for the next one
+	void finish(connection& c, http_response response, clock::time_point now) {
+		const bool keep = c.keep_alive && !response.close && !c.closing;
+		if (response.stop_server) { stop_requested_ = true; }
+		queue_response(c, std::move(response), c.head_only, !keep);
+		c.request = http_request{};
+		c.state = phase::head;
+		c.continue_sent = false;
+		c.deadline = now + timeout();
+		if (!keep) { c.closing = true; }
 	}
 
 	void send_continue(connection& c) {
@@ -490,8 +606,8 @@ private:
 				return false;
 			}
 			const uint64_t wanted = std::stoull(*length);
-			if (wanted > limits_.max_body_bytes) {
-				reject(c, 413, "the body is over the limit of " + std::to_string(limits_.max_body_bytes) + " bytes");
+			if (wanted > max_body()) {
+				reject(c, 413, "the body is over the limit of " + std::to_string(max_body()) + " bytes");
 				return false;
 			}
 			c.body_wanted = static_cast<size_t>(wanted);
@@ -566,8 +682,8 @@ private:
 						c.chunk_state = chunk_phase::trailers;
 						break;
 					}
-					if (request.body.size() + size > limits_.max_body_bytes) {
-						reject(c, 413, "the body is over the limit of " + std::to_string(limits_.max_body_bytes) + " bytes");
+					if (request.body.size() + size > max_body()) {
+						reject(c, 413, "the body is over the limit of " + std::to_string(max_body()) + " bytes");
 						return false;
 					}
 					c.chunk_remaining = size;
@@ -652,11 +768,16 @@ private:
 	}
 
 	http_limits limits_;
+	std::atomic<size_t> max_body_;                 // limits_.max_body_bytes as it moves: a worker sets it, the loop reads it
 	net_socket listener_ = net_bad_socket;
+	net_socket wake_receive_ = net_bad_socket;
+	net_socket wake_send_ = net_bad_socket;
 	int bound_port_ = 0;
 	std::vector<std::unique_ptr<connection>> connections_;
 	bool stop_requested_ = false;
 	std::function<void(const std::string&, int, const std::string&)> rejected_;
+	std::mutex finished_lock_;                     // finished_ is the one member complete touches from other threads
+	std::vector<std::pair<http_ticket, http_response>> finished_;
 };
 
 } // namespace spider_host

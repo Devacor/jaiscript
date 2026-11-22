@@ -89,13 +89,13 @@ void ensure_observable_ref_type_registered(engine& a_engine) {
 			}
 
 			engine* eng = callback.payload_engine();
-			const script_function& script_func = callback.as_function();
 
-			auto cpp_callback = [script_func, eng](const ValueT& old_val, const ValueT& new_val) {
+			// the receiver is bound to the engine below: it stays quiet once the teardown has released the function
+			auto cpp_callback = [function = engine_access::hold_callback(*eng, callback), eng](const ValueT& old_val, const ValueT& new_val) {
 				engine::external_call_guard scope(eng);
 				script_value old_sv = script_value_from_cpp(old_val, eng);
 				script_value new_sv = script_value_from_cpp(new_val, eng);
-				throw_script_callback_failure(eng, script_func({old_sv, new_sv}));
+				throw_script_callback_failure(eng, function.as_function()({old_sv, new_sv}));
 			};
 
 			auto recv = obs_prop->on_change.connect(std::move(cpp_callback));
@@ -168,12 +168,11 @@ void bind_observable_change_method(engine& a_engine, class_definition& class_def
 			throw runtime_error("Property '" + prop_name + "' is not observable");
 		}
 
-		const script_function& script_func = callback.as_function();
-		auto cpp_callback = [script_func, eng](const ValueT& old_val, const ValueT& new_val) {
+		auto cpp_callback = [function = engine_access::hold_callback(*eng, callback), eng](const ValueT& old_val, const ValueT& new_val) {
 			engine::external_call_guard scope(eng);
 			script_value old_sv = script_value_from_cpp(old_val, eng);
 			script_value new_sv = script_value_from_cpp(new_val, eng);
-			throw_script_callback_failure(eng, script_func({old_sv, new_sv}));
+			throw_script_callback_failure(eng, function.as_function()({old_sv, new_sv}));
 		};
 
 		auto recv = obs_prop->on_change.connect(std::move(cpp_callback));
@@ -362,12 +361,15 @@ void bound_class_conversion::require_object(const script_value& v) const {
 }
 
 void ensure_signal_view_type_registered(engine& a_engine) {
-	if (a_engine.is_type_registered("Signal")) { return; }
+	if (a_engine.is_type_registered("signal")) { return; }
 	engine* eng = &a_engine;
-	dynamic_binder<signal_script_ops> builder(a_engine, "Signal");
+	dynamic_binder<signal_script_ops> builder(a_engine, "signal");
 	// serial: a receiver list other objects' code reads and fires
 	builder.method("connect", [eng](signal_script_ops& self, const std::string& id, const script_value& cb) {
 		if (!self.valid() || !self.connect_fn(self.source.get(), id, cb, eng)) { throw runtime_error("Signal view is not backed by a live signal"); }
+	}, serial);
+	builder.method("connect_source", [](signal_script_ops& self, const std::string& id, const script_value& lambda) {
+		if (!self.valid() || self.connect_source_fn == nullptr || !self.connect_source_fn(self.source.get(), id, lambda)) { throw runtime_error("Signal view is not backed by a live signal"); }
 	}, serial);
 	builder.method("disconnect", [](signal_script_ops& self, const std::string& id) {
 		if (self.disconnect_fn != nullptr) { self.disconnect_fn(self.source.get(), id); }

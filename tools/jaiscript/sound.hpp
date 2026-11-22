@@ -1,5 +1,5 @@
 #pragma once
-// Runner-side sound: load_sound(path) -> Sound (play, play(true) to loop, stop, playing, volume, format), play_sound(path[, loop])
+// Runner-side sound: load_sound(path) -> sound (play, play(true) to loop, stop, playing, volume, format), play_sound(path[, loop])
 // to fire and forget, stop_sounds() to silence everything. The format comes from the file's first bytes (RIFF/WAVE, MThd or
 // RIFF/RMID, an ID3 tag or an MPEG frame sync), else from the extension.
 //
@@ -245,7 +245,7 @@ private:
 };
 #endif
 
-// the device closes when the last Sound naming it is gone (a copy of a Sound names the same device)
+// the device closes when the last sound naming it is gone (a copy of a sound names the same device)
 struct sound_device {
 	std::shared_ptr<sound_voice> voice;
 	sound_format format = sound_format::none;
@@ -314,7 +314,7 @@ inline std::shared_ptr<sound> play_sound(const std::string& path, bool loop) {
 }
 
 inline void register_sound(jai::engine& eng) {
-	jai::dynamic_binder<sound>(eng, "Sound")
+	jai::dynamic_binder<sound>(eng, "sound")
 		.method("play", &sound::play)
 		.method("play", &sound::play_looped)
 		.method("stop", &sound::stop)

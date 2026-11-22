@@ -23,7 +23,7 @@ int run_serve() {
 		player_create(b, "Bot " + to_string(b + 1), b);
 		bot_add(b);
 	}
-	int next = cast<int>(time::now() * 1000);
+	int next = cast<int>(time::engine_elapsed() * 1000);
 	int players = net_player_count();
 	int peak = players;
 	int joins = 0;
@@ -32,7 +32,7 @@ int run_serve() {
 	time::stopwatch work;
 	wall.start();
 	while (ticks == 0 || TICK < ticks) {
-		int now = cast<int>(time::now() * 1000);
+		int now = cast<int>(time::engine_elapsed() * 1000);
 		if (now < next) {
 			NET_SRV.pump();
 			sleep(imin(5, next - now) / 1000.0);
@@ -87,7 +87,7 @@ int run_client() {
 	int max_players = 0;
 	array<string> others;
 	for (int f = 0; f < frames && net_session_live(s); ++f) {
-		NOW_MS = cast<int>(time::now() * 1000);
+		NOW_MS = cast<int>(time::engine_elapsed() * 1000);
 		net_session_pump(s);
 		ClientView& v = NCS_VIEW[s];
 		int me = cv_me(v);

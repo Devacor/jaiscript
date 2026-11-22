@@ -152,6 +152,7 @@ std::string disassemble(const chunk& ch, const string_symbolizer* symbolizer) {
 				}
 				break;
 			case opcode::op_get_static:
+			case opcode::op_namespace_entry:
 			case opcode::op_set_member:
 			case opcode::op_set_static:
 			case opcode::op_member_compound:
@@ -197,6 +198,7 @@ std::string disassemble(const chunk& ch, const string_symbolizer* symbolizer) {
 				break;
 			case opcode::op_yield:
 				out << (ins.a ? (ins.b ? " value copy" : " value") : " void");
+				if (ins.c) { out << " site " << (ins.c - 1); }
 				break;
 			case opcode::op_import:
 				out << " site=" << ins.a << " exprs=" << ins.b << (ins.c ? " value" : "");
@@ -243,6 +245,9 @@ std::string disassemble(const chunk& ch, const string_symbolizer* symbolizer) {
 				break;
 			case opcode::op_regex_constant:
 				out << " site=" << ins.a << " regex=" << ins.b << " argc=" << ins.c;
+				break;
+			case opcode::op_instance_test:
+				out << " site=" << ins.a << " test=" << ins.b << " const=" << ins.c;
 				break;
 			case opcode::op_call_from_scratch:
 			case opcode::op_sleep:

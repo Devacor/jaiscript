@@ -1369,7 +1369,7 @@ public:
             auto eng = make_engine();
             stdlib::register_all(*eng);
             eng->execute("class P { int x = 0; string tag = \"p\"; P() {} P(int a) { x = a; } }");
-            check_eq(std::string("P 3 p"), eng->execute("var b = from_binary(to_binary(new P(3))); type_of(b) + \" \" + to_string(b.x) + \" \" + b.tag").as<std::string>());
+            check_eq(std::string("P 3 p"), eng->execute("var b = from_binary(to_binary(new P(3))); reflect::type_of(b) + \" \" + to_string(b.x) + \" \" + b.tag").as<std::string>());
             check_eq(std::string("true 5"), eng->execute(
                 "var p = new P(4); var back = from_binary(to_binary([p, p, {\"k\": p}])); back[0].x = 5; "
                 "to_string(same_object(back[0], back[1]) && same_object(back[0], back[2][\"k\"])) + \" \" + to_string(back[2][\"k\"].x)").as<std::string>());
@@ -1380,7 +1380,7 @@ public:
             // to_json wrote a shared handle as null; it writes the object once under its id, and from_json shares it again
             check_eq(std::string("P 9 true 6"), eng->execute(
                 "var j = new P(9); var jb = from_json(to_json([j, {\"again\": j}])); var first = jb[0]; jb[1][\"again\"].x = 6; "
-                "type_of(from_json(to_json(j))) + \" \" + to_string(from_json(to_json(j)).x) + \" \" + to_string(same_object(first, jb[1][\"again\"])) + \" \" + to_string(first.x)").as<std::string>());
+                "reflect::type_of(from_json(to_json(j))) + \" \" + to_string(from_json(to_json(j)).x) + \" \" + to_string(same_object(first, jb[1][\"again\"])) + \" \" + to_string(first.x)").as<std::string>());
             check_eq(std::string("true 7"), eng->execute(
                 "var r = new P(7); weak_ptr<P> v = weak_ptr<P>(r); var jp = from_json(to_json([v, r])); "
                 "to_string(same_object(jp[0].lock(), jp[1])) + \" \" + to_string(jp[1].x)").as<std::string>(),

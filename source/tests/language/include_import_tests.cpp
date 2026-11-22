@@ -60,6 +60,68 @@ public:
             cleanup_temp_file(math_file);
         });
         
+        // A generic declared in a [[warn_mode]] region checks its instances in it, as a plain declaration there checks, wherever an
+        // instance is made
+        test("warn_mode_reaches_a_generics_instances", [=, this]() {
+            auto generics = create_temp_file("warn_region_generics.jai",
+                "[[warn_mode]];\nclass WBox<T> { T v; T f() { return undeclared_wb; } }\nT wtwice<T>(T x) { return x + undeclared_wt; }\n");
+            auto eng = make_engine();
+            eng->add_include_path(jai::foundry::test_temp_directory().string());
+            const auto loads = [&](const std::string& source) {
+                try { eng->execute(source); return std::string("loaded"); } catch (const std::exception& e) { return std::string(e.what()); }
+            };
+            check_eq(std::string("loaded"), loads("import \"warn_region_generics.jai\"; WBox<int> a; int uses_wtwice() { return wtwice<int>(1); } 1;"), "instances of an imported warn file's generics");
+            check_false(eng->last_check_diagnostics().has_errors(), "the instances' undeclared names are warnings");
+            check_eq(std::string("loaded"), loads("[[warn_mode]] class SBox<T> { T f() { return undeclared_sb; } }\nSBox<int> s; 1;"), "a generic class under a leading [[warn_mode]]");
+            check_eq(std::string("loaded"), loads("[[warn_mode]] T stwice<T>(T x) { return x + undeclared_st; }\nint uses_stwice() { return stwice<int>(1); } 1;"), "a generic function under a leading [[warn_mode]]");
+            check_true(loads("class EBox<T> { T f() { return undeclared_eb; } }\nEBox<int> e; 1;").find("undeclared_eb") != std::string::npos, "outside a warn region the instance's name is an error");
+            cleanup_temp_file(generics);
+        });
+
+        // A generic class's generic method is parsed once to check the class's text and that parse is dropped: the file's leading
+        // [[warn_mode]] reaches only the generics the file keeps (under the address sanitizer the dropped one was written after free)
+        test("warn_mode_reaches_only_the_generics_a_file_keeps", [this]() {
+            const std::string source =
+                "[[warn_mode]];\n"
+                "class WGen<T> { T v; U conv<U>(U seed) { if (seed < 0) { return undeclared_cv; } return seed; } int unused() { return undeclared_g; } }\n"
+                "class P { U id<U>(U x) { if (false) { return undeclared_p; } return x; } }\n"
+                "namespace wn { class NGen<T> { V pass<V>(V x) { return x; } } }\n"
+                "WGen<int> w; w.v = 4; P p; wn::NGen<string> g;\n"
+                "w.conv<int>(3) + w.v + p.id<int>(10) + g.pass<int>(100);\n";
+            for (int run = 0; run < 3; ++run) {
+                auto eng = make_engine();
+                check_eq((int64_t)117, eng->execute(source).as_int());
+                check_false(eng->last_check_diagnostics().has_errors(), "the undeclared names are warnings");
+            }
+        });
+
+        // The generic methods a generic class's instance declares are the class's region's: an imported warn file's generic method
+        // warns when a strict file makes its instance, as the class's own members do
+        test("a_generic_classs_generic_method_checks_in_the_class_region", [=, this]() {
+            auto generics = create_temp_file("warn_region_methods.jai",
+                "[[warn_mode]];\nclass MBox<T> { T item; U conv<U>(U x) { if (false) { return undeclared_mm; } return x; } }\n");
+            auto eng = make_engine();
+            eng->add_include_path(jai::foundry::test_temp_directory().string());
+            std::string loaded = "loaded";
+            try { check_eq((int64_t)5, eng->execute("import \"warn_region_methods.jai\"; MBox<int> b; b.conv<int>(5);").as_int()); }
+            catch (const std::exception& e) { loaded = e.what(); }
+            check_eq(std::string("loaded"), loaded);
+            check_false(eng->last_check_diagnostics().has_errors(), "the method instance's undeclared name is a warning");
+            cleanup_temp_file(generics);
+        });
+
+        // A file a function includes lists its warning under its own name and line, not the including file's
+        test("an_include_in_a_function_lists_its_warning_under_its_file", [=, this]() {
+            auto included = create_temp_file("warn_region_include.jai", "[[warn_mode]];\nfunction k() { return undeclared_inc; }\n");
+            auto eng = make_engine();
+            eng->add_include_path(jai::foundry::test_temp_directory().string());
+            const std::string root = "void run() { include(\"warn_region_include.jai\"); }\n1;\n";
+            eng->execute(root);
+            const std::string listing = eng->last_check_diagnostics().format(root, "<script>");
+            check_true(listing.find("warn_region_include.jai:2:") != std::string::npos && listing.find("<script>:2:") == std::string::npos, listing);
+            cleanup_temp_file(included);
+        });
+
         test("include_with_angle_brackets", [=, this]() {
             auto eng = make_engine();
             
@@ -662,30 +724,28 @@ public:
             f.read(magic, 4);
             return f.gcount() == 4 && magic[0] == 'J' && magic[1] == 'B' && magic[2] == 'I' && magic[3] == 'T';
         };
-        // the sibling's recorded source identity rewritten to the file's current text: a load then proves the parse was
-        // skipped, since that text need not parse
+        // the sibling's recorded source identity rewritten to the file's current text, under a fresh integrity value: a load
+        // then proves the parse was skipped, since that text need not parse
         auto relabel_cache = [](const std::string& src, const std::string& cache) {
             std::ifstream in(src);
             std::stringstream text;
             text << in.rdbuf();
             const auto id = jai::detail::jaibite_identity_of(text.str());
-            std::fstream f(cache, std::ios::in | std::ios::out | std::ios::binary);
-            f.seekp(20);
-            for (uint64_t v : {id.size, id.hash}) {
-                for (int i = 0; i < 8; ++i) { f.put(char(uint8_t(v >> (8 * i)))); }
+            std::vector<uint8_t> bytes;
+            {
+                std::ifstream f(cache, std::ios::binary);
+                bytes.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
             }
-        };
-        auto relabel_sibling = [sibling_of](const std::string& src) {
-            std::ifstream in(src);
-            std::stringstream text;
-            text << in.rdbuf();
-            const auto id = jai::detail::jaibite_identity_of(text.str());
-            std::fstream f(sibling_of(src), std::ios::in | std::ios::out | std::ios::binary);
-            f.seekp(20);
+            if (bytes.size() < jai::detail::k_jaibite_header_size) { return; }
+            size_t at = jai::detail::k_jaibite_source_at;
             for (uint64_t v : {id.size, id.hash}) {
-                for (int i = 0; i < 8; ++i) { f.put(char(uint8_t(v >> (8 * i)))); }
+                for (int i = 0; i < 8; ++i) { bytes[at++] = uint8_t(v >> (8 * i)); }
             }
+            jai::detail::jaibite_seal(bytes.data(), bytes.size());
+            std::ofstream f(cache, std::ios::binary | std::ios::trunc);
+            f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
         };
+        auto relabel_sibling = [sibling_of, relabel_cache](const std::string& src) { relabel_cache(src, sibling_of(src)); };
 
         test("jaibite_cache_creates_sibling_on_file_loads", [=, this]() {
             for (bool use_vm : {false, true}) {
@@ -2134,11 +2194,11 @@ public:
                     check_eq(stats, detail::engine_access::import_stat_count(*eng), "and query no file" + be);
                     eng->import_recheck_interval(0.001);
                     check_eq(std::string(host_clock ? "1 0 0" : "1 0 1"), eng->execute(
-                        "int s0 = stats();\npoll();\nint s1 = stats();\nwait_ms(5);\npoll();\nint s2 = stats();\ntime::now();\npoll();\nint s3 = stats();\n"
+                        "int s0 = stats();\npoll();\nint s1 = stats();\nwait_ms(5);\npoll();\nint s2 = stats();\ntime::engine_elapsed();\npoll();\nint s3 = stats();\n"
                         "to_string(s1 - s0) + \" \" + to_string(s2 - s1) + \" \" + to_string(s3 - s2);").to_string(),
                         "the entry opens a pass; the frame coming around after the window opens none until a system-clock read samples" + be);
                     eng->execution_budget(jai::foundry::k_test_budget_seconds);
-                    check_eq(std::string("5000"), eng->execute("int n = 0;\nfor (int i = 0; i < 5000; i++) { time::now(); n++; }\nn;").to_string(),
+                    check_eq(std::string("5000"), eng->execute("int n = 0;\nfor (int i = 0; i < 5000; i++) { time::engine_elapsed(); n++; }\nn;").to_string(),
                              "a host clock racing ahead never trips the budget" + be);
                 }
             }
@@ -2465,7 +2525,7 @@ public:
                          "declarations without an initializer keep their values; the one that assigns resets");
                 write_module("ia_state.jai", "float kills;\nint resets = 0;\narray<int> pack;\nclass KeepBox { int n = 0; }\nKeepBox held;\nvar loose;\n");
                 eng->execute("load_state();");
-                check_eq(std::string("float 0.0 3"), eng->execute("type_of(kills) + \" \" + to_string(kills) + \" \" + to_string(pack.size());").to_string(), "a declared type change resets to the new default");
+                check_eq(std::string("float 0.0 3"), eng->execute("reflect::type_of(kills) + \" \" + to_string(kills) + \" \" + to_string(pack.size());").to_string(), "a declared type change resets to the new default");
                 // the host's re-run of the same file is the same unit and keeps too
                 const std::string host_path = (dir / "ia_host_state.jai").string();
                 check_eq((int64_t)0, eng->execute_file_source(host_path, "int hp;\nhp;").as_int());
@@ -2478,7 +2538,7 @@ public:
 
         test("an_imported_namespace_class_is_named_by_its_qualified_spelling", [=, this]() {
             // the importer never saw `namespace nq { class Box }`: the class is nq::Box (C++), the name that types declarations,
-            // parameters, returns, fields, containers, handles and references, that type_of and the checker report, and that
+            // parameters, returns, fields, containers, handles and references, that reflect::type_of and the checker report, and that
             // reaches the redefined class after a re-import. Inside its namespace the bare name reads as nq::Box, outside it only
             // through using, and another namespace's Box is another class
             const auto dir = jai::foundry::test_temp_directory();
@@ -2520,7 +2580,7 @@ public:
                 "array<int> got = [a.n, h.box.n, d.n, twice(a).n, bag.b.n, sum, named[\"k\"].n, weak.lock()->n, converted.n, cast<nq::Box>(bare).n, leaf.d];\n"
                 "string out = \"\";\n"
                 "for (int v : got) { out += to_string(v) + \" \"; }\n"
-                "out + type_of(a) + \" \" + type_of(handle) + \" \" + type_of(other::make()) + \" \" + other::make().s;\n";
+                "out + reflect::type_of(a) + \" \" + reflect::type_of(handle) + \" \" + reflect::type_of(other::make()) + \" \" + other::make().s;\n";
             for (bool proofs : {true, false}) {
                 write_module(module_v1);
                 auto eng = make_engine();
@@ -2666,27 +2726,27 @@ public:
                 eng->set_backend(use_vm ? jai::backend_type::vm : jai::backend_type::interpreter);
                 jai::stdlib::register_all(*eng);
                 eng->add_include_path(dir.string());
-                auto d = eng->execute("var d = file_data(\"save.dat\"); d;");
+                auto d = eng->execute("var d = file::data(\"save.dat\"); d;");
                 check_true(d.is_map(), "a map of the file's metadata");
-                const std::string path = eng->execute("file_data(\"save.dat\")[\"path\"];").to_string();
+                const std::string path = eng->execute("file::data(\"save.dat\")[\"path\"];").to_string();
                 check_true(path.find("file_data_probe/save.dat") != std::string::npos && path.find('\\') == std::string::npos, path);
                 check_eq(path, eng->execute("resolve_path(\"save.dat\");").to_string(), "the ladder's canonical spelling");
-                check_eq(std::string("save.dat|.dat|5|false"), eng->execute("var d = file_data(\"save.dat\"); d[\"filename\"] + \"|\" + d[\"extension\"] + \"|\" + to_string(d[\"size\"]) + \"|\" + to_string(d[\"is_directory\"]);").to_string());
+                check_eq(std::string("save.dat|.dat|5|false"), eng->execute("var d = file::data(\"save.dat\"); d[\"filename\"] + \"|\" + d[\"extension\"] + \"|\" + to_string(d[\"size\"]) + \"|\" + to_string(d[\"is_directory\"]);").to_string());
                 const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                const int64_t modified = eng->execute("file_data(\"save.dat\")[\"modified\"];").as_int();
+                const int64_t modified = eng->execute("file::data(\"save.dat\")[\"modified\"];").as_int();
                 check_true(modified > now_ms - 3600000 && modified <= now_ms + 60000, "modified is ms since the Unix epoch");
-                auto created = eng->execute("file_data(\"save.dat\")[\"created\"];");
+                auto created = eng->execute("file::data(\"save.dat\")[\"created\"];");
                 check_true(created.is_null() || (created.is_int() && created.as_int() <= modified + 1000), "created: ms, or null where unavailable");
                 // a rewrite moves modified (stamped forward so the clock's granularity cannot hide it)
                 { std::ofstream(file, std::ios::binary | std::ios::trunc) << "1234567"; }
                 std::filesystem::last_write_time(file, std::filesystem::last_write_time(file) + std::chrono::seconds(5));
-                check_true(eng->execute("file_data(\"save.dat\")[\"modified\"];").as_int() > modified, "a rewrite moves modified");
-                check_eq(script_int(7), eng->execute("file_data(\"save.dat\")[\"size\"];").as_int());
-                check_true(eng->execute("file_data(\"no_such_file.dat\") == null;").as_bool(), "missing -> null");
-                check_eq(std::string("true|0|"), eng->execute("var f = file_data(\"" + dir.generic_string() + "\"); to_string(f[\"is_directory\"]) + \"|\" + to_string(f[\"size\"]) + \"|\" + f[\"extension\"];").to_string());
+                check_true(eng->execute("file::data(\"save.dat\")[\"modified\"];").as_int() > modified, "a rewrite moves modified");
+                check_eq(script_int(7), eng->execute("file::data(\"save.dat\")[\"size\"];").as_int());
+                check_true(eng->execute("file::data(\"no_such_file.dat\") == null;").as_bool(), "missing -> null");
+                check_eq(std::string("true|0|"), eng->execute("var f = file::data(\"" + dir.generic_string() + "\"); to_string(f[\"is_directory\"]) + \"|\" + to_string(f[\"size\"]) + \"|\" + f[\"extension\"];").to_string());
                 eng->disable(jai::permissions::filesystem);
                 std::string denied;
-                try { denied = eng->execute("var m = \"\"; try { file_data(\"save.dat\"); } catch (e) { m = e; } m;").to_string(); } catch (const std::exception& ex) { denied = ex.what(); }
+                try { denied = eng->execute("var m = \"\"; try { file::data(\"save.dat\"); } catch (e) { m = e; } m;").to_string(); } catch (const std::exception& ex) { denied = ex.what(); }
                 check_eq(std::string("Insufficient permission: filesystem."), denied);
             }
             std::filesystem::remove_all(dir);

@@ -237,12 +237,21 @@ expression_ptr clone_expr(const expression_ptr& e, inline_context& c);
 std::shared_ptr<identifier_expr> copy_identifier(const identifier_expr* r, const source_location& loc, inline_context& c) {
 	auto n = c.make<identifier_expr>(loc, r->name, r->symbol_id);
 	n->slot_index = r->slot_index; n->global_qualified = r->global_qualified; n->names_value_decl = r->names_value_decl; n->names_known_value = r->names_known_value;
-	n->this_field = r->this_field; n->program_name = r->program_name;
+	n->this_field = r->this_field; n->program_name = r->program_name; n->stands_for = r->stands_for;
 	return n;
 }
 
-std::shared_ptr<identifier_expr> clone_identifier(const identifier_expr* id, inline_context& c) {
-	if (id->slot_index != SIZE_MAX && id->slot_index < c.renames.size() && c.renames[id->slot_index]) { return copy_identifier(c.renames[id->slot_index].get(), id->location, c); }
+// a clone in the place of `written`: a text that names the operand reads what the program wrote there (detail::written_operand).
+// The chunk keeps `written` alive as it keeps its statements: the caller's tree, a graft's callee (inline_site::decl) or an earlier clone
+std::shared_ptr<identifier_expr> stand_in(const identifier_expr* r, const expression_ptr& written, inline_context& c) {
+	auto n = copy_identifier(r, written->location, c);
+	n->stands_for = written.get();
+	return n;
+}
+
+std::shared_ptr<identifier_expr> clone_identifier(const expression_ptr& e, inline_context& c) {
+	auto* id = static_cast<const identifier_expr*>(e.get());
+	if (id->slot_index != SIZE_MAX && id->slot_index < c.renames.size() && c.renames[id->slot_index]) { return stand_in(c.renames[id->slot_index].get(), e, c); }
 	auto n = copy_identifier(id, id->location, c);
 	n->slot_index = id->slot_index == SIZE_MAX ? SIZE_MAX : id->slot_index + c.slot_offset;
 	return n;
@@ -310,7 +319,7 @@ script_value_type value_kind(const expression* e, const inline_context& c) {
 		const K a = value_kind(t->then_expression.get(), c);
 		return a == value_kind(t->else_expression.get(), c) ? a : K::jai_null_type;
 	}
-	case node_type::cast_expr: { auto* k = static_cast<const cast_expr*>(e); return !k->by_reference && !k->instance_test && scalar_type(k->target.get()) ? k->target->base_type : K::jai_null_type; }
+	case node_type::cast_expr: { auto* k = static_cast<const cast_expr*>(e); return !k->by_reference && !k->type_value && scalar_type(k->target.get()) ? k->target->base_type : K::jai_null_type; }
 	default: return K::jai_null_type;
 	}
 }
@@ -371,7 +380,7 @@ script_value_type kind_of(const expression* e, const F& slot_kind, const call_ex
 		const K a = kind_of(t->then_expression.get(), slot_kind, replace, replace_kind);
 		return a == kind_of(t->else_expression.get(), slot_kind, replace, replace_kind) ? a : K::jai_null_type;
 	}
-	case node_type::cast_expr: { auto* k = static_cast<const cast_expr*>(e); return !k->by_reference && !k->instance_test && scalar_type(k->target.get()) ? k->target->base_type : K::jai_null_type; }
+	case node_type::cast_expr: { auto* k = static_cast<const cast_expr*>(e); return !k->by_reference && !k->type_value && scalar_type(k->target.get()) ? k->target->base_type : K::jai_null_type; }
 	case node_type::call_expr: return e == replace ? replace_kind : K::jai_null_type;
 	default: return K::jai_null_type;
 	}
@@ -547,7 +556,9 @@ void walk_decls(const std::vector<declaration_ptr>& decls, site_walk& w) {
 // typed as the original.
 expression_ptr clone_expr(const expression_ptr& e, inline_context& c) {
 	if (!c.ok || !e) return nullptr;
-	for (const auto& s : c.spills) { if (s.first == e.get()) { return copy_identifier(s.second.get(), e->location, c); } }
+	// a const guard runs where its node is reached, on the node the checker stamped: a body that holds one keeps its call
+	if (detail::const_site_of(e.get())) { c.fail("a node a const rule guards"); return nullptr; }
+	for (const auto& s : c.spills) { if (s.first == e.get()) { return stand_in(s.second.get(), e, c); } }
 	switch (e->get_type()) {
 	case node_type::literal_expr: ++c.nodes; return e;   // immutable: shared as it is
 	case node_type::identifier_expr: {
@@ -571,10 +582,11 @@ expression_ptr clone_expr(const expression_ptr& e, inline_context& c) {
 			return n;
 		}
 		if (id->slot_index == SIZE_MAX) { c.reads_env = true; }
-		return clone_identifier(id, c);
+		return clone_identifier(e, c);
 	}
 	case node_type::this_expr:
-		if (c.receiver) { return copy_identifier(c.receiver.get(), e->location, c); }
+		if (static_cast<const this_expr*>(e.get())->into_handle) { c.fail("a this stored into a handle"); return nullptr; }
+		if (c.receiver) { return stand_in(c.receiver.get(), e, c); }
 		if (c.receiver_this) { return c.make<this_expr>(e->location); }
 		if (c.caller_this) { ++c.nodes; return e; }
 		c.fail("an expression the graft does not take"); return nullptr;
@@ -627,7 +639,7 @@ expression_ptr clone_expr(const expression_ptr& e, inline_context& c) {
 		if (!c.ok) return nullptr;
 		auto n = c.make<assignment_expr>(a->location, t, a->op, v);
 		n->static_store_proof = a->static_store_proof; n->static_operand_class = a->static_operand_class;
-		n->postfix_old_result = a->postfix_old_result; n->incdec_desugar = a->incdec_desugar;
+		n->postfix_old_result = a->postfix_old_result; n->incdec_desugar = a->incdec_desugar; n->yields_reference = a->yields_reference;
 		if (c.stamps && a->target->get_type() == node_type::identifier_expr) {
 			const script_value_type tk = stamp_kind(a->target.get(), c), vk = stamp_kind(a->value.get(), c);
 			if (a->op.type != token_type::equal && n->static_operand_class == operand_class_unknown) { n->static_operand_class = kind_class(tk, vk); }
@@ -645,25 +657,33 @@ expression_ptr clone_expr(const expression_ptr& e, inline_context& c) {
 		auto n = c.make<member_expr>(m->location, o, m->member, m->member_id, m->is_arrow, m->is_static);
 		n->on_caught = m->on_caught;
 		n->null_safe = m->null_safe; n->getter_id = m->getter_id; n->enum_constant = m->enum_constant; n->call_result_discarded = m->call_result_discarded;
+		n->place_read = m->place_read;   // where a reference binds the read (an argument, a cast<T&> operand) it hands back the place
 		return n;
 	}
 	case node_type::ternary_expr: {
 		auto* t = static_cast<const ternary_expr*>(e.get());
 		auto cond = clone_expr(t->condition, c); auto a = clone_expr(t->then_expression, c); auto b = clone_expr(t->else_expression, c);
 		if (!c.ok) return nullptr;
-		return c.make<ternary_expr>(t->location, cond, a, b);
+		auto made = c.make<ternary_expr>(t->location, cond, a, b);
+		made->null_chain = t->null_chain;
+		return made;
 	}
 	case node_type::cast_expr: {
 		auto* k = static_cast<const cast_expr*>(e.get());
 		auto o = clone_expr(k->operand, c);
 		if (!c.ok) return nullptr;
 		auto made = c.make<cast_expr>(k->location, k->target, k->by_reference, o);
-		made->instance_test = k->instance_test;
+		made->dynamic = k->dynamic;
+		made->type_value = k->type_value;
+		made->truth_read = k->truth_read;
+		made->implicit_ref = k->implicit_ref;
+		made->binding_ref = k->binding_ref;
+		made->return_of = k->return_of;
 		return made;
 	}
 	case node_type::call_expr: {
 		auto* ce = static_cast<const call_expr*>(e.get());
-		if (c.replace && ce == c.replace) { ++c.nodes; return c.result ? copy_identifier(c.result.get(), e->location, c) : nullptr; }   // the statement: the call is its temp (null: a void call alone)
+		if (c.replace && ce == c.replace) { ++c.nodes; return c.result ? stand_in(c.result.get(), e, c) : nullptr; }   // the statement: the call is its temp (null: a void call alone)
 		if (!c.replace && !math_call(ce) && !size_call(ce) && !reading_builtin_call(ce, c)) {
 			if (!alias_call(ce, c.lc.eng) && !nested_call(ce, &c.lc)) { c.calls = true; }   // any other call stays a call, made from the grafted body
 			// the alias makes the real call when its name binds anything else, a nested leaf when its guard fails, a kept call always: that
@@ -690,6 +710,7 @@ expression_ptr clone_expr(const expression_ptr& e, inline_context& c) {
 		n->proven_method_decl = ce->proven_method_decl;
 		n->static_arg_proofs = ce->static_arg_proofs; n->proof_globals = ce->proof_globals; n->proven_callee_decl = ce->proven_callee_decl;
 		n->builtin_receiver = ce->builtin_receiver; n->builtin_receiver_open = ce->builtin_receiver_open;
+		n->type_argument_count = ce->type_argument_count;
 		c.origins[n.get()] = ce;
 		for (auto* pins : { c.alias_pins, c.callee_probes }) {
 			if (!pins) continue;
@@ -756,6 +777,7 @@ statement_ptr clone_stmt(const statement_ptr& s, inline_context& c, bool final_p
 	}
 	case node_type::return_stmt: {
 		auto* r = static_cast<const return_stmt*>(s.get());
+		if (detail::const_site_of(r)) { c.fail("a node a const rule guards"); return nullptr; }
 		if (c.loop_depth > 0) { c.fail("a return inside a loop"); return nullptr; }
 		std::vector<declaration_ptr> ds;
 		if (!c.result) {
@@ -835,6 +857,7 @@ std::vector<declaration_ptr> clone_body(const std::vector<declaration_ptr>& decl
 		switch (d->get_type()) {
 		case node_type::variable_decl: {
 			auto* v = static_cast<const variable_decl*>(d.get());
+			if (detail::const_site_of(v)) { c.fail("a node a const rule guards"); return out; }
 			if (v->slot_index == SIZE_MAX || v->is_static || v->ref_escaping || v->function_spelling) { c.fail("a declaration the graft does not take"); return out; }
 			if (v->type && v->type->is_reference()) { c.fail("a reference declaration"); return out; }
 			if (c.in_loop && v->initializer && !landable(v->initializer.get(), &c.lc)) { c.fail("a declaration the block cannot land"); return out; }   // a declaration the block cannot land: the call stays
@@ -1756,8 +1779,15 @@ expression_ptr vm_compiler::compile_hoist(const hoist_plan& plan, const expressi
 	loops_.back().scope_depth = scope_depth_;
 	kill_scopes_.emplace_back();   // the callee's frame: its parameters and its body's locals die where the call would return
 	inlining_off_ = was_off;   // a leaf in an argument grafts inside its parameter's declaration, after this guard (the callee before the arguments)
+	const uint32_t outer_debug_site = graft_debug_site_;
+	const size_t debug_mark = chunk_->debug_locals.size();
+	graft_debug_site_ = site_index + 1;
+	for (const parameter& p : fn->parameters) {   // a parameter renamed to the caller's variable is that variable's slot
+		const auto& renamed = p.slot_index < ctx.renames.size() ? ctx.renames[p.slot_index] : nullptr;
+		if (renamed && renamed->slot_index != SIZE_MAX) { note_debug_local(renamed->slot_index, p.name); }
+	}
 	for (size_t k = 0; k < params.size(); ++k) {
-		if (params[k]) { compile_variable_decl(params[k]); note_kill_decl(params[k].get()); continue; }
+		if (params[k]) { compile_variable_decl(params[k]); note_kill_decl(params[k].get()); note_debug_local(params[k]->slot_index, params[k]->name); continue; }
 		const size_t i = param_arg[k];
 		compile_expression(call->arguments[i]);
 		emit(opcode::op_call_temp, static_cast<uint32_t>(value_temp[i]->slot_index));
@@ -1767,6 +1797,7 @@ expression_ptr vm_compiler::compile_hoist(const hoist_plan& plan, const expressi
 		callable_.slot_types[static_cast<uint32_t>(d->slot_index)] = d->type.get();
 		emit(opcode::op_decl_var, add_node(d), 1, 1);
 		note_kill_decl(d.get());
+		note_debug_local(d->slot_index, d->name);
 		if (!d->type || d->type->may_own_instance()) { emit(opcode::op_kill_slot, static_cast<uint32_t>(d->graft_temp_slot)); }   // the argument's temp: the parameter holds it now
 	}
 	flush_kills();
@@ -1785,6 +1816,8 @@ expression_ptr vm_compiler::compile_hoist(const hoist_plan& plan, const expressi
 		note_kill_decl(d.get());
 	}
 	close_kill_scope();
+	close_debug_locals(debug_mark);
+	graft_debug_site_ = outer_debug_site;
 	inlining_off_ = true;
 	graft_bodies_.pop_back();
 	current_stmt_ = site.call_stmt;   // the fallback and the rest of the statement are the caller's

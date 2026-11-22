@@ -4,7 +4,7 @@ A real-time 2.5D raycast shooter in the terminal — one tight four-map episode 
 corridors, keycards, secrets, and things that roar before they charge — written
 **entirely in JaiScript**. The C++ host (`gloom_host.*` + `gloom_adapter_jai.cpp`)
 is the same thin shell as the crawler/demoreel: a VT console, held-key input, a
-seeded `Rng`, a monotonic clock, flags as globals — split into a shared,
+`seeded_rng`, a monotonic clock, flags as globals — split into a shared,
 runtime-agnostic core and a per-language adapter. Everything else — the raycaster, the sub-cell renderer, enemy
 brains, weapons, particles, the episode, the autopilot — is script.
 
@@ -149,8 +149,8 @@ jitter.
 
 `gloom.jai` is a drag-drop shim for the standalone `jaiscript.exe` runner: it
 supplies the host API of reference/README.md section 2 in pure script (a bit-exact
-xorshift64\* `Rng` under checked overflow, `host_log`/`itrunc`/`ifloor`/`utf8`/
-`ESC`, the `HOST_*` globals) on top of the runner's console IO, then loads
+xorshift64\* `seeded_rng` under checked overflow, `host_log`/`itrunc`/`ifloor`/`utf8`/
+`esc`, the `host_*` globals) on top of the runner's console IO, then loads
 `scripts/` and runs the host pump. Flags go after `--`:
 
 ```bash
@@ -277,7 +277,7 @@ words with the landlord.
 ## Files
 
 ```
-gloom_host.hpp/.cpp thin SHARED host: console, held keys, Rng, clock, flags,
+gloom_host.hpp/.cpp thin SHARED host: console, held keys, rng, clock, flags,
                     smoke/bench harness; language-agnostic
 gloom_adapter_jai.cpp  the JaiScript adapter + main() (this exe)
 scripts/state.jai   RNG global

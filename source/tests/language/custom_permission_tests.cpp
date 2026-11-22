@@ -47,7 +47,7 @@ public:
     void forge_tests() override {
         custom_test("host_permissions_start_disabled_and_grants_are_engine_local", [this](engine& eng) {
             check_false(eng.is_enabled(app_permission::edit));
-            check_true(eng.is_enabled(jai::permissions::filesystem, jai::permissions::scoped_template));
+            check_true(eng.is_enabled(jai::permissions::filesystem, jai::permissions::untrusted_template));
             check_false(eng.is_enabled(jai::permissions::network));
             auto other = make_engine();
             other->enable(app_permission::edit);
@@ -56,10 +56,32 @@ public:
             check_eq(denied(), failure([&]() { eng.execute("edit()"); }));
             check_eq(script_int(42), other->execute("edit()").as_int());
             other->disable(app_permission::edit);
-            check_eq(std::string("Insufficient permission: 6."), failure([&]() { other->execute("edit()"); }));
+            check_eq(std::string("Insufficient permission: 7."), failure([&]() { other->execute("edit()"); }));
             eng.enable(app_permission::edit);
             check_eq(script_int(42), eng.execute("edit()").as_int());
             check_true(eng.is_enabled(app_permission::edit, jai::permissions::filesystem));
+        });
+
+        custom_test("a_strict_engine_holds_nothing_until_the_host_enables_it", [this](engine& eng) {
+            eng.add_function("edit", []() { return script_int(42); }, app_permission::edit);
+            eng.enable(app_permission::edit, jai::permissions::network);
+            eng.set_strict();
+            check_false(eng.is_enabled(jai::permissions::filesystem));
+            check_false(eng.is_enabled(jai::permissions::untrusted_template));
+            check_false(eng.is_enabled(jai::permissions::source_receivers));
+            check_false(eng.is_enabled(jai::permissions::network));
+            check_false(eng.is_enabled(app_permission::edit));
+            check_false(eng.execute("jai::permissions::is_enabled(jai::permissions::filesystem)").as_bool());
+            check_eq(script_int(5), eng.execute("2 + 3").as_int(), "source in memory still runs");
+            check_eq(denied(), failure([&]() { eng.execute("edit()"); }));
+            check_eq(std::string("Insufficient permission: filesystem."), failure([&]() { eng.execute("import(\"strict_missing.jai\");"); }));
+            check_eq(std::string("Insufficient permission: untrusted_template."), failure([&]() { eng.execute("untrusted_template_text(\"x\", {});"); }));
+            eng.enable(jai::permissions::untrusted_template, app_permission::edit);
+            check_eq(script_int(42), eng.execute("edit()").as_int());
+            check_eq(std::string("x"), eng.execute("untrusted_template_text(\"x\", {}).to_string()").as_string());
+            check_false(eng.is_enabled(jai::permissions::filesystem), "enable grants only what it names");
+            eng.set_strict();
+            check_false(eng.is_enabled(app_permission::edit), "a later call withdraws what was granted since");
         });
 
         custom_test("mixed_requirements_are_all_required_and_the_lowest_missing_slot_is_named", [](engine& eng) {
@@ -160,7 +182,7 @@ public:
             auto result = eng.require_permission(app_permission::edit);
             check_false(bool(result));
             check_eq(std::string("Insufficient permission: app.edit."), eng.format_error(result));
-            check_eq(std::string("Insufficient permission: 9."), eng.format_error(eng.require_permission(jai::permissions::filesystem, app_permission::unnamed)));
+            check_eq(std::string("Insufficient permission: 10."), eng.format_error(eng.require_permission(jai::permissions::filesystem, app_permission::unnamed)));
             eng.add_function("edit", []() {}, app_permission::edit);
             auto output = std::make_shared<std::ostringstream>();
             eng.set_output_stream(output);
@@ -173,11 +195,11 @@ public:
 
         custom_test("scripts_ask_by_id_through_jai_permissions", [](engine& eng) {
             eng.enable(app_permission::edit);
-            check_true(eng.execute("jai::permissions::is_enabled(jai::permissions::filesystem, 6, jai::permissions::scoped_template)").as_bool());
-            check_false(eng.execute("jai::permissions::is_enabled(jai::permissions::filesystem, 7)").as_bool());
+            check_true(eng.execute("jai::permissions::is_enabled(jai::permissions::filesystem, 7, jai::permissions::untrusted_template)").as_bool());
+            check_false(eng.execute("jai::permissions::is_enabled(jai::permissions::filesystem, 8)").as_bool());
             check_false(eng.execute("jai::permissions::is_enabled(jai::permissions::network)").as_bool());
-            check_eq(script_int(6), eng.execute("jai::permissions::count;").as_int());
-            check_eq(script_int(15), eng.execute("jai::permissions::filesystem + jai::permissions::scoped_template + jai::permissions::network + "
+            check_eq(script_int(7), eng.execute("jai::permissions::count;").as_int());
+            check_eq(script_int(15), eng.execute("jai::permissions::filesystem + jai::permissions::untrusted_template + jai::permissions::network + "
                 "jai::permissions::debug + jai::permissions::trusted + jai::permissions::untrusted;").as_int());
             const std::string expects = "jai::permissions::is_enabled expects permission ids";
             check_eq(expects, failure([&]() { eng.execute("jai::permissions::is_enabled(\"app.edit\")"); }));
@@ -237,6 +259,7 @@ public:
             const std::string expected = "Cannot change permissions during a parallel region";
             check_eq(expected, failure([&]() { eng.enable(app_permission::edit); }));
             check_eq(expected, failure([&]() { eng.disable(app_permission::edit, jai::permissions::filesystem); }));
+            check_eq(expected, failure([&]() { eng.set_strict(); }));
             check_eq(expected, failure([&]() { eng.register_permission(app_permission::unnamed, "app.new_in_region"); }));
             check_false(detail::engine_access::get_symbolizer(eng)->find("app.new_in_region").has_value());
             check_false(eng.is_enabled(app_permission::edit));
@@ -262,7 +285,7 @@ public:
                 ~thaw_guard() { symbols->set_frozen(false); }
             } thaw{symbols};
             symbols->set_frozen(true);
-            check_eq(std::string("Insufficient permission: 9."), eng.format_error(unnamed_copy.as_function()({})));
+            check_eq(std::string("Insufficient permission: 10."), eng.format_error(unnamed_copy.as_function()({})));
         });
 
         custom_test("nested_execute_sees_reentrant_revocation", [](engine& eng) {

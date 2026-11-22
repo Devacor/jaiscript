@@ -85,8 +85,8 @@ falling back to `demoreel_scenes/` copied next to the binary.
 ### No build: the standalone runner
 
 `demoreel.jai` is a pure-script shim that recreates the C++ host contract (the
-`ESC` global, `itrunc`/`ifloor`, and a bit-exact script port of the seeded
-xorshift64* `Rng` — checked-int64-safe via 16-bit-limb multiplies) and pumps the
+`esc` global, `itrunc`/`ifloor`, and a bit-exact script port of the seeded
+xorshift64* `seeded_rng` — checked-int64-safe via 16-bit-limb multiplies) and pumps the
 reel on the standalone runner — drag-drop it onto `jaiscript.exe` or:
 
 ```
@@ -353,7 +353,7 @@ again.
 
 `--smoke` runs N frames headless at a fixed dt, FNV-1a-hashing every returned
 frame; `--expect H` fails the run unless the stream hash is H. All scene randomness
-goes through the host's seeded xorshift `Rng` class (the presentation-only hashes
+goes through the host's xorshift `seeded_rng` class (the presentation-only hashes
 are integer arithmetic on pixel coordinates), and `parallel_transform` returns
 rows in order, so the hash holds at every worker count. The backends' parity runs
 on the standalone runner (`--backend=vm` and `--backend=interp` above). Env

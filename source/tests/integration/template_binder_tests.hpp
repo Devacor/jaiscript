@@ -10,6 +10,7 @@
 #include <jaiscript/properties/macros.hpp>
 #include <jaiscript/serialization/binary_archive.hpp>
 #include <jaiscript/stdlib/stdlib.hpp>
+#include <jaiscript/detail/type_name_key.hpp>
 #include <cmath>
 
 namespace jai::foundry::tests {
@@ -243,7 +244,7 @@ public:
         // shared_ptr paths (incl. the fixed composite intern), container elements,
         // conversion_registry, base upcasts, opaque tokens - ALL keyed correctly
         // (std::type_index or pointee-id keys); these pins keep them that way.
-        // type_of() reports the REGISTERED NAME for registered instances (it agrees with
+        // reflect::type_of() reports the REGISTERED NAME for registered instances (it agrees with
         // reflect::type_name), so two instantiations sharing one name are still
         // indistinguishable through it; registration_fingerprint does distinguish them.
 
@@ -279,10 +280,10 @@ public:
                 check_eq((int64_t)2, e->execute("var b = new PointF(); b.kind()").as_int());
                 check_eq((int64_t)1, e->execute("auto c = shared_ptr<PointI>(); c.kind()").as_int());
                 check_eq((int64_t)2, e->execute("auto d = shared_ptr<PointF>(); d.kind()").as_int());
-                check_eq((int64_t)1, e->execute("shared_ptr<PointI> g = PointI(); g.kind()").as_int());
-                check_eq((int64_t)2, e->execute("shared_ptr<PointF> h = PointF(); h.kind()").as_int());
+                check_eq((int64_t)1, e->execute("shared_ptr<PointI> g = make_shared<PointI>(); g.kind()").as_int());
+                check_eq((int64_t)2, e->execute("shared_ptr<PointF> h = make_shared<PointF>(); h.kind()").as_int());
                 // wrong-pointee decl errors (typed sp enforcement ruling)
-                check_throws([&]() { e->execute("shared_ptr<PointF> w = PointI();"); });
+                check_throws([&]() { e->execute("shared_ptr<PointF> w = make_shared<PointI>();"); });
                 // host-side: the factory returns distinct type_infos
                 auto* ti_i = detail::engine_access::get_type_info_object(*e, detail::engine_access::symbolize(*e, "PointI"));
                 auto* ti_f = detail::engine_access::get_type_info_object(*e, detail::engine_access::symbolize(*e, "PointF"));
@@ -301,8 +302,8 @@ public:
                 check_eq((int64_t)1, e->execute("array<PointI> ai = [PointI(5)]; ai[0].kind()").as_int());
                 check_eq((int64_t)2, e->execute("array<PointF> af = [PointF(2.5)]; af[0].kind()").as_int());
                 // (f) upcast to the common base from both: each keeps ITS class
-                check_eq((int64_t)1, e->execute("shared_ptr<PBase> u1 = PointI(7); u1.kind()").as_int());
-                check_eq((int64_t)2, e->execute("shared_ptr<PBase> u2 = PointF(7.0); u2.kind()").as_int());
+                check_eq((int64_t)1, e->execute("shared_ptr<PBase> u1 = make_shared<PointI>(7); u1.kind()").as_int());
+                check_eq((int64_t)2, e->execute("shared_ptr<PBase> u2 = make_shared<PointF>(7.0); u2.kind()").as_int());
                 check_eq((int64_t)99, e->execute("u1.base_tag()").as_int());
                 check_eq((int64_t)99, e->execute("u2.base_tag()").as_int());
             }
@@ -347,7 +348,7 @@ public:
         });
 
         test("audit_registration_fingerprint_distinguishes_instantiations", [this]() {
-            // (h) type_of reports the registered NAME, which both instantiations share, so
+            // (h) reflect::type_of reports the registered NAME, which both instantiations share, so
             // it does not distinguish them; the registration fingerprint DOES.
             auto e_i = jai::foundry::make_engine();
             dynamic_binder<audit_pt<int>>(*e_i, "AuditP").constructor<>().method("kind", &audit_pt<int>::kind).build();
@@ -357,7 +358,7 @@ public:
             check_eq((int64_t)1, e_i->execute("AuditP().kind()").as_int());
             check_eq((int64_t)2, e_f->execute("AuditP().kind()").as_int());
             jai::stdlib::register_all(*e_i);
-            check_eq(std::string("AuditP"), e_i->execute("type_of(AuditP())").as<std::string>());
+            check_eq(std::string("AuditP"), e_i->execute("reflect::type_of(AuditP())").as<std::string>());
             // and differently-shaped registrations fingerprint differently
             auto e_two = jai::foundry::make_engine();
             register_audit_points(*e_two);
@@ -461,6 +462,88 @@ public:
                      "a reference parameter");
         });
 
+        test("an_instantiation_the_host_did_not_bind_is_a_load_error_listing_the_bound_ones", [this]() {
+            const auto message = [this](const std::string& source) {
+                auto eng = make_engine();
+                jai::stdlib::register_all(*eng);
+                eng->bind_static_types<TplBox<int64_t>, TplBox<std::string>, TplTagged<std::string, int64_t>>();
+                try { return eng->execute(source).to_string(); } catch (const std::exception& err) { return std::string(err.what()); }
+            };
+            const std::string unbound = "'TplBox<bool>' is not bound: the host binds TplBox<int>, TplBox<int32>, TplBox<string>";
+            for (const char* source : {"TplBox<bool> b;", "TplBox< bool > spaced;", "class C { TplBox<bool> f; }", "void f(TplBox<bool> b) { }",
+                                       "TplBox<bool> g() { return TplBox<bool>(); }", "array<TplBox<bool>> xs;", "map<string, TplBox<bool>> m;", "shared_ptr<TplBox<bool>> h;",
+                                       "weak_ptr<TplBox<bool>> w;", "for (TplBox<bool> x : [1]) { }", "auto l = [](TplBox<bool> b) { return 1; };",
+                                       "void f() { try { } catch (TplBox<bool> e) { } }", "extern TplBox<bool> held;", "var v = 1; cast<TplBox<bool>>(v);",
+                                       "var v = 1; dynamic_cast<TplBox<bool>>(v);", "void f() { auto p = new TplBox<bool>(); }",
+                                       "void f() { auto p = make_shared<TplBox<bool>>(); }", "void f() { auto b = TplBox<bool>(); }",
+                                       "void f() { auto b = TplBox<bool>{}; }", "void f() { auto xs = array<TplBox<bool>>(); }",
+                                       "class Plain : TplBox<bool> { int more = 1; }", "class V<T> : TplBox<T> { T more; } V<bool> v;"}) {
+                check_true(message(source).find("error: " + unbound) != std::string::npos, std::string(source) + " -> " + message(source));
+            }
+            check_true(message("TplBox<TplBox<bool>> nested;").find("error: 'TplBox<TplBox<bool>>' is not bound: the host binds TplBox<int>, TplBox<int32>, TplBox<string>") != std::string::npos,
+                       message("TplBox<TplBox<bool>> nested;"));
+            check_true(message("TplTagged<int, string> swapped;").find("error: 'TplTagged<int, string>' is not bound: the host binds TplTagged<string, int>") != std::string::npos,
+                       message("TplTagged<int, string> swapped;"));
+            check_eq(std::string("2 8 2"), message("TplBox< int > spaced; TplBox<int32> sibling; array<TplBox<int>> xs = [spaced]; `${spaced.kind()} ${sibling.kind()} ${xs[0].kind()}`"));
+            // a warn region leaves it to the run time, which says the same
+            for (const char* construction : {"TplBox<bool> b;", "auto p = new TplBox<bool>();", "auto p = make_shared<TplBox<bool>>();", "auto b = TplBox<bool>();",
+                                             "array<TplBox<bool>> xs; xs.resize(1);"}) {
+                check_eq(unbound, message("[[warn_mode]]; var c = \"\"; try { " + std::string(construction) + " } catch (e) { c = e; } c"), construction);
+            }
+            check_eq("reflect::construct: " + unbound, message("var c = \"\"; try { reflect::construct(\"TplBox<\" + \"bool>\"); } catch (e) { c = e; } c"));
+            check_true(message("[[warn_mode]]; class Based : TplBox<bool> { int more = 1; }").find(unbound) != std::string::npos,
+                       message("[[warn_mode]]; class Based : TplBox<bool> { int more = 1; }"));
+            check_eq(std::string("No constructor found for class 'Nope'"), message("[[warn_mode]]; var c = \"\"; try { auto p = new Nope(); } catch (e) { c = e; } c"));
+
+            auto many = make_engine();
+            many->bind_static_types<TplBox<std::vector<int64_t>>, TplBox<int64_t>, TplBox<double>, TplBox<std::shared_ptr<TplLeaf>>, TplBox<TplLeaf>,
+                                    TplBox<uint8_t>, TplBox<std::map<std::string, double>>, TplBox<TplNamedLeaf>>();
+            std::string listed;
+            try { many->execute("TplBox<bool> b;"); } catch (const std::exception& err) { listed = err.what(); }
+            check_true(listed.find("error: 'TplBox<bool>' is not bound: the host binds TplBox<int>, TplBox<float>, TplBox<int32>, TplBox<uint8>, TplBox<TplLeaf>, "
+                                   "TplBox<float32>, TplBox<NamedLeaf>, TplBox<array<int>> and 2 more\n") != std::string::npos, listed);
+        });
+
+        test("each_bound_instantiation_is_its_own_class_to_a_typed_slot", [this]() {
+            const auto message = [this](const std::string& source) {
+                auto eng = make_engine();
+                jai::stdlib::register_all(*eng);
+                eng->bind_static_types<TplBox<int64_t>, TplBox<double>>();
+                try { return eng->execute(source).to_string(); } catch (const std::exception& err) { return std::string(err.what()); }
+            };
+            for (const auto& [source, text] : std::vector<std::pair<std::string, std::string>>{
+                     {"function k(TplBox<float> b) -> int { return b.kind(); } TplBox<int> i; k(i);", "argument 1 of 'k': cannot pass 'TplBox<int>' to 'b' declared 'TplBox<float>'"},
+                     {"TplBox<int> i; TplBox<float> f = i;", "cannot initialize 'f' declared 'TplBox<float>' with 'TplBox<int>'"},
+                     {"TplBox<int> i; TplBox<float> f; f = i;", "cannot assign 'TplBox<int>' to 'f' declared 'TplBox<float>'"},
+                     {"TplBox<float> g() { TplBox<int> i; return i; }", "cannot return 'TplBox<int>' from 'g' declared to return 'TplBox<float>'"},
+                     {"array<TplBox<float>> xs; TplBox<int> i; xs.push(i);", "cannot push into 'array<TplBox<float>>': expected 'TplBox<float>', got 'TplBox<int>'"},
+                     {"TplBox<int32> narrow; TplBox<int> wide = narrow;", "cannot initialize 'wide' declared 'TplBox<int>' with 'TplBox<int32>'"}}) {
+                check_true(message(source).find("error: " + text) != std::string::npos, source + " -> " + message(source));
+            }
+            check_eq(std::string("3 3"), message("TplBox<float> f; TplBox<float> g = f; var v = f; TplBox<float> h = v; `${g.kind()} ${h.kind()}`"));
+        });
+
+        test("a_type_name_arriving_as_text_matches_whatever_its_spacing", [this]() {
+            check_eq(std::string("Duo<int,string>"), detail::type_name_key("Duo< int , string >"));
+            check_eq(detail::type_name_key("Duo<int, string>"), detail::type_name_key(" Duo\t<int ,string>\n"));
+            check_eq(std::string("ns::K"), detail::type_name_key("ns :: K"));
+            const auto run = [this](const std::string& source) {
+                auto eng = make_engine();
+                jai::stdlib::register_all(*eng);
+                eng->bind_static_types<TplBox<int64_t>, TplTagged<std::string, int64_t>>();
+                try { return eng->execute(source).to_string(); } catch (const std::exception& err) { return std::string(err.what()); }
+            };
+            check_eq(std::string("TplBox<int> TplTagged<string, int> TplTagged<string, int>"),
+                     run("`${reflect::type_of(reflect::construct(\"TplBox< int >\"))} ${reflect::type_of(reflect::construct(\"TplTagged<string,int>\"))} "
+                         "${reflect::type_name(reflect::construct_shared(\"TplTagged< string , int >\"))}`"));
+            check_eq(std::string("true true"), run("TplBox<int> b; `${reflect::has_method(\"TplBox< int >\", \"kind\")} ${reflect::is_instance_of(b, \" TplBox<int> \")}`"));
+            check_eq(std::string("reflect::construct: unknown class 'No Such'"), run("var c = \"\"; try { reflect::construct(\"No Such\"); } catch (e) { c = e; } c"));
+            // an archive names its class as registered and reads the name whatever its spacing
+            check_eq(std::string("ns::K 5 {\"$type\":\"ns::K\",\"$val\":{\"v\":5}}"),
+                     run("namespace ns { class K { int v = 1; } } auto k = from_json(\"{\\\"$type\\\": \\\"ns :: K\\\", \\\"$val\\\": {\\\"v\\\": 5}}\"); `${reflect::type_of(k)} ${k.v} ${to_json(k)}`"));
+            check_eq(std::string("Wide 2"), run("class Thin { int t = 0; } class Wide : Thin { int v = 1; } auto w = extend(Thin(), \" Wide \"); `${reflect::type_of(w)} ${w.v + 1}`"));
+        });
+
         test("a_template_base_name_is_not_a_reserved_word", [this]() {
             auto eng = make_engine();
             eng->bind_static_type<TplBox<int64_t>>();
@@ -479,6 +562,12 @@ public:
             eng->bind_static_type<TplBox<tpl_same_width_a>>();
             check_throws([&]() { eng->bind_static_type<TplBox<tpl_same_width_b>>(); });
             eng->bind_static_type<TplBox<tpl_same_width_a>>();   // the same type again stays idempotent
+            auto scripted = make_engine();
+            scripted->execute("class TplLeaf { int mine = 4; }");
+            std::string refusal;
+            try { scripted->bind_static_type<TplLeaf>(); } catch (const std::exception& e) { refusal = e.what(); }
+            check_eq(std::string("the script name 'TplLeaf' already names a script class, so a C++ type cannot bind under it"), refusal);
+            check_eq((int64_t)4, scripted->execute("TplLeaf().mine").as_int(), "the script class stands");
         });
 
         test("static_type_registry_engine_state", [this]() {
@@ -845,6 +934,150 @@ public:
             eng->execute("auto v32 = TplAutoDetectVec<int32>();");
             eng->execute("v32.a = 3; v32.b = 4;");
             check_eq(eng->execute("v32.dot()").as<int>(), 12, "int32 variant auto-bound");
+        });
+
+        // -------------------- script generics over host templates (docs/site/guide/21-generics.html "Deduction")
+
+        test("a_generic_function_deduces_through_a_host_template_instance", [this]() {
+            auto eng = make_engine();
+            stdlib::register_all(*eng);
+            eng->bind_static_types<TplLeaf, TplBox<int64_t>, TplBox<TplLeaf>, TplBox<std::vector<int64_t>>, TplBox<std::map<std::string, double>>,
+                                   TplBinderKVPair<std::string, double>>();
+            // of<T>(box) names the T the call deduced: the argument list of the instance Of<T>
+            eng->execute("class Of<T> {} string name<T>() { string n = reflect::type_of(Of<T>()); return n.substr(3, n.size() - 4); }"
+                         " string of<T>(TplBox<T> b) { return name<T>(); }"
+                         " string both<K, V>(TplBinderKVPair<K, V> p) { return name<K>() + \"/\" + name<V>(); }"
+                         " K key_of<K, V>(TplBinderKVPair<K, V> p) { K k = p.key; return k; }"
+                         " string any_of<T>(T x) { return name<T>(); }");
+            check_eq(std::string("int TplLeaf array<int> map<string,float>"), eng->execute(
+                "TplBox<int> a; TplBox<TplLeaf> b; TplBox<array<int>> c; TplBox<map<string, double>> d;"
+                " of(a) + \" \" + of(b) + \" \" + of(c) + \" \" + of(d);").as_string(), "a declared host instance");
+            check_eq(std::string("string/float"), eng->execute("TplBinderKVPair<string, float> p; both(p);").as_string(), "two parameters");
+            check_eq(std::string("hp"), eng->execute("TplBinderKVPair<string, float> q; q.key = \"hp\"; key_of(q);").as_string(), "the deduced type is the member's");
+            // a construction expression of a host class and of a host template's instance has that type
+            check_eq(std::string("int array<int> string/float"), eng->execute(
+                "of(TplBox<int>()) + \" \" + of(TplBox<array<int>>{}) + \" \" + both(TplBinderKVPair<string, float>());").as_string(), "a construction");
+            check_eq(std::string("TplLeaf TplBox<int>"), eng->execute("any_of(TplLeaf()) + \" \" + any_of(TplBox<int>());").as_string(), "a host constructor");
+            // through a reference and a handle, as a script generic's instance deduces
+            check_eq(std::string("int"), eng->execute("string by_ref<T>(TplBox<T>& b) { return name<T>(); } TplBox<int> r; by_ref(r);").as_string(), "a reference");
+            check_eq(std::string("TplLeaf"), eng->execute(
+                "string held<T>(shared_ptr<TplBox<T>> b) { return name<T>(); } shared_ptr<TplBox<TplLeaf>> h = new TplBox<TplLeaf>(); held(h);").as_string(), "a handle");
+            // what does not match says so with the generic's own parameters
+            std::string error;
+            try { eng->execute("of(5);"); } catch (const std::exception& ex) { error = ex.what(); }
+            check_true(error.find("cannot deduce T for 'of': argument 1 is int, which 'TplBox<T>' does not match; write of<T>(...)") != std::string::npos, error);
+            error.clear();
+            try { eng->execute("TplBinderKVPair<string, float> wrong; of(wrong);"); } catch (const std::exception& ex) { error = ex.what(); }
+            check_true(error.find("cannot deduce T for 'of': argument 1 is TplBinderKVPair<string, float>, which 'TplBox<T>' does not match; write of<T>(...)") != std::string::npos, error);
+        });
+
+        // A sized number is a type only as a host template's argument: a parameter keeps it there and reads as the int or float a
+        // value of it is everywhere else in the instance
+        test("a_sized_number_a_host_template_is_bound_with_reads_as_its_script_type", [this]() {
+            auto eng = make_engine();
+            stdlib::register_all(*eng);
+            eng->bind_static_types<TplBox<int64_t>, TplBox<int32_t>, TplBox<float>, TplBox<uint8_t>, TplBox<std::vector<int32_t>>, TplBox<TplNamedLeaf>>();
+            eng->execute("class Of<T> {} string name<T>() { string n = reflect::type_of(Of<T>()); return n.substr(3, n.size() - 4); }"
+                         " int kind_of<T>(TplBox<T> b) { return b.kind(); }"
+                         " T zero<T>(TplBox<T> b) { T made = T(); return made; }"
+                         " string read_as<T>(TplBox<T> b) { array<T> held; T one = T(); held.push(one);"
+                         "   return name<T>() + \"/\" + reflect::type_of(one) + \"/\" + reflect::type_name(held) + \"/\" + to_string(b.kind()); }"
+                         " TplBox<int32> narrow; TplBox<float32> single; TplBox<uint8> small; TplBox<int> wide; TplBox<array<int32>> list; TplBox<NamedLeaf> leaf;");
+            check_eq(std::string("int/int/array<int>/8"), eng->execute("read_as(narrow);").as_string(), "int32 reads as int");
+            check_eq(std::string("float/float/array<float>/4"), eng->execute("read_as(single);").as_string(), "float32 reads as float");
+            check_eq(std::string("int/int/array<uint8>/7"), eng->execute("read_as(small);").as_string(), "uint8 reads as int, and is an array's element");
+            check_eq(std::string("int/int/array<int>/2"), eng->execute("read_as(wide);").as_string(), "int is itself");
+            check_eq(std::string("array<int>/array/array<array<int>>/0"), eng->execute("read_as(list);").as_string(), "at any depth");
+            check_eq(std::string("0|0.0|8|2"), eng->execute("`${zero(narrow)}|${zero(single)}|${kind_of(narrow)}|${kind_of(wide)}`;").as_string(), "each binding keeps its instance");
+            // the spelling is deduced, never written: on its own it names no type
+            std::string error;
+            try { eng->execute("zero<int32>(narrow);"); } catch (const std::exception& ex) { error = ex.what(); }
+            check_true(error.find("unknown type 'int32'") != std::string::npos, error);
+            error.clear();
+            // no promotion: the binding's own spelling and a script type are two types for one parameter
+            try { eng->execute("bool same<T>(TplBox<T> b, T x) { return true; } same(narrow, 5);"); } catch (const std::exception& ex) { error = ex.what(); }
+            check_true(error.find("cannot deduce T for 'same': it is int32 from argument 1 and int from argument 2") != std::string::npos, error);
+            // a name the host gave its argument that no script type reads as: fine where it stays the template's argument, an error
+            // at the call where the instance would read it
+            check_eq((int64_t)10, eng->execute("kind_of(leaf);").as_int());
+            error.clear();
+            try { eng->execute("zero(leaf);"); } catch (const std::exception& ex) { error = ex.what(); }
+            check_true(error.find("cannot deduce T for 'zero': argument 1 names 'NamedLeaf', a type the host binds that no script type reads as") != std::string::npos, error);
+            check_true(error.find("unknown type") == std::string::npos, error);
+            // a byte array's element is the same rule: array<T> keeps array<uint8>, T alone is an int
+            check_eq(std::string("1|3|int"), eng->execute("T first<T>(array<T> xs) { T head = xs[0]; return head; } int count<T>(array<T> xs) { return xs.size(); }"
+                " array<uint8> bytes = [1, 2, 3]; `${first(bytes)}|${count(bytes)}|${reflect::type_of(first(bytes))}`;").as_string());
+        });
+
+        test("a_host_templates_name_arriving_as_text_is_read_without_its_spacing", [this]() {
+            auto eng = make_engine();
+            stdlib::register_all(*eng);
+            eng->bind_static_types<TplBox<std::map<std::string, double>>, TplBinderKVPair<std::string, double>>();
+            // a name a host wrote by hand keeps the spelling it was given
+            dynamic_binder<TplTagged<int64_t, int64_t>>(*eng, "TplHand<int,int>").constructor<>().property("tag", &TplTagged<int64_t, int64_t>::tag).build();
+            for (const char* spelled : {"TplBinderKVPair<string, float>", "TplBinderKVPair<string,float>", " TplBinderKVPair < string , float > "}) {
+                const std::string quoted = "\"" + std::string(spelled) + "\"";
+                check_eq(std::string("TplBinderKVPair<string, float>"), eng->execute("reflect::type_of(reflect::construct(" + quoted + "));").as_string(), spelled);
+                check_eq(std::string("TplBinderKVPair<string, float>"), eng->execute("reflect::type_of(reflect::construct_shared(" + quoted + "));").as_string(), spelled);
+                check_true(eng->execute("reflect::has_field(" + quoted + ", \"key\");").as_bool(), spelled);
+                check_eq(std::string("TplBinderKVPair<string, float>"), detail::registered_type_spelling(eng.get(), spelled), spelled);
+            }
+            for (const char* spelled : {"TplBox<map<string,float>>", "TplBox<map<string, float>>", "TplBox< map<string , float> >"}) {
+                check_eq(std::string("TplBox<map<string,float>>"), eng->execute("reflect::type_of(reflect::construct(\"" + std::string(spelled) + "\"));").as_string(), spelled);
+            }
+            for (const char* spelled : {"TplHand<int,int>", "TplHand<int, int>", "TplHand < int , int >"}) {
+                check_eq(std::string("TplHand<int,int>"), eng->execute("reflect::type_of(reflect::construct(\"" + std::string(spelled) + "\"));").as_string(), spelled);
+                check_eq(std::string("TplHand<int,int>"), detail::registered_type_spelling(eng.get(), spelled), spelled);
+            }
+            check_eq(std::string("TplBinderKVPair<string, float>"), eng->execute("TplBinderKVPair<string,float> p; reflect::type_of(p);").as_string(), "printed as registered");
+            check_true(detail::registered_type_spelling(eng.get(), "tplbinderkvpair<string, float>").empty(), "case stays significant");
+            check_false(eng->is_type_registered("TplBinderKVPair<string,float>"), "the host's own lookup is by the registered spelling");
+        });
+
+        test("a_script_generic_and_a_host_classs_name", [this]() {
+            auto eng = make_engine();
+            stdlib::register_all(*eng);
+            eng->bind_static_types<TplLeaf, TplBox<int64_t>>();
+            const auto failure = [&](const std::string& code) -> std::string {
+                try { eng->execute(code); } catch (const std::exception& ex) { return ex.what(); }
+                return "(no error)";
+            };
+            // a host template's name stays the template's: Name<Args> spells the host's instantiation
+            const std::string a_template = "'TplBox' is a host template: a generic cannot take its name";
+            check_true(failure("class TplBox<T> { T v; }").find(a_template) != std::string::npos, failure("class TplBox<T> { T v; }"));
+            check_true(failure("T TplBox<T>(T x) { return x; }").find(a_template) != std::string::npos, failure("T TplBox<T>(T x) { return x; }"));
+            // a generic class under a host class's name is a script class under it: the same error
+            const std::string a_class = "cannot declare class 'TplLeaf': the host binds a C++ class of that name; give the script class another name, or derive from it (class Other : TplLeaf)";
+            check_true(failure("class TplLeaf<T> { T v; }").find(a_class) != std::string::npos, failure("class TplLeaf<T> { T v; }"));
+            check_true(failure("class TplLeaf<K, V> { K k; V v; } 1;").find(a_class) != std::string::npos, "used or not");
+            check_true(failure("class TplLeaf { int v = 0; }").find(a_class) != std::string::npos, "the plain class's text");
+            // a generic function may take the name, as a plain function may
+            check_eq((int64_t)4, eng->execute("T TplLeaf<T>(T x) { return x + 1; } TplLeaf<int>(3);").as_int(), "a generic function");
+            // a method's name is its class's own
+            check_eq((int64_t)6, eng->execute("class Holder { T TplLeaf<T>(T x) { return x + x; } } Holder h; h.TplLeaf(3);").as_int(), "a generic method");
+            check_eq((int64_t)2, eng->execute("TplLeaf leaf; leaf.n = 2; leaf.n;").as_int(), "the host class is what it was");
+        });
+
+        test("an_instance_of_a_host_template_the_host_never_bound", [this]() {
+            // a spelling of a host template the host did not bind is a load error wherever a type is written, in a script
+            // generic's instance too, where the note names the instance
+            auto eng = make_engine();
+            stdlib::register_all(*eng);
+            eng->bind_static_type<TplBox<int64_t>>();
+            const auto failure = [&](const std::string& code) -> std::string {
+                try { eng->execute(code); } catch (const std::exception& ex) { return ex.what(); }
+                return "(no error)";
+            };
+            const std::string unbound = "error: 'TplBox<bool>' is not bound: the host binds TplBox<int>";
+            for (const char* source : {"TplBox<bool> b; b.kind();", "auto b = TplBox<bool>(); b.kind();", "void f() { TplBox<bool> b; } f();"}) {
+                check_true(failure(source).find(unbound) != std::string::npos, std::string(source) + " -> " + failure(source));
+            }
+            const std::string in_instance = failure("class Mine<T> { TplBox<T> held; } Mine<bool> m; 1;");
+            check_true(in_instance.find(unbound) != std::string::npos, in_instance);
+            check_true(in_instance.find("in Mine<bool>, instantiated at") != std::string::npos, in_instance);
+            check_eq((int64_t)2, eng->execute("class Mine<T> { TplBox<T> held; } Mine<int> m; m.held.kind();").as_int(), "a bound spelling in an instance");
+            check_eq(std::string("reflect::construct: 'TplBox<bool>' is not bound: the host binds TplBox<int>, TplBox<int32>"), failure("reflect::construct(\"TplBox<bool>\");"));
+            check_eq((int64_t)2, eng->execute("TplBox<int> bound; bound.kind();").as_int());
         });
     }
 };

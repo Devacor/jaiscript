@@ -1,4 +1,5 @@
 #include <jaiscript/core/engine.hpp>
+#include <jaiscript/core/dynamic_binder.hpp>
 #include <jaiscript/stdlib/stdlib.hpp>
 #include <jaiscript/testing/foundry.hpp>
 #include <string>
@@ -109,7 +110,7 @@ public:
 					"    float g = a + b;\n"
 					"    if (a < b) { t = t + 1; }\n"
 					"    if (a == b) { t = t - 1; }\n"
-					"    return to_string(t) + \",\" + to_string(u) + \",\" + to_string(w) + \",\" + to_string(g) + \",\" + type_of(u);\n"
+					"    return to_string(t) + \",\" + to_string(u) + \",\" + to_string(w) + \",\" + to_string(g) + \",\" + reflect::type_of(u);\n"
 					"}\n"
 					"function bits(var a, var b) { var r = (a & b) | (a ^ b); r = r << 2; var s = r >> 1; return to_string(r) + \",\" + to_string(s); }\n"
 					"function fail(var a, var b, var k) {\n"
@@ -150,7 +151,7 @@ public:
 					"function floats(float x, float y) { float s = 0.0; for (int i = 0; i < 4; ++i) { s += x; s -= y * 0.5; s *= 1.5; } return s; }\n"
 					"function widen(int k) { float w = 1.5; float v = 0.25; for (int i = 0; i < 3; ++i) { w = k; v = i; } "
 					"var q = (w = k + 1); var big = 9007199254740993; w = big; "
-					"return `${to_string(w)},${to_string(v)},${to_string(q)},${type_of(q)}${type_of(w)}`; }\n"
+					"return `${to_string(w)},${to_string(v)},${to_string(q)},${reflect::type_of(q)}${reflect::type_of(w)}`; }\n"
 					"function strs(var a, var b) {\n"
 					"    var out = \"\";\n"
 					"    if (a < b) { out += \"lt\"; } if (a == b) { out += \"eq\"; } if (a != b) { out += \"ne\"; } if (a >= b) { out += \"ge\"; }\n"
@@ -162,7 +163,7 @@ public:
 					"function globals() {\n"
 					"    for (int i = 0; i < 5; ++i) { g = i; gi = i * 2; gf = i + 0.25; gs = `s${to_string(i)}`; gt = gs; }\n"
 					"    g = 2.5; g = true; g = 'c';\n"
-					"    var r = `${to_string(g)},${to_string(gi)},${to_string(gf)},${gs},${gt},${type_of(g)}${type_of(gi)}${type_of(gf)}`;\n"
+					"    var r = `${to_string(g)},${to_string(gi)},${to_string(gf)},${gs},${gt},${reflect::type_of(g)}${reflect::type_of(gi)}${reflect::type_of(gf)}`;\n"
 					"    var bad = \"no\"; var frac = 2.75;\n"
 					"    try { gi = bad; } catch (e) { r = `${r},caught: ${e}`; }\n"
 					"    try { gi = frac; } catch (e) { r = `${r},caught: ${e}`; }\n"
@@ -227,6 +228,73 @@ public:
 					check_eq(oracle, run(backend_type::vm, proofs));
 				}
 			});
+		});
+		// A global operator a host registers for its own class takes that class's operands; every other pair keeps the builtin
+		// meaning (typed, var, compound, element, template text, sort), on every backend, as an engine without the registration
+		// answers
+		test("a_global_operator_over_a_host_class_leaves_other_operands_to_the_builtin", [this]() {
+			struct thing { script_int n = 0; };
+			const std::string script =
+				"function rows(var x, var y) {\n"
+				"    var out = [];\n"
+				"    out.push(x + y); out.push(x - y); out.push(x * y); out.push(x / y); out.push(x % y);\n"
+				"    out.push(x < y); out.push(x <= y); out.push(x > y); out.push(x >= y); out.push(x == y); out.push(x != y); out.push(x <=> y);\n"
+				"    return to_string(out);\n"
+				"}\n"
+				"function bits(var x, var y) { return to_string([x & y, x | y, x ^ y, x << y, x >> y]); }\n"
+				"function typed(int a, int b, float f) {\n"
+				"    int n = a + b; n += b; n -= 1; n *= 2; n /= 3; n %= 5; n &= 7; n |= 8; n ^= 3; n <<= 2; n >>= 1;\n"
+				"    float g = f * a; g += f; g -= 0.5; g /= 2;\n"
+				"    int loops = 0; for (int i = 0; i < 4; i++) { loops += i; }\n"
+				"    bool c = a < b && a != b && b >= a;\n"
+				"    return `${n},${g},${loops},${c},${a <=> b}`;\n"
+				"}\n"
+				"function places() {\n"
+				"    var a = [1, 2]; a[0] += 5; a[1] *= 4; a[0] <<= 1;\n"
+				"    var m = {\"k\": 2}; m[\"k\"] += 3; m[\"k\"] %= 4;\n"
+				"    var v = 1; v += 2; var& r = v; r += 10; r -= 1;\n"
+				"    string s = \"a\"; s += \"b\"; var t = \"x\" + \"y\"; t += s;\n"
+				"    var xs = [3, 1, 2]; xs.sort();\n"
+				"    var texts = [\"b\", \"a\"]; texts.sort();\n"
+				"    return `${a},${m[\"k\"]},${v},${s},${t},${xs},${texts},${[1, 2] == [1, 2]},${\"a\" < \"b\"}`;\n"
+				"}\n"
+				"class P { int x = 1; var y = 2; } P p; p.x += 4; p.y += p.x; p.x <<= 1;\n"
+				"int top = 1; top += 2; var dyn = top + 2; dyn += top;\n"
+				"rows(7, 3) + \"|\" + rows(2.5, 4) + \"|\" + bits(12, 2) + \"|\" + typed(7, 3, 1.5) + \"|\" + places() + \"|\" + to_string(p.x) + to_string(p.y) + to_string(top) + to_string(dyn);\n";
+			const char* const operators[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "<=>", "&", "|", "^", "<<", ">>"};
+			auto run = [&](backend_type type, bool reference, bool registered, const std::string& source) {
+				auto eng = jai::foundry::make_default_engine();
+				eng->set_backend(type);
+				eng->vm_reference_mode(reference);
+				jai::stdlib::register_all(*eng);
+				dynamic_binder<thing>(*eng, "Thing").constructor<>().property("n", &thing::n).build();
+				if (registered) {
+					for (const char* name : operators) {
+						eng->add_function(name, [](thing& a, const thing& b) { return a.n * 100 + b.n; });
+					}
+				}
+				try {
+					auto result = eng->execute(source);
+					return result.is_string() ? result.as_string() : std::string("<not a string>");
+				} catch (const std::exception& e) {
+					return std::string("threw: ") + e.what();
+				}
+			};
+			const std::string oracle = run(backend_type::interpreter, false, false, script);
+			check_true(oracle.find("threw") == std::string::npos && oracle.find("[10, 4, 21,") != std::string::npos, oracle);
+			check_eq(oracle, run(backend_type::interpreter, false, true, script), "interpreter");
+			check_eq(oracle, run(backend_type::vm, false, true, script), "vm");
+			check_eq(oracle, run(backend_type::vm, true, true, script), "vm-reference");
+			// the class's own operands run the host's operator, in every form
+			const std::string own =
+				"Thing a; a.n = 3; Thing b; b.n = 4; var out = [];\n"
+				"out.push(a + b); out.push(a - b); out.push(a <=> b); out.push(a << b); out.push(a % b);\n"
+				"var x = a; var y = b; out.push(x * y); out.push(x ^ y);\n"
+				"to_string(out);\n";
+			const std::string own_oracle = run(backend_type::interpreter, false, true, own);
+			check_eq(std::string("[304, 304, 304, 304, 304, 304, 304]"), own_oracle, "the host operator runs for its class");
+			check_eq(own_oracle, run(backend_type::vm, false, true, own), "vm own");
+			check_eq(own_oracle, run(backend_type::vm, true, true, own), "vm-reference own");
 		});
 		// a numeric operator registered while a dynamic op's frame runs is consulted by its next execution
 		test("dynamic_slot_operand_ops_see_an_operator_registered_mid_function", [this]() {

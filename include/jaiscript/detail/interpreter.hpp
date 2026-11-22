@@ -18,6 +18,7 @@
 #include "member_scope.hpp"
 #include "builtin_methods.hpp"
 #include "execution_limits.hpp"
+#include "host_time.hpp"
 #include "native_stack.hpp"
 #include "operator_table.hpp"
 #include "value_text.hpp"
@@ -44,7 +45,7 @@ namespace jai {
     class script_class_definition;
     class class_definition;
     class class_instance;
-    namespace detail { struct namespace_store_target; struct aggregate_plan; struct construction_scope; }
+    namespace detail { struct namespace_store_target; struct aggregate_plan; struct construction_scope; struct field_initialization; }
     namespace debug { class controller; }
 
     // Forward declare interpreter for scoped_method_environment
@@ -146,6 +147,7 @@ namespace jai {
             }
         }
         bool has_continuations() const { return !continuations_.empty(); }
+        const std::vector<continuation_point>& continuations() const { return continuations_; }   // innermost first
         void drop_saved_containers(uint32_t phase) {
             for (auto& point : continuations_) { if (point.phase == phase) { point.saved_container.reset(); } }
         }
@@ -182,7 +184,7 @@ namespace jai {
 
         // ===== Execution budget (engine::execution_budget) =====
         // A top-level execute()/next() that runs past the armed deadline raises a
-        // catchable runtime error. Ticked at loop back-edges and call entry; the clock
+        // terminal runtime error. Ticked at loop back-edges and call entry; the clock
         // is only sampled every 1024 ticks so the hot path pays one increment+branch.
         void set_execution_budget(std::chrono::nanoseconds budget) override {
             execution_budget_ = budget;
@@ -191,6 +193,10 @@ namespace jai {
         std::chrono::nanoseconds execution_budget() const { return execution_budget_; }
         void extend_execution_deadline(std::chrono::nanoseconds by) override { if (budget_active_) { execution_deadline_ += by; } }
         std::chrono::steady_clock::time_point execution_deadline() const override { return budget_active_ ? execution_deadline_ : std::chrono::steady_clock::time_point{}; }
+        // An armed debug session suspends the wall-clock deadline (a paused script must not be killed by the act of
+        // debugging); sync_debug_hook re-arms a fresh deadline when the session ends.
+        bool budget_spent_now() override { return detail::budget_clock_spent(*limits_, budget_active_ && (!debug_hook_ || !debug_evaluations_.empty()), execution_deadline_); }
+        bool budget_overrun_at_return() override { return detail::budget_overrun_at_return(*limits_, budget_active_ && (!debug_hook_ || !debug_evaluations_.empty()), execution_deadline_); }
 
         void arm_execution_deadline() {
             budget_tick_ = 0;
@@ -291,6 +297,10 @@ namespace jai {
         // Reached via execution_backend::resume_coroutine; the handle's opaque
         // backend_state holds the interpreter_coroutine_state.
         checked_result<script_value> resume_coroutine(coroutine_handle& handle) override;
+        bool paused_coroutine_frame(coroutine_handle& a_handle, const std::vector<detail::coroutine_site>& a_sites, uint32_t& a_site,
+                                    detail::coroutine_frame_view& a_frame) override;
+        bool pause_coroutine_at(coroutine_handle& a_handle, const std::vector<detail::coroutine_site>& a_sites, uint32_t a_site,
+                                detail::coroutine_frame&& a_frame) override;
 
         std::unique_ptr<backend_run_state> make_run_state() override;
         void swap_run_state(backend_run_state& state) noexcept override;
@@ -387,6 +397,12 @@ namespace jai {
         }
 
         // statement visitors
+        error_propagator debug_refusal();   // a watch evaluation reached script code
+        size_t try_depth_ = 0;   // try blocks running: an error raised inside one has a handler that may take it
+        std::vector<const caught_error_scope*> handled_errors_;   // the catch bodies running that bound their error, innermost last
+        // An error noticed where it was raised (its trace not taken yet): an armed session's exception breakpoints see it. KEEP
+        // BYTE-PARALLEL with vm_backend::debug_raised
+        template <class Text> void debug_raised(Text&& text, bool caught);   // interpreter.cpp
         checked_result<void> visit_expression_stmt(expression_stmt* stmt);
         checked_result<void> visit_block_stmt(block_stmt* stmt);
         checked_result<void> visit_if_stmt(if_stmt* stmt);
@@ -395,14 +411,19 @@ namespace jai {
         checked_result<void> visit_range_for_stmt(range_for_stmt* stmt);
         checked_result<void> run_for_stmt(for_stmt* stmt);
         checked_result<void> run_range_for_stmt(range_for_stmt* stmt);
-        // A loop's header runs as the loop's own statement (a frame's trace line and in-scope locals), as the vm's ip has it
-        void note_running_statement(statement* stmt);
+        // A loop's header runs as the loop's own statement (a frame's trace line and in-scope locals), as the vm's ip has it; a
+        // namespace block's member and a static's initializer stand at their own lines the same way
+        void note_running_statement(const ast_node* stmt);
         std::vector<std::pair<size_t, const for_stmt*>> updating_loops_;   // (call depth, loop) whose update is running, for the debugger's locals
         // Scope exits destroy the frame-slot locals that may own an instance, last declared first (the vm's op_kill_slot)
         void kill_scope_slot(const statement* decl);
         template <class Decls> void kill_scope_slots(const Decls& decls) {
             if (call_stack_.empty()) { return; }
+            const size_t frame = call_stack_.size() - 1;   // by index: a destructor's call may move call_stack_
+            const bool was_exiting = call_stack_[frame].exiting;
+            call_stack_[frame].exiting = true;
             for (auto decl = decls.rbegin(); decl != decls.rend(); ++decl) { kill_scope_slot(decl->get()); }
+            call_stack_[frame].exiting = was_exiting;
         }
         checked_result<void> visit_parallel_for_stmt(parallel_for_stmt* stmt);
         checked_result<void> visit_return_stmt(return_stmt* stmt);
@@ -451,7 +472,9 @@ namespace jai {
         // Debugger: named slot-locals (params + reached body decls) of a call frame, reconstructed
         // from the frame's function AST. Empty at global scope / for foreign frames.
         std::vector<std::pair<std::string, script_value>> get_frame_locals(size_t frame) const override;
-        script_value* debug_local_storage(const std::string& name) override;
+        script_value* debug_local_storage(const std::string& name, size_t frame) override;
+        void begin_debug_evaluation(std::chrono::nanoseconds budget) override;
+        void end_debug_evaluation() override;
         std::vector<std::pair<size_t, std::string_view>> frame_scope_slots(size_t frame_index) const;
         int debug_depth() const override { return static_cast<int>(call_stack_.size()); }
         // Debug sync point (out of line: needs the controller type). Refreshes
@@ -499,11 +522,15 @@ namespace jai {
         // Evaluate field initializers for a script class instance at construction time
         // This should be called BEFORE the constructor body executes
         // If skip_parent_recursion is true, only evaluate THIS class's field initializers (parents already handled)
+        // `plan`: a constructor's own fields instead (detail::constructor_field_plan), a listed one evaluated in list_env, the
+        // constructor's activation scope
         checked_result<void> evaluate_field_initializers(strong_ptr<class_instance> instance,
                                         std::shared_ptr<script_class_definition> class_def,
                                         std::shared_ptr<environment> init_env,
                                         bool skip_parent_recursion = false,
-                                        const detail::aggregate_plan* aggregate = nullptr);
+                                        const detail::aggregate_plan* aggregate = nullptr,
+                                        const std::vector<detail::field_initialization>* plan = nullptr,
+                                        std::shared_ptr<environment> list_env = nullptr);
         // execution_backend::apply_field_initializers
         void apply_field_initializers(const strong_ptr<class_instance>& instance,
                                       const std::shared_ptr<class_definition>& class_def) override;
@@ -653,6 +680,15 @@ namespace jai {
             bool empty() const { return top_ == 0; }
             size_t size() const { return top_; }
 
+            // The values above `mark` die in stack order; what lies below belongs to the evaluation that ran this code (a
+            // destructor that fires while a call releases its arguments runs above the value the call pushed)
+            void truncate(size_t mark) {
+                if (top_ <= mark) { return; }
+                std::vector<script_value> released(std::make_move_iterator(values_.begin() + static_cast<std::ptrdiff_t>(mark)),
+                                                   std::make_move_iterator(values_.begin() + static_cast<std::ptrdiff_t>(top_)));
+                top_ = mark;
+            }
+
             void clear() {
                 // Actually destroy the values to release references
                 values_.clear();
@@ -702,6 +738,7 @@ namespace jai {
         const ast_node* top_level_node_ = nullptr;
         void capture_stack_trace();
         static stack_frame call_frame_trace(const call_frame& frame);
+        size_t debug_stack_position(size_t frame_index) const;
         // A construction level's initializer-list argument or field initializer under evaluation: a frame of the trace named for
         // its class, above the `depth` call frames below it (the vm runs that code in the level's own frame)
         struct construction_trace_frame {
@@ -767,6 +804,22 @@ namespace jai {
         std::chrono::steady_clock::time_point execution_deadline_{};
         uint32_t budget_tick_ = 0;
         bool budget_active_ = false;
+        // the run state a debugger's evaluation saved (begin_debug_evaluation), innermost last: while one runs its deadline holds
+        struct debug_evaluation_save {
+            std::optional<script_exception> exception;
+            std::optional<script_value> exception_value;
+            std::vector<stack_trace_entry> trace;
+            std::optional<error_propagator> run_error;
+            detail::nested_failure nested;
+            uint64_t catch_var = 0;
+            bool unwinding = false;
+            bool trace_captured = false;
+            bool terminal = false;
+            bool budget_active = false;
+            std::chrono::nanoseconds budget{};
+            std::chrono::steady_clock::time_point deadline{};
+        };
+        std::vector<debug_evaluation_save> debug_evaluations_;
 
         // Execution-limit state (terminal-error latch). Engine-less fallback storage;
         // prepare_for_execution repoints limits_ at the engine's per-engine instance so
@@ -807,7 +860,6 @@ namespace jai {
         uint64_t done_id_;
         uint64_t advance_id_ = 0;
         uint64_t result_id_ = 0;
-        uint64_t same_as_id_;
         uint64_t eq_method_id_ = 0;   // "==" interned at construction (worker probes must not intern)
         uint64_t to_bool_id_ = 0;
         uint64_t to_string_id_ = 0;
@@ -995,17 +1047,7 @@ namespace jai {
             if (debugger_.load(std::memory_order_relaxed) || debug_hook_) [[unlikely]] {
                 sync_debug_hook();
             }
-            // An armed debug session suspends the wall-clock deadline (a paused script
-            // must not be killed by the act of debugging); sync_debug_hook re-arms a
-            // fresh deadline when the session ends.
-            const auto now = std::chrono::steady_clock::now();
-            limits_->note_clock_sample(now);
-            if (limits_->step_budget_spent()) [[unlikely]] { limits_->terminal_error = true; return true; }   // the clock-free bound (vm twin)
-            if (!budget_active_ || debug_hook_) { return false; }
-            if (now < execution_deadline_) { return false; }
-            // Budget overruns are TERMINAL: no script catch may swallow a timeout
-            limits_->terminal_error = true;
-            return true;
+            return detail::budget_clock_spent(*limits_, budget_active_ && (!debug_hook_ || !debug_evaluations_.empty()), execution_deadline_);
         }
 
         // Combined limit check at loop back-edges / call entry: the budget tick plus a
@@ -1126,6 +1168,15 @@ namespace jai {
         // Coroutine helper - creates a script_value wrapping a coroutine_handle.
         // Static (friend access to script_value) so coroutine-factory thunks need no interpreter.
         static script_value make_coroutine_object(engine* eng, uint64_t type_id, std::shared_ptr<coroutine_handle> handle);
+        // A coroutine being paused at a site (pause_coroutine_at): call_function builds the body's activation, places the frame
+        // and suspends before any statement runs
+        struct coroutine_pause {
+            coroutine_handle* handle = nullptr;
+            const detail::coroutine_site* site = nullptr;
+            detail::coroutine_frame* frame = nullptr;
+        };
+        coroutine_pause* pending_pause_ = nullptr;
+        void place_paused_frame(const coroutine_pause& a_pause, size_t a_frameIndex, const script_defined_function& a_function);
 
         // Function call helpers
         // Returns checked_result - exceptions only thrown at execute() boundary
@@ -1271,6 +1322,8 @@ namespace jai {
         void set_parallel_method_pins(const detail::parallel_method_pin_table* pins) override {
             parallel_method_pins_ = pins;
         }
+        // A worker's copy of a class static its region captured, else null
+        const script_value* parallel_static_copy(class_definition* a_owner, uint64_t a_sym) const;
 
         // Environment pooling functions (public: scoped_method_environment uses them)
         std::shared_ptr<environment> block_environment(std::shared_ptr<environment> parent);   // a { } / loop / case scope

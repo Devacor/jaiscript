@@ -94,9 +94,9 @@ bool pt_converged() {
 // start a host and join it with one client under the given simulated link; the gator starts fresh
 // (a character file saved by an earlier round or run would carry its place in)
 bool pt_setup(int port, int lag, int jitter, int loss) {
-	make_dirs(save_dir() + "/chars");
-	array<string> old = list_dir(save_dir() + "/chars");
-	for (int i = 0; i < old.size(); ++i) { delete_file(save_dir() + "/chars/" + old[i]); }
+	file::make_directories(save_dir() + "/chars");
+	array<string> old = file::list_directory(save_dir() + "/chars");
+	for (int i = 0; i < old.size(); ++i) { file::remove(save_dir() + "/chars/" + old[i]); }
 	sim_init(9);
 	BOTS = [];
 	NOW_MS = 0;

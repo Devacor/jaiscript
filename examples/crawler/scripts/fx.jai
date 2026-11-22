@@ -1,6 +1,6 @@
 // What a turn leaves in the view: damage numbers, slashes, a slain monster melting into sparks,
 // spells in flight with their own light, the alarm over a monster that just saw you, and the
-// banners for a new floor, a level, a find or a reload. Effects read the game and never its Rng,
+// banners for a new floor, a level, a find or a reload. Effects read the game and never its RNG,
 // so the smoke hash never sees them. Each lives a turn or two; a dump draws it at rest (FX_REST),
 // and an interactive turn plays it through four in-between frames first.
 
@@ -626,7 +626,7 @@ function fx_apply_shake() -> void {
 float RELOAD_SWEEP = -1.0;
 
 function reload_done(string why, int files, float ms) -> void {
-	string timing = HOST_INTERACTIVE ? ` in ${ms:.1f} ms` : "";
+	string timing = host_interactive ? ` in ${ms:.1f} ms` : "";
 	log_ink(INK_MAGIC, `Reloaded ${files} scripts${timing} (${why}).`);
 	log_ink(INK_DIM, `  Kept: floor ${G.floor}, turn ${G.turn}, ${G.monsters.size()} monsters, ${G.player.inventory.size()} items, HP ${G.player.hp}/${G.player.total_max_hp()}.`);
 	fx_banner("RELOADED", "YOUR RUN KEPT", INK_MAGIC);

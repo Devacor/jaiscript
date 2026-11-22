@@ -233,7 +233,7 @@ private:
     float radius;
 public:
     Circle(float r) : super("round") { radius = r; }
-    float area() override { return math::PI * radius * radius; }
+    float area() override { return math::pi * radius * radius; }
     string name() override { return "circle"; }
 }
 class Rect : Shape {
@@ -334,7 +334,7 @@ failed: no such slot (slot 7)</code></pre></div>
 <tr><td>null</td><td><code>null</code>, <code>int?</code></td><td><code>null</code>, held by a <code>var</code>, a <code>shared_ptr&lt;T&gt;</code> or a <code>function</code>; never by an <code>int</code> or a class value</td></tr>
 <tr><td>narrowing</td><td><code>int i = (int)3.9;</code></td><td><code>int i = cast&lt;int&gt;(3.9);</code>; a float never enters an <code>int</code> implicitly</td></tr>
 <tr><td>collections</td><td><code>new List&lt;int&gt; { 1, 2 }</code>, <code>new Dictionary&lt;string, int&gt; { ["a"] = 1 }</code></td><td><code>array&lt;int&gt; xs = [1, 2];</code>, <code>map&lt;string, int&gt; m = {"a": 1};</code></td></tr>
-<tr><td>type name</td><td><code>x.GetType().Name</code></td><td><code>type_of(x)</code></td></tr>
+<tr><td>type name</td><td><code>x.GetType().Name</code></td><td><code>reflect::type_of(x)</code></td></tr>
 </tbody></table></div>
 <h3 id="collections-and-linq">Collections and LINQ<a class="hlink" href="#collections-and-linq" aria-label="link">&#8203;</a></h3>
 <p>The <code>array::</code> and <code>map::</code> functions return a new container, like LINQ; the dot methods of the same name change the container in place and return nothing, like <code>List&lt;T&gt;.Sort</code>. Nothing is deferred: each step runs when called.</p>
@@ -367,7 +367,7 @@ failed: no such slot (slot 7)</code></pre></div>
 <tr><td>equality</td><td>reference equality by default</td><td><code>==</code> compares fields; <code>operator==</code> replaces it; <code>same_object(a, b)</code> is identity</td></tr>
 <tr><td>operators</td><td><code>public static Vec operator+(Vec a, Vec b)</code></td><td><code>Vec operator+(Vec o)</code>, a method</td></tr>
 <tr><td><code>as</code></td><td><code>x as Hero</code></td><td><code>cast&lt;Hero&amp;&gt;(x)</code>, which raises a catchable error when <code>x</code> is not a <code>Hero</code></td></tr>
-<tr><td><code>is</code></td><td><code>x is Hero</code></td><td><code>x instanceof Hero</code>: a <code>Hero</code> or a class derived from it. <code>type_of(x) == "Hero"</code> is the exact class only</td></tr>
+<tr><td><code>is</code>, <code>as</code></td><td><code>x is Hero</code>, <code>x is Hero h</code>, <code>x as Hero</code></td><td>C#&#x27;s <code>x is Hero h</code> is <code>if (auto h = dynamic_cast&lt;Hero&gt;(x))</code>: the handle typed <code>shared_ptr&lt;Hero&gt;</code>, or null, which is <code>x as Hero</code> too. <code>x is Hero</code> alone is <code>if (dynamic_cast&lt;Hero&gt;(x))</code>, or <code>reflect::is_instance_of(x, "Hero")</code> for a bool. <code>reflect::type_of(x) == "Hero"</code> is the exact class only</td></tr>
 <tr><td>using, IDisposable, finally</td><td><code>using (var f = Open())</code>, <code>finally { }</code></td><td>a destructor, <code>~File()</code>, runs when its scope ends, a throw included; no <code>finally</code></td></tr>
 </tbody></table></div>
 <div class="tabs" id="classes-sample-tabs">
@@ -422,7 +422,7 @@ p.hp = -3;                                   // through _set_hp
 var anyone = p;
 var text = "text";
 print(p.describe(), " ", p.hp, " ", Hero::count, " hero: " + p);
-print(type_of(anyone) == "Hero", " ", anyone instanceof Hero, " ", text instanceof Hero);
+print(reflect::type_of(anyone) == "Hero", " ", reflect::is_instance_of(anyone, "Hero"), " ", reflect::is_instance_of(text, "Hero"));
 try { throw anyone; } catch (Hero h) { print("caught a Hero: ", h.name); }</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">Sir Ada 0 1 hero: Ada (0 hp)
 false true false
@@ -430,7 +430,7 @@ caught a Hero: Ada</code></pre></div>
 </div>
 </div>
 <p>C# prints its bools capitalized and throws only an <code>Exception</code>, so its program has no third line.</p>
-<p><strong>The is-a test.</strong> <code>x instanceof Hero</code> is true for a <code>Hero</code> or a subclass and false for anything else, a value that is no object included. After it, <code>cast&lt;Hero&amp;&gt;(x)</code> cannot fail; <code>as</code> stays the cast, which raises where C# would give null. A typed <code>catch (Hero h)</code> takes a <code>Hero</code> or a subclass the same way.</p>
+<p><strong>The is-a test.</strong> C#&#x27;s <code>x as Hero</code> is <code>dynamic_cast&lt;Hero&gt;(x)</code>: a <code>shared_ptr&lt;Hero&gt;</code> for a <code>Hero</code> or a subclass, and null where the object is none. The pattern <code>if (x is Hero h)</code> is <code>if (auto h = dynamic_cast&lt;Hero&gt;(x))</code>, and <code>x is Hero</code> is the same cast as the condition, or <code>reflect::is_instance_of(x, "Hero")</code>: true or false, false for a value that is no object. Where either test stands as a condition, <code>x</code> itself is a <code>Hero</code> to the checker, and <code>if (!dynamic_cast&lt;Hero&gt;(x)) { return; }</code> narrows the rest of the block as <code>if (x is not Hero h) return;</code> does (<a href="../reference/rules.html#flow-narrowing">flow narrowing</a>); a store to <code>x</code> ends it. <code>cast&lt;Hero&amp;&gt;(x)</code> and <code>dynamic_cast&lt;Hero&amp;&gt;(x)</code> raise where the object is none, as <code>(Hero)x</code> does. A typed <code>catch (Hero h)</code> takes a <code>Hero</code> or a subclass the same way.</p>
 <h3 id="errors-strings-and-the-rest">Errors, strings and the rest<a class="hlink" href="#errors-strings-and-the-rest" aria-label="link">&#8203;</a></h3>
 <div class="tablewrap"><table><thead><tr><th></th><th>C#</th><th>JaiScript</th></tr></thead><tbody>
 <tr><td>throw</td><td><code>throw new InvalidOperationException("x");</code></td><td><code>throw "x";</code>: any value</td></tr>
@@ -443,8 +443,9 @@ caught a Hero: Ada</code></pre></div>
 <tr><td>switch</td><td>every case ends in <code>break</code></td><td>breaks by default; empty stacked labels share a body, and <code>fallthrough;</code> replaces <code>goto case</code></td></tr>
 <tr><td>checked</td><td><code>checked { }</code></td><td>always: integer overflow raises, and <code>math::wrap_add</code> wraps on purpose</td></tr>
 <tr><td>lambda</td><td><code>x =&gt; x * 2</code></td><td><code>x =&gt; x * 2</code>, <code>(int x) =&gt; x * 2</code>, or C++'s <code>[](int x) { return x * 2; }</code></td></tr>
-<tr><td>delegate, event</td><td><code>Func&lt;int, int&gt;</code>, <code>event Action Clicked</code></td><td>a <code>function</code> slot (any callable, no signature); an <code>array&lt;function&gt;</code> of handlers</td></tr>
-<tr><td>generic method</td><td><code>T Max&lt;T&gt;(T a, T b)</code></td><td><code>auto biggest(auto a, auto b)</code></td></tr>
+<tr><td>delegate, event</td><td><code>Func&lt;int, int&gt;</code>, <code>Action&lt;string&gt;</code>, <code>event Action Clicked</code></td><td><code>function&lt;int(int)&gt;</code>, <code>function&lt;void(string)&gt;</code>, checked at load as a delegate type is; an <code>array&lt;function&lt;void()&gt;&gt;</code> of handlers. A bare <code>function</code> takes any callable.</td></tr>
+<tr><td>generic method</td><td><code>T Max&lt;T&gt;(T a, T b)</code></td><td><code>T biggest&lt;T&gt;(T a, T b)</code>, the same head; deduced or written, <code>biggest&lt;int&gt;(1, 2)</code> (<a href="../guide/21-generics.html">Generics</a>)</td></tr>
+<tr><td>generic class, constraint</td><td><code>class Pool&lt;T&gt; where T : Entity</code></td><td><code>class Pool&lt;T : Entity&gt;</code>. Instantiated at load like a C++ template, not shared code over a constraint: the body is checked per instance, so it may call whatever the argument has</td></tr>
 <tr><td>iterator</td><td><code>IEnumerable&lt;int&gt; Evens() { yield return 0; }</code></td><td><code>coroutine int evens() { yield 0; }</code>, driven by range-<code>for</code> or <code>next()</code></td></tr>
 <tr><td>async, await</td><td><code>await Task.Delay(100)</code></td><td>none: a coroutine the host advances each frame; each <code>next()</code> runs to the next <code>yield</code></td></tr>
 <tr><td>namespace</td><td><code>namespace Game { }</code>, <code>using Game;</code></td><td><code>namespace game { }</code> and <code>game::f()</code>; <code>using game::f;</code> brings in one name</td></tr>
@@ -488,7 +489,7 @@ array&lt;int&gt; seen = [];
 for (int e : evens(7)) { seen.push(e); }
 
 class Button {
-    array&lt;function&gt; clicked = [];
+    array&lt;function&lt;void()&gt;&gt; clicked = [];
     void click() { for (auto&amp; handler : clicked) { handler(); } }
 }
 Button b;
@@ -591,7 +592,7 @@ Unit nobody = null;</code></pre></div>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

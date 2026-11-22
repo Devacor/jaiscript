@@ -77,6 +77,7 @@ namespace stdlib {
             if (!a[0]->is_text()) { return type_error("string::to_lower expects a string argument"); }
             std::string out = a[0]->is_utf8_string() ? a[0]->unchecked_as_utf8().bytes : a[0]->as<std::string>();
             for (auto& c : out) { c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
+            if (detail::work_meter work(e); work.spend_bytes(out.size())) [[unlikely]] { return work.spent(); }
             return a[0]->is_utf8_string() ? script_value::make_utf8(std::move(out), e) : script_value(std::move(out), e);
         });
         def("to_upper", [=](engine* e, args_view a) -> R {
@@ -84,6 +85,7 @@ namespace stdlib {
             if (!a[0]->is_text()) { return type_error("string::to_upper expects a string argument"); }
             std::string out = a[0]->is_utf8_string() ? a[0]->unchecked_as_utf8().bytes : a[0]->as<std::string>();
             for (auto& c : out) { c = static_cast<char>(std::toupper(static_cast<unsigned char>(c))); }
+            if (detail::work_meter work(e); work.spend_bytes(out.size())) [[unlikely]] { return work.spent(); }
             return a[0]->is_utf8_string() ? script_value::make_utf8(std::move(out), e) : script_value(std::move(out), e);
         });
 
@@ -98,6 +100,7 @@ namespace stdlib {
 			std::string result;
 			result.reserve(size);
 			for (const auto* argument : a_args) { result.append(argument->unchecked_text()); }
+			if (detail::work_meter work(a_engine); work.spend_bytes(result.size())) [[unlikely]] { return work.spent(); }
 			return a_args[0]->is_utf8_string() ? script_value::make_utf8(std::move(result), a_engine) : script_value(std::move(result), a_engine);
 		});
         def("from_code", [=](engine* e, args_view a) -> R {
@@ -122,9 +125,11 @@ namespace stdlib {
             if (!a[0]->is_array()) return type_error("string::join expects an array of strings");
             std::string sep;
             if (a.size() == 2) { if (!a[1]->is_text()) return type_error("string::join separator must be a string"); sep = a[1]->unchecked_text(); }
-            std::string out; bool first = true, bad = false, denied = false, utf8 = a.size() == 2 && a[1]->is_utf8_string();
+            std::string out; bool first = true, bad = false, denied = false, spent = false, utf8 = a.size() == 2 && a[1]->is_utf8_string();
+            detail::work_meter work(e);
             if (const script_array* node = a[0]->unchecked_array_node(); node->kind() == script_array::kind_t::str) {   // the texts where they are
                 for (const auto& h : node->strs()) {
+                    if (work.spend(1 + (sep.size() + h->size()) / detail::k_work_unit_bytes)) [[unlikely]] { return work.spent(); }
                     if (!detail::builtin_memory_charge(e, (first ? 0 : sep.size()) + h->size())) [[unlikely]] { return detail::builtin_memory_cap(e); }
                     if (!first) out += sep;
                     out += *h; first = false;
@@ -133,13 +138,15 @@ namespace stdlib {
             }
             a[0]->unchecked_array_node()->for_each(e, [&](const script_value& el) {
                 const script_value& v = el.deref();
-                if (bad || denied) { return; }
+                if (bad || denied || spent) { return; }
                 if (!v.is_text()) { bad = true; return; }
+                if (work.spend(1 + (sep.size() + v.unchecked_text().size()) / detail::k_work_unit_bytes)) [[unlikely]] { spent = true; return; }
                 if (!detail::builtin_memory_charge(e, (first ? 0 : sep.size()) + v.unchecked_text().size())) [[unlikely]] { denied = true; return; }
                 if (!first) out += sep;
                 out += v.unchecked_text(); first = false; utf8 = utf8 || v.is_utf8_string();
             });
             if (bad) return type_error("string::join expects an array of strings");
+            if (spent) [[unlikely]] { return work.spent(); }
             if (denied) [[unlikely]] { return detail::builtin_memory_cap(e); }
             return utf8 ? script_value::make_utf8(std::move(out), e) : script_value(std::move(out), e);
         });
@@ -159,7 +166,10 @@ namespace stdlib {
             const std::string& s = a[0]->unchecked_text(); const std::string& from = a[1]->unchecked_text(); const std::string& to = a[2]->unchecked_text();
             if (from.empty()) return a[0]->is_utf8_string() ? script_value::make_utf8(s, e) : script_value(s, e);
             std::string out; size_t at = 0, hit;
+            detail::work_meter work(e);
+            if (work.spend_bytes(s.size())) [[unlikely]] { return work.spent(); }
             while ((hit = s.find(from, at)) != std::string::npos) {
+                if (work.spend(1 + (hit - at + to.size()) / detail::k_work_unit_bytes)) [[unlikely]] { return work.spent(); }
                 if (!detail::builtin_memory_charge(e, (hit - at) + to.size())) [[unlikely]] { return detail::builtin_memory_cap(e); }
                 out.append(s, at, hit - at); out += to; at = hit + from.size();
             }
@@ -175,7 +185,11 @@ namespace stdlib {
             if (n < 0) return R(make_error_code(runtime_error_code::invalid_operation), "string::repeat count cannot be negative");
             if (!detail::builtin_memory_charge(e, s.size(), detail::saturating_count(n))) [[unlikely]] { return detail::builtin_memory_cap(e); }
             std::string out; out.reserve(detail::saturating_text_size(s.size(), detail::saturating_count(n)));
-            for (script_int k = 0; k < n; ++k) out += s;
+            detail::work_meter work(e);
+            for (script_int k = 0; k < n; ++k) {
+                out += s;
+                if (work.spend(1 + s.size() / detail::k_work_unit_bytes)) [[unlikely]] { return work.spent(); }
+            }
             return a[0]->is_utf8_string() ? script_value::make_utf8(std::move(out), e) : script_value(std::move(out), e);
         });
         struct pad_texts { const char* name; const char* count; const char* first; const char* width; const char* fill; bool left; };
@@ -195,6 +209,7 @@ namespace stdlib {
                     const size_t pad = detail::saturating_count(w) - len;
                     if (!detail::builtin_memory_charge(e, pad)) [[unlikely]] { return detail::builtin_memory_cap(e); }
                     if (pt.left) s.insert(0, pad, fill); else s.append(pad, fill);
+                    if (detail::work_meter work(e); work.spend_bytes(s.size())) [[unlikely]] { return work.spent(); }
                 }
                 return a[0]->is_utf8_string() ? script_value::make_utf8(std::move(s), e) : script_value(std::move(s), e);
             });

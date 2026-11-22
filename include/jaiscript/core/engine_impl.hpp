@@ -32,11 +32,11 @@ namespace detail {
 			// the conversion's failure
 			if (fn.deref().is_null()) { return {}; }
 			if (!fn.is_function() || !fn.payload_engine()) { throw runtime_error("Cannot convert a value that is not a function to a std::function callback"); }
-			std::weak_ptr<const void> alive = engine_access::lifetime_token(*fn.payload_engine());
-			return [fn = std::move(fn), alive = std::move(alive)](Args... args) -> R {
-				// a callback the host kept past its engine never reaches the dead engine
-				if (alive.expired()) { throw runtime_error("Cannot call a script function after its engine was destroyed"); }
-				engine* eng = fn.payload_engine();
+			engine* owner = fn.payload_engine();
+			return [fn = engine_access::hold_callback(*owner, std::move(fn))](Args... args) -> R {
+				// the engine's teardown released the function: a callback the host kept past it never reaches the dead engine
+				if (!fn.valid()) { throw runtime_error("Cannot call a script function after its engine was destroyed"); }
+				engine* eng = fn.get_engine();
 				engine::external_call_guard scope(eng);
 				std::vector<script_value> values;
 				values.reserve(sizeof...(Args));

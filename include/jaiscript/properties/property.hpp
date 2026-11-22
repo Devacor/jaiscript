@@ -119,7 +119,7 @@ namespace jai {
 		}
 
 		// Signal properties fill a type-erased connect/disconnect table (the
-		// generic "Signal" script view rides it); value properties decline.
+		// generic "signal" script view rides it); value properties decline.
 		virtual bool signal_ops(signal_script_ops&) { return false; }
 
 	protected:

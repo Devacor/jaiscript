@@ -179,7 +179,7 @@ public:
 
 	void damage(int dmg, string src) {
 		if (G.mode != 1 || dmg <= 0) { return; }
-		if (HOST_GOD) { return; }
+		if (host_god) { return; }
 		int absorbed = imin(armor, dmg * 2 / 3);
 		armor = armor - absorbed;
 		int taken = dmg - absorbed;

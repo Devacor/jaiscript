@@ -60,7 +60,7 @@ for (auto n : countdown(3)) { print("countdown {}", n); }   // a coroutine drive
 
 var loose = 1;
 loose = "now a string";                           // var is the opt-out from typing
-print("{} {}", type_of(loose), cast<int>('a'));   // char converts only through a cast
+print("{} {}", reflect::type_of(loose), cast<int>('a'));   // char converts only through a cast
 
 try { int x = loose; print("{}", x); } catch (e) { print("caught: {}", e); }
 ```
@@ -144,6 +144,11 @@ the explicit spellings at a typed boundary.
 delegation, static members (`C::s`), operator overloading, user `_get_x` / `_set_x`
 accessors, and hot reload that migrates live instances field by field.
 
+**Generics.** `class Stack<T>`, `T largest<T>(array<T> xs)` and generic methods, instantiated at
+load like C++ templates and checked as if written by hand: `Stack<int>` is an ordinary class.
+Type arguments are written or deduced, `T : Base` bounds one, and an error inside an instance
+names the generic's line and where it was instantiated.
+
 **Coroutines.** `coroutine` functions *and* methods, `yield`, drivable from a range-`for` or
 advanced with `next()` by the host a frame at a time.
 
@@ -192,7 +197,7 @@ out of it while you develop and turn it on for the build you ship.
 | `JAISCRIPT_BUILD_TESTS` | top-level | The Foundry test suite (`jaiscript_tests`) and the fuzzer (`jaiscript_fuzz`) |
 | `JAISCRIPT_BUILD_RUNNER` | top-level | The standalone runner / REPL (`jaiscript`) |
 | `JAISCRIPT_BUILD_LSP` | top-level | The language server (`jaiscript_lsp`) |
-| `JAISCRIPT_BUILD_SPIDER` | top-level | The web application host `jai_spider` and its SQLite (the system's, else a pinned download) |
+| `JAISCRIPT_BUILD_SPIDER` | top-level | The web application host `jai_spider` and its SQLite (compiled from `tools/jai_spider/third_party/sqlite`) |
 | `JAISCRIPT_BUILD_EXAMPLES` | top-level | `jai_gloom`, `jai_crawler`, `jai_demoreel`, and in a top-level build `embed_quickstart` (the embedding quickstart's host) |
 | `JAISCRIPT_INTERPRETER` | top-level | `jaiscript_interpreter`, the library plus the tree-walking interpreter (the suite, the fuzzer, the runner and `jai_spider` link it) |
 | `JAISCRIPT_INSTALL` | top-level | Install rules and the `find_package(JaiScript)` package |
@@ -208,7 +213,7 @@ consumption routes (`add_subdirectory` and `find_package(JaiScript)`).
 
 Two third-party sources ship: [minicoro](source/third_party/minicoro) (public domain or
 MIT-0), which the library compiles, with its AddressSanitizer fiber-switch annotations corrected, and the SQLite amalgamation
-(public domain), which `jai_spider` uses from the system or downloads at configure time, hash-pinned (see [`tools/jai_spider/README.md`](tools/jai_spider/README.md)). The cross-language comparison benchmarks are a
+(public domain) in [`tools/jai_spider/third_party/sqlite`](tools/jai_spider/third_party/sqlite), which `jai_spider` compiles. The cross-language comparison benchmarks are a
 separate harness, not part of this repository. Integer
 arithmetic raises a catchable error on overflow by default; define `JAISCRIPT_WRAP_ON_OVERFLOW`
 for the whole build to opt into silent two's-complement wrap instead.
@@ -293,7 +298,7 @@ Bugs and questions: [github.com/Devacor/jaiscript/issues](https://github.com/Dev
 
 ## Status
 
-JaiScript 0.5 beta, released 12 November 2026. The language, both backends, the embedding API and
+JaiScript 0.6 beta, released 22 November 2026. The language, both backends, the embedding API and
 the `.jaibite` format are complete and covered by 3,900+ tests run on both backends and a
 differential fuzzer. Beta means the C++ API may still change between minor versions;
 [`docs/site/stability.html`](docs/site/stability.html) lists what is settled and what may change

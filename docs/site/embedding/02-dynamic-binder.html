@@ -178,7 +178,7 @@ print(tower.report());</code></pre></div>
 <li><strong>The return type</strong> comes first. One with a comma is parenthesized, as <code>JAI_PROPERTY</code>&#x27;s type is: <code>(std::map&lt;std::string, int64_t&gt;)</code>.</li>
 <li><strong>The parameters</strong> are parenthesized, with their names, and the qualifiers follow them inside the same argument: <code>const</code>, <code>noexcept</code>, <code>&amp;</code> and <code>const &amp;</code>. A <code>&amp;&amp;</code> member is a compile error, since a script receiver is an lvalue.</li>
 <li><strong>Overloads</strong> are one <code>JAI_METHOD</code> each, and script resolves them as it resolves any bound overload set, by arity and then by argument type.</li>
-<li><strong>The options</strong> are <code>.method</code>&#x27;s, trailing: <code>jai::nodiscard</code>, <code>jai::serial</code> and any permission enum, in any order. Anything else is a compile error at the declaration.</li>
+<li><strong>The options</strong> are <code>.method</code>&#x27;s, trailing: <code>jai::nodiscard</code>, <code>jai::serial</code>, <code>jai::exclude_execution_time</code> and any permission enum, in any order. Anything else is a compile error at the declaration.</li>
 <li><strong>An operator</strong> binds as the script operator: <code>operator+=</code> above is <code>tower += 6</code>, and one taking another type (<code>operator*(double)</code>) binds only this way, since the automatic surface takes operators over the class&#x27;s own type.</li>
 <li><strong>A subclass</strong> declares its own: each level binds the <code>JAI_METHOD</code>s it declares, and the ones it inherits resolve through its base, as other base methods do.</li>
 <li><strong>The hook binds the rest</strong>: a default argument (a compile error inside <code>JAI_METHOD</code>; bind each arity, the shorter with a lambda passing the default), a <code>virtual</code> or <code>static</code> member, a script name other than the C++ one, and a lambda. It runs after the <code>JAI_METHOD</code>s, so a binding of the same name and signature there replaces one. A class shared by several files declares the hook in the header, <code>static void jai_auto_bind(jai::dynamic_binder&lt;Watchtower&gt;&amp; b);</code> (<code>&lt;jaiscript/jaiscript_fwd.hpp&gt;</code> declares the binder), and defines it in its <code>.cpp</code> file, so its bindings compile once.</li>
@@ -188,7 +188,7 @@ print(tower.report());</code></pre></div>
 <div class="codeblock cb-cpp" data-sample="binder-spawner-engine"><span class="cb-label">C++</span><pre><code class="lang-cpp">auto eng = jai::engine::make();
 jai::stdlib::register_all(eng);   // formatted print, containers, math, json
 jai::bind_registrar(*eng);         // every property_owner and jai::registrar in the binary, one call</code></pre></div>
-<p>A <code>property_owner</code> class queues its binding where C++ instantiates one of its constructors or its <code>jai_auto_bind</code> calls a verb, so a class C++ never constructs and that has no hook does not bind: define a constructor or the hook in a <code>.cpp</code> file. A file that instantiates the constructor includes <code>&lt;jaiscript/core/dynamic_binder.hpp&gt;</code> (<code>registrar.hpp</code> includes it); when none does, the link fails naming <code>jai::detail::bind_declared_class&lt;T&gt;</code>.</p>
+<p>A <code>property_owner</code> class registers its serialization identity and queues its binding where C++ instantiates one of its constructors or its <code>jai_auto_bind</code> calls a verb, so a class C++ never constructs and that has no hook neither loads by its name nor binds: define a constructor or the hook in a <code>.cpp</code> file, or name it with a <code>jai::registrar</code>. A file that instantiates the constructor includes <code>&lt;jaiscript/core/dynamic_binder.hpp&gt;</code> (<code>registrar.hpp</code> includes it); when none does, the link fails naming <code>jai::detail::bind_declared_class&lt;T&gt;</code>.</p>
 <p>A <code>jai::registrar&lt;T, Context&gt;</code> binds a class that is not a <code>property_owner</code>, or a template instantiation. A host whose bindings need its own services gives the registrar a context type (<code>jai::registrar&lt;Monster, HostContext&gt;</code>); each configure function then receives the context that <code>jai::bind_registrar(*eng, ctx)</code> passes, and <code>const HostContext</code> or <code>HostContext&amp;</code> name the same registry. A registrar for a <code>property_owner</code> class adds to its binding in engines bound with its context, running after the automatic surface and <code>jai_auto_bind</code>; elsewhere the class binds itself. Its name must be the class&#x27;s serialization name, or <code>bind_registrar</code> throws naming the type.</p>
 <p>One engine may take several calls with unrelated contexts: each binds its context&#x27;s registrars, and a class the engine already binds keeps that binding. A context that extends another says so, <code>using jai_context_bases = jai::bases&lt;HostContext&gt;;</code>, and its call runs each base&#x27;s registrars first, with the context as that base.</p>
 <div class="codeblock cb-cpp"><span class="cb-label">C++</span><pre><code class="lang-cpp">struct ToolContext : HostContext { using jai_context_bases = jai::bases&lt;HostContext&gt;; };
@@ -213,6 +213,7 @@ jai::bind_registrar(*other, toolContext, jai::match_exact_context_type);  // Too
 <ul>
 <li><strong>One name everywhere.</strong> A type is named by its <code>JAI_PROPERTY_OWNER(Name)</code> or <code>JAI_PROPERTY_OWNER_AS(Class, "Name")</code> pin when it declares one, else by its bare class name, and that is also its serialization <code>$type</code>. A template instantiation without a pin has no name and binds only through a registrar.</li>
 <li><strong>One type per name.</strong> Two C++ types reaching one engine under one script name throw from <code>bind_registrar</code> before it binds anything, whatever order their files initialize in: <code>bind_registrar: the script name 'Beacon' belongs to two C++ types, 'game::Beacon' and 'tools::Beacon'; name one another way (JAI_PROPERTY_OWNER_AS, or a jai::registrar with its own name) or leave one out with jai::except&lt;&gt;()</code>, and so does a <code>property_owner</code> class whose name a script class of the engine already holds. A <code>property_owner</code> class the engine already binds, under any name, keeps that binding.</li>
+<li><strong>One class per name, host or script.</strong> Binding a C++ type under a name a script class of the engine holds throws <code>the script name 'Beacon' already names a script class, so a C++ type cannot bind under it</code>, from a <code>dynamic_binder</code>&#x27;s construction and from <code>bind_static_type</code>, and the script class stands. A script that declares a class under a bound name fails to load with <a href="../reference/errors.html#err-host-class-name-taken-load"><code>cannot declare class 'Beacon': the host binds a C++ class of that name; ...</code></a>, and the bound class stands. A script adds to a bound class by deriving from it (<code>class Lighthouse : Beacon</code>), and a class a namespace declares is its own name (<code>game::Beacon</code>).</li>
 <li><strong>Static phase.</strong> Declarations, schemas, serialization identities and the binding queue set themselves up at program start, in any file order, touching no engine.</li>
 <li><strong>Runtime phase.</strong> The host calls <code>engine::make()</code>, <code>jai::stdlib::register_all</code>, <code>jai::bind_registrar</code> once per engine, then any explicit binder chains, then scripts. Registrations may come in any order: a derived class registered before its <code>property_owner</code> base registers that base under its own name, and a later explicit registration of the base adopts the same definition and gives it the explicit name.</li>
 <li><strong>A bound member may name a class that registers later</strong>, its own class included. The engine's first load, check or host call into script raises one error listing every type still unregistered; register them and load again.</li>
@@ -290,9 +291,10 @@ threat 7 -&gt; 9</code></pre></div>
 <p>The walk is virtual: a base pointer to a derived object shows the whole chain. Each property carries <code>value_type_id()</code> (its C++ type) and <code>allow_save()</code>, and <code>Spawner::schema()</code> and <code>Spawner::all_property_names()</code> answer without an instance.</p>
 
 <h2 id="serialized">Serialized<a class="hlink" href="#serialized" aria-label="link">&#8203;</a></h2>
-<p>No save or load method was written; one call walks the same property manager. The outer level is the archive&#x27;s root record, whose <code>value0</code> holds the pointer you passed with its <code>$id</code>; the object is the <code>$val</code>. The signal&#x27;s named script-text receiver is saved with it:</p>
+<p>No save or load method was written; one call walks the same property manager. The outer level is the archive&#x27;s root record, whose <code>value0</code> holds the pointer you passed with its <code>$id</code>; the object is the <code>$val</code>. The signal&#x27;s named function receiver is saved with it, by name; the <code>hud</code> lambda is runtime-only:</p>
 <div class="codeblock cb-cpp" data-sample="binder-to-json"><span class="cb-label">C++</span><pre><code class="lang-cpp">eng-&gt;execute(R&quot;JAI(
-    gate.onWave.connect(&quot;logger&quot;, &quot;print(\&quot;wave logged\&quot;);&quot;);   // named script-text receiver
+    void log_wave(int wave) { print(&quot;wave logged&quot;); }
+    gate.onWave.connect(&quot;logger&quot;, log_wave);   // a named function: saved by its name
 )JAI&quot;);
 auto json = jai::to_json(*eng, gate);
 std::cout &lt;&lt; json &lt;&lt; &quot;\n&quot;;</code></pre></div>
@@ -304,12 +306,9 @@ std::cout &lt;&lt; json &lt;&lt; &quot;\n&quot;;</code></pre></div>
       "interval": 2.5,
       "level": 7,
       "onWave": {
-        "parameter_names": [],
-        "observers": [],
-        "owned_observers": {
+        "receivers": {
           "logger": {
-            "parameter_names": [],
-            "script": "print(\"wave logged\");"
+            "function": "log_wave"
           }
         }
       },
@@ -328,7 +327,7 @@ auto again  = jai::from_binary&lt;std::shared_ptr&lt;Spawner&gt;&gt;(*eng, bytes
 again-&gt;spawn_wave();   // receivers persist in binary too</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">wave logged</code></pre></div>
 <ul>
-<li><strong>Which receivers save.</strong> Script-text receivers persist. Function receivers (script lambdas and C++ callbacks) are runtime-only and are skipped without error.</li>
+<li><strong>Which receivers save.</strong> Named ones a load can find again: a script function by its name, a bound method by its object, a <code>connect_source</code> lambda or a text receiver as source. Plain lambdas and C++ callbacks are runtime-only (<a href="10-signals-properties.html#connections-that-save">Connections that save</a>).</li>
 <li><strong>By value or by pointer.</strong> A <code>property_owner</code> copies and moves, so <code>jai::from_json&lt;Spawner&gt;(*eng, jai::to_json(*eng, *gate))</code> returns one by value: its properties sit flat at the root, under its static type. A <code>shared_ptr</code> keeps identity and a derived object&#x27;s <code>$type</code>.</li>
 <li><strong>Across releases.</strong> JSON is the readable form for debugging and diffs, binary the compact one. Fields are found by name, so adding or removing one needs no migration, but neither layout is promised to load across 0.x releases (<a href="../stability.html">Stability</a>).</li>
 </ul>
@@ -355,7 +354,7 @@ robin has 12 arrows</code></pre></div>
 <p>The record, its loads and the property a binding keeps out of it: <a href="08-serialization.html#binding-records">a class you cannot edit</a>. <a href="08-serialization.html#four-ways">Four ways a class serializes</a> sets the intrusive and non-intrusive routes side by side, and <a href="08-serialization.html">Serialization</a> covers versioning, hooks, <code>$ref</code> aliasing and custom archives.</p>
 
 <h2 id="hot-reload-with-state-intact">Hot reload with state intact<a class="hlink" href="#hot-reload-with-state-intact" aria-label="link">&#8203;</a></h2>
-<p>A script class can derive a bound C++ class with no extra registration; <code>super(...)</code> calls the bound constructor. The C++ half of such an object is the same live object across reloads:</p>
+<p>A script class can derive a bound C++ class with no extra registration, unless its binding is <a href="17-host-api.html#final-host">final</a>; <code>super(...)</code> calls the bound constructor. The C++ half of such an object is the same live object across reloads:</p>
 <div class="codeblock cb-jai" data-host="Spawner registration" data-sample="binder-smart"><span class="cb-label">jaiscript (with the host above)</span><pre><code class="lang-jai">class SmartSpawner : Spawner {
     int aggression = 1;
     SmartSpawner() : super() {}
@@ -426,7 +425,7 @@ dot 11.0</code></pre></div>
 <div class="tablewrap"><table><thead><tr><th>Verb</th><th>What it binds</th></tr></thead><tbody>
 <tr><td><code>.constructor&lt;Args...&gt;(options...)</code></td><td>A constructor overload, resolved by arity and C++ parameter types. The options are <code>.method</code>'s.</td></tr>
 <tr><td><code>.method(name, &amp;T::fn)</code>, <code>.method(name, lambda)</code></td><td>A member function, or a lambda whose first parameter is <code>T&amp;</code> or <code>const T&amp;</code>.</td></tr>
-<tr><td><code>.method(name, fn, options...)</code>, <code>.static_method(name, fn, options...)</code></td><td>The trailing options, any number in any order: permissions the call requires, <code>jai::nodiscard</code> (<a href="17-host-api.html#nodiscard-host">a result the script must use</a>) and <code>jai::serial</code> (<a href="#parallel-calls">kept out of parallel bodies</a>): <code>jai::nodiscard, jai::serial, jai::permissions::filesystem</code>. <code>add_function</code> and <code>add_variadic_function</code> take the same list.</td></tr>
+<tr><td><code>.method(name, fn, options...)</code>, <code>.static_method(name, fn, options...)</code></td><td>The trailing options, any number in any order: permissions the call requires, <code>jai::nodiscard</code> (<a href="17-host-api.html#nodiscard-host">a result the script must use</a>), <code>jai::serial</code> (<a href="#parallel-calls">kept out of parallel bodies</a>) and <code>jai::exclude_execution_time</code> (<a href="05-safety-rails.html#what-the-clock-counts">a call the execution budget does not count</a>): <code>jai::nodiscard, jai::serial, jai::permissions::filesystem</code>. <code>add_function</code> and <code>add_variadic_function</code> take the same list.</td></tr>
 <tr><td><code>.property(name, &amp;T::member)</code></td><td>Field access, and a key of the class&#x27;s archive record when it has no route of its own or is a <code>property_owner</code>.</td></tr>
 <tr><td><code>.transient_property(name, &amp;T::member)</code></td><td>Field access its archive record leaves out.</td></tr>
 <tr><td><code>.base_class&lt;Base&gt;()</code></td><td>An inheritance edge.</td></tr>
@@ -450,7 +449,7 @@ dot 11.0</code></pre></div>
 <li>A <code>char</code> parameter (by value or <code>const char&amp;</code>), and a store to a <code>char</code> property, take a char or a one-character string. Any other length raises <code>Cannot convert 'string' to 'char': a char takes a string of exactly one character</code>.</li>
 </ul>
 <p><strong>Operators</strong> are methods named by token, following the script rules of the <a href="../guide/04-operators.html">operators chapter</a>. A type can start as a script class and move to C++ without its call sites changing.</p>
-<p>The tokens, the operators one binding supplies, <code>++</code> and <code>--</code>, compound and reflected forms, overload choice and the no-match error: <a href="../reference/host.html#binder-operators">bound operators</a>.</p>
+<p>The tokens, the operators one binding supplies, <code>++</code> and <code>--</code>, compound and reflected forms, overload choice and the no-match error: <a href="../reference/host.html#binder-operators">bound operators</a>. An operator registered as a global function, <code>eng-&gt;add_function("+", [](Money&amp; a, const Money&amp; b) { ... })</code>, answers only the operands its overloads take: <code>1 + 2</code> in the same engine stays the builtin addition.</p>
 
 <h3 id="serial-only-constructors">Serial-only constructors<a class="hlink" href="#serial-only-constructors" aria-label="link">&#8203;</a></h3>
 <p>A <code>parallel_for</code> body may construct bound classes and script classes over them (<a href="../guide/16-parallel.html#constructing-objects">parallel loops</a>); the constructor and destructor then run on a worker thread. That is safe for a constructor that only builds its own members. One that touches state other objects share (a registry, a cache, a service lookup, a signal hub) is bound with <code>jai::serial</code>, the trailing option <code>.method</code> takes: <code>.constructor&lt;&gt;(jai::serial)</code>. The mark covers every constructor of the class, the automatic ones included. A body that constructs the class, or a script class over it, is refused when the statement is reached, before any element runs.</p>
@@ -519,7 +518,7 @@ s.onWave.connect("logger", "print(\"wave logged\");");     // named script-text 
 s.onWave.connected("hud");                                 // true
 s.onWave.disconnect("hud");</code></pre></div>
 <ul>
-<li><strong>One generic <code>Signal</code> class serves every signature.</strong> Reading a signal member hands script a view over three type-erased operations (connect, disconnect, connected) built where the emitter&#x27;s type is known.</li>
+<li><strong>One generic <code>signal</code> class serves every signature.</strong> Reading a signal member hands script a view over three type-erased operations (connect, disconnect, connected) built where the emitter&#x27;s type is known.</li>
 <li><strong>The lookup walks the inheritance chain</strong>, so a signal declared on a base connects through a derived registration, in either registration order.</li>
 <li><strong>Script-text receivers work however the object was made</strong> (in script, in C++, or by a load): connecting gives the emitter the binding engine.</li>
 <li><strong>A view shares the signal&#x27;s state.</strong> It follows its owner through moves; once the owner is gone it reports nothing connected and its <code>connect</code> fails with <code>Signal view is not backed by a live signal</code>.</li>
@@ -608,7 +607,7 @@ Box&lt;float&gt; f;
 f.value = 2.5;
 Box&lt;int32&gt; w;            // Box&lt;int32_t&gt;, bound with Box&lt;int64_t&gt;
 print("{} {} {}", b.get(), f.get(), w.get());
-print(type_of(b), " ", type_of(f), " ", type_of(w));</code></pre></div>
+print(reflect::type_of(b), " ", reflect::type_of(f), " ", reflect::type_of(w));</code></pre></div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">sum 3.5
 4 2.5 0
 Box&lt;int&gt; Box&lt;float&gt; Box&lt;int32&gt;</code></pre></div>
@@ -616,6 +615,8 @@ Box&lt;int&gt; Box&lt;float&gt; Box&lt;int32&gt;</code></pre></div>
 <p><code>int64_t</code> is <code>int</code> and <code>std::vector&lt;E&gt;</code> is <code>array&lt;E&gt;</code>; every spelling: <a href="../reference/host.html#binder-template-names">template instantiation names</a>.</p>
 <ul>
 <li>Binding one width of a numeric argument binds its 32/64-bit sibling too: <code>Box&lt;int32&gt;</code> with <code>Box&lt;int&gt;</code>, <code>Box&lt;float32&gt;</code> with <code>Box&lt;float&gt;</code>.</li>
+<li>A script reaches the instantiations the host bound and no other: C++ compiles only the ones the host names. Any other spelling of the template is a load error that lists them, wherever the script writes the type: <code>Box&lt;bool&gt; b;</code> fails with <a href="../reference/errors.html#err-instantiation-not-bound-load"><code>'Box&lt;bool&gt;' is not bound: the host binds Box&lt;int&gt;, Box&lt;float&gt;, Box&lt;int32&gt;, Box&lt;float32&gt;</code></a>. Spacing never matters: <code>Box&lt; int &gt;</code> is <code>Box&lt;int&gt;</code>.</li>
+<li>Each bound instantiation is its own class: a typed slot declared <code>Box&lt;float&gt;</code> refuses a <code>Box&lt;int&gt;</code> at load (<code>cannot pass 'Box&lt;int&gt;' to 'b' declared 'Box&lt;float&gt;'</code>), as it refuses any class that is not its own, a subclass, or a source one of its bound one-parameter constructors takes (<a href="06-static-checking.html#one-conversion-table">one conversion table</a>).</li>
 <li>Two C++ types the script spells alike (<code>int</code> and <code>long</code> on MSVC) cannot both bind: the second <code>bind_static_type</code> throws.</li>
 <li>A <code>jai::registrar</code> for a template instantiation needs an explicit name; without one, <code>jai::registrar&lt;Point&lt;int&gt;, Ctx&gt;</code> is a compile error that points to the named constructor. A template-syntax name such as <code>"Point&lt;int&gt;"</code> registers the template name with the parser. <code>Point</code> stays an ordinary identifier: only <code>Point&lt;</code> followed by a type reads as the template.</li>
 </ul>
@@ -659,7 +660,7 @@ the host reads 12</code></pre></div>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

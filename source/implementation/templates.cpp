@@ -1,9 +1,10 @@
 // HTML templates (docs/site/guide/19-templates.html, detail/template_library.hpp): the web::html value, the splice and join
-// builtins a template body desugars to, template(...)'s run-time path, and scoped_template's evaluator. The evaluator walks
+// builtins a template body desugars to, template(...)'s run-time path, and untrusted_template's evaluator. The evaluator walks
 // the parsed body itself: every operation it runs is listed here, so an untrusted template reaches no global, no function,
 // no host binding and no script code.
 
 #include <jaiscript/detail/template_library.hpp>
+#include <jaiscript/detail/load_collector.hpp>
 #include <jaiscript/core/engine.hpp>
 #include <jaiscript/core/dynamic_binder.hpp>
 #include <jaiscript/core/execution_backend.hpp>
@@ -34,7 +35,6 @@
 
 #include <cctype>
 #include <filesystem>
-#include <fstream>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -52,12 +52,12 @@ namespace {
 		std::string to_string() const { return text; }
 	};
 
-	struct scoped_program {
-		std::shared_ptr<std::vector<token>> tokens;   // the body's identifiers view the symbolizer; the tokens own nothing the tree needs
-		expression_ptr body;
+	struct untrusted_program {
+		expression_ptr body;   // its names view the symbolizer: the tree needs nothing of the tokens it was parsed from
 	};
 
-	struct scoped_file_entry {
+	// each stamp here is the one the engine's loader gave the text it stands for (detail/source_loading.hpp)
+	struct untrusted_file_entry {
 		std::string content;
 		bool loaded = false;
 		uint64_t mtime = 0, size = 0;
@@ -72,7 +72,7 @@ namespace {
 		std::string source;
 		int64_t next_check = 0;
 		bool failed = false;
-		uint64_t failed_mtime = 0, failed_size = 0;
+		std::vector<source_stamp> failed_files;   // what the failing load read: the failure stands until one of them moves
 	};
 
 	struct library {
@@ -80,8 +80,8 @@ namespace {
 		uint64_t html_type = 0;
 		const class_definition* html_class = nullptr;
 		uint64_t joiner = 0, splice = 0, raw = 0, format_value = 0, args = 0;
-		std::unordered_map<std::string, std::shared_ptr<const scoped_program>> scoped_programs;
-		std::unordered_map<std::string, scoped_file_entry> scoped_files;
+		std::unordered_map<std::string, std::shared_ptr<const untrusted_program>> untrusted_programs;
+		std::unordered_map<std::string, untrusted_file_entry> untrusted_files;
 		std::unordered_map<std::string, dynamic_entry> dynamic_templates;
 		std::unique_ptr<builtin_method_registries> methods;
 
@@ -121,24 +121,6 @@ namespace {
 			case script_value::TYPEID_FUNCTION: return "function";
 			default: return "object";
 		}
-	}
-
-	bool stat_file(const std::string& a_path, uint64_t& a_mtime, uint64_t& a_size) {
-		std::error_code ec;
-		const auto when = std::filesystem::last_write_time(a_path, ec);
-		if (ec) { return false; }
-		const auto bytes = std::filesystem::file_size(a_path, ec);
-		if (ec) { return false; }
-		a_mtime = static_cast<uint64_t>(when.time_since_epoch().count());
-		a_size = static_cast<uint64_t>(bytes);
-		return true;
-	}
-
-	bool read_whole_file(const std::string& a_path, std::string& a_out) {
-		std::ifstream file(a_path, std::ios::binary);
-		if (!file) { return false; }
-		a_out.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-		return true;
 	}
 
 	// a lies inside dir: both canonical, dir's components a prefix of a's
@@ -210,7 +192,7 @@ namespace {
 		return {};
 	}
 
-	// ------------------------------------------------------------------ the scoped rules
+	// ------------------------------------------------------------------ the untrusted rules
 
 	// The ids the rules name
 	struct library_view_ids {
@@ -220,7 +202,7 @@ namespace {
 			: joiner(a_symbols.intern(k_joiner)), splice(a_symbols.intern(k_splice)), format_value(a_symbols.intern("format_value")),
 			  args(a_symbols.intern("args")), raw(a_symbols.intern("raw")), string_ns(a_symbols.intern("string")), array_ns(a_symbols.intern("array")),
 			  map_ns(a_symbols.intern("map")) {}
-		// string::f, array::f, map::f: the engine's builtins over copies, the only names past args a scoped template reaches
+		// string::f, array::f, map::f: the engine's builtins over copies, the only names past args an untrusted template reaches
 		bool builtin_namespace(const member_expr* a_member) const {
 			if (!a_member->is_static || !a_member->object || a_member->object->get_type() != node_type::identifier_expr) { return false; }
 			const auto* base = static_cast<const identifier_expr*>(a_member->object.get());
@@ -255,8 +237,8 @@ namespace {
 				case node_type::identifier_expr: {
 					const auto* id = static_cast<const identifier_expr*>(e);
 					if (id->global_qualified) {
-						if (id->symbol_id == ids_.raw) { refuse(e, "raw() is not allowed in a scoped template: its output is always escaped"); }
-						else { refuse(e, "a scoped template sees only args: '" + std::string(id->name) + "' is not available"); }
+						if (id->symbol_id == ids_.raw) { refuse(e, "raw() is not allowed in an untrusted template: its output is always escaped"); }
+						else { refuse(e, "an untrusted template sees only args: '" + std::string(id->name) + "' is not available"); }
 					}
 					return;
 				}
@@ -270,7 +252,7 @@ namespace {
 					const auto* u = static_cast<const unary_expr*>(e);
 					const token_type op = u->op.type;
 					if (op != token_type::bang && op != token_type::minus && op != token_type::plus && op != token_type::tilde) {
-						refuse(e, "a scoped template does not assign: '" + std::string(u->op.lexeme) + "' is not allowed");
+						refuse(e, "an untrusted template does not assign: '" + std::string(u->op.lexeme) + "' is not allowed");
 						return;
 					}
 					walk(u->operand.get());
@@ -292,7 +274,7 @@ namespace {
 				case node_type::member_expr: {
 					const auto* m = static_cast<const member_expr*>(e);
 					if (m->is_static && ids_.builtin_namespace(m)) { return; }
-					if (m->is_static) { refuse(e, "a scoped template sees only args: '::" + std::string(m->member) + "' is not available"); return; }
+					if (m->is_static) { refuse(e, "an untrusted template sees only args: '::" + std::string(m->member) + "' is not available"); return; }
 					if (m->object && m->object->get_type() == node_type::identifier_expr && args_shadowed_ == 0) {
 						const auto* base = static_cast<const identifier_expr*>(m->object.get());
 						if (!base->global_qualified && base->symbol_id == ids_.args) { refuse(e, map_member_text(m->member)); return; }
@@ -315,12 +297,12 @@ namespace {
 							for (const auto& a : c->arguments) { walk(a.get()); }
 							return;
 						}
-						if (id->symbol_id == ids_.raw && id->global_qualified) { refuse(e, "raw() is not allowed in a scoped template: its output is always escaped"); return; }
+						if (id->symbol_id == ids_.raw && id->global_qualified) { refuse(e, "raw() is not allowed in an untrusted template: its output is always escaped"); return; }
 						if (id->global_qualified) {
-							refuse(e, "a scoped template calls only built-in methods and the string::, array:: and map:: functions: '" + std::string(id->name) + "(...)' is not allowed");
+							refuse(e, "an untrusted template calls only built-in methods and the string::, array:: and map:: functions: '" + std::string(id->name) + "(...)' is not allowed");
 							return;
 						}
-						refuse(e, "a scoped template does not call function values: '" + std::string(id->name) + "(...)' is not allowed");
+						refuse(e, "an untrusted template does not call function values: '" + std::string(id->name) + "(...)' is not allowed");
 						return;
 					}
 					if (callee->get_type() == node_type::member_expr && !static_cast<const member_expr*>(callee)->is_static) {
@@ -333,23 +315,23 @@ namespace {
 						return;
 					}
 					if (callee->get_type() == node_type::member_expr) {
-						refuse(e, "a scoped template calls only built-in methods and the string::, array:: and map:: functions: '" + std::string(static_cast<const member_expr*>(callee)->member) + "(...)' is not allowed");
+						refuse(e, "an untrusted template calls only built-in methods and the string::, array:: and map:: functions: '" + std::string(static_cast<const member_expr*>(callee)->member) + "(...)' is not allowed");
 						return;
 					}
-					refuse(e, "a scoped template does not call function values");
+					refuse(e, "an untrusted template does not call function values");
 					return;
 				}
 				case node_type::lambda_expr: {
 					const auto* l = static_cast<const lambda_expr*>(e);
 					for (const auto& p : l->parameters) {
 						if (p.is_reference || p.default_value || (p.type && p.type->base_type != script_value_type::jai_any_type)) {
-							refuse(e, "a scoped template's lambda takes plain parameter names");
+							refuse(e, "an untrusted template's lambda takes plain parameter names");
 							return;
 						}
 					}
-					if (!l->captures.empty()) { refuse(e, "a scoped template's lambda takes plain parameter names"); return; }
+					if (!l->captures.empty()) { refuse(e, "an untrusted template's lambda takes plain parameter names"); return; }
 					const expression* value = lambda_value(*l);
-					if (!value) { refuse(e, "a scoped template's lambda is one expression (x => expr)"); return; }
+					if (!value) { refuse(e, "an untrusted template's lambda is one expression (x => expr)"); return; }
 					const bool shadows = std::any_of(l->parameters.begin(), l->parameters.end(), [](const parameter& p) { return p.name == "args"; });
 					args_shadowed_ += shadows;
 					walk(value);
@@ -357,7 +339,7 @@ namespace {
 					return;
 				}
 				default:
-					refuse(e, std::string("a scoped template is one expression over args: ") + construct_name(e->get_type()) + " is not allowed");
+					refuse(e, std::string("an untrusted template is one expression over args: ") + construct_name(e->get_type()) + " is not allowed");
 					return;
 			}
 		}
@@ -385,18 +367,18 @@ namespace {
 		void refuse(const expression* e, std::string a_message) { out_.push_back({e->location, std::move(a_message)}); }
 	};
 
-	// ------------------------------------------------------------------ the scoped evaluator
+	// ------------------------------------------------------------------ the untrusted evaluator
 
 	struct sandbox_lambda;
 
-	class scoped_render {
+	class untrusted_render {
 	public:
-		scoped_render(library& a_lib, const std::shared_ptr<const scoped_program>& a_program)
+		untrusted_render(library& a_lib, const std::shared_ptr<const untrusted_program>& a_program)
 			: lib_(a_lib), eng_(a_lib.eng), program_(a_program), limits_(engine_access::execution_limits(*a_lib.eng)),
-			  ids_(*engine_access::get_symbolizer(*a_lib.eng)), limit_(limits_.scoped_template_output_limit) {}
-		~scoped_render() { *alive_ = false; }
-		scoped_render(const scoped_render&) = delete;
-		scoped_render& operator=(const scoped_render&) = delete;
+			  ids_(*engine_access::get_symbolizer(*a_lib.eng)), limit_(limits_.untrusted_template_output_limit) {}
+		~untrusted_render() { *alive_ = false; }
+		untrusted_render(const untrusted_render&) = delete;
+		untrusted_render& operator=(const untrusted_render&) = delete;
 		const std::shared_ptr<bool>& alive() const { return alive_; }
 
 		R render(script_value a_args) {
@@ -428,7 +410,7 @@ namespace {
 	private:
 		library& lib_;
 		engine* eng_;
-		std::shared_ptr<const scoped_program> program_;
+		std::shared_ptr<const untrusted_program> program_;
 		execution_limits& limits_;
 		library_view_ids ids_;
 		std::vector<std::pair<uint64_t, script_value>> names_;
@@ -477,7 +459,7 @@ namespace {
 		}
 
 		R refuse_object(std::string_view a_what) const {
-			return refusal(lib_, "a scoped template does not " + std::string(a_what) + " a class instance, a host object or a function: its code could run");
+			return refusal(lib_, "an untrusted template does not " + std::string(a_what) + " a class instance, a host object or a function: its code could run");
 		}
 
 		R literal(const literal_expr* a_literal) const {
@@ -513,22 +495,22 @@ namespace {
 		}
 	};
 
-	// A scoped template's lambda: a host function only its render runs, holding the names it closed over
+	// An untrusted template's lambda: a host function only its render runs, holding the names it closed over
 	struct sandbox_lambda {
-		scoped_render* render = nullptr;
+		untrusted_render* render = nullptr;
 		std::shared_ptr<bool> alive;
-		std::shared_ptr<const scoped_program> program;
+		std::shared_ptr<const untrusted_program> program;
 		const lambda_expr* lambda = nullptr;
 		std::shared_ptr<std::vector<std::pair<uint64_t, script_value>>> closure;
 		R operator()(const std::vector<script_value>& a_args) const;
 	};
 
 	R sandbox_lambda::operator()(const std::vector<script_value>& a_args) const {
-		if (!*alive) { return R(make_error_code(runtime_error_code::invalid_operation), "a scoped template's lambda runs only inside its render"); }
+		if (!*alive) { return R(make_error_code(runtime_error_code::invalid_operation), "an untrusted template's lambda runs only inside its render"); }
 		return render->call_lambda(*lambda, *closure, a_args);
 	}
 
-	bool scoped_render::object_like(const script_value& v) {
+	bool untrusted_render::object_like(const script_value& v) {
 		switch (v.raw_storage_index()) {
 			case script_value::TYPEID_OBJECT:
 			case script_value::TYPEID_WEAK_PTR:
@@ -542,10 +524,10 @@ namespace {
 		}
 	}
 
-	checked_result<std::string> scoped_render::plain_text(const script_value& v, const std::string* a_spec) {
+	checked_result<std::string> untrusted_render::plain_text(const script_value& v, const std::string* a_spec) {
 		if (holds_object(v)) {
 			return checked_result<std::string>(make_error_code(runtime_error_code::invalid_operation), "{0}",
-				engine_access::park_error_text(*eng_, "a scoped template does not splice a class instance, a host object or a function: its code could run"));
+				engine_access::park_error_text(*eng_, "an untrusted template does not splice a class instance, a host object or a function: its code could run"));
 		}
 		if (a_spec) {
 			format_spec spec;
@@ -563,7 +545,7 @@ namespace {
 		return value_text(v, own_text_hook{});
 	}
 
-	R scoped_render::eval(const expression* e) {
+	R untrusted_render::eval(const expression* e) {
 		stack_.guard(e->location);
 		if (auto spent = budget(); !spent) { return spent.error_value(); }
 		switch (e->get_type()) {
@@ -573,7 +555,7 @@ namespace {
 				for (size_t i = names_.size(); i-- > 0;) {
 					if (names_[i].first == id->symbol_id) { return names_[i].second; }
 				}
-				return refusal(lib_, "a scoped template sees only args: '" + std::string(id->name) + "' is not available");
+				return refusal(lib_, "an untrusted template sees only args: '" + std::string(id->name) + "' is not available");
 			}
 			case node_type::binary_expr: return eval_binary(static_cast<const binary_expr*>(e));
 			case node_type::unary_expr: return eval_unary(static_cast<const unary_expr*>(e));
@@ -618,11 +600,11 @@ namespace {
 				return script_value::make_function(script_function(std::move(fn)), eng_);
 			}
 			default:
-				return refusal(lib_, "a scoped template is one expression over args");
+				return refusal(lib_, "an untrusted template is one expression over args");
 		}
 	}
 
-	R scoped_render::eval_unary(const unary_expr* u) {
+	R untrusted_render::eval_unary(const unary_expr* u) {
 		auto operand = eval(u->operand.get());
 		if (!operand) { return operand; }
 		const script_value v = operand.value().deref();
@@ -644,7 +626,7 @@ namespace {
 		}
 	}
 
-	R scoped_render::eval_binary(const binary_expr* b) {
+	R untrusted_render::eval_binary(const binary_expr* b) {
 		const token_type op = b->op.type;
 		auto left = eval(b->left.get());
 		if (!left) { return left; }
@@ -675,11 +657,11 @@ namespace {
 			case token_type::equal_equal: case token_type::bang_equal:
 				return compare(op, l, r);
 			default:
-				return refusal(lib_, "a scoped template does not apply '" + std::string(b->op.lexeme) + "'");
+				return refusal(lib_, "an untrusted template does not apply '" + std::string(b->op.lexeme) + "'");
 		}
 	}
 
-	R scoped_render::arithmetic(token_type a_op, const script_value& a_left, const script_value& a_right, bool a_joins_text) {
+	R untrusted_render::arithmetic(token_type a_op, const script_value& a_left, const script_value& a_right, bool a_joins_text) {
 		script_value l = utf8_operands(a_left.raw_storage_index(), a_right.raw_storage_index()) ? utf8_unwrapped(a_left, eng_) : a_left;
 		script_value r = utf8_operands(a_left.raw_storage_index(), a_right.raw_storage_index()) ? utf8_unwrapped(a_right, eng_) : a_right;
 		if (char_operands_promote(l.raw_storage_index(), r.raw_storage_index())) { l = char_promoted(l, eng_); r = char_promoted(r, eng_); }
@@ -718,7 +700,7 @@ namespace {
 		}
 	}
 
-	R scoped_render::compare(token_type a_op, const script_value& a_left, const script_value& a_right) {
+	R untrusted_render::compare(token_type a_op, const script_value& a_left, const script_value& a_right) {
 		script_value l = utf8_operands(a_left.raw_storage_index(), a_right.raw_storage_index()) ? utf8_unwrapped(a_left, eng_) : a_left;
 		script_value r = utf8_operands(a_left.raw_storage_index(), a_right.raw_storage_index()) ? utf8_unwrapped(a_right, eng_) : a_right;
 		if (char_operands_promote(l.raw_storage_index(), r.raw_storage_index())) { l = char_promoted(l, eng_); r = char_promoted(r, eng_); }
@@ -748,7 +730,7 @@ namespace {
 		}
 	}
 
-	R scoped_render::eval_index(const script_value& a_container, const script_value& a_key) {
+	R untrusted_render::eval_index(const script_value& a_container, const script_value& a_key) {
 		if (object_like(a_container)) { return refuse_object("index"); }
 		if (object_like(a_key)) { return refuse_object("index by"); }
 		switch (a_container.raw_storage_index()) {
@@ -777,14 +759,14 @@ namespace {
 				return script_value(script_char(text[static_cast<size_t>(i)]), eng_);
 			}
 			default:
-				return refusal(lib_, "a scoped template indexes arrays, maps and strings");
+				return refusal(lib_, "an untrusted template indexes arrays, maps and strings");
 		}
 	}
 
-	R scoped_render::eval_member(const member_expr* m) {
+	R untrusted_render::eval_member(const member_expr* m) {
 		if (m->is_static) {
 			const script_value* held = builtin_namespace_value(m);
-			if (!held || held->is_function()) { return refusal(lib_, "a scoped template sees only args: '::" + std::string(m->member) + "' is not available"); }
+			if (!held || held->is_function()) { return refusal(lib_, "an untrusted template sees only args: '::" + std::string(m->member) + "' is not available"); }
 			return script_value(held->deref());
 		}
 		auto object = eval(m->object.get());
@@ -811,14 +793,14 @@ namespace {
 					if (const script_value* field = instance->find_field_value(id)) { return script_value(field->deref()); }
 				}
 			}
-			return refusal(lib_, "a scoped template reads the plain fields of a script class instance: '" + std::string(name) + "' is not one");
+			return refusal(lib_, "an untrusted template reads the plain fields of a script class instance: '" + std::string(name) + "' is not one");
 		}
 		return refusal(lib_, std::string(kind_name(v)) + " has no member '" + std::string(name) + "'");
 	}
 
 	// A splice counts the bytes it writes and a body its own text, so a nested template's text counts each time it is spliced:
 	// the limit bounds the work a render does
-	R scoped_render::join(const call_expr* c) {
+	R untrusted_render::join(const call_expr* c) {
 		std::string out;
 		for (const auto& part : c->arguments) {
 			auto v = eval(part.get());
@@ -831,15 +813,15 @@ namespace {
 		return lib_.make_html(std::move(out));
 	}
 
-	JAI_NOINLINE R scoped_render::output_limit() const {
-		return refusal(lib_, "a scoped template's output passed its " + std::to_string(limit_) + "-byte limit: the host raises it with engine::scoped_template_output_limit");
+	JAI_NOINLINE R untrusted_render::output_limit() const {
+		return refusal(lib_, "an untrusted template's output passed its " + std::to_string(limit_) + "-byte limit: the host raises it with engine::untrusted_template_output_limit");
 	}
 
 	JAI_NOINLINE R trusted_output_limit(const library& a_lib, size_t a_limit) {
 		return refusal(a_lib, "template()'s output passed its " + std::to_string(a_limit) + "-byte limit: the host raises it with engine::template_output_limit");
 	}
 
-	R scoped_render::splice(const call_expr* c) {
+	R untrusted_render::splice(const call_expr* c) {
 		auto v = eval(c->arguments[0].get());
 		if (!v) { return v; }
 		std::string spec_text, description;
@@ -859,7 +841,7 @@ namespace {
 		return script_value(std::move(out), eng_);
 	}
 
-	R scoped_render::eval_call(const call_expr* c) {
+	R untrusted_render::eval_call(const call_expr* c) {
 		const expression* callee = c->callee.get();
 		if (callee->get_type() == node_type::identifier_expr) {
 			const uint64_t id = static_cast<const identifier_expr*>(callee)->symbol_id;
@@ -879,13 +861,13 @@ namespace {
 				if (!text) { return text.error_value(); }
 				return script_value(std::move(text.value()), eng_);
 			}
-			return refusal(lib_, "a scoped template calls only built-in methods and the string::, array:: and map:: functions");
+			return refusal(lib_, "an untrusted template calls only built-in methods and the string::, array:: and map:: functions");
 		}
 		if (callee->get_type() == node_type::member_expr && static_cast<const member_expr*>(callee)->is_static) {
 			return namespace_call(c, static_cast<const member_expr*>(callee));
 		}
 		if (callee->get_type() != node_type::member_expr) {
-			return refusal(lib_, "a scoped template does not call function values");
+			return refusal(lib_, "an untrusted template does not call function values");
 		}
 		const auto* m = static_cast<const member_expr*>(callee);
 		auto receiver = eval(m->object.get());
@@ -902,7 +884,7 @@ namespace {
 	}
 
 	// The engine's own function or value in string::, array:: or map::; null for anything else, a script's own function there included
-	const script_value* scoped_render::builtin_namespace_value(const member_expr* a_member) const {
+	const script_value* untrusted_render::builtin_namespace_value(const member_expr* a_member) const {
 		if (!ids_.builtin_namespace(a_member)) { return nullptr; }
 		const auto* base = static_cast<const identifier_expr*>(a_member->object.get());
 		auto& spaces = engine_access::script_namespaces(*eng_);
@@ -919,10 +901,10 @@ namespace {
 		return &v;
 	}
 
-	R scoped_render::namespace_call(const call_expr* c, const member_expr* a_callee) {
+	R untrusted_render::namespace_call(const call_expr* c, const member_expr* a_callee) {
 		const script_value* held = builtin_namespace_value(a_callee);
 		if (!held || !held->is_function()) {
-			return refusal(lib_, "a scoped template calls only built-in methods and the string::, array:: and map:: functions: '" + std::string(a_callee->member) + "(...)' is not allowed");
+			return refusal(lib_, "an untrusted template calls only built-in methods and the string::, array:: and map:: functions: '" + std::string(a_callee->member) + "(...)' is not allowed");
 		}
 		const script_value fn = *held;
 		std::vector<script_value> args;
@@ -948,7 +930,7 @@ namespace {
 	}
 	bool sandbox_unwinding(void*) { return false; }
 
-	R scoped_render::method(const script_value& a_receiver, const member_expr* a_callee, std::vector<script_value> a_args) {
+	R untrusted_render::method(const script_value& a_receiver, const member_expr* a_callee, std::vector<script_value> a_args) {
 		const std::string_view name = a_callee->member;
 		const uint64_t id = a_callee->member_id != UINT64_MAX ? a_callee->member_id : symbols().intern(name);
 		if (object_like(a_receiver)) { return refuse_object("call a method of"); }
@@ -995,38 +977,39 @@ namespace {
 		return result;
 	}
 
-	std::shared_ptr<const scoped_program> compile_scoped(library& a_lib, const std::string& a_content, const std::string& a_label, std::string& a_error) {
+	std::shared_ptr<const untrusted_program> compile_scoped(library& a_lib, const std::string& a_content, const std::string& a_label, std::string& a_error) {
 		const std::string key = a_label + '\n' + a_content;
-		if (auto it = a_lib.scoped_programs.find(key); it != a_lib.scoped_programs.end()) { return it->second; }
+		if (auto it = a_lib.untrusted_programs.find(key); it != a_lib.untrusted_programs.end()) { return it->second; }
+		load_phase_scope reporting(engine_access::load_report_collector(*a_lib.eng), a_label, load_phase::template_compile);
 		string_symbolizer* symbols = engine_access::get_symbolizer(*a_lib.eng);
-		auto program = std::make_shared<scoped_program>();
+		auto program = std::make_shared<untrusted_program>();
 		lexer lex(a_content, symbols, a_label);
-		program->tokens = std::make_shared<std::vector<token>>(lex.tokenize_template(a_lib.joiner, a_lib.splice));
+		const std::vector<token> tokens = lex.tokenize_template(a_lib.joiner, a_lib.splice);
 		static const std::unordered_set<std::string> no_template_types;
-		parser prs(*program->tokens, symbols, a_lib.eng, no_template_types, a_label);
+		parser prs(tokens, symbols, a_lib.eng, no_template_types, a_label);
 		prs.source_text(a_content);
-		auto body = prs.parse_scoped_template_body();
+		auto body = prs.parse_untrusted_template_body();
 		if (!body) {
 			a_error = format_error(body, *symbols);
 			return nullptr;
 		}
 		program->body = std::move(body.value());
-		if (a_lib.scoped_programs.size() >= 256) { a_lib.scoped_programs.clear(); }
-		a_lib.scoped_programs.emplace(key, program);
+		if (a_lib.untrusted_programs.size() >= 256) { a_lib.untrusted_programs.clear(); }
+		a_lib.untrusted_programs.emplace(key, program);
 		return program;
 	}
 
-	R render_scoped(library& a_lib, const std::shared_ptr<const scoped_program>& a_program, const script_value& a_data) {
+	R render_scoped(library& a_lib, const std::shared_ptr<const untrusted_program>& a_program, const script_value& a_data) {
 		const script_value& data = a_data.deref();
-		if (data.raw_storage_index() != script_value::TYPEID_MAP) { return a_lib.refused("scoped_template's second argument is a map"); }
-		scoped_render render(a_lib, a_program);
+		if (data.raw_storage_index() != script_value::TYPEID_MAP) { return a_lib.refused("untrusted_template's second argument is a map"); }
+		untrusted_render render(a_lib, a_program);
 		R result = render.render(data.clone());
 		return result;
 	}
 
 } // namespace
 
-void scoped_violations(const expression& body, string_symbolizer& symbols, std::vector<violation>& out) {
+void untrusted_violations(const expression& body, string_symbolizer& symbols, std::vector<violation>& out) {
 	rule_walk walk(symbols, out);
 	try {
 		walk.walk(&body);
@@ -1035,14 +1018,14 @@ void scoped_violations(const expression& body, string_symbolizer& symbols, std::
 	}
 }
 
-scoped_file resolve_scoped_file(engine& eng, const std::string& path, const std::string& from) {
+untrusted_file resolve_untrusted_file(engine& eng, const std::string& path, const std::string& from) {
 	namespace fs = std::filesystem;
-	scoped_file result;
+	untrusted_file result;
 	const fs::path asked = fs::path(path);
 	// a drive prefix refuses on every platform, where only Windows' fs::path gives it a root name
 	const bool names_a_drive = path.size() >= 2 && path[1] == ':' && std::isalpha(static_cast<unsigned char>(path[0]));
 	if (path.empty() || path.front() == '/' || path.front() == '\\' || names_a_drive || asked.has_root_name() || asked.has_root_directory()) {
-		result.error = "scoped_template: '" + path + "' is not a path relative to its template directories";
+		result.error = "untrusted_template: '" + path + "' is not a path relative to its template directories";
 		return result;
 	}
 	size_t start = 0;
@@ -1050,7 +1033,7 @@ scoped_file resolve_scoped_file(engine& eng, const std::string& path, const std:
 		const size_t end = path.find_first_of("/\\", start);
 		const std::string segment = path.substr(start, end == std::string::npos ? std::string::npos : end - start);
 		if (segment == "..") {
-			result.error = "scoped_template: '" + path + "' names a parent directory (..)";
+			result.error = "untrusted_template: '" + path + "' names a parent directory (..)";
 			return result;
 		}
 		if (end == std::string::npos) { break; }
@@ -1058,7 +1041,7 @@ scoped_file resolve_scoped_file(engine& eng, const std::string& path, const std:
 	}
 	std::error_code ec;
 	bool escaped = false;
-	for (const std::string& listed : eng.scoped_template_dirs()) {
+	for (const std::string& listed : eng.untrusted_template_dirs()) {
 		auto located = resolve_on_import_ladder(listed, &eng, from);   // a relative folder resolves as an import's file does
 		if (!located) { continue; }
 		const fs::path folder = fs::weakly_canonical(fs::path(located.value()), ec);
@@ -1069,8 +1052,8 @@ scoped_file resolve_scoped_file(engine& eng, const std::string& path, const std:
 		result.resolved = candidate.string();
 		return result;
 	}
-	result.error = escaped ? "scoped_template: '" + path + "' leaves its template directory through a link"
-	                       : "template file '" + path + "' not found in the scoped template directories";
+	result.error = escaped ? "untrusted_template: '" + path + "' leaves its template directory through a link"
+	                       : "template file '" + path + "' not found in the untrusted template directories";
 	return result;
 }
 
@@ -1092,10 +1075,10 @@ void register_library(engine& eng) {
 
 	auto& reflect_space = engine_access::script_namespaces(eng)[engine_access::symbolize(eng, "reflect")];
 	if (!reflect_space) { reflect_space = std::make_shared<script_namespace_data>(); }
-	reflect_space->variables[engine_access::symbolize(eng, "scoped_template_dirs")] = script_value::make_function([lib](const std::vector<script_value>& a_args) -> R {
-		if (!a_args.empty()) { return R(make_error_code(runtime_error_code::argument_count_mismatch), "reflect::scoped_template_dirs takes no arguments"); }
+	reflect_space->variables[engine_access::symbolize(eng, "untrusted_template_dirs")] = script_value::make_function([lib](const std::vector<script_value>& a_args) -> R {
+		if (!a_args.empty()) { return R(make_error_code(runtime_error_code::argument_count_mismatch), "reflect::untrusted_template_dirs takes no arguments"); }
 		script_value dirs = script_value::make_array(engine_access::get_type_info_string(*lib->eng), lib->eng);
-		for (const auto& dir : lib->eng->scoped_template_dirs()) { dirs.unchecked_get_array_storage()->push(script_value(dir, lib->eng)); }
+		for (const auto& dir : lib->eng->untrusted_template_dirs()) { dirs.unchecked_get_array_storage()->push(script_value(dir, lib->eng)); }
 		return dirs;
 	}, &eng);
 
@@ -1136,46 +1119,51 @@ void register_library(engine& eng) {
 		return lib->make_html(std::move(text.value()));
 	}, serial);
 
-	eng.add_variadic_function(std::string(k_scoped), [lib](const std::vector<script_value>& a_args) -> R {
-		if (a_args.size() != 3 || !a_args[0].deref().is_string() || !a_args[1].deref().is_string()) { return lib->refused("scoped_template_text(text, map) takes a text and a map"); }
-		if (auto allowed = lib->eng->require_permission(permissions::scoped_template); !allowed) { return allowed.error_value(); }
+	eng.add_variadic_function(std::string(k_untrusted), [lib](const std::vector<script_value>& a_args) -> R {
+		if (a_args.size() != 3 || !a_args[0].deref().is_string() || !a_args[1].deref().is_string()) { return lib->refused("untrusted_template_text(text, map) takes a text and a map"); }
+		if (auto allowed = lib->eng->require_permission(permissions::untrusted_template); !allowed) { return allowed.error_value(); }
 		std::string error;
 		auto program = compile_scoped(*lib, a_args[0].deref().as_string(), a_args[1].deref().as_string(), error);
 		if (!program) { return lib->refused(error); }
 		return render_scoped(*lib, program, a_args[2]);
 	}, serial);
 
-	eng.add_variadic_function(std::string(k_scoped_file), [lib](const std::vector<script_value>& a_args) -> R {
-		if (a_args.size() != 3 || !a_args[0].deref().is_string() || !a_args[1].deref().is_string()) { return lib->refused("scoped_template(path, map) takes a path and a map"); }
+	eng.add_variadic_function(std::string(k_untrusted_file), [lib](const std::vector<script_value>& a_args) -> R {
+		if (a_args.size() != 3 || !a_args[0].deref().is_string() || !a_args[1].deref().is_string()) { return lib->refused("untrusted_template(path, map) takes a path and a map"); }
 		engine& e = *lib->eng;
-		if (auto allowed = e.require_permission(permissions::scoped_template); !allowed) { return allowed.error_value(); }
-		const scoped_file found = resolve_scoped_file(e, a_args[0].deref().as_string(), a_args[1].deref().as_string());
+		if (auto allowed = e.require_permission(permissions::untrusted_template); !allowed) { return allowed.error_value(); }
+		const untrusted_file found = resolve_untrusted_file(e, a_args[0].deref().as_string(), a_args[1].deref().as_string());
 		if (!found.error.empty()) { return lib->refused(found.error); }
 		const std::string& resolved_path = found.resolved;
-		scoped_file_entry& file = lib->scoped_files[resolved_path];
+		untrusted_file_entry& file = lib->untrusted_files[resolved_path];
 		if (!file.loaded || check_due(e, file.next_check)) {
 			uint64_t mtime = 0, size = 0;
-			const bool stamped = stat_file(resolved_path, mtime, size);
+			const bool stamped = engine_access::stamp_source(e, resolved_path, mtime, size);
 			const bool moved = !file.loaded || !stamped || mtime != file.mtime || size != file.size;
 			const bool held = file.loaded && file.failed && stamped && mtime == file.failed_mtime && size == file.failed_size;
 			if (moved && !held) {
-				std::string content;
-				if (!read_whole_file(resolved_path, content)) {
-					if (!file.loaded) { return lib->refused("template file '" + a_args[0].deref().as_string() + "' cannot be read"); }
+				// the text and the stamp remembered for it (the version kept, or the failure held) come from one load; a file
+				// that never read whole keeps the version rendered before, and is the first render's error
+				loaded_source source = engine_access::load_source(e, resolved_path, source_mode::binary);
+				if (source.status != loaded_source::state::loaded) {
+					if (!file.loaded) {
+						return lib->refused(source.status == loaded_source::state::unsettled ? unsettled_source_text(resolved_path)
+							: "template file '" + a_args[0].deref().as_string() + "' cannot be read");
+					}
 				} else {
 					std::string error;
-					if (!compile_scoped(*lib, content, resolved_path, error)) {
+					if (!compile_scoped(*lib, source.text, resolved_path, error)) {
 						if (!file.loaded) { return lib->refused(error); }
-						file.failed = true;
-						file.failed_mtime = mtime;
-						file.failed_size = size;
+						file.failed = source.stamp.stamped;
+						file.failed_mtime = source.stamp.mtime;
+						file.failed_size = source.stamp.size;
 						return lib->refused(error);
 					}
-					file.content = std::move(content);
+					file.content = std::move(source.text);
 					file.loaded = true;
 					file.failed = false;
-					file.mtime = mtime;
-					file.size = size;
+					file.mtime = source.stamp.mtime;
+					file.size = source.stamp.size;
 				}
 			}
 		}
@@ -1216,19 +1204,24 @@ void register_library(engine& eng) {
 		}
 		if (entry.function) {
 			if (engine_access::template_unit_current(e, entry.unit, entry.source)) { return *entry.function; }
-			uint64_t mtime = 0, size = 0;
-			if (entry.failed && stat_file(resolved.value(), mtime, size) && mtime == entry.failed_mtime && size == entry.failed_size) { return *entry.function; }
+			if (entry.failed && engine_access::stamps_stand(e, entry.failed_files)) { return *entry.function; }
 		}
-		R made = engine_access::run_template_unit(e, entry.unit, entry.source);
+		// a failure is held against the files the failing load read, each under the stamp its text was loaded with; a
+		// load that met a file that never read whole reads nothing to hold, so the next render tries again
+		std::vector<source_stamp> read;
+		bool unsettled = false;
+		R made = engine_access::run_template_unit(e, entry.unit, entry.source, read, unsettled);
 		if (!made) {
 			if (entry.function) {
-				entry.failed = true;
-				(void)stat_file(resolved.value(), entry.failed_mtime, entry.failed_size);
+				if (unsettled) { return *entry.function; }
+				entry.failed = !read.empty();
+				entry.failed_files = std::move(read);
 			}
 			return made;
 		}
 		entry.function = std::move(made.value());
 		entry.failed = false;
+		entry.failed_files.clear();
 		return *entry.function;
 	}, serial);
 }

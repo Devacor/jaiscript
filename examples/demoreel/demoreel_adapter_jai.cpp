@@ -86,7 +86,7 @@ public:
 		if (opt.workers > 0) { eng_->parallel_thread_count(static_cast<size_t>(opt.workers)); }
 		jai::stdlib::register_all(eng_);
 
-		jai::dynamic_binder<demoreel::demo_rng>(*eng_, "Rng")
+		jai::dynamic_binder<demoreel::demo_rng>(*eng_, "seeded_rng")
 			.constructor<jai::script_int>()
 			.method("next", &demoreel::demo_rng::next)
 			.method("roll", &demoreel::demo_rng::roll)
@@ -98,7 +98,7 @@ public:
 		// script functions over math::, not host bindings: parallel bodies (skull.jai) call them
 		eng_->execute("function itrunc(float v) -> int { return math::itrunc(v); }\n"
 			"function ifloor(float v) -> int { return math::ifloor(v); }\n");
-		eng_->add_global("ESC", eng_->make_value(std::string("\x1b")));
+		eng_->add_global("esc", eng_->make_value(std::string("\x1b")));
 	}
 
 	void load() override {
@@ -111,7 +111,7 @@ public:
 #endif
 			"demoreel_scenes", "main.jai");
 		// EIGHT imports scenes/live/ while it runs
-		eng_->add_global("SCENES_DIR", eng_->make_value(fs::canonical(fs::path(dir_)).generic_string()));
+		eng_->add_global("scenes_dir", eng_->make_value(fs::canonical(fs::path(dir_)).generic_string()));
 #ifdef JAISCRIPT_ENABLE_DEBUGGER
 		if (flags_.debug) {
 			// execute_file per scene so each node carries its real .jai path and VS Code

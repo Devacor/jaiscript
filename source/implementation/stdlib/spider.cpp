@@ -60,7 +60,7 @@ namespace spider_detail {
 		return text;
 	}
 
-	// spider::Response: one HTTP answer, the one a client call returns and the one a server handler builds. headers is a
+	// spider::response: one HTTP answer, the one a client call returns and the one a server handler builds. headers is a
 	// map<string, string> held as a script value, so r.headers["X"] = v writes the response's own map
 	struct response_record {
 		script_int status = 200;
@@ -142,7 +142,7 @@ namespace spider_detail {
 	// The Set-Cookie line for name=value (RFC 6265 4.1): the value percent-encoded; options max_age, expires (unix seconds),
 	// path ("/"), domain, secure (false), http_only (true), same_site ("Lax"; "" leaves it out)
 	std::string cookie_line(engine* a_engine, const std::string& a_name, const std::string& a_value, const script_value& a_options) {
-		if (!is_token(a_name)) { throw runtime_error("Response.set_cookie: '" + a_name + "' is not a cookie name (letters, digits and !#$%&'*+-.^_`|~)"); }
+		if (!is_token(a_name)) { throw runtime_error("spider::response.set_cookie: '" + a_name + "' is not a cookie name (letters, digits and !#$%&'*+-.^_`|~)"); }
 		std::string result = a_name + "=";
 		web_text_detail::append_percent_encoded(a_value, false, result);
 		std::string path = "/";
@@ -173,12 +173,12 @@ namespace spider_detail {
 				} else if (name && *name == "http_only" && value.is_bool()) {
 					http_only = value.as_bool();
 				} else {
-					throw runtime_error("Response.set_cookie: option '" + (name ? *name : std::string("?")) + "' is unknown or of the wrong kind (max_age, expires: int; path, domain, same_site: string; secure, http_only: bool)");
+					throw runtime_error("spider::response.set_cookie: option '" + (name ? *name : std::string("?")) + "' is unknown or of the wrong kind (max_age, expires: int; path, domain, same_site: string; secure, http_only: bool)");
 				}
 			}
 		}
 		for (const auto& [option, text] : {std::pair<const char*, const std::string*>{"path", &path}, {"domain", &domain}, {"same_site", &same_site}}) {
-			if (!is_cookie_attribute(*text)) { throw runtime_error(std::string("Response.set_cookie: option '") + option + "' holds a ';' or a control character"); }
+			if (!is_cookie_attribute(*text)) { throw runtime_error(std::string("spider::response.set_cookie: option '") + option + "' holds a ';' or a control character"); }
 		}
 		result += "; Path=" + path;
 		if (!domain.empty()) { result += "; Domain=" + domain; }
@@ -372,7 +372,7 @@ namespace spider_detail {
 	// One client call: the options read, the request sent through the host's transport, redirects followed by the policy
 	// (up to options.redirects, 5 by default; 301/302 turn a POST into a GET, 303 turns anything but HEAD into a GET,
 	// 307/308 resend as they were; never from https to http; Authorization and Cookie stay with the origin they were
-	// given for), and the answer as a spider::Response
+	// given for), and the answer as a spider::response
 	function_result exchange(engine* a_engine, std::string_view a_function, const script_value& a_url, const script_value* a_content, const script_value& a_options) {
 		const std::string function(a_function);
 		if (!a_url.deref().is_text()) { return raise(a_engine, runtime_error_code::type_mismatch, function + ": the URL is a string"); }
@@ -486,7 +486,7 @@ namespace spider_detail {
 		using svt = script_value_type;
 		engine* eng = &eng_ref;
 
-		dynamic_binder<response_record>(eng_ref, "spider::Response")
+		dynamic_binder<response_record>(eng_ref, "spider::response")
 			.constructor<>()
 			.property("status", &response_record::status)
 			.property("headers", [eng](response_record& a_self) -> script_value { return a_self.header_map(eng); },
@@ -512,6 +512,7 @@ namespace spider_detail {
 			.property("url", &response_record::url)
 			.method("ok", [](const response_record& a_self) { return a_self.status >= 200 && a_self.status < 300; })
 			.method("json", [eng](const response_record& a_self) -> script_value {
+				detail::engine_access::load_rule rule(eng, {});
 				detail::engine_access::load_session session(eng);
 				serialization::json_archive_reader reader(a_self.body, eng);
 				script_value result = load_archive_value(eng, reader.read_value(), true);
@@ -521,7 +522,7 @@ namespace spider_detail {
 			.method("header", [eng](response_record& a_self, const std::string& a_name) { return a_self.header(eng, a_name); })
 			.method("header", [eng](response_record& a_self, const std::string& a_name, const std::string& a_value) -> response_record& {
 				if (!is_token(a_name) || a_value.find_first_of(std::string_view("\r\n\0", 3)) != std::string::npos) {
-					throw runtime_error("Response.header: '" + a_name + "' is not a header name, or its value holds a line break or NUL");
+					throw runtime_error("spider::response.header: '" + a_name + "' is not a header name, or its value holds a line break or NUL");
 				}
 				a_self.set_header(eng, a_name, a_value);
 				return a_self;
@@ -555,20 +556,20 @@ namespace spider_detail {
 			signature.max_args = a_max;
 			signature.params = std::move(a_params);
 			signature.result = svt::jai_object_type;
-			signature.result_class = "spider::Response";
+			signature.result_class = "spider::response";
 			ns->signatures[id] = std::move(signature);
 		};
 		auto arity_refusal = [](const char* a_text) { return function_result(make_error_code(runtime_error_code::argument_count_mismatch), a_text); };   // static texts: the result holds a view
 
-		def("Response", 0, 2, {svt::jai_int_type, svt::jai_string_type}, [eng, arity_refusal](const std::vector<script_value>& a_args) -> function_result {
-			if (a_args.size() > 2) { return arity_refusal("spider::Response expects 0 to 2 arguments (status, body)"); }
+		def("response", 0, 2, {svt::jai_int_type, svt::jai_string_type}, [eng, arity_refusal](const std::vector<script_value>& a_args) -> function_result {
+			if (a_args.size() > 2) { return arity_refusal("spider::response expects 0 to 2 arguments (status, body)"); }
 			auto response = std::make_shared<response_record>();
 			if (!a_args.empty()) {
-				if (!a_args[0].deref().is_int()) { return raise(eng, runtime_error_code::type_mismatch, "spider::Response: the status is an int"); }
+				if (!a_args[0].deref().is_int()) { return raise(eng, runtime_error_code::type_mismatch, "spider::response: the status is an int"); }
 				response->status = a_args[0].deref().as_int();
 			}
 			if (a_args.size() == 2) {
-				if (!a_args[1].deref().is_text()) { return raise(eng, runtime_error_code::type_mismatch, "spider::Response: the body is a string"); }
+				if (!a_args[1].deref().is_text()) { return raise(eng, runtime_error_code::type_mismatch, "spider::response: the body is a string"); }
 				response->body = a_args[1].deref().unchecked_text();
 			}
 			response->header_map(eng);

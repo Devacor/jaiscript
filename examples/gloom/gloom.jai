@@ -8,37 +8,37 @@
 //
 // The runner provides the console (key_down, read_key, term_cols, term_rows,
 // print) and the stdlib's time:: the clock. This file supplies the rest of the
-// host contract of reference/README.md section 2 in script (the Rng, host_log,
-// itrunc, ifloor, utf8, ESC and the HOST_* globals from ARGS), imports
+// host contract of reference/README.md section 2 in script (the seeded_rng, host_log,
+// itrunc, ifloor, utf8, esc and the host_* globals from args), imports
 // scripts/main.jai and runs the frame loop gloom_host.cpp runs.
 
 // ------------------------------------------------------- host API: globals --
-string ESC = "\x1b";
-int HOST_SEED = 666;
-bool HOST_SMOKE = false;
-int HOST_TICKS = 2000;
-int HOST_WORKERS = -1;      // <= 0: the scripts run their serial loops
-bool HOST_GOD = false;
-string HOST_BACKEND = "vm";  // label only; the real backend is the runner's --backend (before --)
-int HOST_PIX = 1;           // 0 half (1x2) | 1 quad (2x2) | 2 sext (2x3)
-string HOST_LOOK = "";      // showcase | reference; "" = reference under --smoke, else showcase
+string esc = "\x1b";
+int host_seed = 666;
+bool host_smoke = false;
+int host_ticks = 2000;
+int host_workers = -1;      // <= 0: the scripts run their serial loops
+bool host_god = false;
+string host_backend = "vm";  // label only; the real backend is the runner's --backend (before --)
+int host_pix = 1;           // 0 half (1x2) | 1 quad (2x2) | 2 sext (2x3)
+string host_look = "";      // showcase | reference; "" = reference under --smoke, else showcase
 // 24-bit where the terminal says it takes it (COLORTERM, Windows Terminal), else xterm-256; --truecolor / --256color decide
-bool HOST_TRUECOLOR = env_var("COLORTERM") == "truecolor" || env_var("COLORTERM") == "24bit" || env_var("WT_SESSION") != "";
-bool HOST_ASCII = false;    // --ascii for terminals without block glyphs
-bool HOST_DEV = false;      // --dev: the showcase look's scripts reload when they change
-string HOST_SOUND_DIR = ""; // where the showcase look writes its synthesized effects to play them; "" is silence
+bool host_truecolor = env_var("COLORTERM") == "truecolor" || env_var("COLORTERM") == "24bit" || env_var("WT_SESSION") != "";
+bool host_ascii = false;    // --ascii for terminals without block glyphs
+bool host_dev = false;      // --dev: the showcase look's scripts reload when they change
+string host_sound_dir = ""; // where the showcase look writes its synthesized effects to play them; "" is silence
 
-// ---------------------------------------------------------- host API: Rng ---
+// --------------------------------------------------- host API: seeded_rng ---
 // xorshift64* per gloom_host.hpp, the ONLY randomness (STATE_HASH folds
 // state() every tick). s ^= s>>12; s ^= s<<25; s ^= s>>27; return s * M —
 // all uint64. Script ints are checked int64: >> is arithmetic (mask after),
 // << wraps (verified), and the M-multiply wraps via 16-bit limb products.
 // Proven bit-exact against an independent wrap-arithmetic reference for
 // seed 666 (state + first 6 raws) and by the smoke checkpoint table below.
-class Rng {
+class seeded_rng {
 	int s = 0;
 
-	Rng(int seed) {
+	seeded_rng(int seed) {
 		s = seed != 0 ? seed : ((0x9E3779B9 << 32) | 0x7F4A7C15);
 		for (int i = 0; i < 4; ++i) { step(); }
 	}
@@ -157,53 +157,53 @@ function shim_usage() -> void {
 
 function shim_parse_args() -> int {
 	int i = 0;
-	while (i < ARGS.size()) {
-		var a = ARGS[i];
+	while (i < args.size()) {
+		var a = args[i];
 		bool needs_value = a == "--seed" || a == "--ticks" || a == "ticks" || a == "--frames" || a == "frames"
 			|| a == "--turns" || a == "turns" || a == "--bench" || a == "--fps" || a == "--w" || a == "--h"
 			|| a == "--pix" || a == "--workers" || a == "--dump-frame" || a == "--backend" || a == "--look";
-		if (needs_value && i + 1 >= ARGS.size()) {
+		if (needs_value && i + 1 >= args.size()) {
 			print(`missing value for ${a}`);
 			return 2;
 		}
 		if (a == "--smoke" || a == "smoke") { SHIM_SMOKE = true; }
-		else if (a == "--god" || a == "god") { HOST_GOD = true; }
+		else if (a == "--god" || a == "god") { host_god = true; }
 		else if (a == "--help" || a == "-h") { shim_usage(); return 0; }
-		else if (a == "--seed") { i = i + 1; HOST_SEED = ARGS[i].to_int(HOST_SEED); }
-		else if (a == "--ticks" || a == "ticks") { i = i + 1; HOST_TICKS = ARGS[i].to_int(HOST_TICKS); }
+		else if (a == "--seed") { i = i + 1; host_seed = args[i].to_int(host_seed); }
+		else if (a == "--ticks" || a == "ticks") { i = i + 1; host_ticks = args[i].to_int(host_ticks); }
 		else if (a == "--frames" || a == "frames" || a == "--turns" || a == "turns") {
 			i = i + 1;
-			HOST_TICKS = ARGS[i].to_int(HOST_TICKS);
+			host_ticks = args[i].to_int(host_ticks);
 			SHIM_SMOKE = true;   // frames/turns N = the headless self-test
 		}
-		else if (a == "--bench") { i = i + 1; SHIM_BENCH = ARGS[i].to_int(0); }
-		else if (a == "--fps") { i = i + 1; SHIM_FPS = 1.0 * ARGS[i].to_int(30); }
-		else if (a == "--w") { i = i + 1; SHIM_W = ARGS[i].to_int(0); }
-		else if (a == "--h") { i = i + 1; SHIM_H = ARGS[i].to_int(0); }
-		else if (a == "--workers") { i = i + 1; HOST_WORKERS = ARGS[i].to_int(-1); }
-		else if (a == "--dump-frame") { i = i + 1; SHIM_DUMP = ARGS[i].to_int(-1); }
-		else if (a == "--backend") { i = i + 1; HOST_BACKEND = ARGS[i]; }
-		else if (a == "--truecolor") { HOST_TRUECOLOR = true; }
-		else if (a == "--256color") { HOST_TRUECOLOR = false; }
-		else if (a == "--ascii") { HOST_ASCII = true; }
+		else if (a == "--bench") { i = i + 1; SHIM_BENCH = args[i].to_int(0); }
+		else if (a == "--fps") { i = i + 1; SHIM_FPS = 1.0 * args[i].to_int(30); }
+		else if (a == "--w") { i = i + 1; SHIM_W = args[i].to_int(0); }
+		else if (a == "--h") { i = i + 1; SHIM_H = args[i].to_int(0); }
+		else if (a == "--workers") { i = i + 1; host_workers = args[i].to_int(-1); }
+		else if (a == "--dump-frame") { i = i + 1; SHIM_DUMP = args[i].to_int(-1); }
+		else if (a == "--backend") { i = i + 1; host_backend = args[i]; }
+		else if (a == "--truecolor") { host_truecolor = true; }
+		else if (a == "--256color") { host_truecolor = false; }
+		else if (a == "--ascii") { host_ascii = true; }
 		else if (a == "--mute") { SHIM_MUTE = true; }
-		else if (a == "--dev") { HOST_DEV = true; }
+		else if (a == "--dev") { host_dev = true; }
 		else if (a == "--reload-test") { SHIM_RELOAD_TEST = true; }
 		else if (a == "--respawn-test") { SHIM_RESPAWN_TEST = true; }
 		else if (a == "--look") {
 			i = i + 1;
-			HOST_LOOK = ARGS[i];
-			if (HOST_LOOK != "showcase" && HOST_LOOK != "reference") {
-				print(`unknown --look: ${HOST_LOOK} (showcase|reference)`);
+			host_look = args[i];
+			if (host_look != "showcase" && host_look != "reference") {
+				print(`unknown --look: ${host_look} (showcase|reference)`);
 				return 2;
 			}
 		}
 		else if (a == "--pix") {
 			i = i + 1;
-			var p = ARGS[i];
-			if (p == "half") { HOST_PIX = 0; }
-			else if (p == "quad") { HOST_PIX = 1; }
-			else if (p == "sext") { HOST_PIX = 2; }
+			var p = args[i];
+			if (p == "half") { host_pix = 0; }
+			else if (p == "quad") { host_pix = 1; }
+			else if (p == "sext") { host_pix = 2; }
 			else { print(`unknown --pix mode: ${p} (half|quad|sext)`); return 2; }
 		}
 		else {
@@ -213,9 +213,9 @@ function shim_parse_args() -> int {
 		}
 		i = i + 1;
 	}
-	HOST_SMOKE = SHIM_SMOKE;
-	if (HOST_LOOK == "") { HOST_LOOK = HOST_SMOKE ? "reference" : "showcase"; }
-	if (!SHIM_SMOKE && !SHIM_RELOAD_TEST && !SHIM_RESPAWN_TEST && SHIM_BENCH == 0 && !SHIM_MUTE) { HOST_SOUND_DIR = app_cache_dir("gloom") + "/sfx"; }
+	host_smoke = SHIM_SMOKE;
+	if (host_look == "") { host_look = host_smoke ? "reference" : "showcase"; }
+	if (!SHIM_SMOKE && !SHIM_RELOAD_TEST && !SHIM_RESPAWN_TEST && SHIM_BENCH == 0 && !SHIM_MUTE) { host_sound_dir = app_cache_dir("gloom") + "/sfx"; }
 	return -1;   // keep going
 }
 
@@ -224,22 +224,22 @@ function shim_run_smoke() -> int {
 	gloom_force_autopilot();
 	gloom_boot(100, 40);
 	float dt = 1.0 / 30.0;
-	string pix_name = HOST_PIX == 0 ? "half" : (HOST_PIX == 2 ? "sext" : "quad");
-	print(`gloom.jai --smoke: ${HOST_TICKS} ticks @ 100x40, seed ${HOST_SEED}, pix ${pix_name}, workers ${HOST_WORKERS}`);
+	string pix_name = host_pix == 0 ? "half" : (host_pix == 2 ? "sext" : "quad");
+	print(`gloom.jai --smoke: ${host_ticks} ticks @ 100x40, seed ${host_seed}, pix ${pix_name}, workers ${host_workers}`);
 	time::stopwatch run;
 	run.start();
 	int frames_hash = 2166136261;
-	for (int i = 0; i < HOST_TICKS; ++i) {
+	for (int i = 0; i < host_ticks; ++i) {
 		var text = gloom_frame(dt, "", 0.0, 0.0, 0.0);
-		if (i == SHIM_DUMP) { write_file("gloom_frame_shim.txt", text); }
+		if (i == SHIM_DUMP) { file::write("gloom_frame_shim.txt", text); }
 		frames_hash = text_hash(frames_hash, crypto::sha256(text));
 	}
 	int total = cast<int>(run.elapsed() * 1000);
-	float per_tick = 1.0 * total / HOST_TICKS;
+	float per_tick = 1.0 * total / host_ticks;
 	int hash = gloom_state_hash();
 	print(`total ${total} ms | ${per_tick:.3f} ms/tick | frames ${frames_hash} | STATE_HASH: ${hash}`);
 	gloom_summary();
-	string ref_key = `${HOST_SEED}/${HOST_GOD ? 1 : 0}/${HOST_TICKS}`;
+	string ref_key = `${host_seed}/${host_god ? 1 : 0}/${host_ticks}`;
 	if (SMOKE_REF.has(ref_key)) {
 		int expected = SMOKE_REF[ref_key];
 		if (hash == expected) {
@@ -249,7 +249,7 @@ function shim_run_smoke() -> int {
 		print(`checkpoint parity: MISMATCH (expected ${expected}, got ${hash})`);
 		return 1;
 	}
-	print(`no reference checkpoint for seed ${HOST_SEED} @ ${HOST_TICKS} ticks (hash informational)`);
+	print(`no reference checkpoint for seed ${host_seed} @ ${host_ticks} ticks (hash informational)`);
 	return 0;
 }
 
@@ -267,7 +267,7 @@ function shim_run_live(int bench_frames) -> int {
 	bool bench = bench_frames > 0;
 	if (bench) { gloom_force_autopilot(); }
 	gloom_boot(w, h);
-	print(ESC + "[?1049h" + ESC + "[?25l" + ESC + "[2J" + ESC + "[H", skip_newline);   // alt screen, hide cursor
+	print(esc + "[?1049h" + esc + "[?25l" + esc + "[2J" + esc + "[H", skip_newline);   // alt screen, hide cursor
 	// steady pacing as gloom_host.cpp's frame_pacer: frames start on a grid of
 	// deadlines, and a dt within a sixth of the period counts as exactly one period
 	float period = 1.0 / SHIM_FPS;
@@ -297,7 +297,7 @@ function shim_run_live(int bench_frames) -> int {
 		split.start();
 		var text = gloom_frame(dt, key, fps_ema, last_sim, last_draw);
 		last_sim = split.delta() * 1000;
-		print(ESC + "[H" + text + ESC + "[0m", skip_newline);
+		print(esc + "[H" + text + esc + "[0m", skip_newline);
 		last_draw = split.delta() * 1000;
 
 		if (bench) {
@@ -313,7 +313,7 @@ function shim_run_live(int bench_frames) -> int {
 		if (after > deadline + period) { deadline = after; }
 		else if (deadline > after) { sleep(deadline - after); }
 	}
-	print(ESC + "[0m" + ESC + "[?1049l" + ESC + "[?25h", skip_newline);   // restore screen + cursor
+	print(esc + "[0m" + esc + "[?1049l" + esc + "[?25h", skip_newline);   // restore screen + cursor
 	if (bench && done > 0) {
 		float fr = 1.0 * done;
 		print(`bench: ${done} frames @ ${w}x${h}`);
@@ -329,7 +329,7 @@ function shim_main() -> int {
 	int parsed = shim_parse_args();
 	if (parsed >= 0) { return parsed; }
 	if (SHIM_RELOAD_TEST) {
-		HOST_LOOK = "showcase";
+		host_look = "showcase";
 		gloom_force_autopilot();
 		gloom_boot(100, 40);
 		return dev_reload_test();

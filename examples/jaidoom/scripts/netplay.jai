@@ -1,8 +1,8 @@
-// JaiDOOM netplay.jai — up to 16 players over the runner's NetServer/NetChannel,
+// JaiDOOM netplay.jai — up to 16 players over the runner's net_server/net_channel,
 // organized as classes: a Player per slot (LocalPlayer = me, Puppet = a
 // net-driven PLAY-sprite ghost), and a Session owning the wire (HostSession =
-// NetServer star hub: assigns slots, relays, runs co-op authority;
-// ClientSession = one NetChannel to the host). One action pattern carries
+// net_server star hub: assigns slots, relays, runs co-op authority;
+// ClientSession = one net_channel to the host). One action pattern carries
 // everything: one JSON map per packet, "t" type + "s" sender slot,
 // dispatched by Session.apply. The mobj pool stays flat (admission rules);
 // classes hold INDICES into it. Free np_* functions remain the boundary the
@@ -469,7 +469,7 @@ class Session {
 			if (TH_TYPE[t] == want) {
 				sx.push(TH_X[t] * 1.0);
 				sy.push(TH_Y[t] * 1.0);
-				sa.push(TH_ANG[t] * math::PI / 180.0);
+				sa.push(TH_ANG[t] * math::pi / 180.0);
 			}
 		}
 		np_loadout_coop();
@@ -486,7 +486,7 @@ class Session {
 			P_ANG = sa[pick];
 		} else {
 			for (int t2 = 0; t2 < TH_TYPE.size(); ++t2) {
-				if (TH_TYPE[t2] == 1) { P_X = TH_X[t2] * 1.0; P_Y = TH_Y[t2] * 1.0; P_ANG = TH_ANG[t2] * math::PI / 180.0; break; }
+				if (TH_TYPE[t2] == 1) { P_X = TH_X[t2] * 1.0; P_Y = TH_Y[t2] * 1.0; P_ANG = TH_ANG[t2] * math::pi / 180.0; break; }
 			}
 		}
 		P_MOMX = 0.0;
@@ -625,16 +625,16 @@ class Session {
 	}
 }
 
-// host: the NetServer star hub — slots assigned on HELLO, everything relayed
+// host: the net_server star hub — slots assigned on HELLO, everything relayed
 class HostSession : Session {
 	var srv = null;
-	var cid_slot = {};            // NetServer client id -> slot
+	var cid_slot = {};            // net_server client id -> slot
 	var slot_cid = {};
 
 	HostSession() : super() {}
 
 	bool open(int port) {
-		srv = new NetServer();
+		srv = new net_server();
 		srv.on_client_connect.connect("np", [](var cid) { SESSION.on_join(cid); });
 		srv.on_client_packet.connect("np", [](var cid, var bytes) { SESSION.on_wire(cid, bytes); });
 		srv.on_client_disconnect.connect("np", [](var cid, var reason) { SESSION.on_leave(cid, "" + reason); });
@@ -644,7 +644,7 @@ class HostSession : Session {
 		}
 		players[0] = new LocalPlayer(0, NP_NAME);
 		NP_LOBBY = "listening";
-		NP_LOBBY_T0 = time::now();
+		NP_LOBBY_T0 = time::engine_elapsed();
 		return true;
 	}
 
@@ -776,7 +776,7 @@ class ClientSession : Session {
 	ClientSession() : super() {}
 
 	bool open(string host, int port) {
-		ch = new NetChannel();
+		ch = new net_channel();
 		ch.on_connect.connect("np", []() { SESSION.on_up(); });
 		ch.on_packet.connect("np", [](var bytes) { SESSION.on_wire_c(bytes); });
 		ch.on_disconnect.connect("np", [](var reason) { SESSION.on_down("" + reason); });
@@ -785,7 +785,7 @@ class ClientSession : Session {
 			return false;
 		}
 		NP_LOBBY = "connecting";
-		NP_LOBBY_T0 = time::now();
+		NP_LOBBY_T0 = time::engine_elapsed();
 		return true;
 	}
 
@@ -893,7 +893,7 @@ var NP_TAKE_PEND = {};
 var NP_READY_SET = {};
 var NP_NEXT_SENT = false;
 var NP_EXIT_SENT = false;
-var NP_WI_T0 = null;          // host intermission entry (time::now()): the 10s-grace baseline
+var NP_WI_T0 = null;          // host intermission entry (time::engine_elapsed()): the 10s-grace baseline
 var NP_LAST_STATE = [];
 var NP_PROJ_NEXT = 0;         // monotonic net ids (never reset: stale packets can't collide)
 var NP_PROJ_MINE = {};        // my announced live projectiles: mobj idx -> net id
@@ -1174,7 +1174,7 @@ function np_lobby_host(int port, bool coop, string mapname, int skill) -> bool {
 		if (!s.open(port)) { SESSION = null; return false; }
 		return true;
 	} catch (e) {
-		// a copied jaiscript.exe from before the net layer has no NetServer
+		// a copied jaiscript.exe from before the net layer has no net_server
 		set_msg("this jaiscript.exe predates networking - copy a fresh one");
 		SESSION = null;
 		return false;
@@ -1197,7 +1197,7 @@ function np_lobby_join(string host, int port) -> bool {
 function np_lobby_frame() -> void {
 	if (SESSION == null) { return; }
 	SESSION.pump();
-	if (NP_LOBBY == "connecting" && time::now() - NP_LOBBY_T0 > 10.0) {
+	if (NP_LOBBY == "connecting" && time::engine_elapsed() - NP_LOBBY_T0 > 10.0) {
 		NP_LOBBY = "failed: no answer";
 		np_cancel();
 	}
@@ -1365,11 +1365,11 @@ function np_host_can_start() -> bool {
 	if (SESSION == null) { return true; }
 	int need = np_ready_need();
 	if (need <= 0 || np_ready_have() >= need) { return true; }
-	return NP_WI_T0 != null && time::now() - NP_WI_T0 > 10.0;
+	return NP_WI_T0 != null && time::engine_elapsed() - NP_WI_T0 > 10.0;
 }
 
 function np_wi_begin() -> void {
-	NP_WI_T0 = time::now();
+	NP_WI_T0 = time::engine_elapsed();
 }
 
 function np_next_map(string mapname) -> void {

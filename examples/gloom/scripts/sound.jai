@@ -2,7 +2,7 @@
 // an 8-bit WAV from a few swept voices. Feel names the cues each frame and
 // sound_frame plays them through the host's load_sound (the runner's, which
 // jai_gloom registers too). Playing needs a folder to write the WAVs to
-// (HOST_SOUND_DIR); --smoke --look showcase still builds the bank and counts
+// (host_sound_dir); --smoke --look showcase still builds the bank and counts
 // the cues, so the gate checks both without a speaker.
 
 int SFX_RATE = 11025;
@@ -155,8 +155,8 @@ function text_hash(int h, string s) -> int {
 // build the bank: written and loaded when the host has a sound folder, hashed under --smoke
 function sound_boot() -> void {
 	if (!SHOWCASE || !SOUND) { return; }
-	bool playing = HOST_SOUND_DIR != "";
-	if (!playing && !HOST_SMOKE) { return; }
+	bool playing = host_sound_dir != "";
+	if (!playing && !host_smoke) { return; }
 	SFX_BANK_HASH = 2166136261;
 	SFX_BANK_BYTES = 0;
 	for (auto& name : SFX_NAMES) {
@@ -164,8 +164,8 @@ function sound_boot() -> void {
 		SFX_BANK_HASH = text_hash(SFX_BANK_HASH, bytes);
 		SFX_BANK_BYTES += bytes.size();
 		if (!playing) { continue; }
-		string path = HOST_SOUND_DIR + "/" + name + ".wav";
-		if (write_file(path, bytes)) {
+		string path = host_sound_dir + "/" + name + ".wav";
+		if (file::write(path, bytes)) {
 			var s = load_sound(path);
 			if (s != null) { SFX_SOUNDS[name] = s; }
 		}

@@ -31,11 +31,27 @@ namespace debug {
 
 enum class step_mode : int { none = 0, into, over, out };
 
+// The source label of what evaluate() runs: its statements never stop and never count as script code a watch runs
+inline constexpr std::string_view evaluation_source = "<eval>";
+// The error a watch evaluation raises at the first statement of script code it would run ({0}: the function)
+inline constexpr std::string_view watch_runs_script_text = "A watch only reads: '{0}' would run script code (evaluate it in the Debug Console)";
+
 struct stop_info {
-    std::string reason;   // "breakpoint" | "step" | "pause"
+    std::string reason;   // "breakpoint" | "step" | "pause" | "exception"
     std::string file;
     int line = 0;
     int depth = 0;
+    std::string text;     // an exception stop: the error's message
+};
+
+// One breakpoint on a line: it stops when its condition holds (empty: always) and its hit condition takes the count of hits so far
+// (">= 3", "% 2", "5": the fifth hit); a logpoint (log_message set) prints its message, each {expression} in it evaluated, and
+// never stops. Condition and message expressions are evaluated as a watch is: they read, never change state.
+struct breakpoint {
+    int line = 0;
+    std::string condition;
+    std::string hit_condition;
+    std::string log_message;
 };
 
 // file path -> the lines that carry a breakpoint (sorted, deduped)
@@ -49,12 +65,23 @@ struct frame_info {
     int line = 0;
 };
 
-// One in-scope variable at a stop: its name, its value as display text and its kind ("int", "string", "array", "object", ...)
+// One in-scope variable at a stop: its name, its value as display text and its kind ("int", "string", "array", "object", ...).
+// A value with parts (a class object's fields, a container's elements, a handle's object) carries a reference that
+// list_children expands, valid until the script resumes, and how many parts it has; evaluate_name reaches it again from the
+// frame it was read in (empty when no expression does).
 struct variable_info {
     std::string name;
     std::string value;
     std::string type;
+    uint32_t reference = 0;
+    size_t named_children = 0;
+    size_t indexed_children = 0;
+    std::string evaluate_name;
 };
+
+// How evaluate() may affect the script: a watch, a hover and a breakpoint's condition only read (an assignment, an increment, a
+// call of anything but a builtin that only reads, or script code it would run is refused); the console runs anything
+enum class evaluation_mode { watch, console };
 
 // Optional transport an engine drives its controller through (a DAP socket server, a
 // test harness, ...). Kept abstract in core so the always-built library never links a
@@ -92,6 +119,17 @@ public:
     // permits filesystem access. A line that starts no statement binds to the next one that does (breakpoint_line).
     void set_breakpoints(const std::string& file, std::vector<int> lines);
     void set_source_breakpoints(const std::string& file, std::vector<int> lines);
+    // Breakpoints with conditions, hit conditions and log messages, by source path as set_source_breakpoints takes them
+    void set_source_breakpoints(const std::string& file, const std::vector<breakpoint>& breakpoints);
+    // Stop where an error is raised: every one (on_throw) or one no script catch will take (on_uncaught)
+    void set_exception_breakpoints(bool on_throw, bool on_uncaught);
+    // Where a logpoint's message goes (set before the session; it runs on the script thread)
+    void set_on_output(std::function<void(const std::string&)> cb);
+    // Runs on the script thread where an error no script catch takes is raised, its frames still on the stack, so dump() and
+    // list_locals read them; it needs no session and costs nothing until such an error. Set it before the script runs.
+    void set_on_uncaught_error(std::function<void(const std::string& message)> cb);
+    // The wall-clock time one evaluate() may run before it is stopped with an error (default one second)
+    void set_evaluation_budget(std::chrono::nanoseconds budget) { evaluation_budget_.store(budget.count(), std::memory_order_relaxed); }
     void clear_breakpoints();
     void request_pause();                              // stop at the next statement
     void resume();                                     // continue
@@ -121,13 +159,31 @@ public:
     // block scopes, a closure's captures, the program scope). Throws when nothing in scope has the name; a set never declares.
     script_value get_variable(const std::string& name) const;
     void set_variable(const std::string& name, const script_value& value);
-    // A name, or a name followed by .field and [index] steps, read at the stop and rendered as a Variables row is
-    variable_info evaluate(const std::string& path) const;
+    // Runs `text` in frame `frame`'s scope (its locals, its captures, `this` and its fields bare, then the program's names) and
+    // renders the result as a Variables row is. A watch evaluation only reads; a console one may assign and call, and writes a
+    // changed local or field back through the variable's own store rules. Script errors, a refusal and a run past the
+    // evaluation budget throw with their text.
+    variable_info evaluate(const std::string& text, size_t frame = 0, evaluation_mode mode = evaluation_mode::watch);
+    // Stores the value of the expression `value` (evaluated in `frame`) into the part `name` of what `reference` lists (a frame's
+    // locals, the globals, an expanded value's field, element or entry), as the script's own assignment would
+    variable_info set_variable(uint32_t reference, const std::string& name, const std::string& value, size_t frame = 0);
     std::vector<frame_info> list_frames() const;   // the call stack at the stop, innermost first, the top level last
-    // Frame `frame`'s locals, in list_frames order (callables hidden): a function's parameters and reached locals; the
-    // top level's block-scoped names while it is the innermost frame
-    std::vector<variable_info> list_locals(size_t frame = 0) const;
-    std::vector<variable_info> list_globals() const;   // the program scope's variables (callables hidden)
+    // The running script's call stack, innermost first, each frame as an uncaught error's trace names it ("  at f (file:line)") and
+    // followed by its locals, one "      name = value" line each. On the script thread: at a stop, in a host function the script
+    // called, or in on_uncaught_error.
+    std::string dump() const;
+    // A frame as a trace line names it, "f (file:line)" (debug::stack()'s entries)
+    static std::string frame_text(const std::string& function, const std::string& file, size_t line);
+    // Frame `frame`'s locals, in list_frames order: its parameters and reached locals, a closure's captures, `this`, the top
+    // level's block scopes
+    std::vector<variable_info> list_locals(size_t frame = 0);
+    std::vector<variable_info> list_globals();   // the program scope's variables (callables hidden)
+    // The references list_children takes for frame `frame`'s locals and for the globals
+    uint32_t locals_reference(size_t frame);
+    uint32_t globals_reference();
+    // The parts of what `reference` names, `count` of them from `start` (0: all): a frame's locals, the globals, an object's fields,
+    // an array's elements, a map's entries; a handle lists its object's. Empty for a reference from before the last resume.
+    std::vector<variable_info> list_children(uint32_t reference, size_t start = 0, size_t count = 0);
 
     // ---- script/hot path: the interpreter statement hook ----
     // Per-statement gate of an armed session, checked BEFORE on_statement. Step/pause and a
@@ -141,7 +197,13 @@ public:
         const uint32_t b = line & (line_bloom_bits - 1);
         return (bloom[b >> 6] >> (b & 63u)) & 1u;
     }
-    void on_statement(const ast_node* node, int depth);
+    // False refuses the statement: script code a watch evaluation would run (the backend raises detail::raise_watch_runs_script)
+    bool on_statement(const ast_node* node, int depth);
+    // An error the script raises, at its throw (the throwing frame still on the stack): stops when exception breakpoints ask for it
+    void on_exception(const std::string& message, bool caught, int depth);
+    bool wants_exceptions() const noexcept {
+        return break_on_throw_.load(std::memory_order_relaxed) || break_on_uncaught_.load(std::memory_order_relaxed) || reports_uncaught_.load(std::memory_order_relaxed);
+    }
     // A stop is a statement that does work of its own: a block or a case label only holds
     // statements, and a for initializer belongs to its header's stop (the backends skip it).
     static bool stops_at(const ast_node* node) noexcept;
@@ -168,15 +230,28 @@ public:
 
 private:
     void raise_sync();
+    struct expandable {
+        enum class kind_t : uint8_t { globals, locals, value } kind = kind_t::value;
+        size_t frame = 0;
+        script_value value{std::monostate{}, nullptr};
+        std::string evaluate_name;
+    };
+    uint32_t register_expandable(expandable entry);
+    variable_info row(const std::string& name, const script_value& value, size_t frame, std::string evaluate_name);
+    std::vector<std::pair<std::string, script_value>> frame_scope(size_t frame) const;
+    script_value run_evaluation(const std::string& text, size_t frame, evaluation_mode mode);
+    bool breakpoint_fires(const ast_node* node, int line);
+    std::string log_text(const std::string& message);
     void park(const stop_info& si, uint64_t detaches_at_entry);
-    bool should_stop(const ast_node* node, int depth, std::string& reason_out) const;
+    bool should_stop(const ast_node* node, int depth, std::string& reason_out);
     bool breakpoint_hit(const std::string& file, int line) const;
-    void publish_breakpoints(const std::string& file, std::vector<int> lines, bool source_path);
+    void publish_breakpoints(const std::string& file, std::vector<int> lines, bool source_path, std::vector<breakpoint> rich = {});
     script_value* variable_storage(const std::string& name) const;
 
     struct breakpoint_record {
         std::vector<int> lines;
         uint64_t sequence = 0;
+        std::vector<breakpoint> rich;   // its breakpoints that carry more than a line
     };
     struct breakpoint_snapshot {
         // Empty line sets are tombstones: clearing an alternate spelling must
@@ -215,9 +290,13 @@ private:
     const uint64_t* hot_line_bloom_ = nullptr;           // null = no breakpoints
     std::vector<uint64_t> hot_line_bloom_storage_;
     std::shared_ptr<const breakpoint_table> hot_bps_;    // installed table; retained across disable/rearm
+    std::unordered_map<std::string, std::vector<breakpoint>> installed_rich_;   // the installed table's breakpoints that carry more than a line
     breakpoint_table hot_bound_bps_;                     // the installed lines moved onto the lines statements start
     uint64_t hot_stop_lines_version_ = 0;
     uint64_t applied_bp_sequence_ = 0;
+    // breakpoints with a condition, a hit condition or a log message, by file and bound line (the script thread's), and their hits
+    std::unordered_map<std::string, std::unordered_map<int, breakpoint>> hot_rich_bps_;
+    std::unordered_map<std::string, std::unordered_map<int, uint64_t>> hit_counts_;
     uint64_t hot_bp_version_ = 0;                        // ~0 forces a re-cache (session re-arm)
 
     // park/pump handshake — one mutex, one cv, predicate wait (no lost wakeups).
@@ -227,6 +306,15 @@ private:
     std::atomic<uint64_t> detaches_{0};   // raised under mtx_: a stop taken before a detach never parks after it
     std::deque<std::function<void()>> commands_;
     bool in_command_ = false;   // reentrancy guard (touched only on the parked thread)
+    int evaluating_ = 0;         // evaluations running (script thread): their statements never stop
+    bool evaluation_read_only_ = false;
+    std::atomic<int64_t> evaluation_budget_{1000000000};
+    std::vector<expandable> expandables_;   // this stop's references (script thread), cleared when it resumes
+    std::atomic<bool> break_on_throw_{false};
+    std::atomic<bool> break_on_uncaught_{false};
+    std::function<void(const std::string&)> on_output_;
+    std::function<void(const std::string&)> on_uncaught_error_;
+    std::atomic<bool> reports_uncaught_{false};
 
     std::function<void(const stop_info&)> on_stopped_;
 

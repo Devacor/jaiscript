@@ -51,15 +51,15 @@ import "gq_predtest.jai";
 import "gq_menutest.jai";
 
 string arg_value(string key, string def) {
-	for (int i = 0; i + 1 < ARGS.size(); ++i) {
-		if (ARGS[i] == key) { return ARGS[i + 1]; }
+	for (int i = 0; i + 1 < args.size(); ++i) {
+		if (args[i] == key) { return args[i + 1]; }
 	}
 	return def;
 }
 
 bool arg_flag(string key) {
-	for (int i = 0; i < ARGS.size(); ++i) {
-		if (ARGS[i] == key) { return true; }
+	for (int i = 0; i < args.size(); ++i) {
+		if (args[i] == key) { return true; }
 	}
 	return false;
 }
@@ -245,8 +245,8 @@ int run_prepare() {
 	int themes = 0;
 	for (int theme = 0; theme < THEME_TEMPO.size(); ++theme) {
 		string p = dir + "/theme" + to_string(theme) + ".mid";
-		if (!file_exists(p)) { write_file(p, midi_theme(theme)); }
-		if (file_exists(p)) { themes = themes + 1; }
+		if (!file::exists(p)) { file::write(p, midi_theme(theme)); }
+		if (file::exists(p)) { themes = themes + 1; }
 	}
 	print(`prepare: ${SFX_PATH.size()} sound effects and ${themes} music themes in ${dir} (${took.elapsed() * 1000:.0f} ms)`);
 	return 0;

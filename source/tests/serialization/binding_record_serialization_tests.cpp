@@ -317,6 +317,25 @@ public:
 			check(tile.find("\"Tile\"") != std::string::npos, "the second engine's: " + tile);
 			check(dynamic_cast<Square*>(from_json<std::shared_ptr<Shape>>(*second, tile).get()) != nullptr, "each loads its own name");
 			check_eq(std::string("Unknown polymorphic type: Tile"), failure([&]() { from_json<std::shared_ptr<Shape>>(*first, tile); }), "and no other engine's");
+
+			// a "$type" is matched whatever its spacing and saved as registered
+			auto spaced = make_engine();
+			stdlib::register_all(*spaced);
+			dynamic_binder<Shape>(*spaced, "Polygon").property("sides", &Shape::sides).build();
+			dynamic_binder<Square>(*spaced, "Tile<int, string>").base_class<Shape>().property("edge", &Square::edge).build();
+			const std::string saved = to_json(*spaced, square, 0);
+			check(saved.find("\"Tile<int, string>\"") != std::string::npos, saved);
+			const auto respelled = [&](const std::string& a_spelling) {
+				std::string text = saved;
+				text.replace(text.find("Tile<int, string>"), std::string("Tile<int, string>").size(), a_spelling);
+				return text;
+			};
+			for (const char* spelling : {"Tile<int,string>", "Tile < int , string >"}) {
+				const auto loaded = from_json<std::shared_ptr<Shape>>(*spaced, respelled(spelling));
+				check(dynamic_cast<Square*>(loaded.get()) != nullptr, spelling);
+				check_eq(saved, to_json(*spaced, loaded, 0), spelling);
+			}
+			check_eq(std::string("Unknown polymorphic type: Tile<int>"), failure([&]() { from_json<std::shared_ptr<Shape>>(*spaced, respelled("Tile<int>")); }));
 		});
 
 		test("an_explicit_route_wins_and_an_unbound_class_throws_where_the_archive_reaches_it", [this]() {

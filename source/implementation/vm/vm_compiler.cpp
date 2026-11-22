@@ -3,6 +3,7 @@
 #include <jaiscript/detail/const_rules.hpp>   // const guards
 #include <jaiscript/core/runtime_errors.hpp>
 #include <jaiscript/detail/builtin_methods.hpp>
+#include <jaiscript/detail/generics.hpp>
 #include <jaiscript/detail/body_walker.hpp>
 #include <jaiscript/detail/program_slots.hpp>
 #include <jaiscript/detail/math_intrinsics.hpp>
@@ -16,6 +17,7 @@
 #include <jaiscript/core/class_registry.hpp>
 #include <jaiscript/detail/parallel_transform.hpp>
 #include <jaiscript/detail/map_entry_binding.hpp>
+#include <jaiscript/detail/coroutine_snapshot.hpp>
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
@@ -218,6 +220,7 @@ namespace {
 			case opcode::op_call:
 			case opcode::op_probe_callee:
 			case opcode::op_regex_constant:
+			case opcode::op_instance_test:
 			case opcode::op_call_from_scratch:
 			case opcode::op_sleep:
 			case opcode::op_format_call:
@@ -258,6 +261,7 @@ namespace {
 			case opcode::op_set_member_fused:
 			case opcode::op_member_compound:
 			case opcode::op_get_static:
+			case opcode::op_namespace_entry:
 			case opcode::op_set_static:
 			case opcode::op_new:
 			case opcode::op_ref_target_store:
@@ -456,6 +460,7 @@ namespace {
 			case opcode::op_call:
 			case opcode::op_probe_callee:
 			case opcode::op_regex_constant:
+			case opcode::op_instance_test:
 			case opcode::op_call_from_scratch:
 			case opcode::op_sleep:
 			case opcode::op_format_call:
@@ -489,6 +494,7 @@ namespace {
 			case opcode::op_get_member_path:
 			case opcode::op_get_member_this:
 			case opcode::op_get_static:
+			case opcode::op_namespace_entry:
 			case opcode::op_set_member:
 			case opcode::op_set_member_fused:
 			case opcode::op_set_static:
@@ -674,6 +680,7 @@ void vm_compiler::emit_compound_store(uint32_t symbol_index, uint32_t slot, uint
 				cp.rhs.slot = code.back().a;
 				cp.rhs.symbol = code.back().b;
 				cp.rhs.load_flags = code.back().c;
+				cp.rhs.direct = cp.rhs.slot != k_invalid_u32 && cp.rhs.load_flags == 0;
 				if (chunk_->ident_nodes.size() == code.size()) { cp.rhs.ident_node = chunk_->ident_nodes.back(); }
 				fuse = true;
 			}
@@ -1050,6 +1057,12 @@ JAI_NOINLINE std::shared_ptr<chunk> vm_compiler::open_callable(std::string_view 
 	callable_ = {};
 	callable_.active = true;
 	callable_.coroutine_body = detail::aggregate_lowering_impl::contains_yield(body.get());
+	yield_numbers_.clear();
+	resume_steps_.clear();
+	if (callable_.coroutine_body) {
+		const std::vector<detail::coroutine_site> sites = detail::coroutine_sites(parameters, *body);
+		for (size_t i = 0; i < sites.size(); ++i) { yield_numbers_.emplace(sites[i].yield, static_cast<uint32_t>(i)); }
+	}
 	callable_body_ = body.get();
 	frame_param_kinds_.clear();
 	frame_eligible_ = parameters.size() <= 8 && frame_body_shape(body.get(), stack_);
@@ -1321,6 +1334,7 @@ JAI_NOINLINE std::shared_ptr<chunk> vm_compiler::compile_level_initializers_code
 // constructor frame answering as the base); the level's own fields follow, each value stored into this's field
 JAI_NOINLINE void vm_compiler::compile_constructor_prologue(const constructor_prologue& prologue) {
 	name_slots_ = &prologue.name_slots;
+	current_stmt_ = prologue.origin.get();   // the frame stands at the constructor from its entry, while its parameters bind too
 	if (prologue.evaluates) { emit(opcode::op_ctor_scope, static_cast<uint32_t>(prologue.name_slots.size())); }
 	const uint32_t first_step = static_cast<uint32_t>(chunk_->ctor_steps.size());
 	for (const auto& step : prologue.steps) { chunk_->ctor_steps.push_back(step); }
@@ -1361,16 +1375,16 @@ JAI_NOINLINE void vm_compiler::compile_constructor_prologue(const constructor_pr
 			own.target = prologue.level;
 			chunk_->ctor_steps.push_back(std::move(own));
 			emit(opcode::op_ctor_literals, static_cast<uint32_t>(chunk_->ctor_steps.size() - 1));
-		} else {
-			static const std::unordered_map<uint64_t, uint32_t> no_parameters;
-			name_slots_ = &no_parameters;   // C++ [class.mem]: a field initializer resolves in the class, never the constructor's parameters
-			for (const auto& [field_id, initializer] : prologue.fields) {
-				current_stmt_ = initializer.get();
-				chunk_->nodes.push_back(initializer);
-				compile_expression(initializer);
-				chunk_->field_inits.emplace_back(field_id, initializer.get());
-				emit(opcode::op_field_init, static_cast<uint32_t>(chunk_->field_inits.size() - 1));
-			}
+		}
+		static const std::unordered_map<uint64_t, uint32_t> no_parameters;
+		for (const auto& field : prologue.fields) {
+			// C++ [class.mem]: a field's own initializer resolves in the class, never the constructor's parameters; a member initializer reads them
+			name_slots_ = field.listed ? &prologue.name_slots : &no_parameters;
+			current_stmt_ = field.value.get();
+			chunk_->nodes.push_back(field.value);
+			compile_expression(field.value);
+			chunk_->field_inits.emplace_back(field.field_id, field.value.get());
+			emit(opcode::op_field_init, static_cast<uint32_t>(chunk_->field_inits.size() - 1));
 		}
 	}
 	current_stmt_ = nullptr;
@@ -1440,10 +1454,11 @@ void vm_compiler::drop_debug_span(const ast_node* node) {
 	if (!chunk_->debug_spans.empty() && chunk_->debug_spans.back().node == node) { chunk_->debug_spans.pop_back(); }
 }
 
-// a source name in one of the callable's own slots, live from here to its scope's close (a graft's locals are compiler temps)
+// a source name in one of the callable's own slots, live from here to its scope's close; a grafted body's names live in the temps
+// above the frame and belong to the graft's frame
 void vm_compiler::note_debug_local(size_t slot, std::string_view name) {
-	if (!callable_.active || slot == SIZE_MAX || slot >= chunk_->first_temp_slot || name.empty() || name[0] == '\x01') { return; }
-	chunk_->debug_locals.push_back({ static_cast<uint32_t>(slot), static_cast<uint32_t>(chunk_->code.size()), UINT32_MAX, symbolizer_->intern(name) });
+	if (!callable_.active || slot == SIZE_MAX || (slot >= chunk_->first_temp_slot && !graft_debug_site_) || name.empty() || name[0] == '\x01') { return; }
+	chunk_->debug_locals.push_back({ static_cast<uint32_t>(slot), static_cast<uint32_t>(chunk_->code.size()), UINT32_MAX, symbolizer_->intern(name), graft_debug_site_ });
 }
 
 void vm_compiler::note_debug_locals(const statement* decl) {
@@ -1498,6 +1513,12 @@ void vm_compiler::compile_declaration_code(const declaration_ptr& decl, bool top
 		return;
 	case node_type::extern_decl:
 		emit(opcode::op_extern_decl, add_node(decl));
+		return;
+	case node_type::generic_decl:            // a generic class's declaration runs its marker: the linker's word that the generic is
+		// declared, by a class declaration's path (KEEP BYTE-PARALLEL with the interpreter's dispatch_decl)
+		if (const auto marker = detail::generic_marker(*static_cast<generic_decl*>(decl.get()), *symbolizer_)) { emit(opcode::op_class_decl, add_node(marker)); }
+		return;
+	case node_type::generic_instance_decl:   // a request runs nothing: the instance's declarations follow it
 		return;
 	case node_type::include_decl:
 		compile_include_declaration(static_cast<include_decl*>(decl.get()));
@@ -1752,10 +1773,12 @@ JAI_NOINLINE void vm_compiler::compile_block(block_stmt* block) {
 	}
 	emit(opcode::op_scope_push);
 	++scope_depth_;
+	open_resume_step(chunk::resume_step::kind::scope);
 	for (const auto& decl : block->declarations) {
 		compile_declaration(decl, false);
 		note_kill_decl(decl.get());
 	}
+	close_resume_step();
 	close_debug_locals(locals);
 	close_kill_scope();
 	--scope_depth_;
@@ -1965,6 +1988,7 @@ JAI_NOINLINE void vm_compiler::compile_for(for_stmt* stmt) {
 	if (loop_scope) {
 		emit(opcode::op_scope_push);
 		++scope_depth_;
+		open_resume_step(chunk::resume_step::kind::scope);
 	}
 
 	kill_scopes_.emplace_back();
@@ -2010,6 +2034,7 @@ JAI_NOINLINE void vm_compiler::compile_for(for_stmt* stmt) {
 	close_kill_scope();
 
 	if (loop_scope) {
+		close_resume_step();
 		--scope_depth_;
 		emit(opcode::op_scope_pop);
 	}
@@ -2085,6 +2110,7 @@ JAI_NOINLINE bool vm_compiler::compile_counted_for(for_stmt* stmt) {
 	if (loop_scope) {
 		emit(opcode::op_scope_push);
 		++scope_depth_;
+		open_resume_step(chunk::resume_step::kind::scope);
 	}
 
 	const size_t locals = chunk_->debug_locals.size();
@@ -2105,7 +2131,7 @@ JAI_NOINLINE bool vm_compiler::compile_counted_for(for_stmt* stmt) {
 	chunk_->counted_for_protos.push_back(proto);
 	const uint32_t proto_idx = static_cast<uint32_t>(chunk_->counted_for_protos.size() - 1);
 
-	emit(opcode::op_cfor_prep, proto_idx);
+	open_resume_step(chunk::resume_step::kind::counted_for, emit(opcode::op_cfor_prep, proto_idx));
 
 	const size_t generic_cond = chunk_->code.size();
 	{
@@ -2136,6 +2162,7 @@ JAI_NOINLINE bool vm_compiler::compile_counted_for(for_stmt* stmt) {
 	emit(opcode::op_loop_back, static_cast<uint32_t>(generic_cond));
 
 	close_debug_locals(locals);
+	close_resume_step();
 	const size_t exit_pop = chunk_->code.size();
 	emit(opcode::op_cfor_pop);
 	const size_t end = chunk_->code.size();
@@ -2153,6 +2180,7 @@ JAI_NOINLINE bool vm_compiler::compile_counted_for(for_stmt* stmt) {
 	stored.generic_update_ip = static_cast<uint32_t>(generic_update);
 
 	if (loop_scope) {
+		close_resume_step();
 		--scope_depth_;
 		emit(opcode::op_scope_pop);
 	}
@@ -2269,7 +2297,7 @@ JAI_NOINLINE void vm_compiler::compile_range_for(range_for_stmt* stmt) {
 	chunk_->iter_protos.push_back(proto);
 	const uint32_t proto_idx = static_cast<uint32_t>(chunk_->iter_protos.size() - 1);
 
-	emit(opcode::op_iter_init, proto_idx);
+	open_resume_step(chunk::resume_step::kind::range_for, emit(opcode::op_iter_init, proto_idx));
 	++scope_depth_;                               // loop-variable scope pushed by op_iter_init
 
 	const size_t loop_top = chunk_->code.size();
@@ -2304,6 +2332,7 @@ JAI_NOINLINE void vm_compiler::compile_range_for(range_for_stmt* stmt) {
 	loops_.pop_back();
 
 	kill_slots(loop_variable);
+	close_resume_step();
 	emit(opcode::op_iter_pop);
 	--scope_depth_;
 }
@@ -2333,7 +2362,9 @@ JAI_NOINLINE void vm_compiler::compile_try(try_stmt* stmt, const statement_ptr& 
 	loops_.back().kind = region_kind::try_block;
 	loops_.back().scope_depth = scope_depth_;
 	try_kills_.emplace_back();
+	open_resume_step(chunk::resume_step::kind::try_block, try_push);
 	compile_statement(stmt->try_block);
+	close_resume_step();
 	std::vector<uint32_t> try_declared = std::move(try_kills_.back());
 	try_kills_.pop_back();
 	loops_.pop_back();
@@ -2385,19 +2416,7 @@ bool holds_fallthrough(const statement* s) {
 	}
 }
 
-// a case value whose evaluation runs no code and writes nothing: the tests may read the switch's own name in place of a copy
-bool inert_case_value(const expression* e) {
-	if (!e) return false;
-	switch (e->get_type()) {
-	case node_type::literal_expr: return true;
-	case node_type::identifier_expr: return true;
-	case node_type::unary_expr: {
-		auto* u = static_cast<const unary_expr*>(e);
-		return (u->op.type == token_type::minus || u->op.type == token_type::plus) && u->operand && u->operand->get_type() == node_type::literal_expr;
-	}
-	default: return false;
-	}
-}
+using detail::inert_case_value;
 }
 
 // The branch form: the tests run first as `subject == value` conditions in case order (the subject a name the case values cannot write,
@@ -2442,6 +2461,7 @@ JAI_NOINLINE bool vm_compiler::compile_switch_branches(switch_stmt* stmt) {
 		subject_temp = std::make_shared<identifier_expr>(stmt->condition->location, std::string_view("\x01inl"), inline_symbol_);
 		subject_temp->slot_index = landed.slot;
 		subject_temp->names_value_decl = true;
+		subject_temp->stands_for = stmt->condition.get();
 		callable_.slot_types.erase(landed.slot);
 		chunk_->nodes.push_back(subject_temp);
 	}
@@ -2555,6 +2575,7 @@ JAI_NOINLINE void vm_compiler::compile_case_body(const std::vector<statement_ptr
 	if (case_scope) {
 		emit(opcode::op_scope_push);
 		++scope_depth_;
+		open_resume_step(chunk::resume_step::kind::scope);
 	}
 	kill_scopes_.emplace_back();
 	const size_t locals = chunk_->debug_locals.size();
@@ -2573,14 +2594,19 @@ JAI_NOINLINE void vm_compiler::compile_case_body(const std::vector<statement_ptr
 	close_debug_locals(locals);
 	close_kill_scope();
 	if (case_scope) {
+		close_resume_step();
 		--scope_depth_;
 		emit(opcode::op_scope_pop);
 	}
 }
 
 JAI_NOINLINE void vm_compiler::compile_switch(switch_stmt* stmt) {
-	if (compile_switch_branches(stmt)) { return; }
+	open_resume_step(chunk::resume_step::kind::switch_branches);
+	const bool branched = compile_switch_branches(stmt);
+	close_resume_step();
+	if (branched) { return; }
 	compile_expression(stmt->condition);
+	open_resume_step(chunk::resume_step::kind::switch_pair);
 
 	push_region(region_kind::loop);
 	loops_.back().kind = region_kind::switch_ctx;
@@ -2628,6 +2654,7 @@ JAI_NOINLINE void vm_compiler::compile_switch(switch_stmt* stmt) {
 		if (case_scope) {
 			emit(opcode::op_scope_push);
 			++scope_depth_;
+			open_resume_step(chunk::resume_step::kind::scope);
 		}
 		kill_scopes_.emplace_back();
 		const size_t locals = chunk_->debug_locals.size();
@@ -2638,6 +2665,7 @@ JAI_NOINLINE void vm_compiler::compile_switch(switch_stmt* stmt) {
 		close_debug_locals(locals);
 		close_kill_scope();
 		if (case_scope) {
+			close_resume_step();
 			--scope_depth_;
 			emit(opcode::op_scope_pop);
 		}
@@ -2661,6 +2689,7 @@ JAI_NOINLINE void vm_compiler::compile_switch(switch_stmt* stmt) {
 		if (default_scope) {
 			emit(opcode::op_scope_push);
 			++scope_depth_;
+			open_resume_step(chunk::resume_step::kind::scope);
 		}
 		kill_scopes_.emplace_back();
 		const size_t locals = chunk_->debug_locals.size();
@@ -2671,6 +2700,7 @@ JAI_NOINLINE void vm_compiler::compile_switch(switch_stmt* stmt) {
 		close_debug_locals(locals);
 		close_kill_scope();
 		if (default_scope) {
+			close_resume_step();
 			--scope_depth_;
 			emit(opcode::op_scope_pop);
 		}
@@ -2692,6 +2722,7 @@ JAI_NOINLINE void vm_compiler::compile_switch(switch_stmt* stmt) {
 		patch_jump(at, end);
 	}
 	loops_.pop_back();
+	close_resume_step();
 }
 
 // The arms of `x = c ? a : b;` onto a slot, each a store of its own: a nested ternary recurses, a value takes the move row when it is
@@ -3046,7 +3077,7 @@ JAI_NOINLINE bool vm_compiler::compile_no_result_expression(const expression_ptr
 			} else {
 				emit_compound_store(add_symbol(ident->symbol_id), identifier_slot_operand(ident),
 				     compound_kind_for(assign->op.type) | compound_flag_no_result |
-				         (ident->global_qualified ? compound_flag_global_only : 0u),
+				         (ident->global_qualified ? compound_flag_global_only : 0u) | (ident->names_value_decl ? 0u : compound_flag_ref_alias),
 				     assign->value.get(), assign->static_operand_class);
 			}
 			return true;
@@ -3108,37 +3139,59 @@ JAI_NOINLINE bool vm_compiler::compile_no_result_expression(const expression_ptr
 				}
 			}
 		}
-		// Statement-position member store onto a frame-slot base (`p.x = v;`, `t.posx = px;`, `p.life = p.life - 1;`): the value an
-		// operand (an identifier, a literal, or the temp a computed value lands in, as the subscript store takes it), one op, no push,
-		// no result; a static member, an environment base or a value shape the temps decline keep the general form
-		if (assign->op.type == token_type::equal && assign->target->get_type() == node_type::member_expr && callable_.active) {
+		// Statement-position member store or compound onto a frame-slot base (`p.x = v;`, `t.posx = px;`, `p.life -= 1;`, `p.pos.x += v * dt;`,
+		// `++p.n;`), onto `this` (`this.x += v;`) or, in a loop, onto an element of an array of instances (`ps[i].hp -= d;`, the element in an
+		// alias temp): the value an operand (an identifier, a literal, or the temp a computed value lands in, as the subscript store takes
+		// it), one op, no push, no result; a static member, an environment base or, for a plain store, a value shape the temps decline keep
+		// the general form. A compound's value is evaluated first (C++17): the op reads its operand ahead of the target, and any other value
+		// lands in a temp; an element's subscript runs between, so only a literal or a private local stays an operand there
+		if (assign->target->get_type() == node_type::member_expr && callable_.active) {
 			auto* member = static_cast<member_expr*>(assign->target.get());
-			uint32_t base_slot = member->is_static ? k_invalid_u32 : member_base_slot(member);
-			const uint32_t this_base = member->is_static || base_slot != k_invalid_u32 ? 0 : member_this_base(member);
+			const bool compound = assign->op.type != token_type::equal;
+			// a compound reads its target: a name the read resolves ahead of a field (a shared_ptr method) keeps the general form
+			const bool plain_target = !member->is_static && !(compound && (member->place_read || !builtins_ || builtins_->shared_ptr_methods.count(member->member_id)));
+			uint32_t base_slot = plain_target ? member_base_slot(member) : k_invalid_u32;
+			const uint32_t this_base = !plain_target || base_slot != k_invalid_u32 ? 0 : member_this_base(member);
 			if (this_base) { base_slot = this_base | k_typed_env_bit; }
-			if (base_slot != k_invalid_u32 && (this_base || base_slot < k_typed_slot_mask)) {
+			const bool this_self = plain_target && base_slot == k_invalid_u32 && typed_lowering_ && temps_active_ && chunk_->is_function_body &&
+			                       !member->null_safe && member->object && member->object->get_type() == node_type::this_expr;
+			if (this_self) { base_slot = k_typed_env_bit; }
+			const bool elem_base = plain_target && base_slot == k_invalid_u32 && elem_member_operand(member);
+			if (elem_base || (base_slot != k_invalid_u32 && (this_base || this_self || base_slot < k_typed_slot_mask))) {
 				const expression_ptr& value = assign->value;
 				member_store_proto mp; mp.node = add_node(assign->target); mp.base = base_slot;
+				if (compound) {
+					mp.compound = true;
+					mp.kind = compound_kind_for(assign->op.type) | (assign->incdec_desugar ? compound_flag_incdec : 0u) | (assign->postfix_old_result ? compound_flag_old_result : 0u);
+				}
 				if (this_base) { chunk_->member_this_symbols[mp.node] = add_symbol(static_cast<const identifier_expr*>(member->object.get())->symbol_id); }
 				note_component_base(mp.node, member);
 				bool value_operand = false;
-				if (value->get_type() == node_type::literal_expr || (value->get_type() == node_type::identifier_expr && identifier_slot_operand(static_cast<identifier_expr*>(value.get())) != k_invalid_u32)) {
+				auto stack_value_into_temp = [&]() {
+					const uint32_t t0 = static_cast<uint32_t>(temp_next_);
+					++temp_next_;
+					if (temp_next_ > temp_high_) { temp_high_ = temp_next_; }
+					mp.value = fused_operand{}; mp.value.slot = t0; mp.value.symbol = temp_symbol_index(); mp.value.direct = true;
+					value_operand = true;
+					return t0;
+				};
+				if (value->get_type() == node_type::literal_expr || (value->get_type() == node_type::identifier_expr && identifier_slot_operand(static_cast<identifier_expr*>(value.get())) != k_invalid_u32 &&
+				                                                     (!elem_base || private_local(value.get())))) {
 					mp.value = make_fused_operand(value); value_operand = true;
 				} else if (fusable_index_expr(value.get()) && compile_subscript_into_temp(value, operand_expect(static_cast<const binary_expr*>(value.get())), mp.value)) {
 					value_operand = true;
 				} else if (unary_temp_operand(value.get()) || math_temp_operand(value.get()) != detail::math_fn::none || member_temp_operand(value.get())) {
 					compile_value_into_temp(value, 0xFF, mp.value); value_operand = true;
-				} else if (value->get_type() == node_type::binary_expr && binary_lands_fused(static_cast<binary_expr*>(value.get()))) {
+				} else if (const bool lands = value->get_type() == node_type::binary_expr && binary_lands_fused(static_cast<binary_expr*>(value.get())); lands || compound || elem_base) {
 					compile_expression(value);
 					vm_instruction& last = chunk_->code.back();
-					if (last.op == opcode::op_binary_fused) {
-						const uint32_t t0 = static_cast<uint32_t>(temp_next_);
-						++temp_next_;
-						if (temp_next_ > temp_high_) { temp_high_ = temp_next_; }
-						last.op = opcode::op_binary_fused_temp; last.b = t0;
+					if (lands && last.op == opcode::op_binary_fused) {
+						last.op = opcode::op_binary_fused_temp; last.b = stack_value_into_temp();
 						note_landing(value.get());
-						mp.value = fused_operand{}; mp.value.slot = t0; mp.value.symbol = temp_symbol_index(); mp.value.direct = true;
-						value_operand = true;
+					} else if (compound || elem_base) {
+						deref_ahead_of(value.get(), member);
+						emit(opcode::op_call_temp, stack_value_into_temp());
+						note_landing(value.get());
 					} else if (this_base) {
 						compile_expression(member->object);
 						emit(opcode::op_set_member, mp.node);
@@ -3152,6 +3205,12 @@ JAI_NOINLINE bool vm_compiler::compile_no_result_expression(const expression_ptr
 					}
 				}
 				if (value_operand) {
+					if (elem_base) {
+						// the subscript as the member read evaluates it, the element into the alias temp the op reads its base from
+						compile_expression(member->object);
+						mp.base = elem_alias_temp();
+						emit(opcode::op_call_temp, mp.base);
+					}
 					chunk_->member_store_protos.push_back(mp);
 					emit(opcode::op_set_member_value, static_cast<uint32_t>(chunk_->member_store_protos.size() - 1));
 					return true;
@@ -3268,7 +3327,7 @@ void vm_compiler::compile_expression(const expression_ptr& expr, bool as_stateme
 		compile_import_expression(expr);
 		return;
 	case node_type::this_expr:
-		emit(opcode::op_this);
+		emit(opcode::op_this, static_cast<const this_expr*>(expr.get())->into_handle ? 1u : 0u);
 		return;
 	case node_type::super_expr:
 		emit(opcode::op_super);
@@ -3362,7 +3421,10 @@ JAI_NOINLINE void vm_compiler::compile_yield(const yield_expr* ye) {
 		compile_expression(ye->value);
 		has_value = 1;
 	}
-	emit(opcode::op_yield, has_value, ye->value && detail::yield_operand_is_lvalue(ye->value.get()) ? 1u : 0u);
+	const auto numbered = yield_numbers_.find(ye);
+	const uint32_t site = numbered == yield_numbers_.end() ? 0u : numbered->second + 1;
+	const size_t at = emit(opcode::op_yield, has_value, ye->value && detail::yield_operand_is_lvalue(ye->value.get()) ? 1u : 0u, site);
+	if (site != 0) { chunk_->yield_sites.push_back({site - 1, static_cast<uint32_t>(at), resume_steps_}); }
 }
 
 // slot + 1 of the plain field a bare name of a method body names in the body's declaring class, 0 when the name is a local, a global
@@ -3667,7 +3729,7 @@ void vm_compiler::lower_dynamic_ops(chunk& c) {
 			out = k_typed_const_bit | o.const_index;
 			return true;
 		}
-		if (o.slot == k_invalid_u32 || o.slot >= k_typed_env_bit || (o.load_flags & (load_flag_type_ctor | load_flag_global_only))) return false;
+		if (o.slot == k_invalid_u32 || o.slot >= k_typed_env_bit || (o.load_flags & load_flags_unscoped)) return false;
 		out = o.slot;
 		return true;
 	};
@@ -4741,7 +4803,7 @@ void vm_compiler::lower_typed_ops(chunk& c) {
 				// return the raw protocol does not take, re-runs the return's tail from its first instruction, so the tail's operands stay live
 				ir_op ret; ret.kind = ir::ret; ret.origin = static_cast<uint32_t>(ip);
 				if (st.op == opcode::op_return_ident) {
-					if (st.a == k_invalid_u32 || st.a >= k_typed_slot_mask || (st.c & (load_flag_type_ctor | load_flag_global_only))) { refuse(chunk::cell_refusal_translation, ip); break; }
+					if (st.a == k_invalid_u32 || st.a >= k_typed_slot_mask || (st.c & load_flags_unscoped)) { refuse(chunk::cell_refusal_translation, ip); break; }
 					use_slot(st.a, 0, false, 0, nullptr, ip); ret.a = st.a; slot_read(ret, st.a);
 					ret.proto = 0;
 					op = ret;
@@ -4988,8 +5050,8 @@ void vm_compiler::lower_typed_ops(chunk& c) {
 				op.kind = ir::mov; op.a = st.a; op.writes = st.a;
 				if (decl && !from_const && !stamp) { op.tok = 1; }   // `auto x = y;` takes y's declared type: a var source makes x a var
 			} else if (st.op == opcode::op_set_member_value && st.a < c.member_store_protos.size()) {
-				// `base.member = operand;` onto a frame-slot instance (an alias included): a store site whose field the entry or the rebind
-				// resolves; the value a cell or a constant of a scalar kind (an environment value keeps the general form)
+				// `base.member = operand;` or `base.member op= operand;` onto a frame-slot instance (an alias included): a store site whose field
+				// the entry or the rebind resolves; the value a cell or a constant of a scalar kind (an environment value keeps the general form)
 				const member_store_proto& mp = c.member_store_protos[st.a];
 				if (mp.base == k_invalid_u32 || mp.base >= k_typed_slot_mask) { refuse(chunk::cell_refusal_representation, ip); break; }
 				if (mp.value.const_index != k_invalid_u32) {
@@ -5000,6 +5062,10 @@ void vm_compiler::lower_typed_ops(chunk& c) {
 					use_slot(mp.value.slot, 0, false, 0, nullptr, ip); op.b = mp.value.slot; slot_read(op, mp.value.slot);
 				} else { refuse(chunk::cell_refusal_representation, ip); break; }
 				op.kind = ir::store; op.container = mp.base; op.member = mp.node;
+				if (mp.compound) {   // the read, the operation and the store at the site
+					if (mp.value.const_index != k_invalid_u32 && mp.value.const_index > k_cell_member_value_mask) { refuse(chunk::cell_refusal_representation, ip); break; }
+					op.tok = static_cast<uint8_t>((mp.kind & compound_kind_mask) + 1);
+				}
 			} else if (st.op == opcode::op_kill_slot && st.a < k_typed_slot_mask && kills_only_cells(st)) {
 				// a body local's or a temp's end: inside the block its cell holds a scalar, an alias or nothing (an instance never lands in a
 				// cell), and a guard's snapshot is the container its name holds (the block runs no user code that could rebind it), so
@@ -5073,7 +5139,7 @@ void vm_compiler::lower_typed_ops(chunk& c) {
 				op = ir_op{}; op.kind = ir::skip;   // the landing is the pair's second instruction
 				++ip;
 			} else if (st.op == opcode::op_index_fused && st.a < c.fused_index_protos.size() && ip + 1 < back && code[ip + 1].op == opcode::op_compound_store
-			           && (code[ip + 1].c & compound_kind_mask) == compound_plus && (code[ip + 1].c & compound_flag_no_result) && !(code[ip + 1].c & (compound_flag_global_only | compound_flag_old_result))
+			           && (code[ip + 1].c & compound_kind_mask) == compound_plus && (code[ip + 1].c & compound_flag_no_result) && !(code[ip + 1].c & (compound_flag_global_only | compound_flag_old_result | compound_flag_ref_alias))
 			           && code[ip + 1].b != k_invalid_u32 && code[ip + 1].b < k_typed_slot_mask) {
 				// `s += a[i]` on a slot the checker could not class: the element read lands in a statement temp of the element's own kind
 				// (a string is borrowed), and the compound is the append with run-time kinds; the pair's origin is the read (a miss at
@@ -5141,10 +5207,10 @@ void vm_compiler::lower_typed_ops(chunk& c) {
 				op.container = fp.container.slot != k_invalid_u32 && fp.container.slot < k_typed_slot_mask ? fp.container.slot : k_invalid_u32;
 			} else if (st.op == opcode::op_index_compound_operand && st.a < c.fused_index_protos.size()) {
 				// `a[i] op= v;`: the store's site with the read-modify-write of the element (int and float buffers in place; any other kind,
-				// an overflow or a zero divisor misses onto the general compound)
+				// an overflow, a zero divisor or a shift out of range misses onto the general compound)
 				const fused_index_proto& fp = c.fused_index_protos[st.a];
 				if (!array_target(fp)) { refuse(chunk::cell_refusal_representation, ip); break; }
-				if (!fp.compound || compound_kind_bitwise(fp.compound_kind) || (fp.store_value.const_index == k_invalid_u32 && fp.store_value.symbol == k_invalid_u32)) { refuse(chunk::cell_refusal_translation, ip); break; }
+				if (!fp.compound || (fp.store_value.const_index == k_invalid_u32 && fp.store_value.symbol == k_invalid_u32)) { refuse(chunk::cell_refusal_translation, ip); break; }
 				uint32_t sink;
 				const uint32_t vslot = store_value_slot(fp, ip);
 				if (fp.store_value.const_index == k_invalid_u32 && fp.store_value.slot == k_invalid_u32 && vslot == k_invalid_u32) { refuse(chunk::cell_refusal_representation, ip); break; }
@@ -5357,6 +5423,7 @@ void vm_compiler::lower_typed_ops(chunk& c) {
 				const compound_fused_proto& cp = c.compound_fused_protos[st.a];
 				if (cp.slot >= k_typed_slot_mask && cp.slot != k_invalid_u32) { refuse(chunk::cell_refusal_representation, ip); break; }
 				if (cp.kind_flags & compound_flag_global_only) { refuse(chunk::cell_refusal_effect, ip); break; }   // `::name`
+				if (cp.kind_flags & compound_flag_ref_alias) { refuse(chunk::cell_refusal_representation, ip); break; }
 				if (!(cp.kind_flags & compound_flag_no_result) || cp.rhs_proto != k_invalid_u32 || (cp.kind_flags & compound_flag_old_result)) { refuse(chunk::cell_refusal_translation, ip); break; }
 				const uint8_t tok = static_cast<uint8_t>(compound_kind_token(cp.kind_flags));
 				if (!value(op, cp.rhs, 0, static_cast<uint32_t>(ip * 3), ip, op.c)) { refuse(chunk::cell_refusal_representation, ip); break; }
@@ -5462,7 +5529,12 @@ void vm_compiler::lower_typed_ops(chunk& c) {
 					}
 				}
 				std::vector<ir_op> seq;   // one operation per instruction from the probe to the call
-				ir_op probe_op; probe_op.kind = ir::probe; probe_op.a = static_cast<uint32_t>(calls.size()); seq.push_back(probe_op);   // the probe runs first, at its own place: its resolution may run a getter, which no argument value may precede
+				ir_op probe_op; probe_op.kind = ir::probe; probe_op.a = static_cast<uint32_t>(calls.size());
+				// a callee that is a compiler value (a graft's result called in its turn) stays live to its probe, which reads it from its slot
+				if (const uint32_t callee_slot = c.call_sites[st.a].callee.slot; callee_slot < static_cast<uint32_t>(c.local_count)) {
+					if (const int k = find_cell(callee_slot); k >= 0 && cells[k].temp) { probe_op.reads[probe_op.nreads++] = callee_slot; }
+				}
+				seq.push_back(probe_op);   // the probe runs first, at its own place: its resolution may run a getter, which no argument value may precede
 				ir_op call_op; call_op.kind = ir::call; call_op.a = static_cast<uint32_t>(calls.size());
 				// argument evaluation stays in source order: a verbatim environment load or a reference-slot load runs the general
 				// instruction at C_ARGS and may run a getter (a reference to a property), so it is an effect barrier; a computed
@@ -6136,7 +6208,7 @@ void vm_compiler::lower_typed_ops(chunk& c) {
 				break;
 			}
 			case ir::store: {
-				if (op.member != k_invalid_u32) { append(vm_instruction{opcode::op_c_mstore, (op.b & k_typed_const_bit) ? op.b : current[op.b], op.member, op.container}, ip); break; }   // a member store site
+				if (op.member != k_invalid_u32) { append(vm_instruction{opcode::op_c_mstore, ((op.b & k_typed_const_bit) ? op.b : current[op.b]) | (op.tok ? k_cell_member_compound_bit | (static_cast<uint32_t>(op.tok - 1) << k_cell_member_kind_shift) : 0u), op.member, op.container}, ip); break; }   // a member store site (op.tok: a compound's kind + 1)
 				// the copy reads environment values through synthetic-slot operands: a clone of the proto (and of its index binaries)
 				// with each environment value replaced; the original proto stays the general form's
 				// the copy's proto: a clone whose index and value operands name cells (the container stays the general operand,
@@ -6218,7 +6290,13 @@ void vm_compiler::lower_typed_ops(chunk& c) {
 				}
 				break;
 			}
-			case ir::probe: { const chunk::cell_loop::cell_call& cc = loop.calls[op.a]; append(vm_instruction{opcode::op_c_probe, op.a, loop_index, cc.probe_ip}, cc.probe_ip); break; }   // the callee resolved at its own place
+			case ir::probe: {   // the callee resolved at its own place; a slot callee is the cell the loop holds for it here (its latest definition), if any
+				chunk::cell_loop::cell_call& cc = loop.calls[op.a];
+				const uint32_t callee_slot = c.call_sites[code[cc.probe_ip].a].callee.slot;
+				cc.callee_cell = callee_slot < current.size() ? current[callee_slot] : k_invalid_u32;
+				append(vm_instruction{opcode::op_c_probe, op.a, loop_index, cc.probe_ip}, cc.probe_ip);
+				break;
+			}
 			case ir::skip: break;
 			case ir::dispatch: {
 				const chunk::switch_table& t = c.switch_tables[op.a];
@@ -7721,7 +7799,7 @@ bool vm_compiler::call_temp_operand(const expression* e) const {
 	if (!e || e->get_type() != node_type::call_expr) return false;
 	const auto* call = static_cast<const call_expr*>(e);
 	if (call->callee && call->callee->get_type() == node_type::member_expr) {
-		return !static_cast<const member_expr*>(call->callee.get())->is_static && call->arguments.size() <= 8;
+		return (!static_cast<const member_expr*>(call->callee.get())->is_static || namespace_callee(call)) && call->arguments.size() <= 8;
 	}
 	if (!call->callee || call->callee->get_type() != node_type::identifier_expr) return false;
 	const auto* ident = static_cast<const identifier_expr*>(call->callee.get());
@@ -8733,6 +8811,7 @@ JAI_NOINLINE void vm_compiler::compile_assignment(const std::shared_ptr<assignme
 			uint32_t kind = compound_kind_for_token(expr->op.type);
 			if (!as_statement) kind |= compound_flag_result_needed;
 			if (ident->global_qualified) kind |= compound_flag_global_only;
+			if (!ident->names_value_decl) kind |= compound_flag_ref_alias;
 			emit_compound_store(add_symbol(ident->symbol_id), identifier_slot_operand(ident), kind, expr->value.get(), expr->static_operand_class);
 		}
 		return;
@@ -8997,6 +9076,38 @@ void vm_compiler::record_argument_source(call_site& site, const expression_ptr& 
 	}
 }
 
+// reflect::is_instance_of(x, "T") with a literal class name, while the reflect namespace holds the library's function: x, then
+// op_instance_test. The call's own site stays for what the test does not answer (the name bound again, no class under the text, a worker),
+// and the entry is read after x where the call reads it before: nothing x runs can bind a reserved namespace's name
+JAI_NOINLINE bool vm_compiler::try_emit_instance_test(const std::shared_ptr<call_expr>& expr) {
+	if (reference_ || !engine_ || expr->arguments.size() != 2 || expr->type_argument_count != 0) return false;
+	const auto* member = static_cast<const member_expr*>(expr->callee.get());
+	if (member->member != "is_instance_of" || !member->object || member->object->get_type() != node_type::identifier_expr ||
+	    static_cast<const identifier_expr*>(member->object.get())->name != "reflect") return false;
+	const expression* named = expr->arguments[1].get();
+	if (named->get_type() != node_type::literal_expr || !static_cast<const literal_expr*>(named)->value.is_string()) return false;
+	const script_value& text = static_cast<const literal_expr*>(named)->value;
+	const script_value* cell = detail::library_instance_test_cell(const_cast<engine&>(*engine_));
+	if (!cell) return false;
+	site_lease site(pending_sites_);
+	site->call_node = add_node(expr);
+	site->arg_symbols.reserve(2);
+	site->arg_slots.reserve(2);
+	const uint32_t args_begin = static_cast<uint32_t>(chunk_->code.size());
+	record_argument_source(*site, expr->arguments[0], 2);
+	compile_expression(expr->arguments[0]);
+	record_argument_source(*site, expr->arguments[1], 2);
+	chunk_->call_arg_zones.emplace_back(args_begin, static_cast<uint32_t>(chunk_->code.size()));
+	chunk_->call_sites.push_back(std::move(*site));
+	chunk::instance_test test;
+	test.class_name = std::string(text.unchecked_as_string());
+	test.entry_cell = cell;
+	test.entry = *cell->get_storage().get_if<script_value::TYPEID_FUNCTION>();
+	chunk_->instance_tests.push_back(std::move(test));
+	emit(opcode::op_instance_test, static_cast<uint32_t>(chunk_->call_sites.size() - 1), static_cast<uint32_t>(chunk_->instance_tests.size() - 1), add_constant(text));
+	return true;
+}
+
 JAI_NOINLINE void vm_compiler::compile_call(const std::shared_ptr<call_expr>& expr) {
 	// Consumed HERE so nested arg calls never inherit the return-position hint
 	const bool tail_site = pending_tail_call_;
@@ -9067,6 +9178,7 @@ JAI_NOINLINE void vm_compiler::compile_call(const std::shared_ptr<call_expr>& ex
 				emit(opcode::op_math, static_cast<uint32_t>(fn), static_cast<uint32_t>(expr->arguments.size()));
 				return;
 			}
+			if (try_emit_instance_test(expr)) { return; }
 		}
 		if (!member->is_static) {
 			compile_expression(member->object);
@@ -9185,7 +9297,8 @@ JAI_NOINLINE void vm_compiler::compile_call(const std::shared_ptr<call_expr>& ex
 	// op_probe_callee at the pre-args observation point into the pending register -
 	// no value-stack materialization, byte-identical semantics. Other callee shapes
 	// keep the verbatim load+op_call pair.
-	const bool probe_callee = expr->callee->get_type() == node_type::identifier_expr;
+	const bool cell_callee = namespace_callee(expr.get());
+	const bool probe_callee = expr->callee->get_type() == node_type::identifier_expr || cell_callee;
 	size_t probe_ip = SIZE_MAX;
 	size_t staged_args = 0;
 	std::vector<uint32_t> staged_slots;
@@ -9205,12 +9318,17 @@ JAI_NOINLINE void vm_compiler::compile_call(const std::shared_ptr<call_expr>& ex
 		// Computed callees (index/call/static-member results) take the loaded value's
 		// callable check at the same observation point
 		if (call_args_need_probe(*expr)) {
-			emit(opcode::op_probe_member, k_invalid_u32, 1);
+			probe_ip = emit(opcode::op_probe_member, k_invalid_u32, 1);
 		}
 	}
 	site_lease site(pending_sites_);
 	site->call_node = add_node(expr);
-	if (probe_callee) {
+	if (cell_callee) {
+		const auto member = std::static_pointer_cast<member_expr>(expr->callee);
+		site->callee.symbol = add_symbol(member->member_id != UINT64_MAX ? member->member_id : detail::engine_access::symbolize(*engine_, member->member));
+		site->callee.load_flags = load_flag_namespace_cell;
+		site->callee.namespace_cell = namespace_cell_row(member, reserved_namespace_cell(member.get()));
+	} else if (probe_callee) {
 		site->callee = make_fused_operand(expr->callee);
 	}
 	site->arg_symbols.reserve(expr->arguments.size());
@@ -9241,10 +9359,11 @@ JAI_NOINLINE void vm_compiler::compile_call(const std::shared_ptr<call_expr>& ex
 			for (size_t ip : captures_at->second) { chunk_->code[ip].a = static_cast<uint32_t>(chunk_->call_sites.size() - 1); }
 			capture_sites_.erase(captures_at);
 		}
-		const bool sleep_call = expr->arguments.size() == 1 && static_cast<const identifier_expr*>(expr->callee.get())->name == "sleep";
+		const bool sleep_call = !cell_callee && expr->arguments.size() == 1 && static_cast<const identifier_expr*>(expr->callee.get())->name == "sleep";
 		emit(sleep_call ? opcode::op_sleep : expr->literal_format_call() ? opcode::op_format_call : opcode::op_call_from_scratch, static_cast<uint32_t>(expr->arguments.size()),
 		     static_cast<uint32_t>(chunk_->call_sites.size() - 1), tail_site ? 1u : 0u);
 	} else {
+		if (probe_ip != SIZE_MAX) { chunk_->code[probe_ip].a = static_cast<uint32_t>(chunk_->call_sites.size() - 1); }   // the check names its callee as the call does
 		emit(opcode::op_call, static_cast<uint32_t>(expr->arguments.size()),
 		     static_cast<uint32_t>(chunk_->call_sites.size() - 1));
 	}
@@ -9292,8 +9411,39 @@ void vm_compiler::member_tail_into_temp(const expression* e) {
 	code[n - 1] = vm_instruction{opcode::op_load, t, temp_symbol_index(), 0};
 }
 
+// reflect::name, jai::name: no script declares into these namespaces, so the name is this cell for as long as the engine lives, and a
+// host that binds the name again assigns into it
+const script_value* vm_compiler::reserved_namespace_cell(const member_expr* member) const {
+	if (reference_ || !engine_ || !member->object || member->object->get_type() != node_type::identifier_expr) return nullptr;
+	const std::string_view name = static_cast<const identifier_expr*>(member->object.get())->name;
+	if (!is_reserved_namespace_name(name)) return nullptr;
+	engine& eng = const_cast<engine&>(*engine_);
+	auto& spaces = detail::engine_access::script_namespaces(eng);
+	const auto space = spaces.find(detail::engine_access::symbolize(eng, name));
+	if (space == spaces.end() || !space->second) return nullptr;
+	const uint64_t entry = detail::engine_access::symbolize(eng, member->member);
+	if (space->second->scope && space->second->scope->get_own_value_ptr(entry)) return nullptr;
+	const auto cell = space->second->variables.find(entry);
+	return cell == space->second->variables.end() ? nullptr : &cell->second;
+}
+
+uint32_t vm_compiler::namespace_cell_row(const std::shared_ptr<member_expr>& member, const script_value* cell) {
+	chunk_->namespace_cells.push_back(chunk::namespace_cell{cell, add_node(member)});
+	return static_cast<uint32_t>(chunk_->namespace_cells.size() - 1);
+}
+
+// reflect::f(args): the callee is resolved as a bare name's is (a probe ahead of the arguments, the site's caches, the loops' call cells)
+bool vm_compiler::namespace_callee(const call_expr* call) const {
+	return call->callee && call->callee->get_type() == node_type::member_expr && static_cast<const member_expr*>(call->callee.get())->is_static &&
+	       reserved_namespace_cell(static_cast<const member_expr*>(call->callee.get())) != nullptr;
+}
+
 JAI_NOINLINE void vm_compiler::compile_member(const std::shared_ptr<member_expr>& expr) {
 	if (expr->is_static) {
+		if (const script_value* cell = reserved_namespace_cell(expr.get())) {
+			emit(opcode::op_namespace_entry, add_node(expr), namespace_cell_row(expr, cell));
+			return;
+		}
 		emit(opcode::op_get_static, add_node(expr));
 		return;
 	}

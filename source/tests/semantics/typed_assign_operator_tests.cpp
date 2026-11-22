@@ -36,7 +36,7 @@ public:
 	void forge_tests() override {
 		test("a_typed_local_runs_the_class_operator", [this]() {
 			expect("a local", R"(R a = R(); R b = R(); b.x = 2; a = b; return to_string(a.x) + " " + to_string(a.calls);)", "102 1");
-			expect("a subclass value the overload takes", R"(R a = R(); S b = S(); b.x = 3; a = b; return to_string(a.x) + " " + type_of(a);)", "103 R");
+			expect("a subclass value the overload takes", R"(R a = R(); S b = S(); b.x = 3; a = b; return to_string(a.x) + " " + reflect::type_of(a);)", "103 R");
 			expect("in a loop", R"(R a = R(); R b = R(); for (int i = 0; i < 3; ++i) { b.x = i; a = b; } return to_string(a.x) + " " + to_string(a.calls);)", "102 3");
 			expect("a temporary on the right", R"(R a = R(); a = R(); return to_string(a.x);)", "101");
 			expect("the expression's value is the assigned object", R"(R a = R(); R b = R(); R c = R(); c = (a = b); return to_string(a.x) + " " + to_string(c.x);)", "101 201");

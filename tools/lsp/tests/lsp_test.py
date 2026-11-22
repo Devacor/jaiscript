@@ -261,6 +261,7 @@ def run_fixtures(exe, update, checks):
         ask("hover.doc_comment", "textDocument/hover", main_uri, main_text, "twice", 1, 0)
         ask("hover.enum_value", "textDocument/hover", main_uri, main_text, "green", 1, 0)
         ask("hover.host_fn", "textDocument/hover", main_uri, main_text, "to_string", 1, 0)
+        ask("hover.narrowed", "textDocument/hover", main_uri, main_text, "who.heal", 1, 0)
         ask("hover.param", "textDocument/hover", main_uri, main_text, "xs)", 2, 0)
         ask("hover.base_ref_method", "textDocument/hover", main_uri, main_text, "a.power", 1, 2)
         ask("definition.global", "textDocument/definition", main_uri, main_text, "LIMIT", 1, 0)
@@ -321,6 +322,21 @@ def run_fixtures(exe, update, checks):
         for leaf in ("typed_leaf.jai", "broken_leaf.jai"):
             leaf_uri = uri_of(FIXTURES / "errors" / leaf)
             results["diagnostics.errors." + leaf] = client.diagnostics.get(leaf_uri, {}).get("diagnostics")
+
+        # a namespace two files declare: the bare names one file reads are the members the other declares
+        shelf = FIXTURES / "namespace" / "shelf.jai"
+        shelf_uri = client.open(shelf)
+        shelf_text = client.texts[shelf_uri]
+        client.settle()
+        results["diagnostics.namespace.shelf"] = client.wait_diagnostics(shelf_uri)["diagnostics"]
+        ask("hover.namespace_field_other_file", "textDocument/hover", shelf_uri, shelf_text, "stocked.price", 1, 8)
+        ask("definition.namespace_fn_other_file", "textDocument/definition", shelf_uri, shelf_text, "tax(", 1, 0)
+
+        # '<' after a name another file declares: a variable compares and a generic takes type arguments, as the runner reads them
+        compared = FIXTURES / "less_than" / "use.jai"
+        compared_uri = client.open(compared)
+        client.settle()
+        results["diagnostics.less_than.use"] = client.wait_diagnostics(compared_uri)["diagnostics"]
 
         # an edit that breaks and then fixes the syntax: the error appears at the edited line and goes away
         pos = at(main_text, "int hp = h.hp;", 1, 0)
@@ -409,6 +425,112 @@ def run_keyword_members(exe, checks):
         refs = client.request("textDocument/references", dict(at("p.catch", 1, 2), context={"includeDeclaration": True}))
         checks.check(sorted(r["range"]["start"]["line"] for r in refs or []).count(method) == 1 and len(refs or []) >= 2,
                      "keyword members: references to Promise.catch", str(refs)[:300])
+    finally:
+        client.close()
+
+
+def run_generics(exe, checks):
+    """generic code answers what its twin written without type parameters answers (generics_fixture: generic.jai beside
+    plain.jai, line for line), instances by their written names; two programs that each declare a generic never see the
+    other's, and an imported unit's generic changing rechecks the unit that uses it"""
+    print("generics")
+    root = HERE / "generics_fixture"
+    client = Client(exe, root)
+    try:
+        uris = {name: client.open(root / name) for name in ("generic.jai", "plain.jai", "two_a.jai", "two_b.jai", "uses.jai")}
+        client.settle()
+        for name, uri in uris.items():
+            checks.check(not client.wait_diagnostics(uri)["diagnostics"], "generics: no diagnostics in " + name, str(client.diagnostics.get(uri)))
+        texts = {name: client.texts[uri] for name, uri in uris.items()}
+
+        def ask(method, name, needle, delta=0, extra=None):
+            params = {"textDocument": {"uri": uris[name]}, "position": position_of(texts[name], needle, 1, delta)}
+            params.update(extra or {})
+            return client.request(method, params)
+
+        def hover(name, needle, delta=0):
+            r = ask("textDocument/hover", name, needle, delta)
+            return r["contents"]["value"] if r else ""
+
+        def line(r):
+            r = r[0] if isinstance(r, list) and r else r
+            return (relativize(r["uri"], root), r["range"]["start"]["line"]) if r else None
+
+        def labels(name, typed, needle, delta=0):
+            pos = position_of(texts[name], needle, 1, delta)
+            client.change(uris[name], pos, pos, typed)
+            end = {"line": pos["line"], "character": pos["character"] + len(typed)}
+            result = client.request("textDocument/completion", {"textDocument": {"uri": uris[name]}, "position": end})
+            client.change(uris[name], pos, end, "")
+            return {item["label"] for item in result["items"]}
+
+        # (what, needle in generic.jai, needle in plain.jai, delta, what the generic's hover shows)
+        pairs = [
+            ("the class at its declaration", "class Stack", "class Stack", 6, "class Stack<T> {"),
+            ("an instance's written name", "Stack<int> numbers", "Stack numbers", 0, "class Stack<int> {"),
+            ("an instance nested in another's arguments", "Stack<int>> p", "Stack second", 0, "void push(int item);"),
+            ("a generic function at its declaration", "largest<T>", "largest(array", 0, "T largest<T>(array<T> xs)"),
+            ("a generic method at its declaration", "fold<U>", "fold(string", 0, "U fold<U>(U seed)"),
+            ("a deduced call", "big = largest", "big = largest", 6, "int largest<int>(array<int> xs)"),
+            ("a call with type arguments", "big2 = largest", "big2 = largest", 7, "int largest<int>(array<int> xs)"),
+            ("a method of an instance", "numbers.push", "numbers.push", 8, "method of `Stack<int>`"),
+            ("a generic method called with type arguments", "numbers.fold", "numbers.fold", 8, "string fold<string>(string seed)"),
+            ("a field whose type is an instance", "p.second", "p.second", 2, "Stack<int> Pair<string, Stack<int>>.second"),
+            ("a method through that field", "second.push", "second.push", 7, "void push(int item)"),
+            ("a local in a generic body", "best = xs[0]", "best = xs[0]", 0, "T best"),
+            ("a field in a generic class's body", "items.push(item)", "items.push(item)", 0, "array<T> Stack.items"),
+            ("a bound's member in a generic body", "e.id", "e.id", 2, "int Entity.id"),
+        ]
+        for what, g, p, delta, shown in pairs:
+            gd = line(ask("textDocument/definition", "generic.jai", g, delta))
+            pd = line(ask("textDocument/definition", "plain.jai", p, delta))
+            checks.check(gd is not None and pd is not None and gd[1] == pd[1], "generics: definition of " + what + " is the twin's line", str((gd, pd)))
+            h = hover("generic.jai", g, delta)
+            checks.check(bool(h) and (shown is None or shown in h), "generics: hover on " + what, h[:300])
+        h = hover("generic.jai", "array<T> items", 6)
+        checks.check("type parameter of `Stack<T>`" in h, "generics: hover on a type parameter", h)
+        d = line(ask("textDocument/definition", "generic.jai", "array<T> items", 6))
+        checks.check(d == ("generic.jai", 2), "generics: definition of a type parameter is its place in the list", str(d))
+
+        members = labels("generic.jai", "numbers.", "numbers.pop();")
+        checks.check({"items", "push", "pop", "size", "fold"} <= members, "generics: completion after an instance lists the class's members", str(sorted(members)))
+        members = labels("generic.jai", "e.", "e.id")
+        checks.check({"id", "hit"} <= members, "generics: completion in a generic body lists the bound's members", str(sorted(members)))
+        members = labels("generic.jai", "p.second.", "p.second.push")
+        checks.check({"items", "push"} <= members, "generics: completion after a nested instance", str(sorted(members)))
+
+        refs = ask("textDocument/references", "generic.jai", "void push(T", 5, {"context": {"includeDeclaration": True}})
+        twin = ask("textDocument/references", "plain.jai", "void push(int", 5, {"context": {"includeDeclaration": True}})
+        checks.check(sorted(r["range"]["start"]["line"] for r in refs or []) == sorted(r["range"]["start"]["line"] for r in twin or []),
+                     "generics: references of a method reach its instances' calls as the twin's do", str((refs, twin))[:400])
+        sig = ask("textDocument/signatureHelp", "generic.jai", "[1, 2]);\nauto", 1)
+        checks.check(any("largest<int>(array<int> xs)" in s["label"] for s in (sig or {}).get("signatures", [])),
+                     "generics: signature help in a call with type arguments", str(sig))
+        outline = lambda name: [(s["name"], [c["name"] for c in s.get("children", [])]) for s in client.request(
+            "textDocument/documentSymbol", {"textDocument": {"uri": uris[name]}})]
+        checks.check(outline("generic.jai") == outline("plain.jai"), "generics: the outline is the twin's", str(outline("generic.jai")))
+
+        h = hover("uses.jai", "Stack<int>")
+        checks.check("class Stack<int> {" in h and "shelf.jai" in h, "generics: hover on an imported generic's instance", h)
+        checks.check(line(ask("textDocument/definition", "uses.jai", "Stack<int>")) == ("shelf.jai", 1), "generics: definition of an imported generic")
+        h = hover("uses.jai", "first(", 0)
+        checks.check("string first<string>(array<string> xs)" in h, "generics: hover on a namespace's generic function", h)
+        members = labels("uses.jai", "s.", "s.items")
+        checks.check({"items", "count"} <= members, "generics: completion after an instance of a namespace's generic", str(sorted(members)))
+
+        shelf = root / "shelf.jai"
+        shelf_uri = client.open(shelf)
+        shelf_text = client.texts[shelf_uri]
+        pos = position_of(shelf_text, "return best;", 1, 7)
+        end = {"line": pos["line"], "character": pos["character"] + 4}
+        client.change(shelf_uri, pos, end, "nope")
+        client.settle()
+        broken = client.diagnostics.get(uris["uses.jai"], {}).get("diagnostics")
+        checks.check(bool(broken), "generics: an imported generic's body breaking reaches the unit that uses it", str(broken))
+        client.change(shelf_uri, pos, {"line": pos["line"], "character": pos["character"] + 4}, "best")
+        client.settle()
+        fixed = client.diagnostics.get(uris["uses.jai"], {}).get("diagnostics")
+        checks.check(fixed == [], "generics: and mending it clears the unit", str(fixed))
     finally:
         client.close()
 
@@ -828,6 +950,32 @@ def run_robustness(exe, checks):
     finally:
         server.kill()
 
+    # generic chains that grow faster than their depth counts: the check returns with the load's error, as the text is typed
+    server = RawServer(exe)
+    try:
+        server.initialize()
+        growing = (
+            ("an instance that doubles per level", "class Pair<A, B> { A a; B b; }\nclass Grow<T> { Grow<Pair<T, T>> next; }\nGrow<int> g;\n",
+             b"generic instantiation names an instance of more than 4096 characters"),
+            ("a function that doubles its argument", "class Two<A, B> { A a; B b; }\nvoid grow<T>(T x, int n) { if (n > 0) { Two<T, T> p; grow(p, n - 1); } }\ngrow(1, 3);\n",
+             b"needs 'grow<Two<int, int>>'"),
+            ("a class chain that branches", "class L<T> { } class R<T> { }\nclass Tree<T> { Tree<L<T>> a; Tree<R<T>> b; }\nTree<int> t;\n",
+             b"generic instantiation nests more than 64 deep"),
+            ("a function chain that branches", "class Lf<T> { } class Rt<T> { }\nvoid walk<T>(int n) { if (n > 0) { walk<Lf<T>>(n - 1); walk<Rt<T>>(n - 1); } }\nwalk<int>(2);\n",
+             b"generic instantiation makes more than 4096 instances from one use"),
+            ("type arguments on a type parameter", "class List<T> { void f() { List<T<T>> r; } }\nList<int> l;\n",
+             b"takes no type arguments: it is a type parameter of"),
+        )
+        for at, (name, text, expected) in enumerate(growing):
+            uri = uri_of(FIXTURES / ("growing_%d_unsaved.jai" % at))
+            server.send({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {
+                "uri": uri, "languageId": "jaiscript", "version": 1, "text": text}}})
+            reply = server.reply_with(expected)
+            checks.check(reply is not None and reply.get("method") == "textDocument/publishDiagnostics", name + ": the diagnostic is the load's error", str(reply)[:200])
+            checks.check(server.ping(200 + at), name + ": the next request is answered")
+    finally:
+        server.kill()
+
     for args in (["--max-message=1000"], ["--max-message=lots"], ["--host=nope"]):
         proc = subprocess.run([str(exe), *args], stdin=subprocess.DEVNULL, capture_output=True, timeout=HANG_GUARD)
         checks.check(proc.returncode == 2, "a bad %s is a usage error" % args[0], "exit %s" % proc.returncode)
@@ -912,6 +1060,7 @@ def main():
     if args.only in (None, "fixtures"):
         run_fixtures(exe, args.update, checks)
         run_keyword_members(exe, checks)
+        run_generics(exe, checks)
     if args.only in (None, "gatorquest"):
         run_gatorquest(exe, checks)
     if args.only in (None, "latency"):

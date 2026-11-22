@@ -10,6 +10,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace jai::detail {
 
@@ -41,6 +43,11 @@ namespace jai::detail {
 	// ClassName{field: value, ...} with base fields first; a handle shows its pointee, an expired weak_ptr null, an
 	// instance already on the path <cycle ClassName>. Walks on an explicit stack; past limit bytes the text ends in "..."
 	checked_result<std::string> value_text(const script_value& v, const own_text_hook& hook, size_t limit = SIZE_MAX);
+
+	// What a value's parts hang off for a debugger: the object a live weak_ptr names (null for an expired one), the value otherwise
+	script_value shown_object(const script_value& v);
+	// An object's fields as value_text shows them (bases first, fields added at run time after, by name); none for a C++ object
+	std::vector<std::pair<std::string, script_value>> shown_fields(const script_value& v, engine* eng);
 
 } // namespace jai::detail
 

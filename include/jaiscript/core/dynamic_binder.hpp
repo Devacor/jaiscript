@@ -308,7 +308,7 @@ namespace detail {
 		void require_object(const script_value& v) const;
 	};
 
-	// One engine-wide "Signal" class serves every signature through the erased table; registered the first time any
+	// One engine-wide "signal" class serves every signature through the erased table; registered the first time any
 	// signal member binds
 	void ensure_signal_view_type_registered(engine& eng);
 	script_value make_signal_view(engine* eng, const signal_script_ops& ops);
@@ -741,20 +741,20 @@ public:
     dynamic_binder& constructor(const Options&... options) {
         queue_own_binding();
         const function_options folded = detail::fold_function_options(options...);
-        add_constructor<Args...>(folded.required);
+        add_constructor<detail::excludes_execution_time<Options...>, Args...>(folded.required);
         if (folded.nodiscard) { engine_.nodiscard_function(class_name_); }
         if (folded.serial) { class_def_->serial_only_construction(true); }
         return *this;
     }
 
 private:
-    template<typename... Args>
+    template<bool ExcludeTime, typename... Args>
     void add_constructor(const permission_set& required = {}) {
         if constexpr (sizeof...(Args) == 0) {
-            engine_.add_overloaded_function(class_name_, 0, engine_.guard_function(detail::host_method_call{ &native_constructor_call<>, constructor_state() }, required));
+            engine_.add_overloaded_function(class_name_, 0, engine_.template bound_function<ExcludeTime>(detail::host_method_call{ &native_constructor_call<>, constructor_state() }, required));
         } else {
             engine_.add_overloaded_function_with_full_types(class_name_, sizeof...(Args),
-                writeback_tagged<detail::host_writeback_mask<Args...>()>(engine_.guard_function(detail::host_method_call{ &native_constructor_call<Args...>, constructor_state() }, required)),
+                writeback_tagged<detail::host_writeback_mask<Args...>()>(engine_.template bound_function<ExcludeTime>(detail::host_method_call{ &native_constructor_call<Args...>, constructor_state() }, required)),
                 std::vector<param_type_info>{ engine::map_cpp_type_to_param_info<std::decay_t<Args>>()... });
         }
     }
@@ -811,6 +811,15 @@ public:
     // Hold every bound method of this class to its C++ signature in the strict checker
     dynamic_binder& strict_signatures() {
         class_def_->set_strict_signatures(true);
+        return *this;
+    }
+
+    // No script class derives from this one (C++'s final): a class declaration that names it as a base fails the load
+    dynamic_binder& final() {
+        // a property_owner carries the slot whether or not anything extends it; a class that derives the slot itself asks for extension
+        static_assert(!std::is_base_of_v<script_extensible, T> || auto_bind_concepts::is_property_owner<T>,
+                      "a class that derives jai::script_extensible is made for script classes to derive from it, so it cannot be final");
+        class_def_->set_final(true);
         return *this;
     }
 
@@ -1018,7 +1027,7 @@ public:
         }
     }
 
-    template<bool IsConst, typename R, typename Method, typename... Args>
+    template<bool ExcludeTime, bool IsConst, typename R, typename Method, typename... Args>
     dynamic_binder& bind_member_method(const std::string& name, Method method, const function_options& options) {
         queue_own_binding();
         constexpr uint64_t writeback = detail::host_writeback_mask<Args...>();
@@ -1030,9 +1039,9 @@ public:
         // by argument type instead of the last registration silently winning.
         const bool unguarded = options.required.empty();
         class_def_->note_host_overload(engine_.symbolize(name), sizeof...(Args), IsConst);
-        class_def_->add_method(name, writeback_tagged<writeback>(engine_.guard_function(detail::host_method_call{ &member_method_call<IsConst, R, Method, Args...>, state }, options.required)), sizeof...(Args),
+        class_def_->add_method(name, writeback_tagged<writeback>(engine_.template bound_function<ExcludeTime>(detail::host_method_call{ &member_method_call<IsConst, R, Method, Args...>, state }, options.required)), sizeof...(Args),
             std::vector<param_type_info>{ engine::map_cpp_type_to_param_info<std::decay_t<Args>>()... }, result_info<R>());
-        if constexpr (lane_result<R>() && (lane_param<Args>() && ...)) {
+        if constexpr (!ExcludeTime && lane_result<R>() && (lane_param<Args>() && ...)) {
             if (unguarded) {
                 class_def_->add_native_lane(engine_.symbolize(name), &member_lane<std::conditional_t<IsConst, const T, T>, R, Method, Args...>, std::move(state),
                                             &lane_exact<Args...>);
@@ -1050,20 +1059,20 @@ public:
     // member binds as the same member without it.
     template<typename R, typename... Args, bool Noexcept, detail::function_option... Options>
     dynamic_binder& method(const std::string& name, R(T::*member)(Args...) noexcept(Noexcept), const Options&... options) {
-        return bind_member_method<false, R, R(T::*)(Args...), Args...>(name, member, detail::fold_function_options(options...));
+        return bind_member_method<detail::excludes_execution_time<Options...>, false, R, R(T::*)(Args...), Args...>(name, member, detail::fold_function_options(options...));
     }
     template<typename R, typename... Args, bool Noexcept, detail::function_option... Options>
     dynamic_binder& method(const std::string& name, R(T::*member)(Args...) const noexcept(Noexcept), const Options&... options) {
-        return bind_member_method<true, R, R(T::*)(Args...) const, Args...>(name, member, detail::fold_function_options(options...));
+        return bind_member_method<detail::excludes_execution_time<Options...>, true, R, R(T::*)(Args...) const, Args...>(name, member, detail::fold_function_options(options...));
     }
     // a script receiver is an lvalue: & and const & bind as the members they are, && cannot be called on one
     template<typename R, typename... Args, bool Noexcept, detail::function_option... Options>
     dynamic_binder& method(const std::string& name, R(T::*member)(Args...) & noexcept(Noexcept), const Options&... options) {
-        return bind_member_method<false, R, R(T::*)(Args...) &, Args...>(name, member, detail::fold_function_options(options...));
+        return bind_member_method<detail::excludes_execution_time<Options...>, false, R, R(T::*)(Args...) &, Args...>(name, member, detail::fold_function_options(options...));
     }
     template<typename R, typename... Args, bool Noexcept, detail::function_option... Options>
     dynamic_binder& method(const std::string& name, R(T::*member)(Args...) const & noexcept(Noexcept), const Options&... options) {
-        return bind_member_method<true, R, R(T::*)(Args...) const &, Args...>(name, member, detail::fold_function_options(options...));
+        return bind_member_method<detail::excludes_execution_time<Options...>, true, R, R(T::*)(Args...) const &, Args...>(name, member, detail::fold_function_options(options...));
     }
     template<typename R, typename... Args, bool Noexcept, detail::function_option... Options>
     dynamic_binder& method(const std::string&, R(T::*)(Args...) && noexcept(Noexcept), const Options&...) {
@@ -1099,11 +1108,11 @@ public:
         // Detect accidental use of member data pointers - use property() instead
         static_assert(!std::is_member_object_pointer_v<std::decay_t<Callable>>,
             "Member data pointers cannot be passed to method(). Use property() instead.");
-        return bind_callable_method(name, std::forward<Callable>(callable), detail::fold_function_options(options...));
+        return bind_callable_method<detail::excludes_execution_time<Options...>>(name, std::forward<Callable>(callable), detail::fold_function_options(options...));
     }
 
 private:
-    template<typename Callable>
+    template<bool ExcludeTime, typename Callable>
     dynamic_binder& bind_callable_method(const std::string& name, Callable&& callable, const function_options& options) {
         queue_own_binding();
 
@@ -1117,12 +1126,12 @@ private:
             if constexpr (second_param_is_self<args_tuple>()) {
                 // C++'s free op(L, const T&) bound for T: the reflected operator `5 - t` reaches when 5 has none for t
                 if (binary_operator_token(name)) {
-                    return bind_callable_method(engine::reflected_operator_name(name), reflected<typename traits::return_type>(
+                    return bind_callable_method<ExcludeTime>(engine::reflected_operator_name(name), reflected<typename traits::return_type>(
                         std::make_shared<CallableType>(std::forward<Callable>(callable)), static_cast<args_tuple*>(nullptr)), options);
                 }
             }
             // a callable without a T& / const T& first parameter is a method that ignores its receiver
-            return bind_callable_method(name, receiver_ignoring<typename traits::return_type>(
+            return bind_callable_method<ExcludeTime>(name, receiver_ignoring<typename traits::return_type>(
                 std::make_shared<CallableType>(std::forward<Callable>(callable)), static_cast<args_tuple*>(nullptr)), options);
         } else {
             using R = typename traits::return_type;
@@ -1138,12 +1147,12 @@ private:
                 state = std::make_shared<const detail::callable_call_state<CallableType>>(
                     detail::callable_call_state<CallableType>{ std::forward<Callable>(callable), &engine_, class_def_->get_type_id() });
             }
-            const bool lane = lane_shaped && options.required.empty();
+            const bool lane = !ExcludeTime && lane_shaped && options.required.empty();
             constexpr bool is_const = !std::is_same_v<std::tuple_element_t<0, args_tuple>, T&>;
             class_def_->note_host_overload(engine_.symbolize(name), script_arity, is_const);
 
             // the C++ parameter signature after the self parameter, so same-arity lambda overloads resolve by argument type
-            class_def_->add_method(name, writeback_tagged<writeback>(engine_.guard_function(detail::host_method_call{ &callable_method_call<R, args_tuple, CallableType>, state }, options.required)), script_arity,
+            class_def_->add_method(name, writeback_tagged<writeback>(engine_.template bound_function<ExcludeTime>(detail::host_method_call{ &callable_method_call<R, args_tuple, CallableType>, state }, options.required)), script_arity,
                 param_sig_from_tuple<args_tuple, 1, script_arity>(), result_info<R>());
             if constexpr (lane_shaped) {
                 if (lane) {
@@ -1215,8 +1224,9 @@ public:
         const function_options folded = detail::fold_function_options(options...);
         using traits = detail::function_traits<std::decay_t<Callable>>;
         constexpr uint64_t writeback = detail::tuple_writeback_mask<typename traits::argument_types>::value;
-        class_def_->add_static_method(name, writeback_tagged<writeback>(engine_.guard_function(make_function_binder(std::forward<Callable>(callable), &engine_).bind(), folded.required)), traits::arity);
+        class_def_->add_static_method(name, writeback_tagged<writeback>(engine_.template bound_function<detail::excludes_execution_time<Options...>>(make_function_binder(std::forward<Callable>(callable), &engine_).bind(), folded.required)), traits::arity);
         if (folded.nodiscard) { engine_.nodiscard_function(class_name_ + "." + name); }
+        if (folded.type_result) { engine_.type_result_function(class_name_ + "." + name, folded.type_result); }
         if (folded.serial) { class_def_->mark_serial_static_method(engine_.symbolize(name)); }
         return *this;
     }
@@ -1253,6 +1263,7 @@ public:
 private:
     dynamic_binder& apply_method_options(const std::string& name, bool is_const, const function_options& options) {
         if (options.nodiscard) { engine_.nodiscard_function(class_name_ + "." + name); }
+        if (options.type_result) { engine_.type_result_function(class_name_ + "." + name, options.type_result); }
         if (options.serial) {
             const uint64_t name_id = engine_.symbolize(name);
             const serial_overloads* marked = class_def_->serial_method(name_id);
@@ -1360,7 +1371,7 @@ private:
         }
         else if constexpr (dynamic_binder_validation::is_signal_type<P>::value) {
             // Typed per-signature bindings (bind_signal_type) take precedence
-            // when present; otherwise the generic "Signal" view serves the
+            // when present; otherwise the generic "signal" view serves the
             // member ceremony-free through the erased connect table.
             if (engine_ptr->template has_registered_class<P>()) {
                 // a copy of a view shares its emitter's state, so script keeps reaching it through the owner's moves
@@ -1896,7 +1907,7 @@ private:
         }
 
         if constexpr (!std::is_abstract_v<T> && (std::is_default_constructible_v<T> || has_engine_constructor<T>)) {
-            add_constructor<>();
+            add_constructor<false>();
         }
 
         bind_declared_operators();
@@ -1991,7 +2002,7 @@ private:
             const std::type_index value_type = prop_meta->value_type_id;
             const bool is_observable = prop_meta->is_observable;
 
-            // JAI_SIGNAL entries expose the generic Signal view —
+            // JAI_SIGNAL entries expose the generic signal view —
             // declaring the signal is the whole registration.
             if (prop_meta->is_signal) {
                 bind_signal_property_view(prop_name);
@@ -2009,7 +2020,7 @@ private:
     }
 
     // JAI_SIGNAL schema entries become read-only properties returning
-    // the generic Signal view over the live property's erased connect table.
+    // the generic signal view over the live property's erased connect table.
     // Lookup is find_reflected_property (virtual, whole chain), so inherited
     // signal properties resolve against the most-derived live object.
     void bind_signal_property_view(const std::string& prop_name) {

@@ -18,6 +18,9 @@ public:
     ~json_archive_writer();
     // A script's to_json: indentation counts against the engine's memory cap
     void charge_indentation() { charges_indentation_ = true; }
+    // A script's to_json: write_value's walk counts against the engine's execution budget (detail/work_budget.hpp), and a
+    // walk that finds it spent throws the budget's error
+    void count_work() { counts_work_ = true; }
 
     static constexpr bool needs_property_keys = false;
     static constexpr bool is_text_format = true;
@@ -85,8 +88,13 @@ private:
         strong_ptr<class_instance> instance;   // an instance frame's object: its script fields save as stored
         std::vector<std::string> names;
         std::vector<std::pair<std::string, script_value>> fields;
+        bool written_in_place = false;  // an instance's members, the instance written where it is held
+        bool coroutine = false;         // a coroutine's record
     };
+    // {"$id": N, "$type": "coroutine", "$val": record} at a coroutine's first handle, {"$id": N} at every later one
+    void begin_coroutine(coroutine_handle& a_coroutine, const script_value& a_value, std::vector<write_frame>& frames);
     bool aborted_ = false;
+    bool counts_work_ = false;
 
     // Writes a leaf whole, or a container's opening and the frame that writes the rest
     void begin_value(const script_value& given, std::vector<write_frame>& frames);
@@ -158,8 +166,9 @@ private:
 class json_archive_reader : public archive_reader_impl<json_archive_reader> {
 public:
     // Engine is REQUIRED for JSON reading since we need to create script_values. The text is parsed before the constructor
-    // returns; the reader keeps no reference to it.
-    json_archive_reader(std::string_view json_string, engine* eng);
+    // returns; the reader keeps no reference to it. count_work (a script's from_json): the parse and read_value's walk count
+    // against the engine's execution budget, and one that finds it spent throws the budget's error.
+    json_archive_reader(std::string_view json_string, engine* eng, bool count_work = false);
 
     ~json_archive_reader();
 
@@ -240,6 +249,7 @@ private:
     std::string_view json_;   // parse source, during the constructor only
     size_t pos_ = 0;          // parse cursor
     bool archive_keys_ = false;
+    bool counts_work_ = false;
     // The distinct member keys: each key's text is in chars_ once (spans), found by its hash (an open-addressing table of
     // places plus one); a materialized document's keys share one string value per distinct key
     std::vector<std::pair<uint32_t, uint32_t>> key_spans_;

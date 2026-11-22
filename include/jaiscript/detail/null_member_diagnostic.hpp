@@ -1,6 +1,9 @@
 #pragma once
 
+#include <jaiscript/detail/foreign_keyword.hpp>
 #include <jaiscript/detail/ast.hpp>
+#include <jaiscript/detail/slot_site.hpp>
+#include <jaiscript/detail/member_display_name.hpp>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -8,11 +11,15 @@
 namespace jai {
 
 // The symbol naming a member-access receiver: `obj.frob()` -> obj, `game().creature(id).dot()` ->
-// creature. Zero when the receiver has no name (a literal, an index, a ternary).
+// creature. Zero when the receiver has no name (a literal, an index, a ternary, a compiler's own value).
 inline uint64_t null_member_receiver_symbol(const expression* receiver) {
+    receiver = detail::written_operand(receiver);
     if (!receiver) { return 0; }
     switch (receiver->get_type()) {
-        case node_type::identifier_expr: return static_cast<const identifier_expr*>(receiver)->symbol_id;
+        case node_type::identifier_expr: {
+            const auto* id = static_cast<const identifier_expr*>(receiver);
+            return detail::unspellable_name(id->name) ? 0 : id->symbol_id;
+        }
         case node_type::member_expr: return static_cast<const member_expr*>(receiver)->member_id;
         case node_type::call_expr: return null_member_receiver_symbol(static_cast<const call_expr*>(receiver)->callee.get());
         default: return 0;
@@ -22,6 +29,7 @@ inline uint64_t null_member_receiver_symbol(const expression* receiver) {
 // {0} = the member, {1} = the receiver symbol (only used by the shapes that have one);
 // as_callee = the member is being called
 inline std::string_view null_member_message(const expression* receiver, bool as_callee = false) {
+    receiver = detail::written_operand(receiver);
     if (null_member_receiver_symbol(receiver) == 0) {
         return as_callee ? "Cannot call '{0}' on null" : "Cannot access '{0}' on null";
     }
@@ -41,6 +49,7 @@ inline constexpr std::string_view scalar_member_message = "{0} has no member '{1
 // The class name when the receiver is that shape, else empty.
 template <class Engine>
 inline std::string_view class_named_by_dot_receiver(const expression* receiver, const script_value& value, Engine* eng) {
+    receiver = detail::written_operand(receiver);
     if (!eng || !receiver || receiver->get_type() != node_type::identifier_expr || !value.is_function()) { return {}; }
     const auto* id = static_cast<const identifier_expr*>(receiver);
     return detail::engine_access::get_class_definition(*eng, std::string(id->name)) ? id->name : std::string_view{};
@@ -50,9 +59,35 @@ inline std::string class_dot_member_text(std::string_view cls, std::string_view 
     return "'" + std::string(cls) + "' is a class; use " + std::string(cls) + "::" + std::string(member);
 }
 
-// `x.m` on a receiver without m: kind is the receiver's class or builtin kind (empty: object)
-inline std::string no_member_text(std::string_view kind, std::string_view member) {
-    return std::string(kind.empty() ? std::string_view("object") : kind) + " has no member '" + std::string(member) + "'";
+// The class among `cls` and its bases that declares a generic method `member` (docs/site/guide/21-generics.html "Generic
+// methods"); empty when none does
+template <class Engine>
+inline std::string generic_method_owner(Engine& eng, std::string_view cls, std::string_view member, int depth = 0) {
+    if (depth > 32 || cls.empty()) { return {}; }
+    const std::string name(cls);
+    if (detail::engine_access::find_generics(eng, name + "::" + std::string(member))) { return name; }
+    if (const auto def = detail::engine_access::get_class_definition(eng, name)) {
+        for (const auto& parent : def->get_parent_classes()) {
+            if (std::string found = generic_method_owner(eng, parent->get_name(), member, depth + 1); !found.empty()) { return found; }
+        }
+    }
+    return {};
+}
+
+// `x.m` on a receiver without m: kind is the receiver's class or builtin kind (empty: object). A generic method is a member
+// only as its instances, each made where a call is written with the receiver's class known: a call that reaches one at run
+// time, through a receiver the load did not know the class of, is told so and what to write.
+template <class Engine>
+inline std::string no_member_text(Engine* eng, std::string_view kind, std::string_view member) {
+    if (eng && detail::engine_access::names_generic_method(*eng, std::string(member))) {
+        if (const std::string owner = generic_method_owner(*eng, kind, member); !owner.empty()) {
+            return owner + "::" + std::string(member) + " is a generic method: its instance is picked where the call is written, from the receiver's class, which is not known "
+                   "there; give the receiver a typed name (" + std::string(kind) + " x = ...) or cast it (cast<" + std::string(kind) + "&>(x)." + std::string(member) + "(...))";
+        }
+    }
+    const std::string_view advice = detail::foreign_member_text(kind, member);
+    return std::string(kind.empty() ? std::string_view("object") : kind) + " has no member '" + std::string(detail::member_display_name(member)) + "'" +
+           (advice.empty() ? std::string() : ": " + std::string(advice));
 }
 
 // `x.m = v` on an object without m
@@ -67,9 +102,13 @@ inline std::string non_object_member_store_text(std::string_view cls, std::strin
 
 // The spelling null_member_receiver_symbol names: `obj` for obj.m, `creature` for game().creature(id).m
 inline std::string_view null_member_receiver_name(const expression* receiver) {
+    receiver = detail::written_operand(receiver);
     if (!receiver) { return {}; }
     switch (receiver->get_type()) {
-        case node_type::identifier_expr: return static_cast<const identifier_expr*>(receiver)->name;
+        case node_type::identifier_expr: {
+            const std::string_view name = static_cast<const identifier_expr*>(receiver)->name;
+            return detail::unspellable_name(name) ? std::string_view{} : name;
+        }
         case node_type::member_expr: return static_cast<const member_expr*>(receiver)->member;
         case node_type::call_expr: return null_member_receiver_name(static_cast<const call_expr*>(receiver)->callee.get());
         default: return {};
@@ -78,6 +117,7 @@ inline std::string_view null_member_receiver_name(const expression* receiver) {
 
 // `x.m = v` through a null receiver: the read's shapes (null_member_message) with the store's verb
 inline std::string null_member_store_text(const expression* receiver, std::string_view member) {
+    receiver = detail::written_operand(receiver);
     std::string out = "Cannot assign to '" + std::string(member) + "' on null";
     const std::string_view name = null_member_receiver_name(receiver);
     if (name.empty()) { return out; }
@@ -94,11 +134,15 @@ inline std::pair<std::string_view, uint64_t> class_dot_member_error(Symbolizer& 
 }
 
 // The name a call site can attribute to its callee: an identifier's symbol, a member's
-// member id, 0 for a computed callee (fs[0](x), pick()(x))
+// member id, 0 for a computed callee (fs[0](x), pick()(x)) and for a compiler's own value
 inline uint64_t callee_name_symbol(const expression* callee) {
+    callee = detail::written_operand(callee);
     if (!callee) { return 0; }
     switch (callee->get_type()) {
-        case node_type::identifier_expr: return static_cast<const identifier_expr*>(callee)->symbol_id;
+        case node_type::identifier_expr: {
+            const auto* id = static_cast<const identifier_expr*>(callee);
+            return detail::unspellable_name(id->name) ? 0 : id->symbol_id;
+        }
         case node_type::member_expr: {
             const uint64_t id = static_cast<const member_expr*>(callee)->member_id;
             return id == UINT64_MAX ? 0 : id;
@@ -110,7 +154,7 @@ inline uint64_t callee_name_symbol(const expression* callee) {
 // Interned base-type spellings, filled once at backend init: error paths never intern
 // (parallel workers run against a frozen symbolizer)
 struct base_type_symbols {
-    static constexpr size_t count = static_cast<size_t>(script_value_type::jai_invalid_type) + 1;
+    static constexpr size_t count = static_cast<size_t>(k_last_script_value_type) + 1;   // every kind: utf8_string and the math kinds follow jai_invalid_type
     uint64_t ids[count] = {};
     template <typename Symbolizer>
     void intern(const Symbolizer& symbolizer) {
@@ -146,7 +190,7 @@ inline not_callable_text not_callable_diagnostic(uint64_t name_id, script_value_
         return {"Cannot call a value of type {0}: it is not a function", type_id, 0};
     }
     const char c = spelling.empty() ? 'x' : static_cast<char>(spelling.front() | 0x20);
-    const bool vowel = c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u';
+    const bool vowel = (c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u') && !spelling.starts_with("utf8");   // "a utf8_string", as the load's text reads
     return {vowel ? "Cannot call '{0}': it is an {1}, not a function"
                   : "Cannot call '{0}': it is a {1}, not a function", name_id, type_id};
 }

@@ -353,6 +353,8 @@ struct debug_connector::impl {
     std::deque<std::string> out_q_;
     std::atomic<int> out_seq_{1};
     std::atomic<int> gen_{0};   // suspension generation; encoded in frame/scope handles
+    std::string stop_text_;     // the last exception stop's message (script thread writes it before the stopped event)
+    std::mutex stop_text_mtx_;
 
 #ifdef _WIN32
     bool wsa_ready_ = false;
@@ -477,6 +479,9 @@ struct debug_connector::impl {
         if (!make_wake_pair(wake_r_, wake_w_)) { fail_listener("wake pair"); bound_port_ = 0; return; }
         ctrl_->set_on_stopped([this](const stop_info& si) { on_stop(si); });
         ctrl_->set_on_source_loaded([this](const std::string&) { verify_pending(); });
+        ctrl_->set_on_output([this](const std::string& text) {
+            if (running_.load(std::memory_order_acquire)) enqueue(make_event("output", "{\"category\":\"console\",\"output\":\"" + json_escape(text) + "\"}"));
+        });
         running_.store(true, std::memory_order_release);
         started_ = true;
         thread_ = std::thread([this] { run(); });
@@ -492,6 +497,7 @@ struct debug_connector::impl {
         if (ctrl_) {
             ctrl_->set_on_stopped(nullptr);
             ctrl_->set_on_source_loaded(nullptr);
+            ctrl_->set_on_output(nullptr);
         }
         started_ = false;
     }
@@ -534,8 +540,13 @@ struct debug_connector::impl {
         if (!running_.load(std::memory_order_acquire)) return;
         gen_.fetch_add(1, std::memory_order_acq_rel);
         std::string reason = si.reason.empty() ? "breakpoint" : si.reason;
-        std::string body = "{\"reason\":\"" + json_escape(reason) + "\",\"threadId\":1,\"allThreadsStopped\":true}";
-        enqueue(make_event("stopped", body));
+        std::string body = "{\"reason\":\"" + json_escape(reason) + "\",\"threadId\":1,\"allThreadsStopped\":true";
+        if (reason == "exception") {
+            body += ",\"description\":\"Paused on exception\",\"text\":\"" + json_escape(si.text) + "\"";
+            std::lock_guard<std::mutex> lk(stop_text_mtx_);
+            stop_text_ = si.text;
+        }
+        enqueue(make_event("stopped", body + "}"));
     }
 
     // ---- connector thread ----
@@ -699,7 +710,12 @@ struct debug_connector::impl {
         }
 
         if (cmd == "initialize") {
-            enqueue(make_response(req_seq, cmd, true, "{\"supportsConfigurationDoneRequest\":true,\"supportsEvaluateForHovers\":true}"));
+            enqueue(make_response(req_seq, cmd, true, "{\"supportsConfigurationDoneRequest\":true,\"supportsEvaluateForHovers\":true,"
+                "\"supportsSetVariable\":true,\"supportsConditionalBreakpoints\":true,\"supportsHitConditionalBreakpoints\":true,"
+                "\"supportsLogPoints\":true,\"supportsExceptionInfoRequest\":true,\"supportsDelayedStackTraceLoading\":true,"
+                "\"supportsValueFormattingOptions\":false,\"exceptionBreakpointFilters\":["
+                "{\"filter\":\"thrown\",\"label\":\"Thrown errors\",\"description\":\"Stop where any error is raised, caught or not\",\"default\":false},"
+                "{\"filter\":\"uncaught\",\"label\":\"Uncaught errors\",\"description\":\"Stop where an error no script catch takes is raised\",\"default\":false}]}"));
             enqueue(make_event("initialized", ""));   // tell VS Code to send breakpoints + configurationDone
         } else if (cmd == "attach" || cmd == "launch") {
             ctrl_->set_enabled(true);   // arm breakpoints; suspends the wall-clock budget
@@ -710,7 +726,21 @@ struct debug_connector::impl {
         } else if (cmd == "setBreakpoints") {
             handle_set_breakpoints(req_seq, args);
         } else if (cmd == "setExceptionBreakpoints") {
-            enqueue(make_response(req_seq, cmd, true, "{\"breakpoints\":[]}"));
+            bool thrown = false, uncaught = false;
+            std::string verified;
+            if (const jval* filters = args ? args->find("filters") : nullptr; filters && filters->kind == jval::t::array) {
+                for (const auto& f : filters->arr) {
+                    thrown = thrown || f.as_str() == "thrown";
+                    uncaught = uncaught || f.as_str() == "uncaught";
+                    verified += std::string(verified.empty() ? "" : ",") + "{\"verified\":" + (f.as_str() == "thrown" || f.as_str() == "uncaught" ? "true" : "false") + "}";
+                }
+            }
+            ctrl_->set_exception_breakpoints(thrown, uncaught);
+            enqueue(make_response(req_seq, cmd, true, "{\"breakpoints\":[" + verified + "]}"));
+        } else if (cmd == "exceptionInfo") {
+            std::string text;
+            { std::lock_guard<std::mutex> lk(stop_text_mtx_); text = stop_text_; }
+            enqueue(make_response(req_seq, cmd, true, "{\"exceptionId\":\"error\",\"description\":\"" + json_escape(text) + "\",\"breakMode\":\"always\"}"));
         } else if (cmd == "threads") {
             enqueue(make_response(req_seq, cmd, true, "{\"threads\":[{\"id\":1,\"name\":\"script\"}]}"));
         } else if (cmd == "stackTrace") {
@@ -726,7 +756,19 @@ struct debug_connector::impl {
         } else if (cmd == "variables") {
             const int reference = handle_payload(args, "variablesReference");
             if (reference < 0) { enqueue(make_response(req_seq, cmd, false, "", "stale reference")); return; }
-            post_park_only(req_seq, cmd, [this, req_seq, reference] { reply_variables(req_seq, reference); });
+            const jval* start = args ? args->find("start") : nullptr;
+            const jval* count = args ? args->find("count") : nullptr;
+            const size_t first = start ? static_cast<size_t>(std::max(0, start->as_int())) : 0;
+            const size_t take = count ? static_cast<size_t>(std::max(0, count->as_int())) : 0;
+            post_park_only(req_seq, cmd, [this, req_seq, reference, first, take] { reply_variables(req_seq, reference, first, take); });
+        } else if (cmd == "setVariable") {
+            const int reference = handle_payload(args, "variablesReference");
+            if (reference < 0) { enqueue(make_response(req_seq, cmd, false, "", "stale reference")); return; }
+            const jval* name = args ? args->find("name") : nullptr;
+            const jval* value = args ? args->find("value") : nullptr;
+            std::string target = name ? name->as_str() : std::string();
+            std::string text = value ? value->as_str() : std::string();
+            post_park_only(req_seq, cmd, [this, req_seq, reference, target, text] { reply_set_variable(req_seq, reference, target, text); });
         } else if (cmd == "continue") {
             ctrl_->resume();
             enqueue(make_response(req_seq, cmd, true, "{\"allThreadsContinued\":true}"));
@@ -747,7 +789,15 @@ struct debug_connector::impl {
             std::string text = expression ? expression->as_str() : std::string();
             while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) text.pop_back();
             while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) text.erase(0, 1);
-            post_park_only(req_seq, cmd, [this, req_seq, text] { reply_evaluate(req_seq, text); });
+            const jval* context = args ? args->find("context") : nullptr;
+            const evaluation_mode mode = context && context->as_str() == "repl" ? evaluation_mode::console : evaluation_mode::watch;
+            int frame = 0;
+            if (args && args->find("frameId")) {
+                const int payload = handle_payload(args, "frameId");
+                if (payload < 0) { enqueue(make_response(req_seq, cmd, false, "", "stale frame")); return; }
+                frame = payload - 1;
+            }
+            post_park_only(req_seq, cmd, [this, req_seq, text, frame, mode] { reply_evaluate(req_seq, text, static_cast<size_t>(frame), mode); });
         } else if (cmd == "disconnect") {
             enqueue(make_response(req_seq, cmd, true, ""));
             want_close_client_ = true;   // detach + drop after this reply flushes; listener re-accepts
@@ -765,7 +815,6 @@ struct debug_connector::impl {
     // A frame id or variables reference: the stop's generation (mod 2048) over a 20-bit payload, a positive int32
     static constexpr int kHandlePayloadBits = 20;
     static constexpr int kHandlePayloadMask = (1 << kHandlePayloadBits) - 1;
-    static constexpr int kGlobalsPayload = 1;   // a frame's Locals is 2 + its index; frame ids are 1 + the index
     int handle(int payload) const {
         return ((gen_.load(std::memory_order_acquire) & 0x7FF) << kHandlePayloadBits) | payload;
     }
@@ -784,17 +833,29 @@ struct debug_connector::impl {
     void handle_set_breakpoints(int req_seq, const jval* args) {
         std::string path;
         std::vector<int> lines;
+        std::vector<breakpoint> breakpoints;
         if (args) {
             if (const jval* src = args->find("source"))
                 if (const jval* p = src->find("path")) path = p->as_str();
             if (const jval* bps = args->find("breakpoints"); bps && bps->kind == jval::t::array)
                 for (const auto& bp : bps->arr)
-                    if (const jval* ln = bp.find("line")) lines.push_back(ln->as_int());
+                    if (const jval* ln = bp.find("line")) {
+                        lines.push_back(ln->as_int());
+                        breakpoint entry;
+                        entry.line = ln->as_int();
+                        if (const jval* c = bp.find("condition")) entry.condition = c->as_str();
+                        if (const jval* h = bp.find("hitCondition")) entry.hit_condition = h->as_str();
+                        if (const jval* m = bp.find("logMessage")) entry.log_message = m->as_str();
+                        breakpoints.push_back(std::move(entry));
+                    }
             if (lines.empty())
                 if (const jval* lv = args->find("lines"); lv && lv->kind == jval::t::array)
-                    for (const auto& l : lv->arr) lines.push_back(l.as_int());
+                    for (const auto& l : lv->arr) {
+                        lines.push_back(l.as_int());
+                        breakpoints.push_back(breakpoint{l.as_int(), {}, {}, {}});
+                    }
         }
-        ctrl_->set_source_breakpoints(path, lines);
+        ctrl_->set_source_breakpoints(path, breakpoints);
         const bool known = ctrl_->source_known(path);
         std::vector<pending_breakpoint> answered;
         std::string arr = "[";
@@ -839,35 +900,57 @@ struct debug_connector::impl {
                               "{\"stackFrames\":" + arr + ",\"totalFrames\":" + std::to_string(frames.size()) + "}"));
     }
 
+    // A reference past the handle space is a leaf
+    int value_handle(uint32_t reference) const {
+        return reference > 0 && reference <= static_cast<uint32_t>(kHandlePayloadMask) ? handle(static_cast<int>(reference)) : 0;
+    }
+
+    // A variable's fields after its name and value: its kind, its handle and part counts, the expression that reaches it
+    std::string variable_fields(const variable_info& v) const {
+        std::string out;
+        if (!v.type.empty()) out += ",\"type\":\"" + json_escape(v.type) + "\"";
+        out += ",\"variablesReference\":" + std::to_string(value_handle(v.reference));
+        if (v.reference && v.named_children) out += ",\"namedVariables\":" + std::to_string(v.named_children);
+        if (v.reference && v.indexed_children) out += ",\"indexedVariables\":" + std::to_string(v.indexed_children);
+        if (!v.evaluate_name.empty()) out += ",\"evaluateName\":\"" + json_escape(v.evaluate_name) + "\"";
+        return out;
+    }
+
     void reply_scopes(int req_seq, int frame) {
+        const int locals = value_handle(ctrl_->locals_reference(static_cast<size_t>(frame)));
+        const int globals = value_handle(ctrl_->globals_reference());
         std::string body = "{\"scopes\":[{\"name\":\"Locals\",\"presentationHint\":\"locals\",\"variablesReference\":"
-            + std::to_string(handle(kGlobalsPayload + 1 + frame)) + ",\"expensive\":false},"
-            + "{\"name\":\"Globals\",\"variablesReference\":" + std::to_string(handle(kGlobalsPayload)) + ",\"expensive\":false}]}";
+            + std::to_string(locals) + ",\"expensive\":false},"
+            + "{\"name\":\"Globals\",\"variablesReference\":" + std::to_string(globals) + ",\"expensive\":false}]}";
         enqueue(make_response(req_seq, "scopes", true, body));
     }
 
-    // A name and its .field / [index] steps read at the stop; anything else answers unsuccessfully with why
-    void reply_evaluate(int req_seq, const std::string& expression) {
+    // An expression run in the selected frame: a watch or a hover only reads, the console may change state
+    void reply_evaluate(int req_seq, const std::string& expression, size_t frame, evaluation_mode mode) {
         try {
-            const variable_info v = ctrl_->evaluate(expression);
-            std::string body = "{\"result\":\"" + json_escape(v.value) + "\"";
-            if (!v.type.empty()) body += ",\"type\":\"" + json_escape(v.type) + "\"";
-            enqueue(make_response(req_seq, "evaluate", true, body + ",\"variablesReference\":0}"));
+            const variable_info v = ctrl_->evaluate(expression, frame, mode);
+            enqueue(make_response(req_seq, "evaluate", true, "{\"result\":\"" + json_escape(v.value) + "\"" + variable_fields(v) + "}"));
         } catch (const std::exception& e) {
             enqueue(make_response(req_seq, "evaluate", false, "", e.what()));
         }
     }
 
-    void reply_variables(int req_seq, int reference) {
-        auto vars = reference == kGlobalsPayload ? ctrl_->list_globals()
-                                                 : ctrl_->list_locals(static_cast<size_t>(reference - kGlobalsPayload - 1));
+    void reply_set_variable(int req_seq, int reference, const std::string& name, const std::string& value) {
+        try {
+            const variable_info v = ctrl_->set_variable(static_cast<uint32_t>(reference), name, value);
+            enqueue(make_response(req_seq, "setVariable", true, "{\"value\":\"" + json_escape(v.value) + "\"" + variable_fields(v) + "}"));
+        } catch (const std::exception& e) {
+            enqueue(make_response(req_seq, "setVariable", false, "", e.what()));
+        }
+    }
+
+    void reply_variables(int req_seq, int reference, size_t start, size_t count) {
+        auto vars = ctrl_->list_children(static_cast<uint32_t>(reference), start, count);
         std::string arr = "[";
         for (size_t i = 0; i < vars.size(); ++i) {
             if (i) arr += ",";
             arr += "{\"name\":\"" + json_escape(vars[i].name) + "\""
-                + ",\"value\":\"" + json_escape(vars[i].value) + "\"";
-            if (!vars[i].type.empty()) arr += ",\"type\":\"" + json_escape(vars[i].type) + "\"";
-            arr += ",\"variablesReference\":0}";
+                + ",\"value\":\"" + json_escape(vars[i].value) + "\"" + variable_fields(vars[i]) + "}";
         }
         arr += "]";
         enqueue(make_response(req_seq, "variables", true, "{\"variables\":" + arr + "}"));

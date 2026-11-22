@@ -7,6 +7,7 @@
 // the parse-time passes classify without the runtime kernel's headers.
 
 #include <jaiscript/detail/ast.hpp>
+#include <jaiscript/detail/slot_site.hpp>
 #include <string>
 
 namespace jai::detail {
@@ -175,10 +176,12 @@ namespace jai::detail {
 	}
 
 	inline std::string target_spelling(const expression* e) {
+		e = written_operand(e);
 		if (!e) { return "..."; }
 		switch (e->get_type()) {
 			case node_type::identifier_expr: {
 				const auto* id = static_cast<const identifier_expr*>(e);
+				if (unspellable_name(id->name)) { return "..."; }   // a compiler's own value: no source spells it
 				return (id->global_qualified ? "::" : "") + std::string(id->name);
 			}
 			case node_type::this_expr:
@@ -204,8 +207,21 @@ namespace jai::detail {
 		}
 	}
 
+	// A class value never becomes a handle on its own, as in C++: {0} the class (the checker's text starts lowercase)
+	inline constexpr std::string_view value_into_handle_text = "A {0} value does not become a handle: make_shared<{0}>(value) copies it into a new one";
+
+	// A non-const reference declaration over a temporary (docs/site/reference/errors.html); the checker's load text starts lowercase
+	inline constexpr std::string_view non_lvalue_reference_text = "Cannot take reference of non-lvalue expression (var&/auto& declarations bind locals, "
+		"subscript chains like arr[i] or grid[y][x], map entries, object fields like obj.field and C++ properties; "
+		"computed script properties are not ref-bindable)";
+	inline constexpr std::string_view non_lvalue_reference_text_lower = "cannot take reference of non-lvalue expression (var&/auto& declarations bind locals, "
+		"subscript chains like arr[i] or grid[y][x], map entries, object fields like obj.field and C++ properties; "
+		"computed script properties are not ref-bindable)";
+
 	// A subscript store whose operator[] (the class's or the global one) returned a value, not a T&: raised once the call ran
 	inline constexpr std::string_view by_value_subscript_store_text = "Cannot assign to a call result: 'operator[]' returns by value";
+
+	inline constexpr std::string_view null_chain_store_text = "Cannot assign to a '?.' chain: it names no storage (test the value before '?.' and assign through '.')";
 
 	// The text an assignment to an expression that names no storage raises (docs/site/reference/errors.html "Run-time errors"); the
 	// checker reports it at load with a lowercase first letter
@@ -226,7 +242,11 @@ namespace jai::detail {
 				return text;
 			}
 			case node_type::call_expr: {
-				const std::string callee = target_spelling(static_cast<const call_expr*>(t)->callee.get());
+				const expression* called = static_cast<const call_expr*>(t)->callee.get();
+				if (called && called->get_type() == node_type::lambda_expr && static_cast<const lambda_expr*>(called)->null_chain) {
+					return std::string(null_chain_store_text);
+				}
+				const std::string callee = target_spelling(called);
 				return "Cannot assign to a call result: '" + callee + "' returns by value";
 			}
 			case node_type::unary_expr: {
@@ -245,6 +265,7 @@ namespace jai::detail {
 				return "Cannot assign to the result of '" + std::string(static_cast<const binary_expr*>(t)->op.lexeme) + "': it is a temporary value";
 			case node_type::ternary_expr: {
 				const auto* c = static_cast<const ternary_expr*>(t);
+				if (c->null_chain) { return std::string(null_chain_store_text); }
 				const expression* arm = !lvalue_capable(c->then_expression.get()) ? c->then_expression.get() : c->else_expression.get();
 				return "Cannot assign to a conditional: its arm '" + target_spelling(arm) + "' names no storage";
 			}

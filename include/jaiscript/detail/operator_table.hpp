@@ -140,27 +140,45 @@ namespace jai::detail {
     // no synchronization.
     class engine_operator_table {
     public:
+        // the overload a registered set picks for two operands (null: none takes them); a lone function has no picker
+        using overload_picker = script_value (*)(const void* set, const script_value& left, const script_value& right);
+
         [[nodiscard]] bool any() const noexcept { return mask_ != 0; }
 
         [[nodiscard]] const script_value* entry(op_slot s) const noexcept {
             if (s == op_slot::none || ((mask_ >> static_cast<unsigned>(s)) & 1u) == 0) {
                 return nullptr;
             }
-            return &*entries_[static_cast<size_t>(s)];
+            return &*entries_[static_cast<size_t>(s)].dispatcher;
         }
 
-        void set(op_slot s, script_value dispatcher) {
-            entries_[static_cast<size_t>(s)] = std::move(dispatcher);
+        // The function a registered operator runs for these operands: its lone function, or the overload its set picks. Null when
+        // none is registered or no overload takes them: the builtin meaning follows, as for a class's operator
+        [[nodiscard]] script_value overload(op_slot s, const script_value& left, const script_value& right) const {
+            if (s == op_slot::none || ((mask_ >> static_cast<unsigned>(s)) & 1u) == 0) {
+                return script_value::make_null(static_cast<engine*>(nullptr));
+            }
+            const registered& found = entries_[static_cast<size_t>(s)];
+            return found.pick ? found.pick(found.set, left, right) : *found.dispatcher;
+        }
+
+        void set(op_slot s, script_value dispatcher, overload_picker pick = nullptr, const void* set = nullptr) {
+            entries_[static_cast<size_t>(s)] = registered{std::move(dispatcher), pick, set};
             mask_ |= 1u << static_cast<unsigned>(s);
         }
 
         void clear(op_slot s) noexcept {
-            entries_[static_cast<size_t>(s)].reset();
+            entries_[static_cast<size_t>(s)] = registered{};
             mask_ &= ~(1u << static_cast<unsigned>(s));
         }
 
     private:
-        std::array<std::optional<script_value>, static_cast<size_t>(op_slot::count)> entries_{};
+        struct registered {
+            std::optional<script_value> dispatcher;
+            overload_picker pick = nullptr;
+            const void* set = nullptr;
+        };
+        std::array<registered, static_cast<size_t>(op_slot::count)> entries_{};
         uint32_t mask_ = 0;
     };
 

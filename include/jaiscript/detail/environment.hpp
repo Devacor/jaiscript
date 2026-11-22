@@ -107,6 +107,10 @@ namespace jai {
         // A plain extern names a global some unit or the host defines; a lookup that finds nothing says so
         void note_extern(uint64_t id, bool function);
         std::string_view undefined_text(uint64_t id, std::string_view otherwise = "Undefined variable '{0}'") const;
+        // Root only: what says why a name that is not defined is not defined yet, as its error's whole text in permanent storage
+        // (empty: nothing to say). undefined_text asks it after the externs: a generic's instance that still waits answers
+        // (detail::undeclared_instance_text).
+        void explain_undefined(std::function<std::string_view(uint64_t)> a_reason);
         std::pair<std::string_view, uint64_t> unknown_name_error(std::string_view name) const;
 
         // Get a variable value (searches parent scopes, then this/static fields based on kind)
@@ -150,8 +154,18 @@ namespace jai {
         // Get all variables including parent scopes
         std::unordered_map<std::string_view, script_value> get_all_variables() const;
 
+        // The debugger's view of a frame's scopes: each variable of `from` and its parents short of `stop` or a program scope (the
+        // program's, a namespace's), a name `out` already holds (an inner declaration) or the engine's own (__*, this) left out
+        static void append_scope_variables(const environment* from, const environment* stop,
+                                           std::vector<std::pair<std::string, script_value>>& out);
+        // The storage of `id` in the scopes append_scope_variables walks (null when none of them declares it)
+        static script_value* find_scope_variable(const environment* from, const environment* stop, uint64_t id);
+
         // The program-scope variables `unit` declared (its plain cells, current or shadowed by another unit's), by name id
         std::vector<std::pair<uint64_t, const script_value*>> unit_variables(uint32_t unit) const;
+        // The units whose variable declarations made a program-scope name's cells (the current one and those another unit's
+        // declaration shadowed); empty for a name no unit's variable declaration made (the host's, a function, a class)
+        std::vector<uint32_t> declaring_units(uint64_t id) const;
 
         // Reset environment for reuse (optimization helper)
         void reset(std::shared_ptr<environment> new_parent);
@@ -292,17 +306,17 @@ namespace jai {
             }
         }
 
-        // Engine teardown: every variable that may own an instance (an object, an array, a map) dies, the last defined first
-        // (C++ statics at exit); functions stay callable for the destructors that run
+        // Engine teardown: every variable that may own an instance (dies_at_teardown) dies, the last defined first (C++ statics
+        // at exit); declared functions stay callable for the destructors that run
         void release_values_in_reverse() {
             for (size_t i = local_storage_.size(); i-- > 0;) {
                 script_value& cell = local_storage_[i];
                 if (dies_at_teardown(cell)) { script_value dying = std::move(cell); }
             }
         }
-        // A program-scope value that may own an instance: an object, an array, a map, a lambda (its captures), a property
-        // reference (its receiver's handle), or a reference naming one of those; a declared function stays for the destructors
-        // that call it
+        // A program-scope value that may own an instance: an object, an array, a map, a lambda (its captures), a bound method
+        // (its receiver), a property reference (its receiver's handle), or a reference naming one of those; a declared function
+        // stays for the destructors that call it
         static bool dies_at_teardown(const script_value& cell);
         script_value* own_cell(size_t slot) noexcept { return slot < local_storage_.size() ? &local_storage_[slot] : nullptr; }
 
@@ -323,6 +337,8 @@ namespace jai {
         // exhausted; the caller runs its original full lookup for the fallback tails.
         script_value* vm_storage_lookup(uint64_t id, bool& cacheable);
         const detail::env_value_store& own_values() const noexcept { return local_storage_; }
+        // This scope's own names with their cells, in declaration order
+        std::vector<std::pair<uint64_t, const script_value*>> own_definitions() const;
 
     protected:
         // Invalidate the vm's env-lookup inline caches (defined in environment.cpp:
@@ -352,6 +368,7 @@ namespace jai {
             std::unordered_map<uint64_t, unit_stamp> unit_of;
             std::unordered_map<uint64_t, std::vector<uint32_t>> inline_cells;   // an inline cell's declaring units
             std::unordered_map<uint64_t, bool> extern_names;   // plain externs (true = function)
+            std::function<std::string_view(uint64_t)> undefined_reason;   // explain_undefined
         };
         std::unique_ptr<root_tables> root_;
         root_tables& root_tables_mut();
@@ -412,6 +429,18 @@ namespace jai {
     };
 
     namespace detail {
+        // The scope a method coroutine's handle pins: its own method scope over `a_parent` carrying `this` (a static method's
+        // carries its class), so 'this' resolves identically across resumes. Both backends mint it, and a copy of the object
+        // makes one for the copy's coroutine
+        inline std::shared_ptr<environment> method_coroutine_scope(std::shared_ptr<environment> a_parent, string_symbolizer* a_symbols, uint64_t a_this_id,
+                                                                   const script_value& a_this, std::shared_ptr<class_definition> a_static, class_definition* a_access) {
+            auto result = a_static ? std::make_shared<environment>(std::move(a_parent), a_symbols, std::move(a_static))
+                                   : std::make_shared<environment>(std::move(a_parent), a_symbols, a_this);
+            result->set_access_context(a_access);
+            result->define(a_this_id, a_this);
+            return result;
+        }
+
         // A bound method's non-owning reference into its receiver (the chaining idiom's `return *this`) keeps the receiver's
         // object alive, so a temporary receiver outlives the call
         void anchor_bound_method_result(const script_value& this_obj, checked_result<script_value>& result);
@@ -469,7 +498,7 @@ namespace jai {
     inline bool is_lvalue_shaped_expr(const expression* e) noexcept {
         if (!e) return false;
         const node_type t = e->get_type();
-        if (t == node_type::identifier_expr || t == node_type::member_expr) return true;
+        if (t == node_type::identifier_expr || t == node_type::member_expr || t == node_type::this_expr) return true;   // this: C++'s *this
         if (t == node_type::ternary_expr) {
             const auto* n = static_cast<const ternary_expr*>(e);
             return is_lvalue_shaped_expr(n->then_expression.get()) || is_lvalue_shaped_expr(n->else_expression.get());
@@ -558,6 +587,10 @@ struct call_frame {
         // a debugger names the slot-based locals below from it. Null for frames not pushed
         // by call_function. One pointer store per call — no measurable cost.
         const script_defined_function* function = nullptr;
+        // The environment the caller stood in when it pushed this frame (its block scopes, read by a debugger for the caller's
+        // frame); the caller's call holds it alive while this frame lives
+        const environment* caller_environment = nullptr;
+        bool exiting = false;   // its scope's locals are dying: its statement is done, not waiting on a call
 
         /// O(1) access by slot index - much faster than hash map or linear search
         reverse_destroyed_values locals;
@@ -690,6 +723,8 @@ struct call_frame {
         bool declared = false;   // a function declaration's (never a lambda's): another signature of its name joins it in an overload set
         size_t line = 0;   // the declaration's line (an overload's diagnostics name it)
         uint64_t context = 0;   // the host entry that declared it (engine::host_entry_generation)
+        std::string_view saved_source;   // a lambda's lambda_expr::saved_source (connect_source saves it)
+        uint64_t generic_stamp = 0;   // a generic's instance: function_decl::instance_stamp (detail::declare_function_overload)
         std::shared_ptr<const function_decl> decl;   // the vm's mint pins its declaration, so the inliner's stamps on it resolve while the function lives (the interpreter's decl already owns its mint)
         // A converted closure: closure_env is null, backend_body_cache is the chunk compiled
         // with a slot per captured name, and captures holds each name's cell in capture_ids' order (body stays the lambda's own)

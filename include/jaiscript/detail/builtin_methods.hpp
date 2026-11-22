@@ -5,6 +5,7 @@
 
 #include <jaiscript/core/value.hpp>
 #include <jaiscript/detail/execution_limits.hpp>
+#include <jaiscript/detail/work_budget.hpp>
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
@@ -19,10 +20,8 @@ namespace jai {
     class class_definition;
 
     // shared_ptr HANDLE builtin method names that a user class method now SHADOWS and
-    // WINS over. same_as is deliberately EXCLUDED: it is a UNIVERSAL
-    // identity primitive available on every value (and excluded from the fast method-call
-    // gate), not a per-class-overridable handle method. weak_ptr's lock/expired never
-    // collide here - they dispatch on weak_ptr VALUES, which are not user class instances.
+    // WINS over. weak_ptr's lock/expired never collide here - they dispatch on weak_ptr
+    // VALUES, which are not user class instances.
     inline constexpr std::array<std::string_view, 4> k_shadowable_handle_method_names = {
         std::string_view{"reset"}, std::string_view{"use_count"},
         std::string_view{"unique"}, std::string_view{"cpp_ref_count"}
@@ -55,8 +54,8 @@ namespace jai {
         {"reverse", "array::reverse(@) returns a reversed copy"}, {"slice", "array::slice(@, start, end) returns a copy of the range"},
         {"sort", "array::sort(@) returns a sorted copy"}
     }};
-    inline constexpr std::array<in_place_method, 2> k_map_in_place_methods = {{
-        {"clear", {}}, {"filter", "map::filter(@, f) returns a filtered copy"}
+    inline constexpr std::array<in_place_method, 3> k_map_in_place_methods = {{
+        {"clear", {}}, {"filter", "map::filter(@, f) returns a filtered copy"}, {"merge", "map::merge(@, other) returns a merged copy"}
     }};
     inline constexpr std::array<in_place_method, 8> k_string_in_place_twins = {{
         {"append", "string::append(@, text) returns a joined copy"}, {"pad_left", "string::pad_left(@, width) returns a padded copy"},
@@ -78,9 +77,24 @@ namespace jai {
         }
         return std::nullopt;
     }
-    // a name some receiver kind's in-place builtin answers to (a map's are an array's names; a handle's reset): the compile-time gate
+    // The builtins that read their callback's result, and what they read: a predicate's bool, a comparator's order, a mapped or
+    // folded value. A callback that returns nothing hands them null; every other builtin drops its callback's result (for_each)
+    struct callback_result_read { std::string_view name; std::string_view wants; };
+    inline constexpr std::array<callback_result_read, 9> k_array_callback_reads = {{
+        {"every", "a bool"}, {"filter", "a bool"}, {"find", "a bool"}, {"find_index", "a bool"}, {"map", "a value"}, {"reduce", "a value"},
+        {"remove_if", "a bool"}, {"some", "a bool"}, {"sort", "a bool"}
+    }};
+    inline constexpr std::array<callback_result_read, 2> k_map_callback_reads = {{ {"filter", "a bool"}, {"remove_if", "a bool"} }};
+    // What the builtin `a_name` of a receiver kind (0 array, 1 map) reads from its callback, or nullopt when it reads nothing
+    inline std::optional<std::string_view> callback_result_wanted(int a_kind, std::string_view a_name) noexcept {
+        if (a_kind == 0) { for (const auto& r : k_array_callback_reads) { if (r.name == a_name) { return r.wants; } } }
+        if (a_kind == 1) { for (const auto& r : k_map_callback_reads) { if (r.name == a_name) { return r.wants; } } }
+        return std::nullopt;
+    }
+    // a name some receiver kind's in-place builtin answers to (an array's, a map's, a string's; a handle's reset): the compile-time gate
     inline bool is_in_place_method_name(std::string_view a_name) noexcept {
         for (const auto& m : k_array_in_place_methods) { if (m.name == a_name) { return true; } }
+        for (const auto& m : k_map_in_place_methods) { if (m.name == a_name) { return true; } }
         for (std::string_view m : k_string_mutator_method_names) { if (m == a_name) { return true; } }
         return a_name == "reset";
     }
@@ -155,7 +169,9 @@ namespace jai {
         inline checked_result<std::optional<script_int>> array_index_of_equal(const builtin_method_context& ctx, const script_value& self, const script_value& probe_in) {
             const script_array* node = self.unchecked_array_node();
             const script_value& probe = probe_in.deref();
+            work_meter work(ctx.get_engine());
             for (size_t i = 0; i < node->size(); ++i) {
+                if (work.spend(1)) [[unlikely]] { return work.spent(); }
                 const script_value elem = node->get(i, ctx.get_engine());
                 const script_value& e = elem.deref();
                 bool equal = false;
@@ -210,10 +226,6 @@ namespace jai {
     void init_builtin_method_registries(string_symbolizer* symbolizer, builtin_method_registries& out);
 
     namespace detail {
-        // v.same_as(other) bound to v: one argument; nulls, scalars and strings compare by value (a bound value decoded),
-        // objects by identity, anything else is false. Both backends mint it.
-        script_value same_as_method(const script_value& self, engine* eng);
-
         // Builtin args are BY-VALUE. A subscript read in argument position mints an
         // owner-pinned element/map-entry reference (transient_read.hpp leaves call args
         // unmarked so ref params can bind), and script/native parameter binding derefs

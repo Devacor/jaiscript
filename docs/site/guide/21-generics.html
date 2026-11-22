@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Terminal Game in One File</title>
+<meta name="description" content="Classes, functions and methods with type parameters, instantiated at load and checked as if written by hand: deduction, bounds, generic methods, where the errors of an instance are reported, and how instances travel across modules, hot reload and jaibite.">
+<meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="JaiScript docs">
+<meta property="og:title" content="A Terminal Game in One File">
+<meta property="og:description" content="Classes, functions and methods with type parameters, instantiated at load and checked as if written by hand: deduction, bounds, generic methods, where the errors of an instance are reported, and how instances travel across modules, hot reload and jaibite.">
+<meta property="og:image" content="https://jaiscript.com/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jaiscript.com/assets/og-card.png">
+<link rel="canonical" href="https://jaiscript.com/guide/21-generics.html">
+<meta property="og:url" content="https://jaiscript.com/guide/21-generics.html">
+<link rel="icon" href="../favicon.ico" sizes="32x32">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){var t=null;try{t=localStorage.getItem("jai-theme")}catch(e){}
+if(!t)t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+document.documentElement.setAttribute("data-theme",t);}())</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">{*}</span>JaiScript<span class="brand-sub">docs</span></a>
+<nav class="site-nav" aria-label="Sections"><a href="../tour/index.html">Tour</a><a href="../bridges/index.html">Bridges</a><a href="../guide/index.html" class="active" aria-current="page">Guide</a><a href="../embedding/index.html">Embedding</a><a href="../examples/index.html">Examples</a><a href="../play/index.html">Play</a><a href="../reference/index.html">Reference</a></nav>
+<div class="header-tools">
+<div class="search" role="search"><input id="search-box" type="search" placeholder="Search docs&hellip;" autocomplete="off" aria-label="Search docs" aria-controls="search-results" aria-expanded="false" aria-autocomplete="list"><div id="search-results" role="listbox" aria-label="Search results" hidden></div></div>
+<a class="gh-link" href="https://github.com/Devacor/jaiscript" title="JaiScript on GitHub" aria-label="JaiScript on GitHub"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg><span>GitHub</span></a>
+<button id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">&#9681;</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Chapters"><details class="sidebar-box" open><summary class="sidebar-title">Guide<span class="sidebar-current">Generics</span></summary><ol class="chapter-list"><li><a href="../guide/01-hello.html">Hello &amp; Basics</a></li><li><a href="../guide/02-type-ladder.html">The Type Ladder: typed, auto, var</a></li><li><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a></li><li><a href="../guide/04-operators.html">Operators &amp; Arithmetic</a></li><li><a href="../guide/05-control-flow.html">Control Flow</a></li><li><a href="../guide/06-functions.html">Functions &amp; Lambdas</a></li><li><a href="../guide/07-classes.html">Classes</a></li><li><a href="../guide/08-coroutines.html">Coroutines</a></li><li><a href="../guide/09-containers-strings.html">Containers &amp; Strings</a></li><li><a href="../guide/10-modules.html">Modules: include vs import</a></li><li><a href="../guide/11-kitchen-sink.html">Enums, Namespaces, Destructuring &amp; Friends</a></li><li><a href="../guide/12-reflection.html">Reflection: reflect::</a></li><li><a href="../guide/13-strict-checking.html">Types That Fail Early: strict checking</a></li><li><a href="../guide/14-time.html">Time: Clocks, Stopwatches &amp; Dates</a></li><li><a href="../guide/15-math.html">Math: Vectors &amp; Colors</a></li><li><a href="../guide/16-parallel.html">Parallel Loops</a></li><li><a href="../guide/17-web.html">The web:: Library</a></li><li><a href="../guide/18-random.html">Random Numbers &amp; Crypto</a></li><li><a href="../guide/19-templates.html">HTML Templates</a></li><li><a href="../guide/20-terminal-games.html">A Terminal Game in One File</a></li><li class="current"><a href="../guide/21-generics.html" aria-current="page">Generics</a><ol class="page-toc" data-page-toc></ol></li></ol></details></aside>
+<script>(function(){if(!window.matchMedia||!matchMedia("(max-width: 900px)").matches)return;
+var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
+<main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Guide</a><span class="sep" aria-hidden="true">/</span>21</nav>
+<article class="chapter"><h1 id="generics">Generics<a class="hlink" href="#generics" aria-label="link">&#8203;</a></h1>
+<p>A generic is a class, a function or a method with <em>type parameters</em>: <code>class Stack&lt;T&gt;</code>, <code>T largest&lt;T&gt;(array&lt;T&gt; xs)</code>. It is declared once and <strong>instantiated at load</strong> for each list of type arguments the program uses, and each instance is checked and run <strong>exactly as if it had been written by hand</strong> with the arguments in place of the parameters. This is C++&#x27;s template model.</p>
+<ul>
+<li>Nothing is boxed and no <code>T</code> exists at run time: after the load, <code>Stack&lt;int&gt;</code> is an ordinary class named <code>Stack&lt;int&gt;</code> and <code>largest&lt;int&gt;</code> an ordinary function. Reflection, serialization, the debugger and both backends see ordinary declarations.</li>
+<li>Type parameters go <strong>after the name</strong>, in the angle brackets <code>array&lt;T&gt;</code> already uses. <code>template&lt;typename T&gt;</code> is not a second spelling: it fails the load and names this one.</li>
+<li>A generic&#x27;s own text is parsed when its file loads, used or not, so a syntax error in it always fails the load. Its types are checked per instance.</li>
+</ul>
+<h2 id="generic-classes">Generic classes<a class="hlink" href="#generic-classes" aria-label="link">&#8203;</a></h2>
+<p><code>class Name&lt;T, ...&gt;</code> declares one. <code>Name&lt;Args&gt;</code> then stands wherever a class name does: a declaration, a parameter, a field, a base class, <code>new Name&lt;Args&gt;(...)</code>, <code>Name&lt;Args&gt;(...)</code>, <code>Name&lt;Args&gt;{...}</code>, <code>Name&lt;Args&gt;::member</code>, <code>cast&lt;Name&lt;Args&gt;&gt;</code>, <code>dynamic_cast&lt;Name&lt;Args&gt;&gt;</code>, and where a value stands, as a class&#x27;s name does there: <code>extend(obj, More&lt;int&gt;)</code>, and <code>auto make = Pair&lt;string, int&gt;;</code> is its constructor as <code>auto make = Goblin;</code> is a class&#x27;s. A namespace&#x27;s generic class takes each form by its qualified name, as a namespace&#x27;s class does: <code>shop::Shelf&lt;int&gt;(...)</code>, <code>shop::Shelf&lt;shop::Item&gt;{...}</code>.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Stack&lt;T&gt; {
+    array&lt;T&gt; items;
+    void push(T item) { items.push(item); }
+    T pop() { T last = items[items.size() - 1]; items.pop(); return last; }
+    int size() { return items.size(); }
+}
+
+class Pair&lt;K, V&gt; {
+    K first;
+    V second;
+    Pair(K k, V v) { first = k; second = v; }   // the bare class name inside is Pair&lt;K, V&gt;
+}
+
+Stack&lt;int&gt; numbers;                      // a type, anywhere a type is written
+numbers.push(3);
+numbers.push(9);
+print(numbers.pop(), &quot; &quot;, numbers.size());
+
+auto hp = Pair&lt;string, int&gt;(&quot;hp&quot;, 10);   // a construction names the arguments
+print(hp.first, &quot; = &quot;, hp.second);
+print(reflect::type_of(numbers), &quot; / &quot;, reflect::type_of(hp));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">9 1
+hp = 10
+Stack&lt;int&gt; / Pair&lt;string, int&gt;</code></pre></div>
+<ul>
+<li><strong>The class&#x27;s bare name inside it is the instance.</strong> In <code>Pair&lt;K, V&gt;</code>, <code>Pair</code> alone (its constructor, a return type, a field) is <code>Pair&lt;K, V&gt;</code>; another instance is spelled with its arguments, <code>Pair&lt;V, K&gt;</code>.</li>
+<li><strong>A generic class is not overloaded.</strong> One unit declares a class name once: <code>class Dup&lt;T&gt;</code> beside <code>class Dup&lt;K, V&gt;</code> fails the load with <code>generic class &#x27;Dup&#x27; is declared with 1 type parameter on line 1 and with 2 type parameters here: a generic class cannot be overloaded by its parameter count</code>, and so does a class beside a generic class of its name. A later unit&#x27;s declaration replaces the earlier one (<a href="#again">Declaring it again</a>).</li>
+<li><strong>A class&#x27;s type arguments are always written.</strong> A constructor does not deduce them: <code>Pair("hp", 10)</code> fails the load with <code>&#x27;Pair&#x27; is a generic class: its type arguments are written, never deduced from a constructor&#x27;s (Pair&lt;K, V&gt;(...))</code>.</li>
+<li><strong>A base may be an instance</strong>, of the class&#x27;s own parameters or of fixed types: <code>class Derived&lt;T&gt; : Base&lt;T&gt;</code>, <code>class Ints : Base&lt;int&gt;</code>; a constructor initializer names it the same way, <code>: Base&lt;T&gt;(x)</code>.</li>
+<li><strong>A generic is declared where it stands</strong>, as a class or a function is: top-level code runs in order, and a use of <code>Name&lt;Args&gt;</code> above the generic&#x27;s declaration is the error a plain name gives, <code>&#x27;Box&#x27; is used before its declaration (line 3): top-level code runs in order, so declare it above the use or make the use after it</code>. <a href="#declared-when">When an instance is declared</a> has the rule.</li>
+</ul>
+<h2 id="generic-functions">Generic functions<a class="hlink" href="#generic-functions" aria-label="link">&#8203;</a></h2>
+<p>A function lists its type parameters after its name, in either head; a coroutine and a namespace&#x27;s function do the same. A call writes the type arguments, <code>largest&lt;int&gt;(scores)</code>, or leaves them to <a href="#deduction">deduction</a>.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">T largest&lt;T&gt;(array&lt;T&gt; xs) {
+    T best = xs[0];
+    for (auto x : xs) { if (x &gt; best) { best = x; } }
+    return best;
+}
+
+function smallest&lt;T&gt;(array&lt;T&gt; xs) -&gt; T {          // the trailing-return head: the same thing
+    T best = xs[0];
+    for (auto x : xs) { if (x &lt; best) { best = x; } }
+    return best;
+}
+
+coroutine T each&lt;T&gt;(array&lt;T&gt; xs) { for (auto x : xs) { yield x; } }
+
+array&lt;int&gt; scores = [4, 8, 2];
+print(largest&lt;int&gt;(scores), &quot; &quot;, smallest&lt;int&gt;(scores));   // the type argument written
+print(largest(scores), &quot; &quot;, largest([&quot;fig&quot;, &quot;pear&quot;]));     // or deduced from the argument
+int sum = 0;
+for (auto v : each(scores)) { sum += v; }
+print(sum);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">8 2
+8 pear
+14</code></pre></div>
+<ul>
+<li><strong>Overloads.</strong> A generic function may share its name with ordinary functions and with other generics. An ordinary function that takes the call wins over a generic, in whichever unit it is declared: this one, a file the program imports, a unit that ran earlier. A namespace&#x27;s function and a class&#x27;s method, static or not, win over a generic of their name the same way. Of the generics, those whose type arguments can be found are the candidates. Candidates that find the same type arguments name one instance, and each is an overload of that name: with <code>string show&lt;T&gt;(array&lt;T&gt; xs)</code> beside <code>string show&lt;T&gt;(T x, int n)</code>, <code>show&lt;int&gt;</code> is two functions, <code>show&lt;int&gt;(array&lt;int&gt; xs)</code> and <code>show&lt;int&gt;(int x, int n)</code>, and the call&#x27;s value arguments pick between them as between two functions written by hand, whether its type arguments were written (<code>show&lt;int&gt;(5, 1)</code>) or deduced (<code>show(5, 1)</code>). Two of them of one signature define it twice, as two functions written by hand do: <code>show&lt;T&gt;(T x)</code> beside <code>show&lt;V&gt;(int x)</code> fails the load at <code>show&lt;int&gt;</code> with <code>&#x27;show&lt;int&gt;&#x27; is already defined</code>. Candidates that find different type arguments name different instances, and the call fails the load: <code>call to &#x27;show&#x27; is ambiguous: the generics &#x27;show&lt;T&gt;&#x27; (app.jai:1:6) and &#x27;show&lt;T&gt;&#x27; (app.jai:2:6) both take it</code>. Generic methods of one name overload the same way.</li>
+<li><strong>A generic function is not a value, nor is its instance.</strong> <code>function f = largest&lt;int&gt;;</code> fails the load with <code>&#x27;largest&lt;int&gt;&#x27; is an instance of the generic function &#x27;largest&#x27;, which is not a value: call it, or pass a lambda that does ((x) =&gt; largest&lt;int&gt;(x))</code>, and the bare name, <code>auto f = largest;</code>, with <code>&#x27;largest&#x27; is a generic function, which is not a value: ...</code>, the same advice with its parameters, <code>largest&lt;T&gt;(x)</code>. A generic method says the same as <code>&#x27;Cfg::make&#x27; is a generic method</code> through its class, and through a receiver <code>&#x27;conv&lt;int&gt;&#x27; is an instance of the generic method &#x27;conv&#x27;, which is not a value: call it, or bind it with reflect::bind(p, &quot;conv&lt;int&gt;&quot;)</code>. Pass a lambda that calls it, <code>(xs) =&gt; largest&lt;int&gt;(xs)</code>.</li>
+<li><strong><code>&lt;</code> after a name</strong> opens type arguments only where a type-shaped run closes on a <code>&gt;</code> that <code>(</code>, <code>{</code> or <code>::</code> follows and the name, looked up where it stands, names something declared that is no variable; anywhere else it compares. <code>a &lt; b</code> and <code>both(a &lt; b, c &gt; (d))</code> on variables read as they always did, whether the variables are locals, fields (own or inherited), statics, enum values or another file's, and <code>largest&lt;Pet&gt;(pets)</code> is a call wherever <code>largest</code> is declared: above, below, in an imported file (<a href="06-functions.html#type-arguments">Type arguments</a> has the rule in full).</li>
+</ul>
+<h2 id="deduction">Deduction<a class="hlink" href="#deduction" aria-label="link">&#8203;</a></h2>
+<p>A call to a generic function or method may leave out type arguments that its value arguments name. Each parameter whose declared type mentions a type parameter is matched against the argument&#x27;s load-time type:</p>
+<div class="tablewrap"><table><thead><tr><th>You write</th><th>What it is</th></tr></thead><tbody><tr><td><code>T</code></td><td>any type: the argument&#x27;s own (<code>T&amp;</code> deduces as <code>T</code>)</td></tr><tr><td><code>array&lt;T&gt;</code>, <code>map&lt;K, V&gt;</code></td><td>an array or a map of declared element types; a literal of one element type counts (<code>[1, 2]</code> is an <code>array&lt;int&gt;</code>)</td></tr><tr><td><code>shared_ptr&lt;T&gt;</code>, <code>weak_ptr&lt;T&gt;</code></td><td>a handle to a <code>T</code></td></tr><tr><td><code>Name&lt;T&gt;</code></td><td>an instance of the generic class <code>Name</code> or of the host template <code>Name</code>, or a class that derives from one</td></tr><tr><td><code>function&lt;U(T)&gt;</code></td><td>a function value that declares one signature: a variable declared with a signature, a function&#x27;s name, a lambda whose parameters declare their types. The result and each parameter are matched in turn</td></tr><tr><td><code>coroutine&lt;T&gt;</code></td><td>a coroutine&#x27;s handle, by what it yields</td></tr></tbody></table></div>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">K first_key&lt;K, V&gt;(map&lt;K, V&gt; m) { for (auto [k, v] : m) { return k; } return K(); }
+T unwrap&lt;T&gt;(shared_ptr&lt;T&gt; p) { return p; }
+U convert&lt;U, T&gt;(T x) { return cast&lt;U&gt;(x); }
+void swap&lt;T&gt;(T&amp; a, T&amp; b) { T t = a; a = b; b = t; }
+class Goblin { int gold = 3; }
+
+map&lt;string, int&gt; stock = {&quot;tee&quot;: 4};
+print(first_key(stock));                    // K = string, V = int, from map&lt;K, V&gt;
+shared_ptr&lt;Goblin&gt; g = new Goblin();
+print(unwrap(g).gold);                      // T = Goblin, from shared_ptr&lt;T&gt;
+print(convert&lt;string&gt;(41) + &quot;!&quot;);           // U written, T deduced
+int a = 1;
+int b = 2;
+swap(a, b);                                 // T&amp; deduces as T
+print(a, &quot; &quot;, b);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">tee
+3
+41!
+2 1</code></pre></div>
+<p>The arguments a call writes fill the leading parameters and the rest are deduced, which is why <code>convert</code> lists <code>U</code> first. Deduction never converts: two arguments that give one parameter two types are an error, not a promotion. A <code>null</code> says nothing of a type and is skipped. A function value is read only through a signature: against <code>function&lt;U(T)&gt;</code> the signature it declares is matched, and a variable declared with a signature has that type wherever it is passed (<code>T</code> takes it as it stands). A lambda&#x27;s result is the one it declares, else the one type its returns yield.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">array&lt;U&gt; map_all&lt;T, U&gt;(array&lt;T&gt; xs, function&lt;U(T)&gt; f) {
+    array&lt;U&gt; out;
+    for (auto x : xs) { out.push(f(x)); }
+    return out;
+}
+int twice(int n) { return n * 2; }
+function&lt;string(int)&gt; label = (int n) =&gt; &quot;#&quot; + to_string(n);
+
+print(map_all([1, 2, 3], twice));                // T = int and U = int, from twice&#x27;s declaration
+print(map_all([1, 2, 3], label));                // U = string, from the variable&#x27;s signature
+print(map_all([1, 2, 3], (int n) =&gt; n * 0.5));   // U = float, from what the lambda returns
+print(map_all([&quot;a&quot;, &quot;bc&quot;], s =&gt; s.size()));      // T = string types s; the arrow&#x27;s result is U</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">[2, 4, 6]
+[&quot;#1&quot;, &quot;#2&quot;, &quot;#3&quot;]
+[0.5, 1.0, 1.5]
+[1, 2]</code></pre></div>
+<p>The last call passes an arrow that declares no parameter type. Such an arrow is read after the call&#x27;s other arguments: each parameter it leaves untyped takes the type the signature gives it with what those arguments found (<code>T</code> is <code>string</code>, so <code>s</code> is a <code>string</code>), its body is checked with those types, and its result then names what the signature&#x27;s result does. An arrow with nothing beside it to type its parameters says nothing, as does an overloaded function&#x27;s name and a variable declared <code>function</code>. A failure is a load error that says what to write:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">T pick&lt;T&gt;(T a, T b) { return a; }
+T make&lt;T&gt;() { return T(); }
+
+pick(1, 2.5);
+make();</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
+&lt;script&gt;:4:12: error: cannot deduce T for &#x27;pick&#x27;: it is int from argument 1 and float from argument 2
+    pick(1, 2.5);
+               ^
+&lt;script&gt;:5:6: error: cannot deduce T for &#x27;make&#x27;: no parameter names it; write make&lt;T&gt;()
+    make();
+         ^</code></pre></div>
+<p>The other texts: <code>argument 1&#x27;s type is not known at load</code> (a <code>var</code>, an untyped host result), <code>argument 1 is null, which says nothing of a type</code> (or <code>is a function</code>, for one that declares no one signature), and <code>argument 1 is int, which &#x27;array&lt;T&gt;&#x27; does not match</code> (a signature of another parameter count reads the same: <code>argument 1 is function&lt;int(int)&gt;, which &#x27;function&lt;T()&gt;&#x27; does not match</code>). What to write spells the generic&#x27;s own parameters, with the ones the call did give filled in: for <code>V lookup&lt;K, V&gt;(K key)</code>, <code>lookup(&quot;hp&quot;)</code> ends in <code>write lookup&lt;string, V&gt;(...)</code>.</p>
+<ul>
+<li><strong>A construction has the type it makes</strong>, so it deduces like a variable of that type: <code>int(x)</code> and the other primitives, <code>Goblin()</code>, <code>Goblin{}</code>, <code>Box&lt;int&gt;(3)</code>, <code>new Goblin()</code> and <code>make_shared&lt;Goblin&gt;()</code> (a <code>shared_ptr&lt;Goblin&gt;</code>), <code>cast&lt;T&gt;(x)</code>, a math constructor such as <code>math::vec2(1.0, 2.0)</code>, <code>array&lt;int&gt;(3)</code>, and a host class&#x27;s or a host template instance&#x27;s constructor.</li>
+<li><strong>A builtin's or a host function's result has the type its declaration states.</strong> A builtin method that always gives one type has it (<code>s.substr(1)</code> is a <code>string</code>, <code>xs.contains(x)</code> a <code>bool</code>, <code>names.join(",")</code> a <code>string</code>, <code>xs.back()</code> the element type), on a declared variable and on another such result (<code>s.substr(1).size()</code> is an <code>int</code>); a string's element <code>s[i]</code> is a <code>char</code>; a host function's and a host namespace's is the result it was bound with (<code>to_string(x)</code> and <code>format(...)</code> are <code>string</code>s, <code>thread_count()</code> an <code>int</code>), and a value a host namespace holds has its own type (<code>math::pi</code> is a <code>float</code>); a math value's component (<code>v.x</code>) is a <code>float</code> or an <code>int</code>. An operator over such results, a literal of them, an <code>auto</code> variable declared with one and a lambda that returns one have that type too, so <code>id(to_string(n))</code> is <code>id&lt;string&gt;</code>. They are types like any other: <code>pick(s.find("l"), 2.5)</code> is the error above, an <code>int</code> beside a <code>float</code>, exactly as <code>pick(1, 2.5)</code> is. A result no declaration states stays unknown, and the call writes its type argument: a method or an element of a <code>var</code>, which holds whatever the program last stored, and a builtin whose result follows its arguments (<code>s.split(",")</code>, <code>array::map(xs, f)</code>).</li>
+<li><strong>A host template deduces like a generic class.</strong> For a host that bound <code>Point&lt;int&gt;</code> and <code>Point&lt;float&gt;</code>, <code>T first&lt;T&gt;(Point&lt;T&gt; p)</code> takes either, and <code>T</code> is the argument the instance&#x27;s name spells (<a href="../embedding/17-host-api.html#type-arguments-host">host type arguments</a>).</li>
+<li><strong>A sized number is a type only as a host template&#x27;s argument.</strong> A host that bound <code>Point&lt;int32&gt;</code> or <code>Point&lt;float32&gt;</code> spells a width no script type has: a script&#x27;s <code>int</code> and <code>float</code> are 64-bit. Deduced from such a point, <code>T</code> keeps the spelling where it stands as a host template&#x27;s argument, so <code>Point&lt;T&gt;</code> is still <code>Point&lt;int32&gt;</code> and the instance is <code>first&lt;int32&gt;</code>, and reads as the <code>int</code> or <code>float</code> a value of it is everywhere else: <code>T x;</code>, <code>array&lt;T&gt;</code>, a result, <code>T()</code>. A byte array is the same rule: with <code>array&lt;uint8&gt;</code>, <code>array&lt;T&gt;</code> stays <code>array&lt;uint8&gt;</code> and <code>T</code> alone is an <code>int</code>. No promotion joins the two spellings: <code>same(Point&lt;T&gt; p, T x)</code> called with a <code>Point&lt;int32&gt;</code> and <code>5</code> is <code>it is int32 from argument 1 and int from argument 2</code>. The spelling is deduced, never written: <code>first&lt;int32&gt;(p)</code> is <code>unknown type &#x27;int32&#x27;</code>. A name the host gave a template&#x27;s argument that no script type reads as (a class it never bound) deduces where <code>T</code> only stands as that template&#x27;s argument; a generic that names <code>T</code> anywhere else fails at the call: <code>cannot deduce T for &#x27;first&#x27;: argument 1 names &#x27;Handle&#x27;, a type the host binds that no script type reads as</code>.</li>
+</ul>
+<h2 id="as-written-by-hand">Inside an instance<a class="hlink" href="#as-written-by-hand" aria-label="link">&#8203;</a></h2>
+<p>Inside an instance a type parameter <em>is</em> its argument. <code>T x;</code>, <code>T(...)</code>, <code>T{...}</code>, <code>new T(...)</code>, <code>T::member</code>, <code>cast&lt;T&gt;(v)</code>, <code>dynamic_cast&lt;T&gt;(v)</code>, <code>dynamic_cast&lt;T&amp;&gt;(v)</code>, <code>array&lt;T&gt;</code> and a call&#x27;s <code>f&lt;T&gt;(...)</code> mean what they mean with the argument spelled out, so one text serves a class and a primitive:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Point { int x = 0; int y = 0; Point() {} Point(int a) { x = a; y = a; } }
+
+class Maker&lt;T&gt; {
+    static T zero() { return T(); }          // a class default-constructs, a primitive is its zero
+    T from(var v) { return T(v); }           // a class&#x27;s constructor, a primitive&#x27;s conversion
+    T fresh() { T made; return made; }
+    array&lt;T&gt; some() { array&lt;T&gt; xs; xs.push(T()); return xs; }
+}
+
+print(Maker&lt;int&gt;::zero(), &quot; &quot;, Maker&lt;string&gt;::zero() + &quot;|&quot;, &quot; &quot;, Maker&lt;Point&gt;::zero().x);
+Maker&lt;int&gt; ints;
+Maker&lt;Point&gt; points;
+print(ints.from(2.9), &quot; &quot;, points.from(7).y);
+print(int(2.9), &quot; &quot;, float(3), &quot; &quot;, string() + &quot;|&quot;, &quot; &quot;, bool());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">0 | 0
+2 7
+2 3.0 | false</code></pre></div>
+<ul>
+<li><strong>A primitive constructs by its name.</strong> <code>int()</code>, <code>string()</code> and <code>bool{}</code> are the type&#x27;s zero, and <code>int(x)</code> is <code>cast&lt;int&gt;(x)</code>; so are <code>float</code>, <code>char</code>, <code>string</code> and <code>bool</code>. That is what makes <code>T()</code> and <code>T(v)</code> read for every argument.</li>
+<li><strong>What a type argument may be:</strong> <code>int float string bool char</code>, a class, an enum, a math type, <code>array&lt;...&gt;</code>, <code>map&lt;...&gt;</code>, <code>shared_ptr&lt;...&gt;</code>, <code>weak_ptr&lt;...&gt;</code>, <code>function</code>, a signature <code>function&lt;R(A...)&gt;</code>, <code>coroutine&lt;Y&gt;</code>, <code>var</code>, another instance. Never <code>auto</code>, <code>void</code>, a reference (write <code>T&amp;</code> in the generic&#x27;s own parameter list), a <code>const</code> type (const goes on the variable) or a value: <code>Box&lt;int&amp;&gt;</code>, <code>Box&lt;const int&gt;</code> and <code>Box&lt;3&gt;</code> each fail the load saying which, as <code>a type argument names a type: &#x27;int&amp;&#x27; is a reference, not one an instance can be made with; a generic writes T&amp; in its own parameter list</code>. An instance made with a signature or a coroutine type is named as that type is, <code>Box&lt;function&lt;int(int)&gt;&gt;</code>, <code>Box&lt;function&lt;void(Item&amp;,int)&gt;&gt;</code>, <code>Box&lt;coroutine&lt;int&gt;&gt;</code>, and a field that is the parameter holds a callable as a field declared with the type does (a copy of the object rebinds a lambda bound to it). Inside a generic both are types like any other and may name the parameters (<code>function&lt;T(T)&gt; f</code>, <code>coroutine&lt;T&gt; source</code>), and a call deduces through them (<a href="#deduction">Deduction</a>).</li>
+<li><strong>What the text asks of an argument is the argument&#x27;s own rule.</strong> <code>dynamic_cast&lt;T&gt;(v)</code> with <code>T = int</code> fails as <code>dynamic_cast&lt;int&gt;(v)</code> does, in that instance only; with <code>T = shared_ptr&lt;Hero&gt;</code> it is <code>dynamic_cast&lt;Hero&gt;(v)</code>, the handle the argument already names.</li>
+<li><strong>A type parameter&#x27;s name is reserved in its generic</strong>: a variable, a parameter, a field or a method named <code>T</code> fails the load (<code>&#x27;T&#x27; is a type parameter of &#x27;Stack&#x27;: a declaration cannot reuse its name</code>). A member read, <code>x.T</code>, is no use of the parameter. A generic method of a generic class names its own type parameters, never its class&#x27;s again: <code>class Box&lt;T&gt; { T get&lt;T&gt;(T x) { ... } }</code> fails where it is declared, used or not, with <code>&#x27;T&#x27; is a type parameter of &#x27;Box&#x27;: the generic method &#x27;get&#x27; cannot declare it again; give its parameter another name (get&lt;U&gt;)</code>, as a member template does in C++.</li>
+</ul>
+<h2 id="identity">One instance, one class<a class="hlink" href="#identity" aria-label="link">&#8203;</a></h2>
+<p>An instance&#x27;s name is its canonical spelling, the one <code>reflect::type_of</code>, <code>reflect::type_name</code>, <code>reflect::classes()</code>, error texts, stack traces and <code>$type</code> in JSON show: <code>Stack&lt;int&gt;</code>, <code>Pair&lt;string, int&gt;</code>, <code>shop::Shelf&lt;shop::Product&gt;</code>. A class argument is named by its qualified name, so the two spellings below are one class. <code>var</code> as an argument is spelled <code>var</code> (<code>Cell&lt;var&gt;</code>). An instance joins its arguments with a comma and a space, a builtin container with a comma alone (<code>Pair&lt;string, int&gt;</code>, <code>Cell&lt;map&lt;string,int&gt;&gt;</code>), and that is the only spelling ever printed or saved. A name that <em>arrives</em> as text is matched without its whitespace: a <code>$type</code> in JSON or in a binary or base64 archive, the class name <code>reflect::construct</code> and the other <code>reflect::</code> functions take, a name a host looks a class up by. <code>Pair&lt;string,int&gt;</code>, <code>Pair&lt;string, int&gt;</code> and <code>Pair&lt; string , int &gt;</code> reach one class; case stays significant.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">namespace shop {
+    class Product { string title = &quot;tee&quot;; }
+    class Shelf&lt;T&gt; { array&lt;T&gt; items; }
+    Shelf&lt;Product&gt; inside;                        // Shelf and Product are the namespace&#x27;s own
+}
+
+shop::Shelf&lt;shop::Product&gt; outside;               // the same class, by its qualified spelling
+shop::inside.items.push(shop::Product());
+outside = shop::inside;
+print(reflect::type_of(outside), &quot; &quot;, outside.items.size());
+
+class Cell&lt;T&gt; { T held; }
+class Item { int n = 0; }
+Cell&lt;Item&gt; a;                                     // a class argument: a copy copies the Item
+Cell&lt;Item&gt; b = a;
+b.held.n = 5;
+Cell&lt;shared_ptr&lt;Item&gt;&gt; c;                         // a shared_ptr argument: a copy shares it
+c.held = new Item();
+Cell&lt;shared_ptr&lt;Item&gt;&gt; d = c;
+d.held.n = 5;
+print(a.held.n, &quot; &quot;, c.held.n);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">shop::Shelf&lt;shop::Product&gt; 1
+0 5</code></pre></div>
+<ul>
+<li><strong>Value semantics follow the argument.</strong> A class argument copies with its holder; a <code>shared_ptr</code> argument shares.</li>
+<li><strong>Statics are per instance</strong>, as in C++: <code>Pool&lt;Goblin&gt;::made</code> and <code>Pool&lt;Orc&gt;::made</code> are two variables.</li>
+<li><strong>Inside its namespace a generic class answers to its bare name</strong>, as any class of the namespace does: in the unit that declares it, in another file of the program that opens the namespace, whichever of the two is imported first, and in a later unit that opens it again (<code>namespace shop { Shelf&lt;Product&gt; more; }</code>). Code in a nested namespace reaches its enclosing namespace&#x27;s generic class the same way, and <code>using shop::Shelf;</code> names it from outside.</li>
+<li><strong>Two units that use an instance use one class.</strong> Each unit declares the instances its own code names (its jaibite is self-contained and no unit waits for another to run); the second declaration of an instance finds it defined from the same generic and does nothing, so its statics keep their values.</li>
+<li><strong>An instance exists once a unit that ran names it.</strong> Loading data does not make one: <code>from_json</code> of a <code>$type</code> that spells an instance no unit used raises <code>&#x27;Cell&lt;float&gt;&#x27; names an instance of the generic &#x27;Cell&#x27; that the program never made: name the type where it is loaded, as from_json&lt;Cell&lt;float&gt;&gt;(text) does</code>. <code>from_json&lt;Cell&lt;float&gt;&gt;(text)</code> names it (<code>from_binary&lt;Cell&lt;float&gt;&gt;(bytes)</code> for binary, whose error advises that), and so does a variable of the type anywhere in a unit that ran. A <code>$type</code> that cannot name an instance says why in the checker's words for the same spelling: <code>'Cell&lt;int,int&gt;' names no instance of the generic 'Cell': 'Cell' takes 1 type argument, not 2</code>, <code>unknown type 'Nope'</code> for an argument nothing declares.</li>
+</ul>
+<h2 id="bounds">Bounds<a class="hlink" href="#bounds" aria-label="link">&#8203;</a></h2>
+<p><code>T : Base</code> requires the argument to be <code>Base</code> or a class that derives from it. A bound is a class and may name the parameters (<code>T : Comparable&lt;T&gt;</code>). It does not change how the body is checked: it moves the error to the use, and says what the generic expects.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Entity { int id = 0; }
+class Goblin : Entity { int gold = 3; }
+class Orc : Entity { int rage = 9; }
+
+class Pool&lt;T : Entity&gt; {                 // T is Entity or derives from it
+    array&lt;shared_ptr&lt;T&gt;&gt; live;
+    static int made = 0;                 // one per instance: Pool&lt;Goblin&gt;::made, Pool&lt;Orc&gt;::made
+    shared_ptr&lt;T&gt; spawn() { made += 1; live.push(new T()); return live[live.size() - 1]; }
+}
+
+int id_of&lt;T : Entity&gt;(T e) { return e.id; }
+
+Pool&lt;Goblin&gt; goblins;
+Pool&lt;Orc&gt; orcs;
+goblins.spawn();
+goblins.spawn();
+orcs.spawn();
+print(Pool&lt;Goblin&gt;::made, &quot; &quot;, Pool&lt;Orc&gt;::made, &quot; &quot;, id_of(Goblin()), &quot; &quot;, id_of(goblins.live[0]));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 1 0 0</code></pre></div>
+<p>A handle meets a bound its class meets, as <code>dynamic_cast&lt;T&gt;</code> reads one: <code>id_of(goblins.live[0])</code> and <code>id_of(new Goblin())</code> are <code>id_of&lt;shared_ptr&lt;Goblin&gt;&gt;</code>, <code>T</code> is the handle, and the body reaches <code>e.id</code> through it as code does anywhere; <code>Pool&lt;shared_ptr&lt;Goblin&gt;&gt;</code> is an instance too. In a bound that names the parameter the handle reads as its class, so <code>shared_ptr&lt;Num&gt;</code> meets <code>T : Comparable&lt;T&gt;</code> where <code>Num : Comparable&lt;Num&gt;</code> does. A <code>weak_ptr</code> meets no bound, since it names no object until it is locked: <code>id_of(w)</code> fails with <code>&#x27;weak_ptr&lt;Goblin&gt;&#x27; does not derive from &#x27;Entity&#x27;, which T requires: a weak_ptr names no object until it is locked; pass w.lock()</code>.</p>
+<p>The bound is checked where the instance is asked for, before its body:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Entity { int id = 0; }
+class Pool&lt;T : Entity&gt; { array&lt;shared_ptr&lt;T&gt;&gt; live; }
+
+Pool&lt;int&gt; numbers;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
+&lt;script&gt;:4:5: error: Pool&lt;int&gt;: &#x27;int&#x27; does not derive from &#x27;Entity&#x27;, which T requires
+    Pool&lt;int&gt; numbers;
+        ^</code></pre></div>
+<p>A bound that names no declared class is the same error at each instance asked for, with what is wrong: <code>A&lt;int&gt;: the bound of T, &#x27;Nope&#x27;, is no declared class: declare it, or bound T by a class that is (T : Base)</code>. A parameter bounded by itself, <code>T : T</code>, is an error where the generic is declared, used or not: <code>&#x27;T&#x27; is bounded by itself in &#x27;A&#x27;: a bound names the class T must be or derive from (T : Base)</code>.</p>
+<h2 id="generic-methods">Generic methods<a class="hlink" href="#generic-methods" aria-label="link">&#8203;</a></h2>
+<p>A method lists type parameters like a function. Its instance is a real method of the class: it reads <code>this</code>, the class&#x27;s private members and its other methods, and <code>static</code> works as for any method. A generic class may declare generic methods of its own.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class CartForm { string sku; int count = 0; }
+
+class Request {
+    string body = &quot;{\&quot;sku\&quot;: \&quot;tee\&quot;, \&quot;count\&quot;: 2}&quot;;
+    T json&lt;T&gt;() { return from_json&lt;T&gt;(body); }      // T forwards to a host&#x27;s type argument
+    static T make&lt;T&gt;() { return T(); }
+    T twice&lt;T&gt;(T x) { return x + x; }
+}
+
+Request req;
+CartForm form = req.json&lt;CartForm&gt;();               // never deducible here: T is only the result
+print(form.sku, &quot; x&quot;, form.count);
+print(Request::make&lt;CartForm&gt;().count, &quot; &quot;, req.twice(4), &quot; &quot;, req.twice(&quot;ab&quot;));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">tee x2
+0 8 abab</code></pre></div>
+<p>An instance is listed as a method is, by its bare name with its type arguments: <code>reflect::methods(req)</code> names <code>json&lt;CartForm&gt;</code>, <code>make&lt;CartForm&gt;</code> and <code>twice&lt;int&gt;</code> beside the class&#x27;s other methods, and that is the name <code>reflect::method_arguments</code>, <code>has_method</code>, <code>invoke</code> and <code>bind</code> take and the name every text about a call gives it: an error the call raises (<code>Cannot call &#x27;json&lt;CartForm&gt;&#x27; on null (&#x27;req&#x27; is null)</code>, <code>Cannot pass string to parameter &#x27;x&#x27; of &#x27;twice&lt;int&gt;&#x27; (declared int)</code>, <code>Cannot access private member &#x27;secret&lt;int&gt;&#x27; of class &#x27;Vault&#x27;</code>), a stack trace&#x27;s frame (<code>at twice&lt;int&gt;</code>) and the load&#x27;s own (<code>argument 1 of &#x27;twice&lt;int&gt;&#x27;: cannot pass &#x27;string&#x27; to &#x27;x&#x27; declared &#x27;int&#x27;</code>). A text about its declaration names the class with it (<code>&#x27;A::show&lt;int&gt;&#x27; is already defined with parameters (int)</code>).</p>
+<p><strong>A generic method is not virtual</strong> (a member template cannot be in C++ either). The instance is chosen by the receiver&#x27;s class as the load knows it: a variable&#x27;s declared class, a reference&#x27;s, the class of another unit&#x27;s declared global. A derived class&#x27;s generic of the same name hides the base&#x27;s, and <code>override</code> on a generic method is an error.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Base { string who&lt;T&gt;() { return &quot;base&quot;; } }
+class Derived : Base { string who&lt;T&gt;() { return &quot;derived&quot;; } }
+
+Derived d;
+Base&amp; as_base = d;
+print(d.who&lt;int&gt;(), &quot; &quot;, as_base.who&lt;int&gt;());</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">derived base</code></pre></div>
+<p>A receiver whose class the load does not know (a <code>var</code>) cannot pick an instance: <code>cannot instantiate &#x27;json&lt;CartForm&gt;&#x27;: the receiver&#x27;s class is not known at load</code>. Give it a typed variable or a typed reference. A call that leaves its type arguments to deduction loads, since a <code>var</code> may hold any class, and fails where it runs with the same advice: <code>Base::twice is a generic method: its instance is picked where the call is written, from the receiver&#x27;s class, which is not known there; give the receiver a typed name (Base x = ...) or cast it (cast&lt;Base&amp;&gt;(x).twice(...))</code>.</p>
+<p><strong>The class may stand below the call.</strong> A function above the class, or above the <code>import</code> that brings it, may call its generic method: the method&#x27;s instance is declared the moment its class is (<a href="#declared-when">When an instance is declared</a>). A call that runs before then finds no class, as a call of a plain method would: <code>Class &#x27;Oracle&#x27; not found</code> for a static call, <code>No constructor found for class &#x27;Oracle&#x27;</code> where it would make one. A class declared again keeps the instances its callers declared.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int ask(Oracle o) { return o.answer&lt;int&gt;(3); }      // above the class: its instance waits for it
+
+class Oracle {
+    int base = 4;
+    T answer&lt;T&gt;(T x) { return x + base; }
+}
+
+print(ask(Oracle()));</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">7</code></pre></div>
+<h2 id="declared-when">When an instance is declared<a class="hlink" href="#declared-when" aria-label="link">&#8203;</a></h2>
+<p><strong>An instance is declared the moment everything it is built on is declared</strong>: its generic, every class its type arguments name, its base classes, and for a generic method&#x27;s instance the class it belongs to. When all of those exist as the unit starts (they came from imports that already ran, or are builtin types), that moment is the start of the unit. No place is computed from the uses, so it does not matter how the instance is first named: a type, a construction, a call, a cast, a <code>dynamic_cast</code>, a type argument, a function&#x27;s or a lambda&#x27;s body, another instance&#x27;s text.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">int seed() { return 5; }
+class Shelf&lt;T&gt; {
+    static int made = seed();          // runs when the instance is declared
+    T item;
+}
+print(reflect::classes().contains(&quot;Shelf&lt;Book&gt;&quot;));    // Book is not declared yet: Shelf&lt;Book&gt; waits for it
+class Book { string title = &quot;Dune&quot;; }
+print(reflect::classes().contains(&quot;Shelf&lt;Book&gt;&quot;), &quot; &quot;, Shelf&lt;int&gt;::made);
+auto shelf = Shelf&lt;Book&gt;();              // an expression names it first; the type below changes nothing
+Shelf&lt;Book&gt; other;
+print(shelf.item.title, &quot; &quot;, other.item.title);</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">false
+true 5
+Dune Dune</code></pre></div>
+<ul>
+<li><strong>Its declaration runs at that moment</strong>, as a class written at that point would: the initializer of a static runs then and sees what is declared above it (<code>seed</code> above), a base class is looked up then, and nothing declared further down exists yet. A static&#x27;s initializer that reads a global declared below the generic fails as it would in a plain class there.</li>
+<li><strong>The order rule is the one plain names have.</strong> A use in top-level code names the generic and its argument classes, so it stands below their declarations: above one, a construction or a call is a load error with the plain text (<code>&#x27;Box&#x27; is used before its declaration (line 3): ...</code>, <code>&#x27;Item&#x27; is used before its declaration (line 4): ...</code>, <code>&#x27;twice&#x27; is called before its declaration (line 2): ...</code>), and a typed declaration is a run-time error, as it is for a plain class, that says what the instance waits for (<code>&#x27;Holder&lt;int&gt;&#x27; is not declared yet: it waits for &#x27;Holder&#x27;</code> where the plain class is <code>No constructor found for class &#x27;Plain&#x27;</code>). A function&#x27;s instance is declared the moment its generic is: a function above the generic may call it, and a call that runs before the generic&#x27;s declaration has run fails where a call of a plain function declared below does, with <code>&#x27;twice&lt;int&gt;&#x27; is not declared yet: it waits for &#x27;twice&#x27;</code> where the plain one is <code>Undefined variable &#x27;twice&#x27;</code>.</li>
+<li><strong>A class may derive from an instance of itself</strong>, <code>class Num : Comparable&lt;Num&gt;</code>: the instance is declared as that class&#x27;s declaration begins.</li>
+<li><strong>An instance that still waits says what for</strong>, whatever reaches it: a typed declaration, a construction, <code>new</code> or a container&#x27;s element in a function that runs above <code>class Book</code>, <code>reflect::construct(&quot;Shelf&lt;Book&gt;&quot;)</code> and <code>from_json</code> of that <code>$type</code> all raise <code>&#x27;Shelf&lt;Book&gt;&#x27; is not declared yet: it waits for &#x27;Book&#x27;</code>. The text is the same on both backends.</li>
+</ul>
+<h2 id="errors">Errors in an instance<a class="hlink" href="#errors" aria-label="link">&#8203;</a></h2>
+<p>An error inside an instance is reported at the generic&#x27;s own file and line, with a note that names the instance and where it was asked for; nested instances add one note per level. Each instance reports what its own arguments break, and an instance that is sound reports nothing:</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Box&lt;T&gt; {
+    T item;
+    int length() { return item.size(); }
+}
+
+Box&lt;string&gt; words;
+Box&lt;int&gt; count;</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">jaiscript: static check failed:
+&lt;script&gt;:3:32: error: int has no member &#x27;size&#x27;
+    in Box&lt;int&gt;, instantiated at &lt;script&gt;:7:4
+        int length() { return item.size(); }
+                                   ^</code></pre></div>
+<h2 id="modules">Modules, hot reload and jaibite<a class="hlink" href="#modules" aria-label="link">&#8203;</a></h2>
+<p>A generic is visible to every unit of the program, like a function: the units a root reaches through <code>import</code> and <code>include</code> are gathered before any is checked, and a unit that ran earlier in the engine counts too.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">import &quot;stack.jai&quot;;
+
+Stack&lt;string&gt; names;
+names.push(&quot;ann&quot;);
+print(names.items.size(), &quot; &quot;, Stack&lt;string&gt;::made, &quot; &quot;, reflect::type_name(names));
+print(to_json(names));</code></pre></div>
+<p>with <code>stack.jai</code>:</p>
+<div class="codeblock cb-jai" data-file="stack.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Stack&lt;T&gt; {
+    array&lt;T&gt; items;
+    static int made = 0;
+    Stack() { made += 1; }
+    void push(T item) { items.push(item); }
+}</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 1 Stack&lt;string&gt;
+{&quot;$type&quot;:&quot;Stack&lt;string&gt;&quot;,&quot;$val&quot;:{&quot;items&quot;:[&quot;ann&quot;]}}</code></pre></div>
+<ul>
+<li><strong>Hot reload.</strong> A generic&#x27;s file is part of every module that instantiates it, as a <a href="19-templates.html">template file</a> is part of the module that renders it: an edit to the generic re-runs those modules (their classes and functions replace the old ones in place, their top-level statements run again). A broken edit is reported and the old code keeps running: an edit that an instance some loaded unit names cannot be made from rejects the reload, whether or not that unit runs again, and nothing of the edit is applied (<a href="#again">Declaring it again</a>).</li>
+<li><strong>jaibite.</strong> A unit&#x27;s jaibite holds the instances it uses as ordinary declarations, and a generic as its tokens, so a loaded generic still instantiates. An instance of a generic another unit declares follows the engine that runs the bite: made again from the declaration that engine holds when it differs from the one the bite was saved with. A unit that instantiates a generic another file declares keeps no <a href="../embedding/04-jaibite.html">jaibite cache</a>, like a unit with a spliced include: its freshness would know only its own file.</li>
+<li><strong>Declaring it again.</strong> An edit to a generic&#x27;s file is the generic declared again: the instances the engine holds are made again as the file runs, and each module that runs again finds its instances made and resets nothing (<a href="#again">Declaring it again</a>).</li>
+</ul>
+<h2 id="again">Declaring it again<a class="hlink" href="#again" aria-label="link">&#8203;</a></h2>
+<p>A generic&#x27;s name is declared, declared again and clashes as a class&#x27;s name does. A later unit that declares it (a later <code>execute</code>, its file loaded again after an edit, another file) replaces the earlier declaration, and nothing asks for the engine to start over.</p>
+<p><strong>Every instance the engine holds is made again from the new text, where the new declaration stands</strong>, whatever the unit names. An object that lives takes the new methods and gains the new fields, a function compiled before the change calls the new body, and a field or a static that keeps its name keeps its value: what a class declared again does.</p>
+<div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Box&lt;T&gt; { T v; static int made = 0; Box() { made += 1; } int get() { return 1; } }
+Box&lt;int&gt; a;
+a.v = 5;
+int use() { Box&lt;int&gt; x; return x.get(); }
+print(a.get(), &quot; &quot;, use());
+import &quot;again.jai&quot;;                 // another unit declares Box again and names no instance
+print(a.get(), &quot; &quot;, use(), &quot; &quot;, a.v, &quot; &quot;, Box&lt;int&gt;::made);</code></pre></div>
+<p>with <code>again.jai</code>:</p>
+<div class="codeblock cb-jai" data-file="again.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Box&lt;T&gt; { T v; int extra = 7; static int made = 0; Box() { made += 1; } int get() { return 3 + extra; } }</code></pre></div>
+<div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">1 1
+10 10 5 3</code></pre></div>
+<ul>
+<li>Top-level code runs in order: above the new declaration the earlier instance still answers, below it the new one, as with a class declared twice in a unit.</li>
+<li>A generic function and a generic method follow the same rule: the instances their callers hold are made again when the generic is declared again (a method&#x27;s when its class is). A generic function declared with other value parameters is another overload beside the first, as for a plain function, and the first one&#x27;s instances stay. An instance belongs to the declaration it was made from: of two overloads that both made <code>show&lt;int&gt;</code>, the one declared again makes its own <code>show&lt;int&gt;</code> again and leaves the other&#x27;s.</li>
+<li><strong>An instance the new declaration cannot make</strong> (another count of type parameters, a bound its argument no longer meets, a body that does not check for its arguments) gets the verdict a function gets when a caller no longer fits it. A <a href="../embedding/07-hot-reload.html#interaction-with-the-rest-of-the-engine">reload</a>, a module&#x27;s file imported again after an edit or a file the host runs again with <code>execute_file</code>, checks every loaded unit before anything runs: an instance one of them names <strong>rejects the reload</strong> with the error that instance has (<a href="#errors">Errors in an instance</a>), nothing is applied, and every instance and function of the file keeps the code it had. A reload reads the file as it stands, so a generic function it no longer declares with those parameters, and a name it gives to a class or a function, reject the same way; a generic the file drops altogether stays, as a function or a class a file drops does: its users run on, a unit that runs again or is edited still names its instances and may make new ones, and the next declaration of the name replaces it. Declared again by text that loads without a reload, which checks no unit but itself (a later <code>execute</code>, another file&#x27;s first load), and in a reload when no loaded unit names it, <strong>the instance keeps the declaration it has</strong>, and the unit&#x27;s check warns, naming it and the reason: <code>&#x27;Box&lt;int&gt;&#x27; keeps its earlier declaration: this declaration of &#x27;Box&#x27; cannot make it: &#x27;Box&#x27; takes 2 type arguments, not 1</code>. The objects of that instance keep working; naming it in new code is the ordinary error for the same reason, and a later declaration that can make it does. <code>[[warn_mode]]</code> does not change this: every load is checked, a host has no switch that turns the check off, and under <code>[[warn_mode]]</code> an instance the unit&#x27;s own text names is made with its errors reported as warnings, like the unit&#x27;s other errors, while an instance the unit only makes again still keeps its earlier declaration.</li>
+<li><strong>One name is one class.</strong> <code>class Box&lt;T&gt;</code> beside <code>class Box</code> in one unit fails the load at the second of them: <code>class &#x27;Box&#x27; is declared without type parameters on line 1 and with 1 type parameter here: a class and a generic class cannot share a name</code>. From a later unit the later declaration takes the name. A class declared under a generic class&#x27;s name is a declaration that cannot make that generic&#x27;s instances, with the verdict above: a reload a loaded unit names one in is rejected, and otherwise they stay as they are, with the warning (<code>... cannot make it: &#x27;Box&#x27; takes no type arguments: it is not a generic class</code>). A generic class declared under a class&#x27;s name leaves the class to the code and the objects that use it already, and the bare name then names no class wherever a class&#x27;s name can stand in new code: a declared type (a variable&#x27;s, a parameter&#x27;s, a result&#x27;s, a field&#x27;s, a handle&#x27;s or a container&#x27;s element), a type argument, <code>new</code>, <code>cast</code>, <code>dynamic_cast</code>, a base class, a braced construction <code>Box{}</code>, a static member <code>Box::made</code> and the name as a value. Each is <code>&#x27;Box&#x27; is a generic class: name its type arguments (Box&lt;T&gt;)</code>, the error a bare generic name gives anywhere; a namespace&#x27;s generic class gives it by its qualified name too (<code>shop::Box::made</code>).</li>
+<li>Two files that each declare a generic class of one name do what two files that declare one class do: the one that runs later replaces the other. Two files that each declare a generic function, or a class's generic method, with the same value parameters do what two files that declare one function do: every caller, in either file or a third, reaches the one that ran later, and a file declared again after an edit takes over at once. Generic functions that differ in their value parameters stay overloads, whichever files declare them. In a namespace a function collides across files instead of replacing, and a generic function with it: the second file&#x27;s declaration of the same name and value parameters raises <code>Function &#x27;f&#x27; already exists in namespace &#x27;n&#x27;. Use &#x27;override&#x27; keyword to replace it.</code> where it runs, the first stands for every caller, and a declaration written <code>override</code> (<code>string f&lt;T&gt;(T x) override { ... }</code>) replaces it. A file run again replaces its own.</li>
+<li>A unit that made instances again keeps no <a href="../embedding/04-jaibite.html">jaibite cache</a>: what it declared rested on what the engine held. A bite a host saves from such a unit (<code>engine::jaibite</code>, then <code>save</code> or <code>save_bytes</code>) carries the instances its own text names and none it only made again: the engine that loads it makes again the instances it holds itself, and a fresh engine declares the generic alone.</li>
+</ul>
+<h2 id="limits">Limits and what is not here<a class="hlink" href="#limits" aria-label="link">&#8203;</a></h2>
+<ul>
+<li>Instantiation is limited in everything that can grow, and passing a limit is a load error with the first links of the chain, not a hang. It nests at most 64 deep: <code>class A&lt;T&gt; { A&lt;array&lt;T&gt;&gt; next; }</code> fails the load with <code>generic instantiation nests more than 64 deep</code>. An instance&#x27;s name is at most 4,096 characters: <code>class Grow&lt;T&gt; { Grow&lt;Pair&lt;T, T&gt;&gt; next; }</code>, whose instances double at every level, fails with <code>generic instantiation names an instance of more than 4096 characters</code>. One use in the program&#x27;s own text makes at most 4,096 instances, those its instances&#x27; text names counted: <code>void walk&lt;T&gt;(int n) { walk&lt;L&lt;T&gt;&gt;(n - 1); walk&lt;R&lt;T&gt;&gt;(n - 1); }</code>, whose every instance asks for two more, fails with <code>generic instantiation makes more than 4096 instances from one use</code>. The count is each use&#x27;s own, so a program names as many instances as it likes. A use that passes a limit reports that one error, and nothing more is made for it. A note under an error spells an instance&#x27;s name of more than 80 characters by its two ends (<code>in A&lt;array&lt;array&lt;arra ... &gt;&gt;&gt;&gt;, instantiated at ...</code>).</li>
+<li>A class&#x27;s members are made with it, so that an instance is the class as written by hand, to reflection and to a <code>var</code> receiver alike. A member that names an instance of its own generic built from the instance itself would therefore ask without end, and fails the load at the first step, where the member stands: for <code>class List&lt;T&gt; { List&lt;List&lt;T&gt;&gt; chunks() { ... } }</code>, <code>List&lt;int&gt;</code> reports <code>&#x27;List&lt;int&gt;&#x27; would need &#x27;List&lt;List&lt;int&gt;&gt;&#x27; and so on without end: the member &#x27;chunks&#x27; names an instance of &#x27;List&#x27; built from the instance itself; a class&#x27;s members are made with it and a generic function only where it is called, so write it as one outside the class: chunks&lt;T&gt;(List&lt;T&gt; self)</code>. The generic function it names, <code>List&lt;List&lt;T&gt;&gt; chunks&lt;T&gt;(List&lt;T&gt; self)</code>, is made only for the calls the program writes.</li>
+<li>Each of these is a load error with its own text, not a silent gap: default type arguments (<code>&lt;T = int&gt;</code>), specialization (<code>class Stack&lt;int&gt;</code>), non-type parameters (<code>&lt;int N&gt;</code>), variadic parameters (<code>&lt;T...&gt;</code>), generic lambdas (use <code>auto</code> parameters), deducing a class&#x27;s arguments from its constructor, an instance as a function value, a generic declared inside a function body, and a generic constructor or operator (<code>Box&lt;T&gt;(T x)</code>, <code>operator+&lt;T&gt;(T x)</code>: <code>a constructor takes no type parameters: give the class them (class Box&lt;T&gt;), or declare a constructor for each type it takes</code>, and the same of an operator). A generic class&#x27;s constructor is spelled by the bare name, <code>Pair(K k, V v)</code>; <code>Pair&lt;K, V&gt;(...)</code> there is <code>a constructor is named by its class&#x27;s bare name: write Pair(...); inside the class, Pair is Pair&lt;K, V&gt;</code>.</li>
+<li>Type arguments go on a generic&#x27;s name only. On any other type they fail the load once, wherever the type stands, with what the name is: <code>&#x27;Hero&#x27; takes no type arguments: it is not a generic class</code>, <code>... it is a host class, not a host template</code>, <code>... it is an enum</code>, <code>&#x27;int&#x27; takes no type arguments: it is a builtin type</code>. A generic&#x27;s own type parameter takes none either, and that is an error where the generic is declared, used or not: <code>&#x27;T&#x27; takes no type arguments: it is a type parameter of &#x27;List&#x27;</code>.</li>
+<li>A generic class or function may not take the name of a template the host bound (<a href="../embedding/17-host-api.html#type-arguments-host">host type arguments</a>), since <code>Point&lt;int&gt;</code> spells the host&#x27;s class: <code>&#x27;Point&#x27; is a host template: a generic cannot take its name</code>. A generic class may not take the name of a class the host bound, as no script class may: <code>cannot declare class &#x27;Sprite&#x27;: the host binds a C++ class of that name; give the script class another name, or derive from it (class Other : Sprite)</code>. A generic function may, as a plain function may, and a generic method&#x27;s name is its class&#x27;s own.</li>
+</ul>
+<nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../guide/20-terminal-games.html"><span>&larr; previous</span>A Terminal Game in One File</a><a class="next" rel="next" href="../embedding/01-embedding-quickstart.html"><span>next &middot; embedding &rarr;</span>Embedding Quickstart</a></nav></article>
+</main>
+</div>
+<footer class="site-footer">
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

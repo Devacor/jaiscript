@@ -2,7 +2,7 @@
 // and that a program which sleeps outlasts the one-second budget the gate runs it under
 string caught = "uncaught";
 try {
-    string missing = read_file("no such file");
+    string missing = file::read("no such file");
 } catch (e) {
     caught = "caught";
 }

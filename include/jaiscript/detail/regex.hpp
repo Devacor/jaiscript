@@ -40,11 +40,18 @@ namespace jai::detail::regex {
 	// A pattern's text as a pattern that matches it literally
 	std::string escape(std::string_view text);
 
+	// A long search's budget poll (detail/work_budget.hpp): a search asks it as it scans, with the work units since it last
+	// asked, and stops when the answer is true
+	struct poll {
+		bool (*spent)(void* context, size_t units) = nullptr;
+		void* context = nullptr;
+	};
+
 	// One subject's searches over a compiled regex; holds the regex's caches (or private ones while another search holds
 	// them) until it is destroyed. Slots are byte offsets, two per group (group 0 is the whole match), npos when unmatched.
 	class searcher {
 	public:
-		searcher(const compiled& re, subject s);
+		searcher(const compiled& re, subject s, poll watch = {});
 		~searcher();
 		searcher(const searcher&) = delete;
 		searcher& operator=(const searcher&) = delete;
@@ -53,12 +60,15 @@ namespace jai::detail::regex {
 		bool find(std::string_view text, size_t from, bool groups, std::vector<size_t>& slots);
 		// The whole text matches
 		bool full(std::string_view text);
+		// The poll stopped a search: its false answer says nothing about the text
+		bool stopped() const;
 
 		struct state;
-		static constexpr size_t k_state_size = 160;
+		static constexpr size_t k_state_size = 192;
 	private:
 		alignas(std::max_align_t) unsigned char storage_[k_state_size];
 		state& st();
+		const state& st() const;
 	};
 
 	// The byte offset one character past `at` (a byte that starts no valid sequence is a character of its own)

@@ -37,6 +37,7 @@ namespace jai::detail {
         uint64_t stamped_generation = UINT64_MAX;
         unit_stamp unit{};
         int load_depth = 0;
+        std::string_view typed_load_who;
         std::vector<std::pair<script_value, script_int>> deferred_post_loads;
         bool terminal_error = false;
         uint64_t steps_taken = 0;

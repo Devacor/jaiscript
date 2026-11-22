@@ -771,7 +771,7 @@ public:
                     NodeB(NodeA a) {
                         this.value = a.value * 2;
                         if (a.child != null) {
-                            this.child = NodeB(a.child);
+                            this.child = make_shared<NodeB>(a.child);
                         }
                     }
                 }
@@ -782,7 +782,7 @@ public:
                 a1.value = 1;
                 var a2 = NodeA();
                 a2.value = 2;
-                a1.child = a2;
+                a1.child = make_shared<NodeA>(a2);
 
                 var b_val = get_value(a1);
             )");

@@ -6,6 +6,7 @@
 
 #include "profile_capture.hpp"
 #include <jaiscript/jaiscript.hpp>
+#include <jaiscript/core/load_report.hpp>
 #include <jaiscript/core/engine_time.hpp>
 #include <jaiscript/core/script_run.hpp>
 #include <jaiscript/testing/temporary_directory.hpp>
@@ -13,9 +14,10 @@
 #include <jaiscript/signals/signal_property.hpp>
 #include <jaiscript/signals/signal_impl.hpp>
 #include <jaiscript/properties/property_serialization.hpp>   // property_manager::load template bodies
+#include <jaiscript/debug/controller.hpp>
 #ifdef JAISCRIPT_ENABLE_DEBUGGER
 #include <jaiscript/debug/connector.hpp>
-#include "fetch.hpp"   // Download, zip_entries, zip_extract (runner host API)
+#include "fetch.hpp"   // download, zip_entries, zip_extract (runner host API)
 #include "sound.hpp"   // load_sound, play_sound, stop_sounds (runner host API)
 #include "http_transport.hpp"   // spider::catch / sling / get / post over WinHTTP or sockets
 #endif
@@ -44,8 +46,8 @@
 #include <thread>
 #include <vector>
 
-#include "file_io.hpp"      // read_file, write_file and the rest of the host file IO
-#include "net_socket.hpp"   // the socket primitives NetChannel and NetServer stand on
+#include "file_io.hpp"      // file::read, file::write and the rest of the host file IO
+#include "net_socket.hpp"   // the socket primitives net_channel and net_server stand on
 
 #ifdef _WIN32
 #include <windows.h>
@@ -143,13 +145,16 @@ struct options {
 	bool local_alias = true;               // engine::local_alias (--no-local-alias: every by-value local declaration clones)
 	bool type_proofs = true;               // engine::type_proofs (--no-proofs: no proofs, typed ops or cell blocks; the general form)
 	int debug_port = 0;                    // --debug-port=N, which implies --debug; 0 = default base (see attach_debugger)
+	std::vector<std::string> breaks;       // --break=<file:line[ if condition]>: print the stack and locals there and go on
+	bool dump_on_error = false;            // --dump-on-error: an uncaught error prints the stack and every frame's locals
 	int pause_mode = -1;                   // -1 auto (solo console), 0 never, 1 always
 	bool selftest = false;
 	std::string disasm;                    // --disasm=<file>: every chunk the VM compiles, disassembled with its regions' IR, in compile order
 	std::string manifest;                  // --manifest=<file>: the same chunks' semantic manifests (the identity gate's text)
 	std::string coverage;                  // --coverage=<file>: the vm's execution-coverage census at exit (a build with JAISCRIPT_VM_COVERAGE)
+	std::string load_report;               // --load-report[=json]: where the load spent its time, on stderr ("table" or "json"); empty = off
 	int benchmark_main = 0;               // file execution warms main; then call it N more times
-	std::vector<std::string> script_args;  // everything after `--`, exposed as global ARGS
+	std::vector<std::string> script_args;  // everything after `--`, exposed as the global `args`
 };
 
 void print_usage() {
@@ -203,7 +208,7 @@ void print_usage() {
 		"\n"
 		"usage:\n"
 		"  jaiscript                          interactive REPL (persistent engine; :help inside)\n"
-		"  jaiscript file.jai [-- args...]    run a script and exit; the args are the global ARGS, an\n"
+		"  jaiscript file.jai [-- args...]    run a script and exit; they are the global `args`, an\n"
 		"                                     array of strings (drag-drop a .jai onto the exe works\n"
 		"                                     too - the window pauses so you can read output)\n"
 		"  jaiscript -e \"source\" [-e ...]     run the source text and exit, like a file: several -e run\n"
@@ -233,6 +238,8 @@ void print_usage() {
 		"                        error (default 0 = unlimited - infinite loops are your business;\n"
 		"                        the embedded-engine default of 5.0s is deliberately lifted here)\n"
 		"  --time                print wall time for each run\n"
+		"  --load-report         when the script's top level ends, print on stderr where loading spent its time, per\n"
+		"                        file and phase (--load-report=json: the same as one line of JSON)\n"
 		"  --warnings            list the static checker's warnings on stderr before a script runs (errors\n"
 		"                        always fail the load and print)\n"
 		"  --benchmark-main=N    execute file as warm-up, then call its repeatable main() N times\n"
@@ -243,6 +250,11 @@ void print_usage() {
 		"  --no-local-alias      copy every by-value local declaration (the read-only local elision off)\n"
 		"  --no-proofs           run without type proofs and the typed instructions they enable (the general form)\n"
 		"  --debug-port=N        --debug, with N the first port the listener tries (default 52477, probing +10)\n"
+		"  --break=FILE:LINE     each time the script reaches LINE of FILE, print the call stack and every frame's\n"
+		"                        locals on stderr and run on; \"FILE:LINE if CONDITION\" prints only while the\n"
+		"                        condition holds (repeatable; a file run without --debug)\n"
+		"  --dump-on-error       an error no script catch takes prints the call stack and every frame's locals on\n"
+		"                        stderr where it is raised, before the error itself\n"
 		"  --pause / --no-pause  force / suppress the \"press Enter to close\" hold after a file\n"
 		"                        run (auto: pauses only when the console window is exclusively\n"
 		"                        ours, i.e. drag-drop or double-click launch)\n"
@@ -255,17 +267,17 @@ void print_usage() {
 		"           a piped REPL exits 1 when any input failed.\n"
 		"\n"
 		"environment: the full JaiScript stdlib is always registered (print/format/to_string/\n"
-		"  type_of, math, to_json/from_json, containers, the random type, crypto:: hashes, HMAC,\n"
+		"  reflect::type_of, math, to_json/from_json, containers, the random type, crypto:: hashes, HMAC,\n"
 		"  secure random and passwords), the web::\n"
 		"  library (html_escape, url_encode, form_encode, parse_query, build_query, parse_url, ...),\n"
 		"  the spider:: HTTP client (spider::catch(url[, options]), also spelled spider::get;\n"
 		"  spider::sling(content, url[, options]), also spelled spider::post(url, content[, options]);\n"
-		"  each answers a spider::Response; WinHTTP on Windows, sockets elsewhere, HTTPS through OpenSSL\n"
+		"  each answers a spider::response; WinHTTP on Windows, sockets elsewhere, HTTPS through OpenSSL\n"
 		"  when the build found it), with the network permission granted,\n"
-		"  plus host file IO: read_file(path),\n"
-		"  write_file(path, text) (creates missing folders), file_exists(path), delete_file(path), Download,\n"
-		"  zip_entries(zip), zip_extract(zip, entry, dest), dir_exists(path),\n"
-		"  make_dirs(path), list_dir(path), writable_dir(path). Locations are language builtins:\n"
+		"  plus host file IO: file::read(path),\n"
+		"  file::write(path, text) (creates missing folders), file::exists(path), file::remove(path), download,\n"
+		"  zip_entries(zip), zip_extract(zip, entry, dest), file::directory_exists(path),\n"
+		"  file::make_directories(path), file::list_directory(path), file::ensure_writable_directory(path). Locations are language builtins:\n"
 		"  executable_dir() (alias bin_dir()), root_script_dir() (the script this run started with),\n"
 		"  current_script_dir() (the file whose code is running), the *_path() twins, resolve_path(name)\n"
 		"  (the file import would load for that name), app_data_dir(name) / app_cache_dir(name),\n"
@@ -273,17 +285,17 @@ void print_usage() {
 		"  from any working directory when its paths start from one of these; and console-game IO:\n"
 		"  key_down(name), read_key(), term_cols(), term_rows(), env_var(name) (clocks are time::,\n"
 		"  waits sleep()),\n"
-		"  sound: load_sound(path) -> Sound (play()/play(true) loops/stop()/playing()/volume(0..1)/\n"
+		"  sound: load_sound(path) -> sound (play()/play(true) loops/stop()/playing()/volume(0..1)/\n"
 		"  format(); wav, midi or mp3 by the file's header), play_sound(path[, loop]), stop_sounds()\n"
-		"  (each Sound mixes with the others; Windows only, null elsewhere). POSIX terminals synthesize\n"
-		"  key_down from auto-repeat; there are no key-up events. Networking: NetChannel\n"
-		"  (new NetChannel(); listen(port)/connect(host,port)/send(bytes)/pump()/close();\n"
+		"  (each sound mixes with the others; Windows only, null elsewhere). POSIX terminals synthesize\n"
+		"  key_down from auto-repeat; there are no key-up events. Networking: net_channel\n"
+		"  (new net_channel(); listen(port)/connect(host,port)/send(bytes)/pump()/close();\n"
 		"  signals on_packet(bytes)/on_connect()/on_disconnect(reason) fire during pump();\n"
-		"  4-byte big-endian length framing) and NetServer (N clients on one\n"
+		"  4-byte big-endian length framing) and net_server (N clients on one\n"
 		"  port: listen/send(id,bytes)/broadcast/pump/kick/client_count; per-client signals\n"
 		"  on_client_connect(id)/on_client_packet(id,bytes)/on_client_disconnect(id,reason)),\n"
 		"  net_host_name() and net_local_addresses() (this machine's IPv4 addresses).\n"
-		"  Args after `--` are the global ARGS (array of strings). include/import resolve\n"
+		"  Args after `--` are the global `args` (array of strings). include/import resolve\n"
 		"  relative to the script's folder.\n"
 		"\n"
 		"debugging: --debug stands up a DAP listener (localhost only, costs nothing until a session\n"
@@ -353,12 +365,20 @@ int parse_args(int argc, char** argv, options& opt, const console_state& con) {
 		else if (a == "--time") { opt.time_runs = true; }
 		else if (a == "--warnings") { opt.warnings = true; }
 		else if (a == "--debug") { opt.debug = true; }
+		else if (a == "--dump-on-error") { opt.dump_on_error = true; }
+		else if (is_flag("--break")) {
+			std::string where;
+			if (!text_of("--break", where)) { return 2; }
+			opt.breaks.push_back(where);
+		}
 		else if (a == "--no-param-alias") { opt.param_alias = false; }
 		else if (a == "--no-local-alias") { opt.local_alias = false; }
 		else if (a == "--no-proofs") { opt.type_proofs = false; }
 		else if (a == "--pause") { opt.pause_mode = 1; }
 		else if (a == "--no-pause") { opt.pause_mode = 0; }
 		else if (a == "--selftest") { opt.selftest = true; }
+		else if (a == "--load-report") { opt.load_report = "table"; }
+		else if (a == "--load-report=json") { opt.load_report = "json"; }
 		else if (is_flag("--benchmark-main")) {
 			auto n = number_of("--benchmark-main", 0, INT_MAX, "a count from 0");
 			if (!n) { return 2; }
@@ -398,12 +418,20 @@ int parse_args(int argc, char** argv, options& opt, const console_state& con) {
 			return 2;
 		}
 	}
+	if ((!opt.breaks.empty() || opt.dump_on_error) && (opt.watch || (opt.script.empty() && opt.sources.empty()) || (opt.debug && !opt.breaks.empty()))) {
+		std::fprintf(stderr, "%s\n", con.red("--break and --dump-on-error need a file or -e and no --watch, and --break runs without --debug").c_str());
+		return 2;
+	}
 	if (!opt.sources.empty() && (!opt.script.empty() || opt.watch)) {
 		std::fprintf(stderr, "%s\n", con.red("-e runs its source instead of a script file (no file, no --watch)").c_str());
 		return 2;
 	}
 	if (opt.benchmark_main < 0 || (opt.benchmark_main > 0 && (opt.script.empty() || opt.watch))) {
 		std::fprintf(stderr, "--benchmark-main needs a file, a non-negative count and no --watch\n");
+		return 2;
+	}
+	if (!opt.load_report.empty() && (opt.watch || (opt.script.empty() && opt.sources.empty()))) {
+		std::fprintf(stderr, "--load-report needs a file or -e, and no --watch\n");
 		return 2;
 	}
 	if (opt.backend == "interpreter") { opt.backend = "interp"; }
@@ -1209,7 +1237,7 @@ private:
 };
 
 void register_net_channel(jai::engine& eng) {
-	jai::dynamic_binder<net_server>(eng, "NetServer")
+	jai::dynamic_binder<net_server>(eng, "net_server")
 		.constructor<>()
 		.method("listen", &net_server::listen)
 		.method("send", &net_server::send)
@@ -1220,7 +1248,7 @@ void register_net_channel(jai::engine& eng) {
 		.method("listening", &net_server::listening)
 		.method("close", &net_server::close)
 		.build();
-	jai::dynamic_binder<net_channel>(eng, "NetChannel")
+	jai::dynamic_binder<net_channel>(eng, "net_channel")
 		.constructor<>()
 		.method("listen", &net_channel::listen)
 		.method("connect", &net_channel::connect)
@@ -1302,6 +1330,9 @@ std::shared_ptr<jai::engine> make_runner_engine(const options& opt, std::ostream
 	eng->set_output_stream(std::shared_ptr<std::ostream>(engine_out ? engine_out : &g_watched_out, [](std::ostream*) {}));
 	jai::stdlib::register_all(eng);
 	jai::stdlib::register_web(eng);
+#ifdef JAISCRIPT_ENABLE_IMAGE
+	jai::stdlib::register_image(*eng);
+#endif
 
 	// Host file IO — a runner without it can't save anything (same shapes as the example games).
 	register_file_io(*eng);
@@ -1315,7 +1346,7 @@ std::shared_ptr<jai::engine> make_runner_engine(const options& opt, std::ostream
 	auto& arg_storage = args.as_array();
 	arg_storage.reserve(opt.script_args.size());
 	for (const auto& s : opt.script_args) { arg_storage.emplace_back(s, eng.get()); }
-	eng->add_global("ARGS", std::move(args));
+	eng->add_global("args", std::move(args));
 	return eng;
 }
 
@@ -1334,6 +1365,44 @@ int attach_debugger(jai::engine& eng, int requested_port) {
 	return 0;
 }
 #endif
+
+// --break and --dump-on-error: the controller with no transport, its stops and its uncaught errors printed on stderr. A stop
+// resumes as soon as it is printed, so the script runs on.
+bool wire_headless_debugging(const options& opt, jai::engine& eng) {
+	if (opt.breaks.empty() && !opt.dump_on_error) { return true; }
+	jai::debug::controller& dbg = eng.debugger();
+	std::map<std::string, std::vector<jai::debug::breakpoint>> by_file;
+	for (const std::string& where : opt.breaks) {
+		const size_t cut = where.find(" if ");
+		const std::string place = where.substr(0, cut);
+		const size_t colon = place.rfind(':');
+		auto line = colon == std::string::npos ? std::nullopt : number_in_range(place.substr(colon + 1), 1, INT_MAX);
+		if (!line) {
+			std::fprintf(stderr, "invalid value for --break: '%s' (FILE:LINE, or \"FILE:LINE if CONDITION\")\n", where.c_str());
+			return false;
+		}
+		jai::debug::breakpoint bp;
+		bp.line = *line;
+		if (cut != std::string::npos) { bp.condition = where.substr(cut + 4); }
+		by_file[place.substr(0, colon)].push_back(bp);
+	}
+	for (const auto& [file, bps] : by_file) { dbg.set_source_breakpoints(file, bps); }
+	if (!opt.breaks.empty()) {
+		dbg.set_on_stopped([&dbg](const jai::debug::stop_info& at) {
+			std::fprintf(stderr, "break at %s:%d\n%s", at.file.c_str(), at.line, dbg.dump().c_str());
+			std::fflush(stderr);
+			dbg.resume();
+		});
+		dbg.set_enabled(true);
+	}
+	if (opt.dump_on_error) {
+		dbg.set_on_uncaught_error([&dbg](const std::string& message) {
+			std::fprintf(stderr, "uncaught error: %s\n%s", message.c_str(), dbg.dump().c_str());
+			std::fflush(stderr);
+		});
+	}
+	return true;
+}
 
 int wire_debugger(const options& opt, jai::engine& eng, const console_state& con, std::ostream& out) {
 	if (!opt.debug) { return 0; }
@@ -1441,6 +1510,15 @@ run_result run_file_in_engine(jai::engine& eng, const std::string& path, bool pr
 	return r;
 }
 
+// The runner's program is its file's top level, so the report follows it: load time and the first file's own run stay separate lines
+void print_load_report(const options& opt, const jai::engine& eng) {
+	if (opt.load_report.empty()) { return; }
+	std::fflush(stdout);
+	const jai::load_report_summary report = eng.load_report_snapshot();
+	const std::string text = opt.load_report == "json" ? report.json() + "\n" : report.format();
+	std::fputs(text.c_str(), stderr);
+}
+
 int run_file_mode(const options& opt, const console_state& con) {
 	if (opt.sources.empty() && !fs::exists(opt.script)) {
 		std::fprintf(stderr, "%s\n", con.red("jaiscript: no such file: " + opt.script).c_str());
@@ -1450,13 +1528,20 @@ int run_file_mode(const options& opt, const console_state& con) {
 		std::fprintf(stderr, "%s\n", con.red("jaiscript: --coverage needs a build with JAISCRIPT_VM_COVERAGE (cmake -DJAISCRIPT_VM_COVERAGE=ON)").c_str());
 		return 2;
 	}
+	const auto setup_began = std::chrono::steady_clock::now();
 	auto eng = make_runner_engine(opt, nullptr);
+	if (!opt.load_report.empty()) {
+		eng->load_report(true);
+		eng->load_report_setup_time(std::chrono::duration<double>(std::chrono::steady_clock::now() - setup_began).count());
+	}
 	std::ostringstream debug_note;
 	wire_debugger(opt, *eng, con, debug_note);
 	if (!debug_note.str().empty()) { std::fputs(debug_note.str().c_str(), stderr); }
+	if (!wire_headless_debugging(opt, *eng)) { return 2; }
 
 	if (opt.benchmark_main > 0) { std::cout << "JAI_BENCHMARK_PHASE warmup\n"; }
 	run_result r = opt.sources.empty() ? run_file_in_engine(*eng, opt.script, opt.warnings) : run_sources_in_engine(*eng, opt.sources, opt.warnings);
+	print_load_report(opt, *eng);
 	if (r.ok && r.exit_code == 0 && opt.benchmark_main > 0) {
 		for (int repetition = 1; repetition <= opt.benchmark_main; ++repetition) {
 			std::cout << "JAI_BENCHMARK_PHASE measured " << repetition << "\n";
@@ -1972,6 +2057,8 @@ int run_selftest(const console_state& con) {
 		expect(parse({"--workers=abc"}) == 2 && parse({"--workers=-1"}) == 2 && parse({"--debug-port=70000"}) == 2 &&
 			parse({"--budget=nan"}) == 2 && parse({"--benchmark-main=1x"}) == 2 && parse({"--workers"}) == 2, "flags: a malformed or missing number exits 2");
 		expect(parse({"--workers", "3", "--budget=1.5", "--debug-port=52490"}) == -1, "flags: a value follows its flag or its '='");
+		expect(parse({"--load-report", "a.jai"}) == -1 && parsed.load_report == "table" && parse({"--load-report=json", "a.jai"}) == -1 && parsed.load_report == "json", "flags: --load-report takes a table or json");
+		expect(parse({"--load-report=xml", "a.jai"}) == 2 && parse({"--load-report"}) == 2 && parse({"--load-report", "--watch", "a.jai"}) == 2, "flags: --load-report needs a file and a known form");
 		auto eng = make_runner_engine(opt, nullptr);
 		expect(run_sources_in_engine(*eng, {"300"}).exit_code == 44 && run_sources_in_engine(*eng, {"-1"}).exit_code == 255 &&
 			run_sources_in_engine(*eng, {"4294967296"}).exit_code == 0, "exit code: an int result outside 0..255 keeps its low byte");
@@ -2063,7 +2150,7 @@ int run_selftest(const console_state& con) {
 		expect(text.find("jai> ") != std::string::npos, "repl: prompt prints when interactive");
 	}
 
-	for (const char* backend : {"interp", "vm"}) {   // read_file's contract and binary data through the real file functions
+	for (const char* backend : {"interp", "vm"}) {   // file::read's contract and binary data through the real file functions
 		options file_opt = opt;
 		file_opt.backend = backend;
 		auto eng = make_runner_engine(file_opt, nullptr);
@@ -2080,21 +2167,21 @@ int run_selftest(const console_state& con) {
 		};
 		auto name = [&](const char* what) { return std::string("files [") + backend + "]: " + what; };
 		const std::string bytes = "array<int> b = []; for (int i = 0; i < 256; ++i) { b.push(i); } b.push(13); b.push(10); b.push(0); b.push(10); ";
-		expect(run(bytes + "write_file(bin_path, string::from_bytes(b)) && read_file(bin_path).to_bytes() == b;") == "true",
+		expect(run(bytes + "file::write(bin_path, string::from_bytes(b)) && file::read(bin_path).to_bytes() == b;") == "true",
 			name("every byte value, NUL and \\r\\n round trip").c_str());
 		std::string disk = slurp_file(bin.string());
 		bool exact = disk.size() == 260 && disk[13] == '\x0D' && disk[256] == '\x0D' && disk[257] == '\x0A' && disk[258] == '\0';
 		for (int i = 0; i < 256 && exact; ++i) { exact = static_cast<unsigned char>(disk[i]) == i; }
 		expect(exact, name("the file on disk holds exactly those bytes").c_str());
-		expect(run("binary::writer w; w.uint32(0xCAFEBABE).text(\"hdr\", 8).float64(-0.5); write_file(bin_path, w.to_string()); "
-			"var r = read_file(bin_path).reader(); to_string(r.uint32()) + \" \" + r.text(8) + \" \" + to_string(r.float64()) + \" \" + to_string(r.at_end());") ==
+		expect(run("binary::writer w; w.uint32(0xCAFEBABE).text(\"hdr\", 8).float64(-0.5); file::write(bin_path, w.to_string()); "
+			"var r = file::read(bin_path).reader(); to_string(r.uint32()) + \" \" + r.text(8) + \" \" + to_string(r.float64()) + \" \" + to_string(r.at_end());") ==
 			"3405691582 hdr -0.5 true", name("a binary::writer file reads back through binary::reader").c_str());
-		expect(run("read_file(empty_path).size();") == "0", name("an empty file reads as \"\"").c_str());
-		expect(run("var m = \"\"; try { read_file(missing_path); } catch (e) { m = e; } m;") == "Cannot read file '" + missing.generic_string() + "': not found",
+		expect(run("file::read(empty_path).size();") == "0", name("an empty file reads as \"\"").c_str());
+		expect(run("var m = \"\"; try { file::read(missing_path); } catch (e) { m = e; } m;") == "Cannot read file '" + missing.generic_string() + "': not found",
 			name("a missing file raises").c_str());
-		expect(run("var m = \"\"; try { read_file(dir_path); } catch (e) { m = e; } m;") == "Cannot read file '" + dir.generic_string() + "': not a file",
+		expect(run("var m = \"\"; try { file::read(dir_path); } catch (e) { m = e; } m;") == "Cannot read file '" + dir.generic_string() + "': not a file",
 			name("a folder raises").c_str());
-		expect(run("file_exists(missing_path) ? read_file(missing_path) : \"fallback\";") == "fallback", name("check first, then read").c_str());
+		expect(run("file::exists(missing_path) ? file::read(missing_path) : \"fallback\";") == "fallback", name("check first, then read").c_str());
 	}
 
 	{   // sound: format by header, then by extension; the play state a script reads (played only where an output device exists)
@@ -2148,7 +2235,7 @@ int run_selftest(const console_state& con) {
 	}
 
 	for (const char* backend : {"interp", "vm"}) {
-		// Process-owned fixtures only. The invalid URL is rejected before Download
+		// Process-owned fixtures only. The invalid URL is rejected before download
 		// starts a worker, and missing audio files cannot produce audible output.
 		const fs::path fixture = dir / (std::string("filesystem permission ") + backend);
 		auto expect_permission = [&](bool ok, const std::string& name) {
@@ -2175,9 +2262,9 @@ int run_selftest(const console_state& con) {
 				++guarded_calls;
 				return true;
 			}, jai::permissions::filesystem);
-			expect_permission(eng->execute("read_file(fixture + \"/content.txt\");").as_string() == "unchanged",
+			expect_permission(eng->execute("file::read(fixture + \"/content.txt\");").as_string() == "unchanged",
 				"default file access remains enabled");
-			eng->execute("var saved_read = read_file; var pending = Download(); var saved_start = reflect::bind(pending, \"start\");");
+			eng->execute("var saved_read = file::read; var pending = download(); var saved_start = reflect::bind(pending, \"start\");");
 			eng->execute("revoke_filesystem();");
 			expect_permission(revoke_calls == 1 && !eng->is_enabled(jai::permissions::filesystem),
 				"host callback revokes subsequent access");
@@ -2194,25 +2281,25 @@ int run_selftest(const console_state& con) {
 				}
 			};
 			const std::pair<const char*, const char*> denied_calls[] = {
-				{"read_file(fixture + \"/content.txt\")", "read_file"},
-				{"write_file(fixture + \"/content.txt\", \"changed\")", "write_file"},
-				{"file_exists(fixture + \"/content.txt\")", "file_exists"},
-				{"delete_file(fixture + \"/removable.txt\")", "delete_file"},
-				{"move_file(fixture + \"/removable.txt\", fixture + \"/moved.txt\")", "move_file"},
-				{"dir_exists(fixture)", "dir_exists"},
-				{"make_dirs(fixture + \"/created\")", "make_dirs"},
-				{"writable_dir(fixture + \"/probe-created\")", "writable_dir"},
-				{"list_dir(fixture)", "list_dir"},
+				{"file::read(fixture + \"/content.txt\")", "file::read"},
+				{"file::write(fixture + \"/content.txt\", \"changed\")", "file::write"},
+				{"file::exists(fixture + \"/content.txt\")", "file::exists"},
+				{"file::remove(fixture + \"/removable.txt\")", "file::remove"},
+				{"file::move(fixture + \"/removable.txt\", fixture + \"/moved.txt\")", "file::move"},
+				{"file::directory_exists(fixture)", "file::directory_exists"},
+				{"file::make_directories(fixture + \"/created\")", "file::make_directories"},
+				{"file::ensure_writable_directory(fixture + \"/probe-created\")", "file::ensure_writable_directory"},
+				{"file::list_directory(fixture)", "file::list_directory"},
 				{"load_sound(fixture + \"/missing.wav\")", "load_sound"},
 				{"play_sound(fixture + \"/missing.mid\")", "play_sound"},
 				{"crypto::sha256_file(fixture + \"/content.txt\")", "crypto::sha256_file"},
 				{"zip_entries(fixture + \"/missing.zip\")", "zip_entries"},
 				{"zip_extract(fixture + \"/missing.zip\", \"entry\", fixture + \"/extracted.txt\")", "zip_extract"},
-				{"pending.start(\"jaiscript-selftest://never-network\", fixture + \"/download.bin\")", "Download.start"},
-				{"saved_read(fixture + \"/content.txt\")", "saved read_file alias"},
-				{"saved_start(\"jaiscript-selftest://never-network\", fixture + \"/alias.bin\")", "saved Download.start alias"},
-				{"reflect::call(\"read_file\", fixture + \"/content.txt\")", "reflected read_file"},
-				{"reflect::invoke(pending, \"start\", \"jaiscript-selftest://never-network\", fixture + \"/reflected.bin\")", "reflected Download.start"}
+				{"pending.start(\"jaiscript-selftest://never-network\", fixture + \"/download.bin\")", "download.start"},
+				{"saved_read(fixture + \"/content.txt\")", "saved file::read alias"},
+				{"saved_start(\"jaiscript-selftest://never-network\", fixture + \"/alias.bin\")", "saved download.start alias"},
+				{"reflect::call(\"file::read\", fixture + \"/content.txt\")", "reflected file::read"},
+				{"reflect::invoke(pending, \"start\", \"jaiscript-selftest://never-network\", fixture + \"/reflected.bin\")", "reflected download.start"}
 			};
 			for (const auto& [expression, name] : denied_calls) { expect_denied(expression, name); }
 			expect_denied("guarded_probe()", "host callback");
@@ -2233,13 +2320,13 @@ int run_selftest(const console_state& con) {
 				"denied archive/download operations create nothing");
 			expect_permission(eng->execute("!pending.pump() && !pending.done() && !pending.success() && "
 				"pending.error() == \"\" && pending.total() == -1 && pending.fraction() == 0;").as_bool(),
-				"denied start does not alter Download state; memory queries remain available");
+				"denied start does not alter download state; memory queries remain available");
 #if !defined(_WIN32) && !defined(JAISCRIPT_RUNNER_HAS_CURL)
 			// Only the curl-executable fallback polls the output file for progress.
-			expect_denied("pending.received()", "Download.received filesystem fallback");
+			expect_denied("pending.received()", "download.received filesystem fallback");
 #else
 			expect_permission(eng->execute("pending.received();").as_int() == 0,
-				"Download.received remains available when progress is memory-only");
+				"download.received remains available when progress is memory-only");
 #endif
 			expect_permission(eng->execute("pending.cancel(); stop_sounds(); true;").as_bool(),
 				"explicit cancel, stop and status remain available");
@@ -2247,26 +2334,26 @@ int run_selftest(const console_state& con) {
 			eng->enable(jai::permissions::filesystem);
 			expect_permission(eng->execute("saved_read(fixture + \"/content.txt\");").as_string() == "unchanged",
 				"saved callable works after re-enable");
-			expect_permission(eng->execute("write_file(fixture + \"/reenabled.txt\", \"enabled\") && "
-				"file_exists(fixture + \"/reenabled.txt\");").as_bool()
+			expect_permission(eng->execute("file::write(fixture + \"/reenabled.txt\", \"enabled\") && "
+				"file::exists(fixture + \"/reenabled.txt\");").as_bool()
 				&& slurp_file((fixture / "reenabled.txt").string()) == "enabled",
 				"reenabled file operations retain normal behavior");
-			expect_permission(eng->execute("write_file(fixture + \"/save.tmp\", \"new\") && write_file(fixture + \"/save.txt\", \"old\") && "
-				"move_file(fixture + \"/save.tmp\", fixture + \"/save.txt\") && !file_exists(fixture + \"/save.tmp\") && "
-				"read_file(fixture + \"/save.txt\") == \"new\" && !move_file(fixture + \"/save.tmp\", fixture + \"/save.txt\");").as_bool(),
-				"move_file replaces the destination and answers false for a missing source");
+			expect_permission(eng->execute("file::write(fixture + \"/save.tmp\", \"new\") && file::write(fixture + \"/save.txt\", \"old\") && "
+				"file::move(fixture + \"/save.tmp\", fixture + \"/save.txt\") && !file::exists(fixture + \"/save.tmp\") && "
+				"file::read(fixture + \"/save.txt\") == \"new\" && !file::move(fixture + \"/save.tmp\", fixture + \"/save.txt\");").as_bool(),
+				"file::move replaces the destination and answers false for a missing source");
 			expect_permission(eng->execute("load_sound(fixture + \"/missing.wav\") == null && play_sound(fixture + \"/missing.mid\") == null;").as_bool(),
 				"load_sound and play_sound answer null for a missing file");
 			expect_permission(!eng->execute("saved_start(\"jaiscript-selftest://never-network\", "
 				"fixture + \"/reenabled-download.bin\");").as_bool()
 				&& eng->execute("pending.error();").as_string() == "download: only http and https URLs are supported",
-				"reenabled Download alias reaches its original validation without network access");
+				"reenabled download alias reaches its original validation without network access");
 			expect_permission(eng->execute("guarded_probe();").as_bool() && guarded_calls == 1,
 				"reenabled callback enters exactly once");
 			eng->disable(jai::permissions::network);
-			expect_permission(eng->execute("var m = \"\"; try { auto d = Download(); d.start(\"http://127.0.0.1:1/\", fixture + \"/net.bin\"); } "
+			expect_permission(eng->execute("var m = \"\"; try { auto d = download(); d.start(\"http://127.0.0.1:1/\", fixture + \"/net.bin\"); } "
 				"catch (e) { m = e; } m;").as_string().find("network") != std::string::npos && !fs::exists(fixture / "net.bin"),
-				"Download.start needs the network permission too");
+				"download.start needs the network permission too");
 			eng->enable(jai::permissions::network);
 		} catch (const std::exception& error) {
 			expect_permission(false, "fixture/setup or recovery");

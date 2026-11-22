@@ -36,6 +36,14 @@ namespace jai::detail {
         const script_value* existing = env.get_own_value_ptr(name_id);
         const script_callable* held = existing ? script_callable_of(*existing, eng) : nullptr;
         if (!held) { return value; }
+        if (fn->generic_stamp != 0) {   // a generic's instance another unit already defined from the same definition: what is there stays
+            const auto present = [&](const std::shared_ptr<script_defined_function>& member) {
+                return member->generic_stamp == fn->generic_stamp && same_signature(member->parameters(), fn->parameters());
+            };
+            if (held->kind == script_callable::kind_type::function && held->fn && present(held->fn)) { return *existing; }
+            if (held->kind == script_callable::kind_type::overload_set && held->overloads() &&
+                std::any_of(held->overloads()->members.begin(), held->overloads()->members.end(), present)) { return *existing; }
+        }
         auto set = std::make_shared<function_overload_set>();
         set->name_id = name_id;
         const script_defined_function* duplicate = nullptr;
@@ -98,14 +106,16 @@ namespace jai::detail {
     // A namespace function declaration (both backends' namespace declaration): an earlier run of the declaring unit drops what it
     // declared; a declaration of the same signature that stays collides (the caller raises unless `override`, which erases it), one
     // that differs only by reference is the second definition's error (its text in `error`)
-    enum class namespace_admission : uint8_t { admitted, collision, reference_only };
+    // present: a generic's instance the namespace already holds under the same stamp (detail/generics.hpp), which stays
+    enum class namespace_admission : uint8_t { admitted, collision, reference_only, present };
     inline namespace_admission admit_namespace_function(std::vector<std::shared_ptr<function_decl>>& overloads, const function_decl& fn, bool redefines,
                                                         std::string& error) {
         std::erase_if(overloads, [&](const std::shared_ptr<function_decl>& o) { return earlier_run(o->unit, fn.unit); });
         for (auto it = overloads.begin(); it != overloads.end(); ++it) {
             if (!same_signature((*it)->parameters, fn.parameters)) { continue; }
-            if (!fn.is_override) { return namespace_admission::collision; }
-            overloads.erase(it);
+            if (fn.instance_stamp != 0 && (*it)->instance_stamp == fn.instance_stamp) { return namespace_admission::present; }
+            if (!fn.is_override && (fn.instance_stamp == 0 || (*it)->instance_stamp == 0)) { return namespace_admission::collision; }
+            overloads.erase(it);   // an override, or an instance made from another definition of its generic
             break;
         }
         for (auto it = overloads.begin(); it != overloads.end();) {

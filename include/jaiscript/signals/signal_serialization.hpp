@@ -7,6 +7,7 @@
 // signal.hpp no longer pulls in the engine-coupled script glue; serialization needs a
 // complete engine type (get_user_context<engine>) and the script-receiver execution path.
 #include <jaiscript/signals/signal_impl.hpp>
+#include <jaiscript/signals/receiver_save.hpp>
 #include <jaiscript/serialization/archive_impl.hpp>
 
 #include <vector>
@@ -15,114 +16,126 @@
 
 namespace jai {
 
-// A serializable snapshot of a script receiver. Only script-based receivers persist (C++
-// callbacks are runtime-only). Everything routes through the archive's format-agnostic
-// ar(make_nvp(...)) path so signals round-trip in BOTH json and binary — raw begin_array /
-// write_property_name framing is json-only and corrupts the binary stream.
-struct serialized_receiver {
-	std::vector<std::string> parameter_names;
-	std::string script;
+namespace detail {
+
+// A method receiver's object, as the archive's other references name one: {"$ref": N}
+struct receiver_object_ref {
+	uint32_t id = 0;
 };
 
 template<typename Archive>
-void save(Archive& ar, const serialized_receiver& r) {
-	ar(serialization::make_nvp("parameter_names", r.parameter_names));
-	ar(serialization::make_nvp("script", r.script));
+void save(Archive& ar, const receiver_object_ref& r) {
+	ar(serialization::make_nvp("$ref", r.id));
 }
 
 template<typename Archive>
-void load(Archive& ar, serialized_receiver& r) {
-	ar(serialization::make_nvp("parameter_names", r.parameter_names));
-	ar(serialization::make_nvp("script", r.script));
+void load(Archive& ar, receiver_object_ref& r) {
+	ar(serialization::make_nvp("$ref", r.id));
 }
 
-// A save stores parameter_names (signal-level), observers (array), and owned_observers (id -> receiver map). A named
-// connection lives in both observers_ and owned_connections_, so owned receivers are excluded from the observers list to
-// avoid serializing them twice.
+// One kind's fields, each written only when it holds something; a load reads the ones present
+template<typename Archive>
+void save(Archive& ar, const receiver_record& r) {
+	if (!r.function.empty()) {
+		ar(serialization::make_nvp("function", r.function));
+	} else if (!r.method.empty()) {
+		ar(serialization::make_nvp("object", receiver_object_ref{ r.object }));
+		ar(serialization::make_nvp("method", r.method));
+	} else {
+		ar(serialization::make_nvp("source", r.source));
+		if (!r.parameter_names.empty()) { ar(serialization::make_nvp("parameter_names", r.parameter_names)); }
+		if (!r.captures.empty()) { ar(serialization::make_nvp("captures", r.captures)); }
+	}
+}
+
+template<typename Archive>
+void load(Archive& ar, receiver_record& r) {
+	if (ar.has_property("function")) { ar(serialization::make_nvp("function", r.function)); }
+	if (ar.has_property("object")) {
+		receiver_object_ref object;
+		ar(serialization::make_nvp("object", object));
+		r.object = object.id;
+	}
+	if (ar.has_property("method")) { ar(serialization::make_nvp("method", r.method)); }
+	if (ar.has_property("source")) { ar(serialization::make_nvp("source", r.source)); }
+	if (ar.has_property("parameter_names")) { ar(serialization::make_nvp("parameter_names", r.parameter_names)); }
+	if (ar.has_property("captures")) { ar(serialization::make_nvp("captures", r.captures)); }
+}
+
+} // namespace detail
+
+// A save writes the named receivers that save, by id, under one "receivers" field present only when one does
 template<typename T, typename Sync>
 template<typename Archive>
 void detail::signal_state<T, Sync>::save_receivers(Archive& ar) const {
 	auto lock = lock_state();
-	std::vector<std::string> param_names = parameter_names();
-	ar(serialization::make_nvp("parameter_names", param_names));
-
-	const auto snapshot = [](const std::shared_ptr<receiver<T>>& a_receiver) {
-		serialized_receiver result;
-		if (a_receiver->parameter_names()) { result.parameter_names = *a_receiver->parameter_names(); }
-		result.script = a_receiver->script();
-		return result;
-	};
-
-	std::vector<serialized_receiver> observers;
-	for (const auto& entry : observers_) {
-		auto obs = live_target(entry);
-		if (!obs || !obs->has_script()) { continue; }
-		bool owned = false;
-		for (const auto& [id, owned_obs] : owned_connections_) {
-			if (owned_obs == obs) { owned = true; break; }
-		}
-		if (owned) { continue; }
-		observers.push_back(snapshot(obs));
-	}
-	ar(serialization::make_nvp("observers", observers));
-
-	std::map<std::string, serialized_receiver> owned_observers;
+	std::map<std::string, receiver_record> records;
 	for (const auto& [id, obs] : owned_connections_) {
-		if (!obs->has_script() || !owns(*obs)) { continue; }
-		owned_observers[id] = snapshot(obs);
+		if (!owns(*obs)) { continue; }
+		receiver_record record;
+		if (obs->save_form_) {
+			if (!receiver_record_of(*obs->save_form_, ar, record)) { continue; }
+		} else if (obs->has_script()) {
+			record.source = obs->script();
+			if (obs->parameter_names()) { record.parameter_names = *obs->parameter_names(); }
+		} else {
+			continue;
+		}
+		records.emplace(id, std::move(record));
 	}
-	ar(serialization::make_nvp("owned_observers", owned_observers));
+	if (!records.empty()) {
+		ar(serialization::make_nvp("receivers", records));
+	}
 }
 
-// A load replaces the script-text receivers the signal holds (the ones a save writes) with the saved ones, so loading
-// into a live object never doubles them; C++ callbacks and script function receivers stay connected.
+// A load replaces the receivers a save writes with the saved ones, so loading into a live object never doubles them; the
+// rest (C++ callbacks, lambdas, unnamed receivers) stay connected. The saved ones connect when the outermost read completes.
 template<typename T, typename Sync>
 template<typename Archive>
-void detail::signal_state<T, Sync>::load_receivers(Archive& ar) {
+void detail::signal_state<T, Sync>::load_receivers(Archive& ar, const std::shared_ptr<signal_state>& a_self) {
 	engine* eng = ar.template get_user_context<engine>();
+	deferred_receivers job;
+	if (ar.has_property("receivers")) {
+		std::map<std::string, receiver_record> records;
+		ar(serialization::make_nvp("receivers", records));
+		job.records.assign(std::make_move_iterator(records.begin()), std::make_move_iterator(records.end()));
+	}
 
-	std::vector<std::string> param_names;
-	ar(serialization::make_nvp("parameter_names", param_names));
-	std::vector<serialized_receiver> observers;
-	ar(serialization::make_nvp("observers", observers));
-	std::map<std::string, serialized_receiver> owned_observers;
-	ar(serialization::make_nvp("owned_observers", owned_observers));
-
-	auto lock = lock_state();
-	parameter_names(param_names);
-
-	std::vector<std::shared_ptr<receiver<T>>> replaced;
-	for (const auto& entry : observers_) {
-		if (auto obs = live_target(entry); obs && obs->has_script()) {
-			replaced.push_back(std::move(obs));
+	signal_state& self = *a_self;
+	{
+		auto lock = self.lock_state();
+		std::vector<shared_receiver_type> replaced;
+		for (const auto& [id, obs] : self.owned_connections_) {
+			if (self.owns(*obs) && saves(*obs)) {
+				replaced.push_back(obs);
+			}
+		}
+		for (const auto& obs : replaced) {
+			self.detach(obs);
 		}
 	}
-	for (const auto& obs : replaced) {
-		detach(obs);
-	}
-
-	auto rebuild = [&](const serialized_receiver& r) {
-		std::shared_ptr<std::vector<std::string>> names;
-		if (!r.parameter_names.empty()) {
-			names = std::make_shared<std::vector<std::string>>(r.parameter_names);
-		}
-		return receiver<T>::make(r.script, eng, names);
-	};
-
-	for (const auto& r : observers) {
-		auto recv = rebuild(r);
-		loaded_observers_.push_back(recv);
-		attach(std::move(recv), false);
-	}
-
-	for (const auto& [id, r] : owned_observers) {
-		replaced.push_back(std::exchange(owned_connections_[id], rebuild(r)));
-		attach(owned_connections_[id], false);
-	}
-
 	if (eng) {
-		script_engine(eng);
+		self.script_engine(eng);
 	}
+	if (!job.records.empty()) {
+		job.state = a_self;
+		job.arm = &signal_state::arm_loaded;
+		job.eng = eng;
+		ar.defer_receivers(std::move(job));
+	}
+}
+
+template<typename T, typename Sync>
+void detail::signal_state<T, Sync>::arm_loaded(void* a_state, const std::string& a_id, const detail::loaded_receiver& a_loaded) {
+	signal_state& self = *static_cast<signal_state*>(a_state);
+	if (a_loaded.function) {
+		self.connect(a_id, *a_loaded.function, false);
+		return;
+	}
+	auto names = a_loaded.source->parameter_names.empty() ? nullptr : std::make_shared<std::vector<std::string>>(a_loaded.source->parameter_names);
+	auto recv = receiver<T>::make(a_loaded.source->source, a_loaded.eng, names);
+	recv->save_form_ = a_loaded.source;
+	self.connect_named(a_id, std::move(recv), false);
 }
 
 // ADL hooks (named save/load so the archive's write_element/read_element find them).
@@ -133,7 +146,7 @@ void save(Archive& ar, const signal_emitter<T, Sync>& sig) {
 
 template<typename Archive, typename T, typename Sync>
 void load(Archive& ar, signal_emitter<T, Sync>& sig) {
-	detail::signal_state_access::state(sig)->load_receivers(ar);
+	detail::signal_state<T, Sync>::load_receivers(ar, detail::signal_state_access::state(sig));
 }
 
 } // namespace jai

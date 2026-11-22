@@ -712,8 +712,8 @@ namespace jai::detail {
 		return checked_result<script_value>(std::move(result.value()));
 	}
 
-	// a op= b, ++a, a++, --a and a-- on an object whose class binds that operator, as C++ calls operator+=, operator++() and
-	// operator++(int): it runs on the object once, in place, and the expression is what it returns, never stored back. base_id is
+	// a op= b, ++a, a++, --a and a-- on an object whose class declares or binds that operator, as C++ calls operator+=, operator++()
+	// and operator++(int): it runs on the object once, in place, and the expression is what it returns, never stored back. base_id is
 	// the binary operator's id (+ for ++). nullopt when no overload takes the operation: a op= b is then a = a op b, ++ and -- raise
 	template <class Host>
 	std::optional<checked_result<script_value>> object_operator_in_place(Host& h, const script_value& target, uint64_t base_id, const script_value& right,
@@ -729,13 +729,8 @@ namespace jai::detail {
 		script_value method_val = h.operator_value(owner, id);
 		if (!method_val.is_function()) { return std::nullopt; }
 		std::vector<script_value> args;
-		if (form == incdec_form::prefix) {
-			const auto* dispatch = host_operator_dispatch(method_val);
-			if (dispatch && dispatch->overloads->find(0) == dispatch->overloads->end()) { return std::nullopt; }
-		} else {
-			args.push_back(form == incdec_form::postfix ? h.make_int(0) : right);
-			if (!host_operator_accepts(method_val, args.back())) { return std::nullopt; }
-		}
+		if (form != incdec_form::prefix) { args.push_back(form == incdec_form::postfix ? h.make_int(0) : right); }
+		if (!in_place_operator_accepts(owner.class_def, id, args.empty() ? nullptr : &args.back())) { return std::nullopt; }
 		auto result = h.operator_call(target, method_val, id, std::move(args));
 		if (!result) {
 			if (h.unwinding()) { return checked_result<script_value>(h.make_null()); }

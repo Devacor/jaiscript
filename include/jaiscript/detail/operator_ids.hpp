@@ -11,6 +11,9 @@ namespace jai::detail {
 	// How a class's in-place operator is asked: a op= b, or ++/-- in prefix or postfix form (operator++() and operator++(int))
 	enum class incdec_form : uint8_t { none, prefix, postfix };
 
+	// The parameter operator++(int) and operator--(int) declare: C++'s unnamed postfix marker, a name no source can spell
+	inline constexpr std::string_view k_postfix_marker_name = "\x01postfix";
+
 	// A class's operator method names, interned once per backend at construction (a parallel worker never interns)
 	struct operator_ids {
 		uint64_t plus = 0, minus = 0, star = 0, slash = 0, percent = 0;

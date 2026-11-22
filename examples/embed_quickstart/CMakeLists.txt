@@ -13,7 +13,7 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 	option(EMBED_QUICKSTART_FIND_PACKAGE "Use an installed JaiScript through find_package" OFF)
 
 	if(EMBED_QUICKSTART_FIND_PACKAGE)
-		find_package(JaiScript 0.5 CONFIG REQUIRED)
+		find_package(JaiScript 0.6 CONFIG REQUIRED)
 	else()
 		add_subdirectory(../.. jaiscript)
 	endif()

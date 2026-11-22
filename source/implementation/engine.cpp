@@ -1,7 +1,11 @@
 #include <jaiscript/jaiscript.hpp>
+#include <jaiscript/detail/less_than.hpp>
+#include <jaiscript/detail/method_value.hpp>
+#include <jaiscript/core/script_type.hpp>
 #include <jaiscript/core/engine_time.hpp>
 #include <jaiscript/core/http_transport.hpp>
 #include <jaiscript/core/execution_backend.hpp>
+#include <jaiscript/core/coroutine.hpp>
 #include <jaiscript/detail/class_runtime.hpp>
 #include <jaiscript/detail/ast.hpp>
 #include <jaiscript/detail/lexer.hpp>
@@ -9,6 +13,7 @@
 #include <jaiscript/core/class_registry.hpp>
 #include <jaiscript/core/runtime_errors.hpp>
 #include <jaiscript/detail/float_text.hpp>
+#include <jaiscript/detail/type_name_key.hpp>
 #include <jaiscript/serialization/json_archive.hpp>
 #include <jaiscript/stdlib/json.hpp>   // reconstruct_archive_value (hybrid field hydration)
 #include <jaiscript/core/script_namespace.hpp>
@@ -19,9 +24,13 @@
 #include <jaiscript/detail/aggregate_lowering.hpp>
 #include <jaiscript/detail/operator_table.hpp>
 #include <jaiscript/detail/execution_limits.hpp>
+#include <jaiscript/detail/work_budget.hpp>
+#include <jaiscript/detail/host_time.hpp>
 #include <jaiscript/detail/parallel_transform.hpp>
 #include <jaiscript/thread_pool.hpp>
 #include <jaiscript/detail/ast_serializer.hpp>   // jaibite save/load
+#include <jaiscript/core/load_report.hpp>
+#include <jaiscript/detail/load_collector.hpp>
 #include <jaiscript/detail/structural_equality.hpp>
 #include <jaiscript/detail/format_spec.hpp>       // format_value builtin (template-string specs)
 #include <jaiscript/detail/value_text.hpp>
@@ -35,6 +44,9 @@
 #include <jaiscript/detail/math_component_store.hpp>
 #include <jaiscript/detail/release_machine.hpp>
 #include <jaiscript/detail/constant_arguments.hpp>
+#include <jaiscript/detail/type_value.hpp>
+#include <jaiscript/detail/generics.hpp>
+#include <jaiscript/detail/function_overloads.hpp>
 #include <jaiscript/detail/run_record.hpp>
 #include <jaiscript/core/script_run.hpp>
 #ifdef JAISCRIPT_VM_COVERAGE
@@ -434,8 +446,8 @@ static int compute_param_match_cost(
 struct engine::implementation {
     // Engine-thread state. A C++ callback may change grants before returning to
     // script; parallel regions keep them immutable until their workers join.
-    permission_set permissions_ = detail::permission_set_of(permissions::filesystem, permissions::scoped_template);
-    std::vector<std::string> scoped_template_dirs_{"template"};   // engine::scoped_template_dirs, relative ones from the calling script's directory
+    permission_set permissions_ = detail::permission_set_of(permissions::filesystem, permissions::untrusted_template, permissions::source_receivers);
+    std::vector<std::string> untrusted_template_dirs_{"template"};   // engine::untrusted_template_dirs, relative ones from the calling script's directory
     // Per-engine reference_holder block pool, type-erased (value.cpp owns the type).
     // Before other owning members so it is destroyed LAST - members releasing reference
     // values on teardown returns its blocks to a live pool. The teardown orphans the
@@ -496,7 +508,9 @@ struct engine::implementation {
     std::unordered_map<const void*, weaker_ptr<class_instance>> script_layers_;
     std::unordered_set<std::string> serial_functions_;
     std::unordered_set<std::string> serial_namespaces_;
+    std::unordered_set<std::string> parallel_namespace_entries_;   // the members of a serial namespace that read only their argument
     std::unordered_set<std::string> nodiscard_callables_;
+    std::unordered_map<std::string, uint8_t> type_result_callables_;
     std::unordered_set<std::string> host_function_names_;
     std::unordered_set<std::string> host_global_names_;
     size_t script_layer_sweep_watermark_ = 64;
@@ -655,6 +669,11 @@ struct engine::implementation {
             }
             return best->function;
         }
+
+        // engine_operator_table's picker: the overload taking a binary operator's operands, null when none does
+        static script_value operator_overload(const void* set, const script_value& left, const script_value& right) {
+            return static_cast<const OverloadSet*>(set)->findBestMatch({left, right});
+        }
     };
     
     // Track which globals should NOT be serialized (most are serializable by default)
@@ -759,7 +778,10 @@ struct engine::implementation {
     type_info_arena type_arena_;
     std::unordered_map<type_key, type_info*, type_key_hash> type_infos_;
     std::mutex held_lock;   // the held values' registry (held_value): touched only when a host constructs, copies, moves or drops one
-    held_value* held_head = nullptr;
+    held_value* held_head[2] = {nullptr, nullptr};   // the plain holds, then the callbacks' (held_value::callback_), each the last made first
+    // Engine teardown: the instances destroy_surviving_instances found alive, pinned until their members are released
+    std::vector<strong_ptr<class_instance>> teardown_survivors_;
+    coroutine_handle* coroutine_head = nullptr;   // live coroutines, the last made first (engine::register_coroutine)
 
     // Secondary index for O(1) lookup by type ID (stores pointers into type_infos_)
     std::unordered_map<uint64_t, type_info*> type_id_index_;
@@ -838,7 +860,10 @@ struct engine::implementation {
         }
         auto val = global_environment_->get(string_symbolizer_.intern(name));
         if (val && val.value().is_function()) {
-            operator_table_.set(slot, std::move(val.value()));
+            // a typed registration dispatches over its set, whose pick the table asks; a lone untyped function takes any operands
+            const auto set = overloadedFunctions.find(std::string(name));
+            const bool dispatches = set != overloadedFunctions.end() && val.value().as_function().target<engine::overload_dispatch>();
+            operator_table_.set(slot, std::move(val.value()), dispatches ? &OverloadSet::operator_overload : nullptr, dispatches ? &set->second : nullptr);
             latch_custom_binary_ops();
         } else {
             // Operator name rebound to a non-function: dispatch falls back to builtins
@@ -850,6 +875,7 @@ struct engine::implementation {
 
     // Step-debugger controller, lazily created on first engine::debugger() call.
     std::unique_ptr<debug::controller> debugger_;
+    instance_variables* evaluation_scope_ = nullptr;   // debug_evaluate's names: each one's value after the run is written back
     // Optional debug transport (e.g. a DAP socket server). Stopped before teardown.
     std::shared_ptr<debug::transport> debug_transport_;
 
@@ -872,11 +898,10 @@ struct engine::implementation {
     }
     engine::import_behavior import_behavior = engine::import_behavior::file_timestamp; // Default
     
-    struct closure_stamp {
-        std::string path;
-        uint64_t mtime = 0;
-        uint64_t size = 0;
-    };
+    using closure_stamp = detail::source_stamp;   // a file under the stamp the loader gave its text (load_source)
+    struct script_cache_entry;
+    // a loaded unit as a check judged it: the unit and the entry it had run from
+    using judged_unit = std::pair<uint32_t, std::weak_ptr<script_cache_entry>>;
     struct import_record {
         std::string resolved_path;
         // (mtime, size) stamp via stat_mtime_size, matching the script cache: 100 ns
@@ -891,10 +916,11 @@ struct engine::implementation {
         uint64_t failed_mtime = 0;
         uint64_t failed_size = 0;
         std::vector<closure_stamp> failed_closure;   // other files the failure involved (a dependent it broke, a file its parse read): a change to one lets it try again
+        std::vector<judged_unit> failed_units;       // the loaded units the failure broke, as it judged them: one that is loaded again lets it try again
         bool missing = false;   // its file was gone at a check (raised once): it waits until a check finds the file again
         uint64_t runs = 0;      // runs started: a nested module queued to re-run is skipped when something ran it meanwhile
         // the rest of the module's closure: every file its last run included (top level, nested, spliced into a function
-        // body), each stamped as it was read; a pass queries each like the module itself
+        // body), each under the stamp its text was loaded with; a pass queries each like the module itself
         std::vector<closure_stamp> closure;
         // the modules its last run imported: a pass that checks this module checks them too, and a changed one re-runs alone
         std::vector<std::string> children;
@@ -965,7 +991,8 @@ struct engine::implementation {
     };
     std::vector<import_frame> import_frames_;   // per running import, innermost last
 
-    // a file the running import read: a second read under another stamp leaves a zero stamp, which the next pass sees moved
+    // a file the running import loaded, under the stamp of the text it loaded (unstamped: a file the stamp source cannot
+    // stamp, or one that never read whole): a second load under another stamp leaves a zero stamp, which the next pass sees moved
     void note_closure_file(const std::string& path, bool stamped, uint64_t mtime, uint64_t size) {
         if (import_frames_.empty()) { return; }
         if (!stamped) { mtime = 0; size = 0; }
@@ -1003,7 +1030,8 @@ struct engine::implementation {
     }
     bool closure_moved(const import_record& record) { return stamps_moved(record.closure); }
     bool held_failure(const import_record& record, uint64_t mtime, uint64_t size) {
-        return record.failed && mtime == record.failed_mtime && size == record.failed_size && !stamps_moved(record.failed_closure);
+        return record.failed && mtime == record.failed_mtime && size == record.failed_size && !stamps_moved(record.failed_closure) &&
+               units_stand(record.failed_units);
     }
     bool stamps_moved(const std::vector<closure_stamp>& stamps) {
         for (const auto& s : stamps) {
@@ -1046,6 +1074,9 @@ struct engine::implementation {
         bool closure_filesystem = true;   // permission under which dependencies were gathered
         std::vector<closure_stamp> closure_stamps;
         std::vector<closure_stamp> spliced_stamps;   // files spliced into function bodies at parse time: a change re-parses this entry; such a unit writes no jaibite cache
+        std::vector<detail::generic_definition_ptr> generics;   // the generics its text declares (note_text_stamp)
+        bool generics_gathered = false;
+        detail::text_stamp loaded_under;   // the stamp its text was last loaded with (note_text_stamp): a parse of that text again keeps it
         // the unit's reload hook (hot_reload_migrate at its top level): kept off the program - never defined, never callable - and
         // run after a re-run of the unit; check_declarations = the program and the hook, what the checker and the proof pass walk
         std::shared_ptr<function_decl> reload_hook;
@@ -1056,6 +1087,7 @@ struct engine::implementation {
         uint64_t cache_mtime = 0, cache_size = 0;
         bool cache_stamped = false;
         std::filesystem::path cache_write_failed;   // the cache file this source text could not write: never retried on every hit
+        bool foreign_cache_replaced = false;   // a run of this text has written its cache (or chosen not to): another registration's is adopted after
         bool identity_known = false;
         detail::jaibite_source_identity identity;
         // what the parse and a clean check rest on beyond the text: the parse holds while the namespace classes it asked about
@@ -1066,7 +1098,11 @@ struct engine::implementation {
         bool outside_keyed = false;
         bool context_recorded = false;   // the first check ran: its context is the one the cache keeps
         bool stamp_loaded = false;   // the loaded cache's stamp, held against the context at the check it stands in for
-        bool restamp = false;        // that stamp did not hold: the cache is written again under this context
+        bool cache_unstamped = false;   // the loaded cache held no stamp this checker's revision trusts
+        bool restamp = false;        // the stamp did not hold, or a clean check found none to trust: the cache is written again under this context
+        // it made instances from generics another unit declares, or made again instances the engine held: like a spliced
+        // include, no cache holds them
+        bool outside_generics = false;
         std::string closure_listing;                   // erroring units' listings, each against its own source + path
         std::vector<check_diagnostic> closure_diags;   // every unit diagnostic, path-qualified in the message
         std::string closure_parse_failures;            // units that failed to parse: the program stops there, before any check
@@ -1075,6 +1111,47 @@ struct engine::implementation {
         mutable detail::aggregate_lowering_state lowering;
     };
     uint64_t script_cache_epoch = 0;
+    engine* self_ = nullptr;
+    // '<' after a name. A unit parsed before the files it names are pooled is provisional; the
+    // parses and the freshness checks made once they are pooled settle (reparse_if_moved)
+    bool settle_parses_ = false;
+    std::string less_answers_now(const std::vector<declaration_ptr>& decls, const std::vector<std::string>& queries) {
+        return detail::less_than_answers(*self_, decls, queries, program_check_options(detail::check_options::proofs_t::leave));
+    }
+    // a site of the unit would read otherwise than its parse read it
+    bool less_moved(const std::vector<declaration_ptr>& decls, detail::jaibite_context& context) {
+        if (context.less_queries.empty()) { return false; }
+        const bool settled = context.less_settled || settle_parses_;
+        std::string now = less_answers_now(decls, context.less_queries);
+        if (!detail::less_readings_equal(context.less_answers, context.less_settled, now, settled)) { return true; }
+        if (settled != context.less_settled) {
+            context.less_answers = std::move(now);
+            context.less_settled = true;
+        }
+        return false;
+    }
+    static const char* less_named(char answer, bool past) {
+        switch (answer) {
+            case detail::k_less_variable: return past ? "named a variable" : "names a variable";
+            case detail::k_less_declared: return past ? "named a function or a type" : "names a function or a type";
+            default: return past ? "named nothing declared" : "names nothing declared";
+        }
+    }
+    // A bite's parse read '<' after a name by what the name named; here it names something that reads otherwise, and the bite
+    // carries no text to parse again
+    void refuse_less_answers(detail::jaibite_context& context, const std::vector<declaration_ptr>& decls) {
+        if (context.less_queries.empty()) { return; }
+        const std::string now = less_answers_now(decls, context.less_queries);
+        check_report report;
+        for (size_t i = 0; i < context.less_queries.size() && i < now.size() && i < context.less_answers.size(); ++i) {
+            if (detail::less_opens(context.less_answers[i], context.less_settled) == detail::less_opens(now[i], true)) { continue; }
+            report.diagnostics.push_back({check_diagnostic::level::error, 0, 0, "the bite was parsed where '" + detail::less_query::parse(context.less_queries[i]).head + "' " +
+                                          less_named(context.less_answers[i], true) + "; here it " + less_named(now[i], false) + ", so '<' after it reads otherwise: save it again from source"});
+        }
+        if (report.diagnostics.empty()) { return; }
+        last_check_ = report;
+        throw static_check_error("static check failed:\n" + report.format());
+    }
     uint64_t layout_generation_ = 0;
     uint64_t script_cache_clock = 0;
     static constexpr size_t script_cache_max = 64;
@@ -1135,28 +1212,51 @@ struct engine::implementation {
     // the same units' class declarations (a subclass resolves a parent another unit declares).
     std::unordered_set<std::string> program_names_;
     detail::program_class_map program_classes_;
-    detail::program_enum_map program_enums_;   // the closure units' top-level enums (an enum value read is no user code: member_expr::enum_constant)
-    detail::program_function_map program_functions_;   // the closure units' free functions (the inliner's cross-unit leaves)
-    detail::program_global_map program_globals_;   // the closure units' top-level variables: the proof pass types them
+    detail::program_enum_map program_enums_;   // the closure units' enums, a namespace's under its qualified name (an enum value read is no user code: member_expr::enum_constant)
+    detail::program_function_map program_functions_;   // the closure units' free functions, a namespace's qualified (the inliner's cross-unit leaves)
+    detail::program_global_map program_globals_;   // the closure units' top-level and namespace variables: the proof pass types the top-level ones
     std::unordered_map<std::string, std::unordered_map<std::string, uint64_t>> program_name_units_;   // name -> unit path -> unit_key of the unit declaring it
     std::unordered_map<std::string, uint64_t> pooled_unit_keys_;   // unit path -> the unit_key its names were pooled under
-    std::unordered_map<std::string, std::vector<declaration_ptr>> pooled_unit_declarations_;   // unit path -> its functions, globals and enums the tables hold
+    std::unordered_map<std::string, std::vector<declaration_ptr>> pooled_unit_declarations_;   // unit path -> its functions, variables and enums the tables hold
     // moves whenever what the checker reads of the pools (names, class models, enums) changes: a verdict holds while it stands
     uint64_t program_union_epoch_ = 0;
-    static bool pooled_by_path(const declaration_ptr& d) {
-        if (!d) { return false; }
-        const node_type type = d->get_type();
-        return type == node_type::function_decl || type == node_type::variable_decl || type == node_type::enum_decl;
-    }
-    // whether the path-keyed tables already hold exactly these declarations of the unit
-    static bool pools_as(const std::vector<declaration_ptr>& pooled, const std::vector<declaration_ptr>& decls) {
-        size_t next = 0;
+    // the declarations the path-keyed tables hold of a unit: its functions, variables and enums, and those of its namespaces
+    static void pooled_by_path(const std::vector<declaration_ptr>& decls, std::vector<declaration_ptr>& out) {
         for (const auto& d : decls) {
-            if (!pooled_by_path(d)) { continue; }
-            if (next == pooled.size() || pooled[next] != d) { return false; }
-            ++next;
+            if (!d) { continue; }
+            const node_type type = d->get_type();
+            if (type == node_type::function_decl || type == node_type::variable_decl || type == node_type::enum_decl) { out.push_back(d); }
+            else if (type == node_type::namespace_decl) { pooled_by_path(static_cast<const namespace_decl*>(d.get())->declarations, out); }
         }
-        return next == pooled.size();
+    }
+    // The pooled classes and enums a namespace declares, by bare name, and a count that moves whenever they do: a parse reads a
+    // bare name in a namespace's code as that namespace's class or enum (parser::qualify_namespace_classes), whichever unit
+    // declares it
+    std::unordered_set<std::string> pooled_namespace_classes_;
+    size_t pooled_class_moves_ = 0;
+    void index_pooled_namespace_classes() {
+        ++pooled_class_moves_;
+        pooled_namespace_classes_.clear();
+        for (const auto& [name, declaration] : program_classes_) {
+            if (const size_t cut = class_qualifier_cut(name); cut != std::string::npos) { pooled_namespace_classes_.insert(name.substr(cut + 2)); }
+        }
+        for (const auto& [name, units] : program_enums_) {
+            if (const size_t cut = name.rfind("::"); cut != std::string::npos) { pooled_namespace_classes_.insert(name.substr(cut + 2)); }
+        }
+    }
+    // The namespaces the pooled units open inside another, by last segment: a parse reads inner::k in outer's code as
+    // outer::inner::k (program_names_ holds each path as "outer::inner::")
+    std::unordered_set<std::string> pooled_nested_namespaces_;
+    void note_pooled_namespace_path(const std::string& name) {
+        if (name.size() < 2 || name.compare(name.size() - 2, 2, "::") != 0) { return; }
+        const size_t cut = name.rfind("::", name.size() - 3);
+        if (cut == std::string::npos) { return; }
+        pooled_nested_namespaces_.insert(name.substr(cut + 2, name.size() - cut - 4));
+        ++pooled_class_moves_;
+    }
+    void index_pooled_namespace_paths() {
+        pooled_nested_namespaces_.clear();
+        for (const auto& name : program_names_) { note_pooled_namespace_path(name); }
     }
     // A unit's declarations into the program pools, each name under the unit that declares it; a unit pooled again under the
     // key it was pooled with brings the names it brought before, and again with the same declarations changes nothing but the
@@ -1169,31 +1269,1108 @@ struct engine::implementation {
             detail::collect_unit_names(decls, names);
             for (const auto& n : names) {
                 program_name_units_[n][path] = key;
-                moved = program_names_.insert(n).second || moved;
+                if (program_names_.insert(n).second) {
+                    moved = true;
+                    note_pooled_namespace_path(n);
+                }
             }
         }
+        const size_t classes_before = program_classes_.size();
         moved = detail::collect_unit_classes(decls, program_classes_) || moved;
-        if (std::vector<declaration_ptr>& pooled = pooled_unit_declarations_[path]; !pools_as(pooled, decls)) {
-            pooled.clear();
-            for (const auto& d : decls) { if (pooled_by_path(d)) { pooled.push_back(d); } }
+        if (program_classes_.size() != classes_before) { index_pooled_namespace_classes(); }
+        register_generics(decls, path);
+        std::vector<declaration_ptr> held;
+        pooled_by_path(decls, held);
+        if (std::vector<declaration_ptr>& pooled = pooled_unit_declarations_[path]; pooled != held) {
+            pooled = std::move(held);
+            const size_t enums_before = program_enums_.size();
             detail::collect_unit_enums(decls, path, program_enums_);
+            if (program_enums_.size() != enums_before) { index_pooled_namespace_classes(); }
             detail::collect_unit_functions(decls, path, program_functions_);
             detail::collect_unit_globals(decls, path, program_globals_);
             moved = true;
         }
         if (moved) { ++program_union_epoch_; }
     }
+    // ---- Generics (detail/generics.hpp, docs/site/guide/21-generics.html)
+    // Every definition the program declares, by qualified name: the closure units' as they are pooled and those of every unit
+    // that ran. A generic class's definition replaces the earlier one of its name, a function's or a method's its file's
+    // earlier one of the same shape; a file's removed ones leave with it, and a class declared under a generic class's name
+    // takes the name.
+    std::unordered_map<std::string, std::vector<detail::generic_definition_ptr>> generics_;
+    // The generic classes the pooled units declare in a namespace, by qualified and by bare name: classes of the namespace to a
+    // parse, as program_classes_ holds the plain ones (namespace_class_known)
+    std::unordered_set<std::string> pooled_namespace_generics_;
+    void index_pooled_namespace_generics() {
+        std::unordered_set<std::string> named;
+        for (const auto& [name, held] : generics_) {
+            const size_t cut = name.rfind("::");
+            if (cut == std::string::npos || std::none_of(held.begin(), held.end(), [](const detail::generic_definition_ptr& g) { return g->kind == detail::generic_kind::class_type; })) { continue; }
+            named.insert(name);
+            named.insert(name.substr(cut + 2));
+        }
+        if (named == pooled_namespace_generics_) { return; }
+        pooled_namespace_generics_ = std::move(named);
+        ++pooled_class_moves_;
+    }
+    // each instance made, by name: what it was made from (a deduction reads Name<T> against the arguments)
+    struct generic_instance_record {
+        std::string generic;
+        std::vector<type_info_ptr> arguments;
+    };
+    std::unordered_map<std::string, generic_instance_record> generic_instances_;
+    std::unordered_map<std::string, std::vector<std::string>> instances_of_;   // the instances made of each generic, by its qualified name
+    // The shape of each function's and method's definition an instance was made from, by its stamp: a later declaration of that
+    // shape is the definition declared again (note_remade_instances), one of another shape an overload beside it
+    std::unordered_map<uint64_t, detail::generic_definition_ptr> instance_shapes_;
+    std::unordered_set<std::string> generic_method_names_;   // the bare names of the generic methods ever declared
+    // The definitions a file dropped altogether while instances of them were made, by qualified name: each stays in generics_,
+    // as a function or a class a file drops stays, for every unit, until something of its kind takes the name (a generic, a
+    // class for a generic class's, a function for a generic function's). A unit that makes an instance from one depends on
+    // the file under the stamp of the text that dropped it.
+    std::unordered_map<std::string, std::vector<detail::generic_definition_ptr>> dropped_generics_;
+    std::unordered_map<std::string, detail::text_stamp> pooled_text_stamps_;   // each file's text as it was last pooled
+    static void collect_plain_functions(const std::vector<declaration_ptr>& decls, const std::string& space, std::vector<std::string>& out) {
+        for (const auto& d : decls) {
+            if (!d) { continue; }
+            if (d->get_type() == node_type::function_decl) {
+                const auto* f = static_cast<const function_decl*>(d.get());
+                if (f->instance_stamp == 0) { out.push_back(space.empty() ? std::string(f->name) : space + "::" + std::string(f->name)); }
+            } else if (d->get_type() == node_type::namespace_decl) {
+                const auto* n = static_cast<const namespace_decl*>(d.get());
+                collect_plain_functions(n->declarations, space.empty() ? std::string(n->name) : space + "::" + std::string(n->name), out);
+            }
+        }
+    }
+    static void collect_enum_names(const std::vector<declaration_ptr>& decls, const std::string& space, std::vector<std::string>& out) {
+        for (const auto& d : decls) {
+            if (!d) { continue; }
+            if (d->get_type() == node_type::enum_decl) {
+                const auto* e = static_cast<const enum_decl*>(d.get());
+                out.push_back(space.empty() ? std::string(e->name) : space + "::" + std::string(e->name));
+            } else if (d->get_type() == node_type::namespace_decl) {
+                const auto* n = static_cast<const namespace_decl*>(d.get());
+                collect_enum_names(n->declarations, space.empty() ? std::string(n->name) : space + "::" + std::string(n->name), out);
+            }
+        }
+    }
+    // a dropped definition leaves the pool: something of its kind took its name
+    void evict_dropped(const std::string& name, detail::generic_kind kind) {
+        const auto dropped = dropped_generics_.find(name);
+        if (dropped == dropped_generics_.end()) { return; }
+        auto& held = generics_[name];
+        std::erase_if(dropped->second, [&](const detail::generic_definition_ptr& g) {
+            if (g->kind != kind) { return false; }
+            if (std::erase(held, g) != 0) { ++script_cache_epoch; }
+            return true;
+        });
+        if (dropped->second.empty()) { dropped_generics_.erase(dropped); }
+    }
+    void note_instance(const std::string& name, const std::string& generic, const std::vector<type_info_ptr>& arguments) {
+        const auto [held, fresh] = generic_instances_.try_emplace(name);
+        if (fresh) { instances_of_[generic].push_back(name); }
+        held->second = {generic, arguments};
+    }
+
+    static bool same_generic_shape(const detail::generic_definition& a, const detail::generic_definition& b) { return detail::same_generic_signature(a, b); }
+    // A namespace's generic function that another file (or another executed text) already declares with the same value
+    // parameters, and that is not written `override`: its declaration raises as it runs, as a plain namespace function's does
+    // (class_registry.cpp declare_script_class), so the pool keeps the declaration that stands
+    bool namespace_function_collides(const detail::generic_definition& definition) const {
+        if (definition.kind != detail::generic_kind::function || definition.space.empty()) { return false; }
+        const auto held = generics_.find(definition.qualified_name());
+        if (held == generics_.end()) { return false; }
+        const std::string& file = definition.location.filename;
+        for (const auto& g : held->second) {
+            if (g->stamp == definition.stamp || !same_generic_shape(*g, definition)) { continue; }
+            const bool other_text = g->location.filename != file || file.empty() || file == "<script>";
+            return other_text && !detail::generic_declared_override(definition);
+        }
+        return false;
+    }
+    static void collect_generics(const std::vector<declaration_ptr>& decls, std::vector<detail::generic_definition_ptr>& out) {
+        for (const auto& d : decls) {
+            if (!d) { continue; }
+            if (d->get_type() == node_type::generic_decl) {
+                out.push_back(static_cast<const generic_decl*>(d.get())->definition);
+            } else if (d->get_type() == node_type::namespace_decl) {
+                collect_generics(static_cast<const namespace_decl*>(d.get())->declarations, out);
+            } else if (d->get_type() == node_type::class_decl) {
+                for (const auto& m : static_cast<const class_decl*>(d.get())->members) {
+                    if (m.declaration && m.declaration->get_type() == node_type::generic_decl) {
+                        out.push_back(static_cast<const generic_decl*>(m.declaration.get())->definition);
+                    }
+                }
+            }
+        }
+    }
+    // the classes a unit declares that are no generic's instance, through its namespaces
+    static void collect_plain_classes(const std::vector<declaration_ptr>& decls, std::vector<const class_decl*>& out) {
+        for (const auto& d : decls) {
+            if (!d) { continue; }
+            if (d->get_type() == node_type::class_decl) {
+                const auto* c = static_cast<const class_decl*>(d.get());
+                if (c->instance_stamp == 0 && !c->method_instances) { out.push_back(c); }
+            } else if (d->get_type() == node_type::namespace_decl) {
+                collect_plain_classes(static_cast<const namespace_decl*>(d.get())->declarations, out);
+            }
+        }
+    }
+    void register_generics(const std::vector<declaration_ptr>& decls, const std::string& file) {
+        std::vector<detail::generic_definition_ptr> declared;
+        collect_generics(decls, declared);
+        if (declared.empty() && generics_.empty()) { return; }
+        std::vector<const class_decl*> plain;
+        collect_plain_classes(decls, plain);
+        for (const class_decl* c : plain) {   // a class declared under a generic class's name takes the name
+            const auto held = generics_.find(std::string(c->name));
+            if (held == generics_.end()) { continue; }
+            if (std::erase_if(held->second, [](const detail::generic_definition_ptr& g) { return g->kind == detail::generic_kind::class_type; }) != 0) { ++script_cache_epoch; }
+            if (const auto dropped = dropped_generics_.find(std::string(c->name)); dropped != dropped_generics_.end()) {
+                std::erase_if(dropped->second, [](const detail::generic_definition_ptr& g) { return g->kind == detail::generic_kind::class_type; });
+            }
+        }
+        if (!dropped_generics_.empty()) {
+            // a function declared under a dropped generic function's name takes the name, an enum a dropped generic class's; a
+            // class declared again leaves none of the generic methods its dropped text declared
+            std::vector<std::string> functions;
+            collect_plain_functions(decls, {}, functions);
+            for (const std::string& name : functions) { evict_dropped(name, detail::generic_kind::function); }
+            std::vector<std::string> enums;
+            collect_enum_names(decls, {}, enums);
+            for (const std::string& name : enums) { evict_dropped(name, detail::generic_kind::class_type); }
+            for (const class_decl* c : plain) {
+                std::vector<std::string> methods;
+                for (const auto& [name, held] : dropped_generics_) {
+                    if (std::any_of(held.begin(), held.end(), [&](const detail::generic_definition_ptr& g) { return g->kind == detail::generic_kind::method && g->owner == c->name; })) { methods.push_back(name); }
+                }
+                for (const std::string& name : methods) { evict_dropped(name, detail::generic_kind::method); }
+            }
+        }
+        const bool named_file = !file.empty() && file != "<script>";
+        if (named_file) {   // what the file no longer declares
+            const auto loaded_under = pooled_text_stamps_.find(file);
+            for (auto& [name, held] : generics_) {
+                std::erase_if(held, [&](const detail::generic_definition_ptr& g) {
+                    if (g->location.filename != file) { return false; }
+                    const bool kept = std::any_of(declared.begin(), declared.end(), [&](const detail::generic_definition_ptr& d) {
+                        return d->qualified_name() == name && same_generic_shape(*d, *g);
+                    });
+                    if (kept) { return false; }
+                    // dropped altogether, with instances made: it stays, as a function or a class the file drops does. A name the
+                    // text declares another way (a generic of another shape, a class or a function of the name, a method's class
+                    // without it) is declared again, and what cannot be made from that is the reload's to refuse.
+                    const bool standing = std::any_of(dropped_generics_[name].begin(), dropped_generics_[name].end(), [&](const detail::generic_definition_ptr& d) { return d == g; });
+                    const bool renamed = std::any_of(declared.begin(), declared.end(), [&](const detail::generic_definition_ptr& d) { return d->qualified_name() == name; }) ||
+                                         (g->kind == detail::generic_kind::class_type && unit_declares_class(decls, name)) ||
+                                         (g->kind == detail::generic_kind::function && unit_declares_function(decls, name)) ||
+                                         (g->kind == detail::generic_kind::method && unit_declares_class(decls, g->owner));
+                    if (!renamed && (standing || instances_of_.count(name) != 0)) {
+                        if (!standing) { dropped_generics_[name].push_back(g); }
+                        if (loaded_under != pooled_text_stamps_.end()) {
+                            g->file_stamped = loaded_under->second.stamped;
+                            g->file_mtime = loaded_under->second.stamped ? loaded_under->second.mtime : 0;
+                            g->file_size = loaded_under->second.stamped ? loaded_under->second.size : 0;
+                        }
+                        return false;
+                    }
+                    ++script_cache_epoch;
+                    std::erase(dropped_generics_[name], g);
+                    return true;
+                });
+            }
+            std::erase_if(dropped_generics_, [](const auto& entry) { return entry.second.empty(); });
+        }
+        for (const auto& definition : declared) {
+            if (definition->kind == detail::generic_kind::method) { generic_method_names_.emplace(definition->name); }
+            if (namespace_function_collides(*definition)) { continue; }   // what stands stays the program's: this declaration raises when it runs
+            if (const auto dropped = dropped_generics_.find(definition->qualified_name()); dropped != dropped_generics_.end()) {   // the name is a generic's again
+                auto& standing = generics_[definition->qualified_name()];
+                for (const auto& g : dropped->second) { if (std::erase(standing, g) != 0) { ++script_cache_epoch; } }
+                dropped_generics_.erase(dropped);
+            }
+            auto& held = generics_[definition->qualified_name()];
+            // a class's name is one generic class, whatever file or parameter list declared it before; a function's or a method's
+            // is one per shape, whatever file declared it before: the declaration pooled last stands for the program, as the
+            // function a later file declares replaces an earlier file's of its signature
+            auto earlier = std::find_if(held.begin(), held.end(), [&](const detail::generic_definition_ptr& g) {
+                if (definition->kind == detail::generic_kind::class_type) { return g->kind == detail::generic_kind::class_type; }
+                return same_generic_shape(*g, *definition);
+            });
+            if (earlier == held.end()) {
+                held.push_back(definition);
+            } else if (*earlier != definition) {
+                // a parse that made instances from the old text makes them again; where no instance of the generic was ever made, none did
+                if ((*earlier)->stamp != definition->stamp && instances_of_.count(definition->qualified_name()) != 0) { ++script_cache_epoch; }
+                *earlier = definition;
+            }
+        }
+        index_pooled_namespace_generics();
+    }
+    void forget_generics() {
+        if (generics_.empty() && dropped_generics_.empty() && generic_instances_.empty() && generic_method_names_.empty()) { return; }
+        generics_.clear();
+        dropped_generics_.clear();
+        generic_instances_.clear();
+        instances_of_.clear();
+        instance_shapes_.clear();
+        generic_method_names_.clear();
+        ++script_cache_epoch;
+        index_pooled_namespace_generics();
+    }
+    // The instance a declaration was made for (a class's, a function's, a method's), through the namespaces its text stands
+    // in; its name is empty for any other declaration
+    static detail::generic_instance_id instance_of(const declaration& d) { return instance_of_impl(d); }
+    // The file a unit's own text is in: an instance's declarations, which stand first, carry their generic's
+    static std::string unit_file(const std::vector<declaration_ptr>& decls) {
+        for (const auto& d : decls) {
+            if (!d || !instance_of(*d).name.empty()) { continue; }
+            if (d->get_type() == node_type::generic_instance_decl && !static_cast<const generic_instance_decl&>(*d).within.empty()) { continue; }
+            return d->location.filename;
+        }
+        for (const auto& d : decls) { if (d && d->get_type() == node_type::generic_instance_decl) { return d->location.filename; } }
+        return {};
+    }
+    // the unit's declarations being run, innermost last: where a waiting instance's owner is found (engine::instance_owner)
+    std::vector<const std::vector<declaration_ptr>*> running_declarations_;
+
+    static const detail::generic_definition_ptr* unit_class_generic(const std::vector<declaration_ptr>& decls, std::string_view qualified) {
+        for (const auto& d : decls) {
+            if (!d) { continue; }
+            if (d->get_type() == node_type::generic_decl) {
+                const auto& definition = static_cast<const generic_decl*>(d.get())->definition;
+                if (definition->kind == detail::generic_kind::class_type && definition->qualified_name() == qualified) { return &definition; }
+            } else if (d->get_type() == node_type::namespace_decl) {
+                if (const auto* found = unit_class_generic(static_cast<const namespace_decl*>(d.get())->declarations, qualified)) { return found; }
+            }
+        }
+        return nullptr;
+    }
+    static bool unit_declares_enum(const std::vector<declaration_ptr>& decls, std::string_view name) {
+        for (const auto& d : decls) {
+            if (!d) { continue; }
+            if (d->get_type() == node_type::enum_decl && static_cast<const enum_decl*>(d.get())->name == name) { return true; }
+            if (d->get_type() == node_type::namespace_decl && unit_declares_enum(static_cast<const namespace_decl*>(d.get())->declarations, name)) { return true; }
+        }
+        return false;
+    }
+    // What a name that no generic class declares is, where type arguments follow it
+    detail::plain_type_kind plain_type_named(engine& self, const std::vector<declaration_ptr>& decls, const std::string& name) {
+        if (detail::builtin_type_name(name)) { return detail::plain_type_kind::builtin; }
+        if (unit_declares_enum(decls, name) || program_enums_.count(name) != 0 || self.is_enum_name(string_symbolizer_.intern(name))) { return detail::plain_type_kind::enumeration; }
+        if (unit_declares_class(decls, name) || program_classes_.count(name) != 0 || self.get_class_registry().find_script_class(name) != nullptr) { return detail::plain_type_kind::script_class; }
+        const auto held = self.get_class_definition(name);
+        return held ? (held->is_cpp_class() ? detail::plain_type_kind::host_class : detail::plain_type_kind::script_class) : detail::plain_type_kind::none;
+    }
+    static bool unit_declares_function(const std::vector<declaration_ptr>& decls, const std::string& qualified) {
+        std::vector<std::string> functions;
+        collect_plain_functions(decls, {}, functions);
+        return std::find(functions.begin(), functions.end(), qualified) != functions.end();
+    }
+    static bool unit_declares_class(const std::vector<declaration_ptr>& decls, std::string_view name) {
+        for (const auto& d : decls) {
+            if (!d) { continue; }
+            if (d->get_type() == node_type::class_decl && static_cast<const class_decl*>(d.get())->name == name) { return true; }
+            if (d->get_type() == node_type::namespace_decl && unit_declares_class(static_cast<const namespace_decl*>(d.get())->declarations, name)) { return true; }
+        }
+        return false;
+    }
+    static void stamp_instance(declaration& d, const detail::generic_definition& definition, std::string_view name, std::string_view simple, bool remade) {
+        switch (d.get_type()) {
+            case node_type::namespace_decl:
+                for (const auto& member : static_cast<namespace_decl&>(d).declarations) { if (member) { stamp_instance(*member, definition, name, simple, remade); } }
+                break;
+            case node_type::class_decl: {
+                auto& c = static_cast<class_decl&>(d);
+                if (definition.kind == detail::generic_kind::method) {
+                    c.method_instances = true;
+                    c.instance_remade = remade;
+                    for (const auto& m : c.members) {
+                        if (!m.declaration || m.declaration->get_type() != node_type::function_decl) { continue; }
+                        auto& f = static_cast<function_decl&>(*m.declaration);
+                        f.instance_stamp = definition.stamp;
+                        f.instance_name = name;
+                        f.method_instance = true;
+                        f.instance_remade = remade;
+                    }
+                } else if (definition.kind == detail::generic_kind::class_type && c.name == name) {
+                    c.instance_stamp = definition.stamp;
+                    c.instance_remade = remade;
+                }
+                break;
+            }
+            case node_type::function_decl: {
+                auto& f = static_cast<function_decl&>(d);
+                if (definition.kind == detail::generic_kind::function && f.name == simple) {
+                    f.instance_stamp = definition.stamp;
+                    f.instance_name = name;
+                    f.instance_remade = remade;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    // What an instance is built on (class_decl::instance_needs): the classes its type arguments name, through containers
+    // and handles, an instance among them by its own name; its bases; for a method's instance, the class it joins. An enum
+    // or a builtin type needs no declaration, and a signature or a coroutine type only what it names. The request keeps the
+    // same names for the checker's order rule.
+    void argument_classes(engine& self, const std::vector<declaration_ptr>& decls, const type_info* type, std::vector<std::string_view>& out) {
+        if (!type) { return; }
+        if (type->base_type == script_value_type::jai_object_type && !type->type_name.empty() && !type->is_coroutine) {
+            const std::string name(type->type_name);
+            const bool is_class = generic_instances_.count(name) != 0 || name.find('<') != std::string::npos || unit_declares_class(decls, name) ||
+                                  program_classes_.count(name) != 0 || self.get_class_registry().find_script_class(name) != nullptr || self.get_class_definition(name) != nullptr;
+            if (is_class) {
+                const std::string_view held = string_symbolizer_.intern_with_view(name).second;
+                if (std::find(out.begin(), out.end(), held) == out.end()) { out.push_back(held); }
+            }
+            return;   // an instance's own arguments are what that instance waits for
+        }
+        for (const auto& parameter : type->type_params) { argument_classes(self, decls, parameter.get(), out); }
+    }
+    // The sized numbers among an instance's arguments (detail::generic_spelling::sized): a host's spelling of one that no
+    // class or enum of the program has taken for its own name
+    void sized_arguments(engine& self, const std::vector<declaration_ptr>& decls, const type_info* type, std::vector<std::string_view>& out, int depth = 0) {
+        if (!type || depth > 64) { return; }
+        if (type->base_type == script_value_type::jai_object_type && !type->is_coroutine) {
+            if (sized_number_kind(type->type_name) != script_value_type::jai_null_type && std::find(out.begin(), out.end(), type->type_name) == out.end() &&
+                plain_type_named(self, decls, type->type_name) == detail::plain_type_kind::none) { out.push_back(type->type_name); }
+            return;
+        }
+        for (const auto& parameter : type->type_params) { sized_arguments(self, decls, parameter.get(), out, depth + 1); }
+    }
+    void note_instance_needs(engine& self, const std::vector<declaration_ptr>& decls, declaration& made, const detail::generic_definition& definition,
+                             generic_instance_decl& request) {
+        if (made.get_type() == node_type::namespace_decl) {
+            for (const auto& member : static_cast<namespace_decl&>(made).declarations) { if (member) { note_instance_needs(self, decls, *member, definition, request); } }
+            return;
+        }
+        if (made.get_type() != node_type::class_decl) { return; }   // a function's instance has no declaration-time work: it is declared as the unit starts
+        auto& c = static_cast<class_decl&>(made);
+        if (c.instance_stamp == 0 && !c.method_instances) { return; }
+        std::vector<std::string_view> needs;
+        if (c.method_instances) {
+            needs.push_back(c.name);
+        } else {
+            c.instance_generic = string_symbolizer_.intern_with_view(definition.qualified_name()).second;
+        }
+        for (const auto& argument : request.arguments) { argument_classes(self, decls, argument.get(), needs); }
+        for (const std::string_view base : c.base_classes) { if (std::find(needs.begin(), needs.end(), base) == needs.end()) { needs.push_back(base); } }
+        c.instance_needs = needs;
+        request.needs = std::move(needs);
+    }
+
+    // a unit's requests, each by what identifies its instance: the name and, for a function's or a method's, its definition
+    using generic_request_index = std::unordered_map<detail::generic_instance_id, generic_instance_decl*, detail::generic_instance_id_hash>;
+    static bool type_names_class(const type_info* type, std::string_view name, int depth = 0) {
+        if (!type || depth > 64) { return false; }
+        if (type->base_type == script_value_type::jai_object_type && type->type_name == name) { return true; }
+        return std::any_of(type->type_params.begin(), type->type_params.end(), [&](const type_info_ptr& p) { return type_names_class(p.get(), name, depth + 1); });
+    }
+    // The member of a generic class's text that the token at `at` stands in, by its name (empty when none does); `method`
+    // when a parameter list follows the name
+    static std::string_view generic_member_at(const detail::generic_definition& definition, const source_location& at, bool& method) {
+        const std::vector<token>& tokens = definition.tokens;
+        size_t target = SIZE_MAX;
+        for (size_t i = 0; i < tokens.size() && target == SIZE_MAX; ++i) {
+            if (tokens[i].location.line == at.line && tokens[i].location.column == at.column) { target = i; }
+        }
+        size_t open = definition.list_end;
+        while (open < tokens.size() && tokens[open].type != token_type::left_brace) { ++open; }
+        if (target == SIZE_MAX || target <= open) { return {}; }
+        const auto named = [&](size_t begin, size_t end) {   // the last name outside angle brackets before '(' (a method), '=' or the end
+            std::string_view name;
+            int angles = 0;
+            for (size_t i = begin; i < end; ++i) {
+                const token_type kind = tokens[i].type;
+                if (kind == token_type::less) { ++angles; }
+                else if (kind == token_type::greater) { --angles; }
+                else if (kind == token_type::right_shift) { angles -= 2; }
+                else if (kind == token_type::left_paren && angles <= 0) { method = !name.empty(); return name; }
+                else if ((kind == token_type::equal || kind == token_type::left_brace) && angles <= 0) { return name; }
+                else if (kind == token_type::identifier && angles <= 0) { name = tokens[i].lexeme; }
+            }
+            return name;
+        };
+        int depth = 0;
+        size_t begin = open + 1;
+        for (size_t i = open; i < tokens.size(); ++i) {
+            const token_type kind = tokens[i].type;
+            if (kind == token_type::left_brace) { ++depth; continue; }
+            const bool closes = kind == token_type::right_brace && --depth == 1;
+            if (!closes && !(kind == token_type::semicolon && depth == 1)) { continue; }
+            if (target >= begin && target <= i) { return named(begin, i); }
+            begin = i + 1;
+        }
+        return {};
+    }
+    // "'List<int>' would need 'List<List<int>>' and so on without end: the member 'chunks' names an instance of 'List' built
+    // from the instance itself; ...": `request`, asked for in the text of `asker` (made from `asked_in`), is an instance of
+    // the generic `outer` is one of, built from `outer`
+    static std::string endless_instance_text(const detail::generic_definition& definition, const generic_instance_decl& outer, const generic_instance_decl& request,
+                                             const detail::generic_definition* asked_in) {
+        std::string text = "'" + std::string(outer.name) + "' would need '" + std::string(request.name) + "' and so on without end: ";
+        bool method = false;
+        const std::string_view member = asked_in ? generic_member_at(*asked_in, request.location, method) : std::string_view();
+        text += member.empty() ? "its text names" : "the member '" + std::string(member) + "' names";
+        text += " an instance of '" + definition.qualified_name() + "' built from the instance itself; a class's members are made with it and a generic function only where it is called, so ";
+        if (member.empty() || !method || asked_in != &definition) { return text + "let a generic function outside the class make that instance"; }
+        std::string parameters;
+        for (size_t i = 0; i < definition.parameters.size(); ++i) { parameters += (i ? ", " : "") + std::string(definition.parameters[i].name); }
+        return text + "write it as one outside the class: " + std::string(member) + "<" + parameters + ">(" + std::string(definition.name) + "<" + parameters + "> self)";
+    }
+    // The request of the unit's own text that `request` was asked for through, by its chain of askers; itself when the
+    // unit's text asked for it
+    static generic_instance_decl& request_root(const generic_request_index& requests, generic_instance_decl& request) {
+        generic_instance_decl* root = &request;
+        for (size_t levels = 0; !root->within.empty() && levels <= detail::k_generic_depth_limit; ++levels) {
+            const auto outer = requests.find(root->asker());
+            if (outer == requests.end() || outer->second == root) { break; }
+            root = outer->second;
+        }
+        return *root;
+    }
+    // One instance: the definition's text with the request's arguments, parsed as program text; its declarations, stamped, come
+    // back in `made` behind the requests that text makes itself. What keeps it from being made stays on the request, for the
+    // check to report. Instantiation is limited in everything that grows (docs/site/guide/21-generics.html "Limits and what
+    // is not here"): how deep it nests, how long an instance's name is, how many instances `root`, the unit's own use, sets
+    // off. The request that passes a limit says so, and nothing more is made for that use (expand_generics).
+    void instantiate_generic(engine& self, const std::vector<declaration_ptr>& decls, const generic_request_index& requests,
+                             generic_instance_decl& request, generic_instance_decl& root, std::vector<declaration_ptr>& made, std::vector<closure_stamp>& files) {
+        const auto fail = [&](std::string message, bool unresolved = false) {
+            request.failures.push_back({request.location, std::move(message)});
+            request.unresolved = unresolved;
+        };
+        const auto outgrown = [&](const std::string& limit, const char* and_so_on) {
+            std::vector<std::string_view> askers;
+            for (detail::generic_instance_id outer = request.asker(); !outer.name.empty() && askers.size() <= detail::k_generic_depth_limit;) {
+                askers.push_back(outer.name);
+                const auto held = requests.find(outer);
+                if (held == requests.end()) { break; }
+                outer = held->second->asker();
+            }
+            bool more = false;
+            const std::string chain = detail::instance_chain_text(askers, request.name, more);
+            fail("generic instantiation " + limit + ": " + chain + (more ? and_so_on : ""));
+            root.overgrown = true;
+        };
+        // a name a level of a multiplying chain made: no text is made from it, whatever it names
+        if (request.name.size() > detail::k_generic_name_limit) {
+            outgrown("names an instance of more than " + std::to_string(detail::k_generic_name_limit) + " characters", ", and so on, each name longer than the last");
+            return;
+        }
+        const std::string generic(request.generic);
+        detail::generic_definition_ptr definition = std::move(request.definition);
+        request.definition.reset();
+        if (!definition) {
+            if (const auto* own = unit_class_generic(decls, generic)) {
+                definition = *own;
+            } else if (auto held = generics_.find(generic); held != generics_.end() && !unit_declares_class(decls, generic)) {   // the unit's own class takes the name
+                for (const auto& g : held->second) {
+                    if (g->kind == detail::generic_kind::class_type) { definition = g; break; }
+                }
+            }
+            if (!definition && request.as_value) {   // a generic function's instance where a value stands: no value either
+                std::vector<detail::generic_definition_ptr> declared;
+                collect_generics(decls, declared);
+                if (const auto held = generics_.find(generic); held != generics_.end()) { declared.insert(declared.end(), held->second.begin(), held->second.end()); }
+                const auto callable = std::find_if(declared.begin(), declared.end(), [&](const detail::generic_definition_ptr& g) {
+                    return g->kind != detail::generic_kind::class_type && g->qualified_name() == generic;
+                });
+                if (callable != declared.end()) {
+                    fail(detail::generic_value_text(request.name, generic, (*callable)->kind == detail::generic_kind::method, request.name));
+                    return;
+                }
+            }
+            if (!definition) {
+                const detail::plain_type_kind plain = plain_type_named(self, decls, generic);
+                fail(plain != detail::plain_type_kind::none ? detail::no_type_arguments_text(generic, plain)
+                                                            : "unknown type '" + std::string(request.name) + "': no generic class '" + generic + "' is declared",
+                     plain == detail::plain_type_kind::none);
+                return;
+            }
+        }
+        if (definition->parameters.size() != request.arguments.size()) {
+            fail("'" + generic + "' takes " + std::to_string(definition->parameters.size()) + (definition->parameters.size() == 1 ? " type argument" : " type arguments") +
+                 ", not " + std::to_string(request.arguments.size()));
+            return;
+        }
+        std::vector<std::string_view> chain;
+        for (detail::generic_instance_id outer = request.asker(); !outer.name.empty();) {
+            chain.push_back(outer.name);
+            const auto held = requests.find(outer);
+            if (held == requests.end() || chain.size() > detail::k_generic_depth_limit) { break; }
+            // An instance whose text asks for an instance of its own generic built from itself asks without end (List<int> for
+            // List<List<int>>, that one for List<List<List<int>>>): the first step says so, where the member stands
+            if (definition->kind == detail::generic_kind::class_type && held->second->generic == request.generic &&
+                std::any_of(request.arguments.begin(), request.arguments.end(), [&](const type_info_ptr& a) { return type_names_class(a.get(), outer.name); })) {
+                const auto asker = requests.find(request.asker());
+                detail::generic_definition_ptr asked_in;
+                if (asker != requests.end() && asker->second->generic == request.generic) {
+                    asked_in = definition;
+                } else if (asker != requests.end()) {
+                    const std::string asking(asker->second->generic);
+                    if (const auto* own = unit_class_generic(decls, asking)) {
+                        asked_in = *own;
+                    } else if (const auto held_generics = generics_.find(asking); held_generics != generics_.end()) {
+                        for (const auto& g : held_generics->second) { if (g->kind == detail::generic_kind::class_type) { asked_in = g; break; } }
+                    }
+                }
+                fail(endless_instance_text(*definition, *held->second, request, asked_in.get()));
+                return;
+            }
+            outer = held->second->asker();
+        }
+        if (chain.size() >= detail::k_generic_depth_limit) {
+            std::string text = "generic instantiation nests more than " + std::to_string(detail::k_generic_depth_limit) + " deep: '" + std::string(chain.back()) + "'";
+            for (size_t i = chain.size() - 1; i-- > 0 && chain.size() - i <= 3;) { text += " needs '" + std::string(chain[i]) + "'"; }
+            fail(text + ", and so on without end");
+            root.overgrown = true;
+            return;
+        }
+        if (++root.set_off > detail::k_generic_instance_limit) {
+            outgrown("makes more than " + std::to_string(detail::k_generic_instance_limit) + " instances from one use", ", and so on");
+            return;
+        }
+        for (const auto& argument : request.arguments) {
+            std::vector<token> spelled;
+            if (!argument || !detail::generic_argument_tokens(*argument, request.location, string_symbolizer_, spelled)) {
+                fail("'" + (argument ? argument->canonical_name() : std::string("auto")) + "' is not a type an instance is made with: '" + std::string(request.name) + "'");
+                return;
+            }
+        }
+        const std::string& file = definition->location.filename;
+        detail::generic_spelling host{&registeredTemplateTypes, {}};
+        for (const auto& argument : request.arguments) { sized_arguments(self, decls, argument.get(), host.sized); }
+        for (size_t p = 0; p < definition->parameters.size(); ++p) {
+            if (definition->parameters[p].bound.empty()) { continue; }
+            // a handle meets the bound its class meets: the parameter reads as that class in its own bound (T : Comparable<T>)
+            std::vector<type_info_ptr> bounded = request.arguments;
+            if (const type_info* held = bounded[p].get(); held && held->base_type == script_value_type::jai_shared_ptr_type && held->element_type()) {
+                bounded[p] = held->element_type();
+            }
+            std::vector<token> bound = detail::generic_bound_tokens(*definition, p, bounded, string_symbolizer_, &host);
+            bound.emplace_back(token_type::eof, "", definition->parameters[p].location);
+            parser reader(bound, &string_symbolizer_, &self, registeredTemplateTypes, file);
+            auto type = reader.parse_type_text(made);
+            if (!type || !type.value() || reader.has_errors()) {
+                for (auto& issue : reader.issues()) { request.failures.push_back({std::move(issue.at), std::move(issue.message)}); }
+                if (request.failures.empty()) { request.failures.push_back({definition->parameters[p].location, "expected a class after ':'"}); }
+                made.clear();
+                return;
+            }
+            request.bounds.push_back({std::string(definition->parameters[p].name), request.arguments[p]->canonical_name(), type.value()->canonical_name()});
+        }
+        // The name the instance declares: a class's and a function's without the namespace around it; a method's in full
+        // (Base::tag<int>), so a derived class's instance of the name is another method and none overrides the other
+        std::string_view simple = request.name;
+        const std::string& prefix = definition->space;
+        if (definition->kind != detail::generic_kind::method && !prefix.empty() && simple.size() > prefix.size() + 2 && simple.substr(0, prefix.size()) == prefix) {
+            simple.remove_prefix(prefix.size() + 2);
+        }
+        const std::vector<token> text = detail::generic_instance_tokens(*definition, request.arguments, simple, string_symbolizer_, &host);
+        parser reader(text, &string_symbolizer_, &self, registeredTemplateTypes, file);
+        reader.inherit_check_mode(definition->check_mode);
+        auto parsed = reader.parse();
+        refuse_unsettled(reader);
+        for (const auto& spliced : reader.spliced_files()) { files.push_back(spliced); }
+        if (!parsed) {
+            for (auto& issue : reader.issues()) { request.failures.push_back({std::move(issue.at), std::move(issue.message)}); }
+            if (request.failures.empty()) { request.failures.push_back({definition->location, self.format_error(parsed)}); }
+            made.clear();
+            return;
+        }
+        const auto asked_here = [&](declaration& asked) {
+            auto& inner = static_cast<generic_instance_decl&>(asked);
+            inner.within = request.name;
+            inner.within_stamp = request.stamp;
+        };
+        for (auto& d : made) { asked_here(*d); }   // the bounds' own instances
+        for (auto& d : parsed.value()) {
+            if (!d) { continue; }
+            if (d->get_type() == node_type::generic_instance_decl) {
+                asked_here(*d);
+            } else {
+                stamp_instance(*d, *definition, request.name, simple, request.remade);
+                note_instance_needs(self, decls, *d, *definition, request);
+            }
+            made.push_back(std::move(d));
+        }
+        request.expanded = true;
+        request.file = file;
+        // the generic's file under the stamp its text was loaded with; text the host supplied (execute_file_source) was never
+        // loaded here, so its file is stamped as it stands now
+        closure_stamp origin{file, definition->file_mtime, definition->file_size};
+        if (!definition->file_stamped && !file.empty() && file != "<script>") { (void)stat_mtime_size(file, origin.mtime, origin.size); }
+        files.push_back(std::move(origin));
+        note_instance(std::string(request.name), generic, request.arguments);
+        keep_instance_shape(*definition);
+    }
+    // the shape of a function's or a method's definition an instance was made from, by its stamp (instance_shapes_)
+    void keep_instance_shape(const detail::generic_definition& definition) {
+        if (definition.kind == detail::generic_kind::class_type || instance_shapes_.count(definition.stamp)) { return; }
+        auto shape = std::make_shared<detail::generic_definition>(definition);
+        shape->tokens = {};
+        for (auto& parameter : shape->parameters) { parameter.bound = {}; }
+        instance_shapes_.emplace(definition.stamp, std::move(shape));
+    }
+    // A loaded unit's instance (a saved bite's, a cached unit's) was made where the engine did not see it: its request names
+    // the stamp of the definition it was made from, which the unit itself declares or the engine holds
+    void note_loaded_instance(const std::vector<declaration_ptr>& decls, const generic_instance_decl& request) {
+        if (!generic_instances_.count(std::string(request.name))) { note_instance(std::string(request.name), std::string(request.generic), request.arguments); }
+        if (request.stamp == 0 || instance_shapes_.count(request.stamp)) { return; }
+        std::vector<detail::generic_definition_ptr> declared;
+        collect_generics(decls, declared);
+        if (const auto held = generics_.find(std::string(request.generic)); held != generics_.end()) { declared.insert(declared.end(), held->second.begin(), held->second.end()); }
+        const auto made_from = std::find_if(declared.begin(), declared.end(), [&](const detail::generic_definition_ptr& g) { return g->stamp == request.stamp; });
+        if (made_from != declared.end()) { keep_instance_shape(**made_from); }
+    }
+
+    // The request a unit only makes again (generic_instance_decl::remade) that `request` is, or was asked for by; null for one
+    // the unit's own text asked for
+    static generic_instance_decl* remade_root(const generic_request_index& requests, generic_instance_decl* request) {
+        for (size_t levels = 0; request && levels <= detail::k_generic_depth_limit; ++levels) {
+            if (request->remade) { return request; }
+            const auto outer = request->within.empty() ? requests.end() : requests.find(request->asker());
+            request = outer != requests.end() ? outer->second : nullptr;
+        }
+        return nullptr;
+    }
+    static generic_request_index index_requests(const std::vector<declaration_ptr>& decls) {
+        generic_request_index requests;
+        for (const auto& d : decls) {
+            if (d && d->get_type() == node_type::generic_instance_decl) { requests.emplace(static_cast<generic_instance_decl*>(d.get())->id(), static_cast<generic_instance_decl*>(d.get())); }
+        }
+        return requests;
+    }
+    // The unit's own text (at `at`, in the instance `within`) names an instance the unit was only making again: the instance
+    // is the unit's from here, asked for there. True when it was not the unit's already.
+    static bool claim_instance(const generic_request_index& requests, generic_instance_decl& standing, const source_location& at, const detail::generic_instance_id& within) {
+        if (!remade_root(requests, &standing)) { return false; }
+        if (const auto asker = requests.find(within); !within.name.empty() && asker != requests.end() && remade_root(requests, asker->second)) { return false; }
+        standing.remade = false;
+        standing.location = at;
+        standing.within = within.name;
+        standing.within_stamp = within.stamp;
+        return true;
+    }
+
+    // A unit that declares a generic again makes again every instance of it the engine holds, at that declaration, whatever
+    // the unit's text names (docs/site/guide/21-generics.html "Declaring it again"): each is a request the unit did not write,
+    // flagged remade, made from the unit's definition like any other and declared as that definition's declaration runs (the
+    // linker in class_registry.cpp). An instance is held when a class, a method or a function is declared under its name from
+    // another stamp; a function's and a method's also when that stamp's definition has the shape of the unit's (another shape
+    // is another overload, whose instance of the name is its own). `kept` are the instances the unit's declarations cannot
+    // make: none is asked for again, and a class the unit declares under a generic class's name adds that generic's instances
+    // to them. True when a request was added.
+    bool note_remade_instances(engine& self, std::vector<declaration_ptr>& decls, std::vector<detail::generic_kept_instance>& kept) {
+        if (instances_of_.empty()) { return false; }
+        const auto given_up = [&](const std::string& name, uint64_t stamp) {
+            return std::any_of(kept.begin(), kept.end(), [&](const detail::generic_kept_instance& k) { return k.name == name && k.stamp == stamp; });
+        };
+        std::vector<const class_decl*> plain;
+        collect_plain_classes(decls, plain);
+        for (const class_decl* c : plain) {
+            const auto made = instances_of_.find(std::string(c->name));
+            if (made == instances_of_.end()) { continue; }
+            for (const std::string& name : made->second) {
+                const auto held = self.get_class_definition(name);
+                if (!held || held->generic_stamp() == 0 || given_up(name, 0)) { continue; }
+                kept.push_back({name, std::string(c->name), detail::no_type_arguments_text(c->name, detail::plain_type_kind::script_class), c->location});
+            }
+        }
+        std::vector<detail::generic_definition_ptr> declared;
+        collect_generics(decls, declared);
+        bool added = false;
+        generic_request_index requests;   // the unit's requests, read once a generic it declares has instances
+        bool indexed = false;
+        for (const auto& definition : declared) {
+            const std::string generic = definition->qualified_name();
+            const auto made = instances_of_.find(generic);
+            if (made == instances_of_.end()) { continue; }
+            const uint64_t asked = detail::generic_instance_stamp(*definition);
+            if (!indexed) {
+                requests = index_requests(decls);
+                indexed = true;
+            }
+            for (const std::string& name : made->second) {
+                if (given_up(name, asked)) { continue; }
+                if (requests.count(detail::generic_instance_id{name, asked}) != 0) { continue; }
+                const std::vector<uint64_t> stamps = detail::declared_instance_stamps(self, name);
+                const bool held = std::any_of(stamps.begin(), stamps.end(), [&](uint64_t stamp) {
+                    if (stamp == definition->stamp) { return false; }
+                    if (definition->kind == detail::generic_kind::class_type) { return true; }
+                    const auto shape = instance_shapes_.find(stamp);
+                    return shape == instance_shapes_.end() || same_generic_shape(*shape->second, *definition);
+                });
+                if (!held) { continue; }
+                const auto [id, interned] = string_symbolizer_.intern_with_view(name);
+                auto request = std::make_shared<generic_instance_decl>(definition->location, interned, id);
+                request->generic = string_symbolizer_.intern_with_view(generic).second;
+                request->stamp = asked;
+                request->arguments = generic_instances_[name].arguments;
+                request->definition = definition;
+                request->remade = true;
+                requests.emplace(request->id(), request.get());
+                decls.push_back(std::move(request));   // behind the unit's own requests: an instance the unit's text names is the unit's
+                added = true;
+            }
+        }
+        return added;
+    }
+    // the stamp of the definition a made declaration came from (a class's, a function's, a method's), through its namespaces
+    static const function_decl* made_function(const declaration& d) {
+        switch (d.get_type()) {
+            case node_type::function_decl:
+                return static_cast<const function_decl*>(&d);
+            case node_type::class_decl:
+                for (const auto& m : static_cast<const class_decl&>(d).members) {
+                    if (m.declaration && m.declaration->get_type() == node_type::function_decl) { return static_cast<const function_decl*>(m.declaration.get()); }
+                }
+                return nullptr;
+            case node_type::namespace_decl:
+                for (const auto& member : static_cast<const namespace_decl&>(d).declarations) {
+                    if (!member) { continue; }
+                    if (const function_decl* found = made_function(*member)) { return found; }
+                }
+                return nullptr;
+            default:
+                return nullptr;
+        }
+    }
+    static uint64_t made_from_stamp(const declaration& d) {
+        switch (d.get_type()) {
+            case node_type::class_decl: {
+                const auto& c = static_cast<const class_decl&>(d);
+                if (c.instance_stamp != 0) { return c.instance_stamp; }
+                if (!c.method_instances) { return 0; }
+                for (const auto& m : c.members) {
+                    if (m.declaration && m.declaration->get_type() == node_type::function_decl) { return static_cast<const function_decl&>(*m.declaration).instance_stamp; }
+                }
+                return 0;
+            }
+            case node_type::function_decl:
+                return static_cast<const function_decl&>(d).instance_stamp;
+            case node_type::namespace_decl:
+                for (const auto& member : static_cast<const namespace_decl&>(d).declarations) {
+                    if (!member) { continue; }
+                    if (const uint64_t stamp = made_from_stamp(*member)) { return stamp; }
+                }
+                return 0;
+            default:
+                return 0;
+        }
+    }
+    // A unit held past a change of the program's generics (a bite: one loaded from a save, or one made before a generic it
+    // names was declared again) carries instances made from text the engine does not hold for the generic. Offered as the
+    // unit starts, one would replace the class or the function live code uses with the text the bite was saved from. Each
+    // is made again from the declaration the engine holds, as a unit parsed again makes its own: a class's request is asked
+    // again, and a function's or a method's is asked of the one declaration the engine holds that takes its type arguments
+    // (of several, the one that takes its value parameters too): the unit's calls name the instance already, so no check
+    // asks again, and a call the declaration does not take is the call's error. With no such declaration, or no single one,
+    // the instance leaves the unit and the calls that name it fail the unit's check. An instance of a generic the unit
+    // declares itself stays, so does one of a generic a file dropped (it stands for every unit), and so does one of a generic
+    // the engine has no declaration for (it waits for one, as it always did): but a method's instance has nothing to wait
+    // for where its class stands without the generic, and leaves. True when an instance left.
+    static const class_decl* method_instances_of(const declaration& d) {
+        if (d.get_type() == node_type::class_decl) { return static_cast<const class_decl&>(d).method_instances ? static_cast<const class_decl*>(&d) : nullptr; }
+        if (d.get_type() != node_type::namespace_decl) { return nullptr; }
+        for (const auto& member : static_cast<const namespace_decl&>(d).declarations) {
+            if (!member) { continue; }
+            if (const class_decl* found = method_instances_of(*member)) { return found; }
+        }
+        return nullptr;
+    }
+    bool withdraw_stale_instances(engine& self, std::vector<declaration_ptr>& decls) {
+        const generic_request_index requests = index_requests(decls);
+        if (requests.empty()) { return false; }
+        std::vector<detail::generic_definition_ptr> own;
+        collect_generics(decls, own);
+        std::unordered_map<const generic_instance_decl*, uint64_t> made;   // each request's declarations, by the stamp they carry
+        std::unordered_map<const generic_instance_decl*, size_t> taken;    // and, for a function's or a method's, its value parameters
+        std::unordered_map<const generic_instance_decl*, std::string> method_owner;   // a method's: the class it is a method of
+        for (const auto& d : decls) {
+            if (!d || d->get_type() == node_type::generic_instance_decl) { continue; }
+            const auto asked = requests.find(instance_of(*d));
+            if (asked == requests.end()) { continue; }
+            made.emplace(asked->second, made_from_stamp(*d));
+            if (const function_decl* fn = made_function(*d)) { taken.emplace(asked->second, fn->parameters.size()); }
+            if (const class_decl* methods = method_instances_of(*d)) { method_owner.emplace(asked->second, std::string(methods->name)); }
+        }
+        std::unordered_set<const generic_instance_decl*> stale;
+        std::unordered_set<const generic_instance_decl*> dropped;
+        std::unordered_map<const generic_instance_decl*, detail::generic_definition_ptr> again;   // a function's or a method's: what makes it now
+        for (const auto& [id, request] : requests) {
+            if (!request->expanded || request->remade) { continue; }
+            const auto from = made.find(request);
+            if (from == made.end() || from->second == 0) { continue; }
+            const uint64_t stamp = from->second;
+            if (std::any_of(own.begin(), own.end(), [&](const detail::generic_definition_ptr& g) { return g->stamp == stamp; })) { continue; }
+            const auto same_text = [&](const detail::generic_definition_ptr& g) { return g->stamp == stamp; };
+            if (const auto gone = dropped_generics_.find(std::string(request->generic)); gone != dropped_generics_.end() && std::any_of(gone->second.begin(), gone->second.end(), same_text)) { continue; }
+            const auto held = generics_.find(std::string(request->generic));
+            if (held == generics_.end() || held->second.empty()) {
+                const auto owner = method_owner.find(request);
+                if (owner != method_owner.end() && (self.get_class_definition(owner->second) || self.get_class_registry().find_script_class(owner->second))) {
+                    stale.insert(request);
+                    dropped.insert(request);
+                }
+                continue;
+            }
+            if (std::any_of(held->second.begin(), held->second.end(), same_text)) { continue; }
+            stale.insert(request);
+            if (request->stamp == 0) { continue; }   // a class's: its name finds the declaration
+            detail::generic_definition_ptr sole, sole_fitting;
+            size_t typed = 0, fitting = 0;
+            const auto parameters = taken.find(request);
+            for (const auto& g : held->second) {
+                if (g->kind == detail::generic_kind::class_type || g->parameters.size() != request->arguments.size()) { continue; }
+                sole = g;
+                ++typed;
+                if (parameters == taken.end() || parameters->second < g->required_values() || parameters->second > g->values.size()) { continue; }
+                sole_fitting = g;
+                ++fitting;
+            }
+            if (typed == 1) { again.emplace(request, std::move(sole)); }
+            else if (fitting == 1) { again.emplace(request, std::move(sole_fitting)); }
+            else { dropped.insert(request); }
+        }
+        if (stale.empty()) { return false; }
+        std::erase_if(decls, [&](const declaration_ptr& d) {
+            if (!d) { return false; }
+            if (d->get_type() == node_type::generic_instance_decl) { return dropped.count(static_cast<const generic_instance_decl*>(d.get())) != 0; }
+            const auto asked = requests.find(instance_of(*d));
+            return asked != requests.end() && stale.count(asked->second) != 0;
+        });
+        for (const auto& d : decls) {
+            if (!d || d->get_type() != node_type::generic_instance_decl) { continue; }
+            auto& request = static_cast<generic_instance_decl&>(*d);
+            if (stale.count(&request) == 0) { continue; }
+            request.expanded = false;
+            request.unresolved = false;
+            request.failures.clear();
+            request.bounds.clear();
+            request.needs.clear();
+            request.file.clear();
+            request.definition.reset();
+            if (const auto made_by = again.find(&request); made_by != again.end()) {
+                request.definition = made_by->second;
+                request.stamp = detail::generic_instance_stamp(*made_by->second);
+            }
+        }
+        return true;
+    }
+    // The unit declares again a generic (or declares a class under a generic class's name) the engine holds instances of:
+    // its check has instances to make again or to warn of, whatever a loaded stamp says of its text
+    bool remakes_instances(engine& self, const std::vector<declaration_ptr>& decls) {
+        if (instances_of_.empty()) { return false; }
+        std::vector<declaration_ptr> probe = decls;
+        std::vector<detail::generic_kept_instance> kept;
+        return note_remade_instances(self, probe, kept) || !kept.empty();
+    }
+    // An instance the unit only made again and its declaration cannot make leaves the unit: its request, its declarations and
+    // the instances its text alone asked for. False when the unit's own text names it by now (its errors are the unit's).
+    static bool drop_remade_instance(std::vector<declaration_ptr>& decls, const detail::generic_instance_id& instance) {
+        const generic_request_index requests = index_requests(decls);
+        const auto held = requests.find(instance);
+        if (held == requests.end() || !held->second->remade) { return false; }
+        std::erase_if(decls, [&](const declaration_ptr& d) {
+            if (!d) { return false; }
+            if (d->get_type() == node_type::generic_instance_decl) { return remade_root(requests, static_cast<generic_instance_decl*>(d.get())) == held->second; }
+            const detail::generic_instance_id made = instance_of(*d);
+            const auto asked = made.name.empty() ? requests.end() : requests.find(made);
+            return asked != requests.end() && remade_root(requests, asked->second) == held->second;
+        });
+        return true;
+    }
+
+    // A unit's declarations as a saved bite carries them: less the instances the unit only made again
+    // (generic_instance_decl::remade) and what their text alone asked for. Those rest on what the engine held when the unit
+    // was checked, not on the unit: the engine that loads the bite makes again the instances it holds itself, as a unit
+    // freshly checked there does (check_bite).
+    static std::vector<declaration_ptr> carried_declarations(const std::vector<declaration_ptr>& decls) {
+        const generic_request_index requests = index_requests(decls);
+        std::vector<declaration_ptr> carried;
+        carried.reserve(decls.size());
+        for (const auto& d : decls) {
+            generic_instance_decl* request = nullptr;
+            if (d && d->get_type() == node_type::generic_instance_decl) {
+                request = static_cast<generic_instance_decl*>(d.get());
+            } else if (d) {
+                const detail::generic_instance_id made = instance_of(*d);
+                const auto asked = made.name.empty() ? requests.end() : requests.find(made);
+                if (asked != requests.end()) { request = asked->second; }
+            }
+            if (!remade_root(requests, request)) { carried.push_back(d); }
+        }
+        return carried;
+    }
+
+    // Every request of the unit that is not made yet, in order; an instance's own requests follow its request, ahead of its
+    // declarations (a base's instance before the class that derives from it). True when the declarations changed.
+    bool expand_generics(engine& self, std::vector<declaration_ptr>& decls, std::vector<closure_stamp>& files) {
+        detail::load_phase_scope reporting(collector(), load_phase::generics);
+        bool changed = false;
+        generic_request_index requests = index_requests(decls);   // every request there is, whatever its place: an instance's chain of askers reads it
+        for (size_t i = 0; i < decls.size(); ++i) {
+            if (!decls[i] || decls[i]->get_type() != node_type::generic_instance_decl) { continue; }
+            auto* request = static_cast<generic_instance_decl*>(decls[i].get());
+            if (generic_instance_decl* standing = requests.emplace(request->id(), request).first->second; standing != request) {   // the unit asks for an instance once: the earliest request stands
+                claim_instance(requests, *standing, request->location, request->asker());
+                decls.erase(decls.begin() + static_cast<std::ptrdiff_t>(i--));
+                changed = true;
+                continue;
+            }
+            if (request->expanded || (!request->failures.empty() && !request->unresolved)) {
+                if (request->expanded) { note_loaded_instance(decls, *request); }
+                continue;
+            }
+            generic_instance_decl& root = request_root(requests, *request);
+            if (root.overgrown) { continue; }   // an instance of that use passed a limit: its one error stands, and nothing more is made for it
+            request->failures.clear();
+            request->bounds.clear();
+            request->unresolved = false;
+            std::vector<declaration_ptr> made;
+            instantiate_generic(self, decls, requests, *request, root, made, files);
+            decls.insert(decls.begin() + static_cast<std::ptrdiff_t>(i) + 1, made.begin(), made.end());
+            changed = true;
+        }
+        // the unit's requests and instances stand ahead of its own declarations, in the order asked: running them is the unit
+        // offering its instances as it starts (the linker in class_registry.cpp declares each when all it is built on is)
+        const auto instance_node = [](const declaration_ptr& d) { return d && (d->get_type() == node_type::generic_instance_decl || !instance_of(*d).name.empty()); };
+        if (!std::is_partitioned(decls.begin(), decls.end(), instance_node)) {
+            std::stable_partition(decls.begin(), decls.end(), instance_node);
+            changed = true;
+        }
+        return changed;
+    }
+
+    static detail::generic_instance_id instance_of_impl(const declaration& d) {
+        const auto function_instance = [](const function_decl& f) { return f.instance_stamp != 0 ? detail::generic_instance_id{f.instance_name, f.instance_stamp} : detail::generic_instance_id{}; };
+        switch (d.get_type()) {
+            case node_type::class_decl: {
+                const auto& c = static_cast<const class_decl&>(d);
+                if (c.instance_stamp != 0) { return {c.name, 0}; }
+                if (!c.method_instances) { return {}; }
+                for (const auto& m : c.members) {
+                    if (m.declaration && m.declaration->get_type() == node_type::function_decl) { return function_instance(static_cast<const function_decl&>(*m.declaration)); }
+                }
+                return {};
+            }
+            case node_type::function_decl:
+                return function_instance(static_cast<const function_decl&>(d));
+            case node_type::namespace_decl:
+                for (const auto& member : static_cast<const namespace_decl&>(d).declarations) {
+                    if (!member) { continue; }
+                    if (const detail::generic_instance_id found = instance_of_impl(*member); !found.name.empty()) { return found; }
+                }
+                return {};
+            default:
+                return {};
+        }
+    }
+    // An instance a check found the unit to need: a request among the unit's others. No place is computed for it: the unit
+    // offers every instance as it starts, and the linker declares each the moment all it is built on is declared.
+    bool request_instance(std::vector<declaration_ptr>& decls, detail::generic_request& asked) {
+        const uint64_t stamp = asked.definition ? detail::generic_instance_stamp(*asked.definition) : 0;
+        const detail::generic_instance_id within{asked.within.empty() ? std::string_view() : string_symbolizer_.intern_with_view(asked.within).second, asked.within_stamp};
+        for (const auto& d : decls) {
+            if (d && d->get_type() == node_type::generic_instance_decl && static_cast<const generic_instance_decl*>(d.get())->id() == detail::generic_instance_id{asked.name, stamp}) {
+                return claim_instance(index_requests(decls), static_cast<generic_instance_decl&>(*d), asked.at, within);
+            }
+        }
+        const auto [id, name] = string_symbolizer_.intern_with_view(asked.name);
+        auto request = std::make_shared<generic_instance_decl>(asked.at, name, id);
+        request->generic = string_symbolizer_.intern_with_view(asked.generic).second;
+        request->stamp = stamp;
+        request->arguments = std::move(asked.arguments);
+        request->within = within.name;
+        request->within_stamp = within.stamp;
+        request->definition = std::move(asked.definition);
+        decls.insert(decls.begin(), std::move(request));
+        return true;
+    }
+
+    // A unit's check with its generics: the instances its text names are declared, then each check's requests (a call's given or
+    // deduced type arguments, a generic method's receiver), until a check asks for nothing new. `view` answers what to check:
+    // the declarations, with a reload hook after them.
+    template <typename View>
+    check_report check_expanding(engine& self, std::vector<declaration_ptr>& declarations, View&& view, detail::check_options o,
+                                 std::vector<closure_stamp>& files, bool& changed, const std::vector<std::string>* extra_globals = nullptr) {
+        changed = expand_generics(self, declarations, files);
+        std::vector<detail::generic_kept_instance> kept;   // what the unit's declarations cannot make again: the check warns of each
+        const auto remake = [&] {   // a class made again declares its generic methods again: until nothing more is held
+            while (note_remade_instances(self, declarations, kept)) {
+                expand_generics(self, declarations, files);
+                changed = true;
+            }
+        };
+        remake();
+        o.kept_instances = &kept;
+        for (int round = 0;; ++round) {
+            std::vector<detail::generic_request> asked;
+            std::vector<detail::generic_kept_instance> failed;
+            o.generic_requests = &asked;
+            o.remade_failures = &failed;
+            ++check_walks_;
+            check_report report = detail::run_static_check(self, view(), extra_globals, o);
+            bool moved = false;
+            if (round < 1024) { for (auto& request : asked) { moved = request_instance(declarations, request) || moved; } }
+            for (auto& failure : failed) {   // the first error in each: the instance leaves the unit and keeps the declaration it has
+                if (!drop_remade_instance(declarations, {failure.name, failure.stamp})) { continue; }
+                kept.push_back(std::move(failure));
+                moved = true;
+            }
+            if (!moved) { return report; }
+            expand_generics(self, declarations, files);
+            remake();
+            changed = true;
+        }
+    }
+    // the files an entry's instances were made from stand beside its spliced includes, each under the stamp the text it
+    // was made from was loaded with: a change re-parses the entry
+    void stamp_generic_files(script_cache_entry& entry, const std::vector<closure_stamp>& files) {
+        for (const auto& made_from : files) {
+            const std::string& f = made_from.path;
+            if (f != entry.source_path) { entry.outside_generics = true; }
+            if (f.empty() || f == "<script>") { continue; }
+            if (f == entry.source_path || std::any_of(entry.spliced_stamps.begin(), entry.spliced_stamps.end(), [&](const closure_stamp& s) { return s.path == f; })) { continue; }
+            entry.spliced_stamps.push_back(made_from);
+        }
+    }
+    // The stamp an entry's text was loaded with reaches the generics it declares: an instance made from one is stamped with
+    // it (null: the host supplied the text)
+    void note_text_stamp(script_cache_entry& entry, const detail::text_stamp* loaded_under) {
+        entry.loaded_under = loaded_under ? *loaded_under : detail::text_stamp{};
+        if (!entry.source_path.empty() && entry.source_path != "<script>") { pooled_text_stamps_[entry.source_path] = entry.loaded_under; }
+        if (!entry.generics_gathered) {
+            entry.generics_gathered = true;
+            collect_generics(entry.declarations, entry.generics);
+        }
+        for (const auto& g : entry.generics) {
+            g->file_stamped = loaded_under && loaded_under->stamped;
+            g->file_mtime = g->file_stamped ? loaded_under->mtime : 0;
+            g->file_size = g->file_stamped ? loaded_under->size : 0;
+        }
+    }
+
     struct closure_unit {
         std::string path;   // resolved spelling: the key the unit later executes under
         std::string source;
         std::shared_ptr<script_cache_entry> entry;
+        bool pending = false;   // a loaded module read from other text than it runs from (pending_text)
     };
+    struct program_pools;
+    std::unordered_set<std::string> reload_group_;   // the modules a reload is deciding now: what it pools is its own to keep or put back
     // The root's closure findings, republished by every checked_report: the strict throw
     // text and the diagnostics folded into the caller-visible report.
     std::string program_check_listing_;
     std::vector<check_diagnostic> program_check_diags_;
     std::string program_parse_failures_;
-    // Host functions' declared scalar results (engine::host_function_result): jai_null_type = unknown or disagreeing
+    // Host functions' declared scalar results (engine::host_function_result): jai_invalid_type = void, jai_null_type = unknown or disagreeing
     std::unordered_map<std::string, script_value_type> host_results_;
     // Constant arguments (engine::constant_argument): the rules in registration order (stable addresses), indexed by the key
     // a call spells ("name", ".member"), and the program's const texts by name
@@ -1261,6 +2438,9 @@ struct engine::implementation {
     // caller whether to rewrite the cache afterwards.
     std::shared_ptr<script_cache_entry> acquire_entry(engine& self, const std::string& content, const std::string& sourcePath,
                                                       std::filesystem::path& cacheFile, bool& cacheFresh) {
+        detail::load_collector* report = collector();
+        detail::load_phase_scope reporting(report, sourcePath, load_phase::other);
+        if (report) { report->row(report->row_of(sourcePath)).source_bytes = content.size(); }
         cacheFile.clear();
         cacheFresh = false;
         std::filesystem::path shipped;   // with a cache directory set, the .cache beside the source is read, never written
@@ -1268,10 +2448,13 @@ struct engine::implementation {
             cacheFile = jaibite_cache_file(sourcePath);
             if (!cacheFile.empty() && !jaibite_cache_directory_.empty()) { shipped = jaibite_beside_file(sourcePath); }
         }
+        if (report && cacheFile.empty()) { report->note_cache(sourcePath, load_cache::not_cacheable, no_cache_reason(self, sourcePath)); }
         auto cached = find_cached_script(sourcePath, content);
         std::optional<detail::jaibite_source_identity> identity;
         if (cached) {
-            cacheFresh = !cacheFile.empty() && (cache_holds(*cached, cacheFile, content) || (!shipped.empty() && cache_holds(*cached, shipped, content)));
+            if (report && !cacheFile.empty()) { report->note_cache(sourcePath, load_cache::memory, ""); }
+            detail::load_phase_scope comparing(report, load_phase::freshness);
+            cacheFresh = !cacheFile.empty() && (cache_holds(self, *cached, cacheFile, content) || (!shipped.empty() && cache_holds(self, *cached, shipped, content)));
         } else if (!cacheFile.empty()) {
             // a cache loads only when it records this exact source; anything else parses below and is rewritten
             cached = try_load_jaibite_entry(self, cacheFile, sourcePath, content, identity);
@@ -1280,12 +2463,21 @@ struct engine::implementation {
         }
         if (!cached) {
             lexer lex(content, &string_symbolizer_, sourcePath);
-            auto tokens = lex.tokenize();
+            auto tokens = [&] {
+                detail::load_phase_scope timed(report, load_phase::lex);
+                return lex.tokenize();
+            }();
             parser prs(tokens, &string_symbolizer_, &self, registeredTemplateTypes);
             prs.source_text(content);
-            auto parse_result = prs.parse();
+            prs.less_provisional(!settle_parses_);
+            auto parse_result = [&] {
+                detail::load_phase_scope timed(report, load_phase::parse);
+                return prs.parse();
+            }();
             if (!parse_result) {
-                for (const auto& f : prs.spliced_files()) { uint64_t mtime = 0, size = 0; const bool ok = stat_mtime_size(f, mtime, size); note_closure_file(f, ok, mtime, size); }
+                for (const auto& f : prs.spliced_files()) { note_closure_file(f.path, true, f.mtime, f.size); }
+                if (!prs.unsettled_file().empty()) { note_closure_file(prs.unsettled_file(), false, 0, 0); }
+                refuse_unsettled(prs);
                 throw parse_error(self.format_error(parse_result));
             }
             auto decls = std::move(parse_result.value());
@@ -1300,43 +2492,105 @@ struct engine::implementation {
         return cached;
     }
 
+    // Why a source has no cache file to look at (the load report)
+    const char* no_cache_reason(const engine& self, const std::string& sourcePath) const {
+        if (sourcePath == "<script>") { return "source text"; }
+        if (!jaibite_cache_enabled) { return "cache off"; }
+        if (!self.is_enabled(permissions::filesystem)) { return "filesystem off"; }
+        return "no cache path";
+    }
+    // What became of a unit's cache file once its check passed; the unit's reason for keeping none outranks how it was found
+    void note_cache_write(detail::load_collector& report, const script_cache_entry& entry, const std::string& sourcePath,
+                          const std::filesystem::path& cacheFile, bool wanted) {
+        load_report_row& row = report.row(report.row_of(sourcePath));
+        if (!entry.spliced_stamps.empty() || entry.outside_generics) {
+            const char* why = entry.outside_generics ? "another file's generics" : "spliced files";
+            report.note_cache(sourcePath, load_cache::not_cacheable, why);
+            row.cache_write = why;
+        } else if (!wanted) {
+            if (row.cache_write.empty()) { row.cache_write = "up to date"; }
+        } else if (entry.cache_write_failed == cacheFile) {
+            row.cache_write = "failed";
+        } else {
+            row.cache_write = "written";
+            if (row.cache_bytes == 0) { row.cache_bytes = entry.cache_size; }
+        }
+    }
+
+    static void note_parse_failure(const parse_error& e, std::string& parse_failures) {
+        std::string_view listing = e.what();
+        constexpr std::string_view k_header = "parse failed:\n";
+        if (listing.substr(0, k_header.size()) == k_header) { listing.remove_prefix(k_header.size()); }   // the program's own header leads them all
+        parse_failures += listing;
+        if (parse_failures.empty() || parse_failures.back() != '\n') { parse_failures += '\n'; }
+    }
+
+    // A unit parsed before the pools held a namespace class it names bare read that name unqualified: it parses again once its
+    // program is pooled, and pools what the new parse declares (the classes a unit declares do not depend on the answer, so one
+    // pass over a program settles it). True when the entry was replaced; throws parse_error.
+    bool reparse_if_moved(engine& self, std::shared_ptr<script_cache_entry>& held, const std::string& source) {
+        struct settling { bool& slot; bool saved; ~settling() { slot = saved; } } settle{settle_parses_, settle_parses_};
+        settle_parses_ = true;
+        if (!parse_moved(*held)) { return false; }
+        const std::string path = held->source_path;
+        detail::load_collector* report = collector();
+        detail::load_phase_scope reporting(report, path, load_phase::reparse);
+        detail::load_reparse_scope reparsing(report);
+        const detail::text_stamp loaded_under = held->loaded_under;   // the same text, parsed again: no file is read for it
+        std::filesystem::path cacheFile;
+        bool cacheFresh = false;
+        held = acquire_entry(self, source, path, cacheFile, cacheFresh);
+        note_text_stamp(*held, loaded_under.stamped ? &loaded_under : nullptr);
+        pool_unit(held->declarations, path, unit_key(*held, source));
+        return true;
+    }
+
     // Depth-first in source order; a unit the runtime cannot resolve or read is skipped here
     // and reported by the runtime exactly as before, when it executes. A unit that fails to
     // parse is collected in parse_failures (its text, path and position included). Every
-    // resolved unit leaves a stamp (taken before the read, so a later edit shows as newer).
+    // resolved unit leaves the stamp its text was loaded with. A unit that never read whole
+    // keeps the declarations the program has for it and leaves a zero stamp, so the next
+    // gather is due; one the program never loaded ends the gather (source_unsettled): no
+    // check stands on a text nobody read.
     void collect_closure_units(engine& self, const std::vector<std::string>& paths, std::unordered_set<std::string>& visited,
                                std::vector<closure_unit>& out, std::vector<closure_stamp>& stamps, const std::string& from_file,
-                               std::string& parse_failures) {
+                               std::string& parse_failures, std::shared_ptr<program_pools>& before_pending) {
+        detail::load_phase_scope reporting(collector(), detail::load_collector::k_no_file, load_phase::import_bookkeeping);
         for (const auto& path : paths) {
             closure_unit unit;
             try {
                 auto resolved = resolve_include_path(path, &self, from_file);
                 if (!resolved || !visited.insert(resolved.value()).second) { continue; }
                 unit.path = std::move(resolved.value());
-                closure_stamp stamp{unit.path, 0, 0};
-                const bool stamped = stat_mtime_size(unit.path, stamp.mtime, stamp.size);
-                const uint64_t mtime = stamp.mtime, size = stamp.size;
-                stamps.push_back(std::move(stamp));
-                if (read_for_load(unit.path, stamped, mtime, size, unit.source) == stamped_read::missing) { continue; }
+                detail::loaded_source loaded = load_source(unit.path, detail::source_mode::text);
+                if (loaded.status == detail::loaded_source::state::unsettled) {
+                    if (!pooled_unit_keys_.count(unit.path)) { throw detail::source_unsettled(unit.path); }
+                    stamps.push_back({unit.path, 0, 0});
+                    continue;
+                }
+                stamps.push_back({unit.path, loaded.stamp.mtime, loaded.stamp.size});
+                if (loaded.status == detail::loaded_source::state::missing) { continue; }
+                unit.source = std::move(loaded.text);
                 std::filesystem::path cacheFile;
                 bool cacheFresh = false;
                 unit.entry = acquire_entry(self, unit.source, unit.path, cacheFile, cacheFresh);
+                note_text_stamp(*unit.entry, &loaded.stamp);
+            } catch (const detail::source_unsettled&) {
+                throw;
             } catch (const parse_error& e) {
-                std::string_view listing = e.what();
-                constexpr std::string_view k_header = "parse failed:\n";
-                if (listing.substr(0, k_header.size()) == k_header) { listing.remove_prefix(k_header.size()); }   // the program's own header leads them all
-                parse_failures += listing;
-                if (parse_failures.empty() || parse_failures.back() != '\n') { parse_failures += '\n'; }
+                note_parse_failure(e, parse_failures);
                 continue;
             } catch (...) {
                 continue;
             }
             std::vector<std::string> nested;
             literal_unit_paths(unit.entry->declarations, nested);
+            unit.pending = pending_text(unit);
+            if (unit.pending && !before_pending) { before_pending = saved_pools(); }
             pool_unit(unit.entry->declarations, unit.path, unit_key(*unit.entry, unit.source));
             std::string unit_path = unit.path;
             out.push_back(std::move(unit));
-            collect_closure_units(self, nested, visited, out, stamps, unit_path, parse_failures);
+            collect_closure_units(self, nested, visited, out, stamps, unit_path, parse_failures, before_pending);
         }
     }
 
@@ -1361,6 +2615,7 @@ struct engine::implementation {
     // A proof-only walk over an entry (diagnostics off): the program's globals type here, and a class-typed one waits for its class
     // (entry.proofs_deferred; restamp_deferred after an import completes)
     void stamp_proofs(engine& self, script_cache_entry& entry) {
+        detail::load_phase_scope reporting(collector(), entry.source_path, load_phase::proofs);
         detail::check_options o = program_check_options(type_proofs_ ? detail::check_options::proofs_t::stamp : detail::check_options::proofs_t::clear);
         o.diagnostics = false;
         o.stats = &last_proof_stats_;
@@ -1407,19 +2662,41 @@ struct engine::implementation {
         detail::set_aggregate_view(state, lowering_on());
     }
 
+    // the unit declares its instances now: what was built from its declarations is built again
+    void adopt_expanded_instances(script_cache_entry& entry, const std::vector<closure_stamp>& generic_files) {
+        entry.compiled.reset();
+        if (entry.lowering.built) { entry.lowering = detail::aggregate_lowering_state{}; }
+        stamp_generic_files(entry, generic_files);
+        if (std::any_of(entry.declarations.begin(), entry.declarations.end(), [](const declaration_ptr& d) {
+                return d && d->get_type() == node_type::generic_instance_decl && static_cast<const generic_instance_decl&>(*d).remade; })) {
+            entry.outside_generics = true;
+        }
+        if (pooled_unit_keys_.count(entry.source_path) && detail::collect_unit_classes(entry.declarations, program_classes_)) { ++program_union_epoch_; }
+    }
+
     void check_entry(engine& self, script_cache_entry& entry, bool want_diagnostics) {
+        detail::load_collector* report = collector();
+        detail::load_phase_scope reporting(report, entry.source_path, load_phase::other);
         gather_entry_constants(entry);
         const uint64_t want_proof_epoch = type_proofs_ ? check_surface_epoch_ : UINT64_MAX;
         // a moved union re-derives a failing verdict (the names it lacked may be there now); a clean one breaking is a reload's
         // dependents check (check_group), and a gather re-derives its root
-        const bool need_check = want_diagnostics && (!entry.checked || entry.checked_epoch != check_surface_epoch_ ||
+        // a unit that declares a generic again is checked against the instances the engine holds as it starts to run, which may
+        // be more than its last check saw (a unit that ran since made one): it makes each again (note_remade_instances)
+        const bool remakes = want_diagnostics && remakes_instances(self, entry.declarations);
+        const bool need_check = want_diagnostics && (!entry.checked || entry.checked_epoch != check_surface_epoch_ || remakes ||
                                                      (entry.checked_union != program_union_epoch_ && entry.check_result.has_errors()));
         const bool need_proofs = entry.proof_epoch != want_proof_epoch || !entry.autos_typed ||
                                  (lowering_on() && !entry.lowering.built) || entry.lowering.lowered_view != lowering_on();
-        if (need_check && entry.stamp_loaded && outside_key(self, entry.context.outside) == entry.context.outside_key) {
+        if (need_check && entry.stamp_loaded && !remakes && outside_key(self, entry.context.outside) == entry.context.outside_key) {
             entry.check_result = {};   // the loaded stamp's names resolve here as where it was checked
             entry.outside_keyed = true;
+            if (report) { ++report->row(report->current_row()).checks_trusted; }
+            std::vector<closure_stamp> generic_files;
+            expand_generics(self, entry.declarations, generic_files);   // a cached unit holds its instances: the engine learns what each was made from
         } else if (need_check) {   // the diagnostics walk leaves the proofs alone: the proof pass follows, and it alone reads the program's globals
+            detail::load_phase_scope checking(report, load_phase::check);
+            if (report) { ++report->row(report->current_row()).checks_run; }
             detail::set_aggregate_view(entry.lowering, false);   // diagnostics read the parsed bodies
             detail::check_options o = program_check_options(detail::check_options::proofs_t::leave);
             o.diagnostics = true;
@@ -1427,10 +2704,18 @@ struct engine::implementation {
             const bool first = jaibite_cache_enabled && entry.source_path != "<script>" && !entry.context_recorded;
             std::vector<std::string> outside;
             if (first) { o.outside = &outside; }
-            ++check_walks_;
-            entry.check_result = detail::run_static_check(self, checked_declarations(entry), nullptr, o);
+            std::vector<closure_stamp> generic_files;
+            bool expanded = false;
+            entry.check_result = check_expanding(self, entry.declarations, [&]() -> const std::vector<declaration_ptr>& {
+                if (entry.reload_hook) {
+                    entry.check_declarations = entry.declarations;
+                    entry.check_declarations.push_back(entry.reload_hook);
+                }
+                return checked_declarations(entry);
+            }, o, generic_files, expanded);
+            if (expanded) { adopt_expanded_instances(entry, generic_files); }
             if (first) {
-                entry.restamp = entry.stamp_loaded;
+                entry.restamp = entry.stamp_loaded || (entry.cache_unstamped && !entry.check_result.has_errors());
                 entry.outside_keyed = !entry.check_result.has_errors();
                 entry.context.outside = entry.outside_keyed ? std::move(outside) : std::vector<std::string>{};
                 entry.context.outside_key = entry.outside_keyed ? outside_key(self, entry.context.outside) : 0;
@@ -1444,6 +2729,7 @@ struct engine::implementation {
             entry.checked_union = program_union_epoch_;
         }
         if (need_check || need_proofs) {
+            detail::load_phase_scope proving(report, load_phase::proofs);
             lowering_view(self, checked_declarations(entry), entry.lowering);
             stamp_proofs(self, entry);
             entry.proof_epoch = want_proof_epoch;
@@ -1459,20 +2745,46 @@ struct engine::implementation {
     // parse error is the whole report (the names it would have declared are unknown, so
     // any check would only cascade). The findings live on the root entry and are
     // republished on every call, gathered or not.
-    const check_report& checked_report(engine& self, script_cache_entry& entry, std::string_view source) {
-        if (closure_due(entry)) {
+    const check_report& checked_report(engine& self, std::shared_ptr<script_cache_entry>& held, std::string_view source) {
+        if (closure_due(*held)) {
+            held->closure_epoch = UINT64_MAX;   // a gather that does not end (a unit never read whole) is due again
             std::vector<std::string> roots;
-            literal_unit_paths(entry.declarations, roots);
+            literal_unit_paths(held->declarations, roots);
+            std::vector<closure_unit> closure;
+            std::vector<closure_stamp> stamps;
+            std::string parse_failures;
+            std::shared_ptr<program_pools> before_pending;
+            std::vector<closure_unit> standing;   // the gathered units that are no pending text: what stays pooled
+            if (!roots.empty()) {
+                pool_unit(held->declarations, held->source_path, unit_key(*held, source));
+                std::unordered_set<std::string> visited;
+                collect_closure_units(self, roots, visited, closure, stamps, held->source_path, parse_failures, before_pending);
+                for (auto& unit : closure) {
+                    try {
+                        reparse_if_moved(self, unit.entry, unit.source);
+                    } catch (const parse_error& e) {
+                        note_parse_failure(e, parse_failures);
+                    }
+                }
+                reparse_if_moved(self, held, std::string(source));
+                if (before_pending) {
+                    for (const auto& unit : closure) { if (!unit.pending) { standing.push_back(unit); } }
+                }
+                // the instances each unit's text names, before any unit is checked: the type of another unit's variable or result may be one
+                if (parse_failures.empty()) {
+                    for (auto& unit : closure) {
+                        std::vector<closure_stamp> generic_files;
+                        if (expand_generics(self, unit.entry->declarations, generic_files)) { adopt_expanded_instances(*unit.entry, generic_files); }
+                    }
+                }
+            }
+            script_cache_entry& entry = *held;
             entry.closure_root = !roots.empty();
-            entry.closure_stamps.clear();
+            entry.closure_stamps = std::move(stamps);
             entry.closure_listing.clear();
             entry.closure_diags.clear();
-            entry.closure_parse_failures.clear();
-            std::vector<closure_unit> closure;
+            entry.closure_parse_failures = std::move(parse_failures);
             if (entry.closure_root) {
-                pool_unit(entry.declarations, entry.source_path, unit_key(entry, source));
-                std::unordered_set<std::string> visited;
-                collect_closure_units(self, roots, visited, closure, entry.closure_stamps, entry.source_path, entry.closure_parse_failures);
                 if (entry.checked_union != program_union_epoch_) { entry.checked = false; }
                 // every unit's consts before any unit's check: a constant argument may name a const a later unit declares
                 detail::gather_constants(entry.declarations, program_constants_, constant_rule_index_);
@@ -1507,16 +2819,17 @@ struct engine::implementation {
                 for (const auto& d : r.diagnostics) {
                     entry.closure_diags.push_back({d.severity, 0, 0,
                         (d.file.empty() ? unit.path : d.file) + ":" + std::to_string(d.line) + ":" + std::to_string(d.column) + ": " + d.message,
-                        d.related_line, d.related_column});
+                        d.related_line, d.related_column, {}, d.notes, d.related_file});
                 }
             }
+            if (before_pending) { withdraw_pending_text(*held, source, *before_pending, standing); }
         } else {
-            check_entry(self, entry, true);
+            check_entry(self, *held, true);
         }
-        program_check_listing_ = entry.closure_listing;
-        program_check_diags_ = entry.closure_diags;
-        program_parse_failures_ = entry.closure_parse_failures;
-        return entry.check_result;
+        program_check_listing_ = held->closure_listing;
+        program_check_diags_ = held->closure_diags;
+        program_parse_failures_ = held->closure_parse_failures;
+        return held->check_result;
     }
 
     // What a caller sees: the root's diagnostics followed by the closure's (line/column 0,
@@ -1581,21 +2894,21 @@ struct engine::implementation {
 
     // The one cache-hit execution tail (execute_file fast lane + the literal lane):
     // mirrors execute_source's hit path — prepare, static-check hook, execute_parsed.
-    script_value execute_cache_hit(engine& self, const std::shared_ptr<script_cache_entry>& held,
+    script_value execute_cache_hit(engine& self, std::shared_ptr<script_cache_entry> held,
                                    const instance_variables& instanceVars, std::string_view source) {
-        script_cache_entry& entry = *held;
+        detail::load_phase_scope reporting(collector(), held->source_path, load_phase::other);
         binding_gate(self);
         has_executed_ = true;
         load_scope loading(*this);
         self.backend()->prepare_for_execution();
-        entry.last_used = ++script_cache_clock;
-        const check_report& rep = checked_report(self, entry, source);
+        held->last_used = ++script_cache_clock;
+        const check_report& rep = checked_report(self, held, source);
         if (instanceVars.empty()) {
             gate_checked(rep, source);
         } else {
-            gate_checked(check_with_instance_vars(self, entry, instanceVars), source);
+            gate_checked(check_with_instance_vars(self, *held, instanceVars), source);
         }
-        return run_unit(self, held, entry.compiled, instanceVars.empty() ? nullptr : &instanceVars, source, false);
+        return run_unit(self, held, held->compiled, instanceVars.empty() ? nullptr : &instanceVars, source, false);
     }
 
     // Every unit that ran, at the entry it last ran: a module's reload re-checks them against the declarations it brings before
@@ -1627,15 +2940,147 @@ struct engine::implementation {
         slot.source.assign(source);
     }
 
+    // ---- A reload and the instances the loaded units use (docs/site/embedding/07-hot-reload.html "Callers in other files")
+    // A unit that is not run again keeps the instances it declared, and the reloading text makes each again as it runs: one it
+    // cannot make would keep its earlier declaration beside code that took the new text. So a unit that names an instance of
+    // a generic the reload declares otherwise is checked from its own text before anything runs, each instance made from the
+    // declarations the reload brings.
+    // `files`: every file the reload reads (its modules and what they import). What each declares now is pooled; what it
+    // declared when it last ran is its loaded entry's. The names: the generics those files declare otherwise than they ran,
+    // or no longer declare, and the classes they declare anew (one takes a generic class's name).
+    std::unordered_set<std::string> generics_a_reload_moves(const std::unordered_set<std::string>& files) const {
+        std::unordered_set<std::string> result;
+        std::unordered_map<std::string, std::pair<std::vector<uint64_t>, std::vector<uint64_t>>> stamps;   // by name: as the files ran, as they are pooled
+        std::unordered_set<std::string> ran_classes;
+        for (const std::string& file : files) {
+            const auto loaded = loaded_units_.find(loaded_unit_of(file));
+            if (loaded == loaded_units_.end() || !loaded->second.entry) { continue; }
+            std::vector<detail::generic_definition_ptr> declared;
+            collect_generics(loaded->second.entry->declarations, declared);
+            for (const auto& g : declared) { if (g->location.filename == file) { stamps[g->qualified_name()].first.push_back(g->stamp); } }
+            std::vector<const class_decl*> plain;
+            collect_plain_classes(loaded->second.entry->declarations, plain);
+            for (const class_decl* c : plain) { ran_classes.emplace(c->name); }
+        }
+        const auto theirs = [&](const source_location& at) { return files.count(std::string(at.filename)) != 0; };
+        for (const auto& [name, held] : generics_) {
+            for (const auto& g : held) { if (theirs(g->location)) { stamps[name].second.push_back(g->stamp); } }
+        }
+        for (auto& [name, both] : stamps) {
+            std::sort(both.first.begin(), both.first.end());
+            std::sort(both.second.begin(), both.second.end());
+            if (both.first != both.second) { result.insert(name); }
+        }
+        for (const auto& [name, declared] : program_classes_) {
+            if (declared && declared->instance_stamp == 0 && theirs(declared->location) && !ran_classes.count(name)) { result.insert(name); }
+        }
+        return result;
+    }
+    // the unit's own text names an instance of one of those generics
+    static bool names_instance_of(const std::vector<declaration_ptr>& decls, const std::unordered_set<std::string>& generics) {
+        const generic_request_index requests = index_requests(decls);
+        for (const auto& [id, request] : requests) {
+            if (!remade_root(requests, request) && generics.count(std::string(request->generic)) != 0) { return true; }
+        }
+        return false;
+    }
+    // A function or a class a file drops stays for the units that use it, and so does an instance of a generic it drops
+    // (dropped_generics_): while such a unit is checked from its text the definition stands in the pool again, unless the
+    // name went to something of its kind (a generic, a class for a generic class's, a function for a generic function's; a
+    // generic method stands while the class the program holds still declares it). `placed` takes what was added.
+    void place_dropped_generics(engine& self, const std::vector<declaration_ptr>& decls, std::vector<detail::generic_definition_ptr>& placed) {
+        if (dropped_generics_.empty()) { return; }
+        const generic_request_index requests = index_requests(decls);
+        for (const auto& [id, request] : requests) {
+            if (remade_root(requests, request)) { continue; }
+            const std::string name(request->generic);
+            const auto dropped = dropped_generics_.find(name);
+            if (dropped == dropped_generics_.end()) { continue; }
+            if (const auto held = generics_.find(name); held != generics_.end() && !held->second.empty()) { continue; }
+            for (const auto& g : dropped->second) {
+                bool taken = false;
+                switch (g->kind) {
+                    case detail::generic_kind::class_type:
+                        taken = plain_type_named(self, {}, name) != detail::plain_type_kind::none;
+                        break;
+                    case detail::generic_kind::function: {
+                        const auto functions = program_functions_.find(name);
+                        taken = functions != program_functions_.end() &&
+                                std::any_of(functions->second.begin(), functions->second.end(), [](const auto& unit) { return !unit.second.empty(); });
+                        break;
+                    }
+                    case detail::generic_kind::method: {   // an instance's own generic method comes with the instance
+                        const auto owner = program_classes_.find(g->owner);
+                        taken = g->owner.find('<') != std::string::npos || owner == program_classes_.end() || !owner->second ||
+                                std::none_of(owner->second->members.begin(), owner->second->members.end(), [&](const auto& member) {
+                                    return member.declaration && member.declaration->get_type() == node_type::generic_decl &&
+                                           static_cast<const generic_decl&>(*member.declaration).definition->stamp == g->stamp;
+                                });
+                        break;
+                    }
+                }
+                if (taken) { continue; }
+                generics_[name].push_back(g);
+                placed.push_back(g);
+            }
+        }
+    }
+    struct standing_generics {   // the dropped definitions the checked units use, in the pool until the dependents are checked
+        implementation& impl;
+        std::vector<detail::generic_definition_ptr> placed;
+        void place(engine& self, const std::vector<declaration_ptr>& decls) {
+            const size_t before = placed.size();
+            impl.place_dropped_generics(self, decls, placed);
+            if (placed.size() != before) { impl.index_pooled_namespace_generics(); }
+        }
+        ~standing_generics() {
+            if (placed.empty()) { return; }
+            for (const auto& g : placed) { std::erase(impl.generics_[g->qualified_name()], g); }
+            impl.index_pooled_namespace_generics();
+        }
+    };
+    // A loaded unit read again from its text and checked as a run of it would be. Nothing of the parse is kept; a text that no
+    // longer reads (a file spliced into it changed) gives no verdict.
+    check_report check_unit_text(engine& self, const loaded_unit& loaded) {
+        try {
+            lexer lex(loaded.source, &string_symbolizer_, loaded.entry->source_path);
+            auto tokens = lex.tokenize();
+            parser reader(tokens, &string_symbolizer_, &self, registeredTemplateTypes);
+            reader.source_text(loaded.source);
+            auto parsed = reader.parse();
+            if (!parsed) { return {}; }
+            std::vector<declaration_ptr> declarations = std::move(parsed.value());
+            const std::shared_ptr<function_decl> hook = take_reload_hook(declarations);
+            std::vector<declaration_ptr> hooked;
+            detail::check_options o = program_check_options(detail::check_options::proofs_t::leave);
+            o.reload_dependent = true;
+            std::vector<closure_stamp> files;
+            bool changed = false;
+            return check_expanding(self, declarations, [&]() -> const std::vector<declaration_ptr>& {
+                if (!hook) { return declarations; }
+                hooked = declarations;
+                hooked.push_back(hook);
+                return hooked;
+            }, o, files, changed);
+        } catch (...) {
+            return {};
+        }
+    }
+
     // A reload's dependents: every loaded unit but the re-running ones, checked again (never run again) against the program as
-    // the reload would leave it, its new declarations pooled. A gating diagnostic the unit's own last check did not raise is the
-    // reload's; the listing names the unit's file and line, and the files that failed land in failing_files (unstamped).
-    std::string reload_dependents_listing(engine& self, const std::unordered_set<uint32_t>& rerunning, std::vector<closure_stamp>& failing_files) {
+    // the reload would leave it, its new declarations pooled (`files`: every file the reload reads). A gating diagnostic the
+    // unit's own last check did not raise is the reload's; the listing names the unit's file and line, the files that failed
+    // land in failing_files (unstamped) and the units, each with the entry that was judged, in failing_units.
+    std::string reload_dependents_listing(engine& self, const std::unordered_set<uint32_t>& rerunning, const std::unordered_set<std::string>& files,
+                                          std::vector<closure_stamp>& failing_files, std::vector<judged_unit>& failing_units,
+                                          std::vector<check_diagnostic>* found = nullptr) {
         std::vector<uint32_t> units;
         for (const auto& [unit, loaded] : loaded_units_) {
             if (!rerunning.count(unit) && loaded.entry->checked) { units.push_back(unit); }
         }
         std::sort(units.begin(), units.end());
+        const std::unordered_set<std::string> moved = instances_of_.empty() ? std::unordered_set<std::string>{} : generics_a_reload_moves(files);
+        standing_generics dropped{*this, {}};
         std::string listing;
         for (const uint32_t unit : units) {
             const loaded_unit& loaded = loaded_units_[unit];
@@ -1647,19 +3092,38 @@ struct engine::implementation {
             const check_report recheck = detail::run_static_check(self, checked_declarations(entry), nullptr, o);
             detail::set_aggregate_view(entry.lowering, lowered);
             check_report broken;
-            for (const auto& d : recheck.diagnostics) {
-                if (d.severity != check_diagnostic::level::error) { continue; }
-                const auto& before = entry.check_result.diagnostics;
-                const bool known = std::any_of(before.begin(), before.end(), [&](const check_diagnostic& b) {
-                    return b.line == d.line && b.column == d.column && b.message == d.message;
-                });
-                if (!known) { broken.diagnostics.push_back(d); }
+            const auto raise = [&](const check_diagnostic& d) {
+                if (d.severity != check_diagnostic::level::error) { return; }
+                const auto same = [&](const check_diagnostic& b) { return b.line == d.line && b.column == d.column && b.message == d.message; };
+                const auto& known = entry.check_result.diagnostics;
+                if (std::any_of(known.begin(), known.end(), same)) { return; }
+                if (std::any_of(broken.diagnostics.begin(), broken.diagnostics.end(), [&](const check_diagnostic& b) { return same(b) && b.file == d.file; })) { return; }
+                broken.diagnostics.push_back(d);
+                if (found) {   // each with the file it stands in
+                    found->push_back(d);
+                    if (found->back().file.empty()) { found->back().file = entry.source_path; }
+                }
+            };
+            for (const auto& d : recheck.diagnostics) { raise(d); }
+            if (!moved.empty() && names_instance_of(entry.declarations, moved)) {
+                dropped.place(self, entry.declarations);
+                for (const auto& d : check_unit_text(self, loaded).diagnostics) { raise(d); }
             }
             if (broken.diagnostics.empty()) { continue; }
             listing += broken.format(loaded.source, entry.source_path);
             if (entry.source_path != "<script>") { failing_files.push_back({entry.source_path, 0, 0}); }
+            failing_units.emplace_back(unit, loaded.entry);
         }
         return listing;
+    }
+    // every unit is still loaded from the entry a check judged
+    bool units_stand(const std::vector<judged_unit>& units) const {
+        for (const auto& [unit, judged] : units) {
+            const auto loaded = loaded_units_.find(unit);
+            const auto entry = judged.lock();
+            if (!entry || loaded == loaded_units_.end() || loaded->second.entry != entry) { return false; }
+        }
+        return true;
     }
     uint32_t loaded_unit_of(const std::string& path) const {
         auto it = unit_index_.find(std::filesystem::path(path).lexically_normal().string());
@@ -1676,22 +3140,162 @@ struct engine::implementation {
         std::unordered_map<std::string, std::unordered_map<std::string, uint64_t>> name_units;
         std::unordered_map<std::string, uint64_t> unit_keys;
         std::unordered_map<std::string, std::vector<declaration_ptr>> unit_declarations;
+        std::unordered_map<std::string, std::vector<detail::generic_definition_ptr>> generics;
+        std::unordered_map<std::string, std::vector<detail::generic_definition_ptr>> dropped_generics;
     };
     program_pools save_program_pools() const {
         return {program_names_, program_classes_, program_enums_, program_functions_, program_globals_, program_name_units_, pooled_unit_keys_,
-                pooled_unit_declarations_};
+                pooled_unit_declarations_, generics_, dropped_generics_};
+    }
+    std::shared_ptr<program_pools> saved_pools() const { return std::make_shared<program_pools>(save_program_pools()); }
+    // A loaded module whose file changed is pending until an import of it is reached and its reload is decided. A root's
+    // gather reads its new text, since the root is checked against what its imports will bring; the pools hold the text
+    // a module runs from everywhere else, so a reload that is rejected, or never reached, leaves nothing of the edit in
+    // them (docs/site/embedding/07-hot-reload.html "Check, then apply"). A reload's own gather is no such root: what its
+    // modules read stays pooled until its verdict, since its dependents are checked against every file it reads.
+    bool pending_text(const closure_unit& unit) const {
+        if (!reload_group_.empty()) { return false; }
+        const auto loaded = loaded_units_.find(loaded_unit_of(unit.path));
+        return loaded != loaded_units_.end() && loaded->second.entry && loaded->second.entry != unit.entry;
+    }
+    // The root is judged: the pools as they stood before its gather pooled a pending text, then what the gather may leave
+    void withdraw_pending_text(script_cache_entry& root, std::string_view source, program_pools& before_pending, const std::vector<closure_unit>& standing) {
+        restore_program_pools(std::move(before_pending));
+        pool_unit(root.declarations, root.source_path, unit_key(root, source));
+        for (const auto& unit : standing) {
+            if (unit.entry) { pool_unit(unit.entry->declarations, unit.path, unit_key(*unit.entry, unit.source)); }
+        }
     }
     void restore_program_pools(program_pools&& saved) {
         ++program_union_epoch_;
         program_names_ = std::move(saved.names);
+        index_pooled_namespace_paths();
         program_name_units_ = std::move(saved.name_units);
         pooled_unit_keys_ = std::move(saved.unit_keys);
         pooled_unit_declarations_ = std::move(saved.unit_declarations);
         program_classes_ = std::move(saved.classes);
         program_enums_ = std::move(saved.enums);
+        index_pooled_namespace_classes();
         program_functions_ = std::move(saved.functions);
         program_globals_ = std::move(saved.globals);
+        generics_ = std::move(saved.generics);
+        dropped_generics_ = std::move(saved.dropped_generics);
+        index_pooled_namespace_generics();
     }
+
+    // the unit declares a function or a class at program scope under a name the engine already holds
+    static bool declares_held_code(engine& self, const std::vector<declaration_ptr>& decls) {
+        for (const auto& d : decls) {
+            if (!d) { continue; }
+            if (d->get_type() == node_type::function_decl) {
+                const auto& f = static_cast<const function_decl&>(*d);
+                if (f.instance_stamp == 0 && self.has_function(std::string(f.name))) { return true; }
+            } else if (d->get_type() == node_type::class_decl) {
+                const auto& c = static_cast<const class_decl&>(*d);
+                if (c.instance_stamp == 0 && !c.method_instances && self.get_class_definition(std::string(c.name))) { return true; }
+            }
+        }
+        return false;
+    }
+    // Text the host executes as a string checks no unit but its own (docs/site/embedding/07-hot-reload.html "Callers in other
+    // files"). Where it declares again a function or a class the engine holds, what a reload of that text would be rejected
+    // for is a warning of its check instead, naming each use's file and line: nothing is refused.
+    // the script functions the engine holds at program scope under a name
+    std::vector<std::shared_ptr<script_defined_function>> held_functions(engine& self, std::string_view name) {
+        std::vector<std::shared_ptr<script_defined_function>> result;
+        const auto id = string_symbolizer_.find(name);
+        const script_value* value = id && global_environment_ ? global_environment_->get_own_value_ptr(*id) : nullptr;
+        const script_callable* callable = value ? detail::script_callable_of(*value, &self) : nullptr;
+        if (!callable) { return result; }
+        if (callable->kind == script_callable::kind_type::function && callable->fn && callable->fn->declared) {
+            result.push_back(callable->fn);
+        } else if (callable->kind == script_callable::kind_type::overload_set && callable->overloads()) {
+            result = callable->overloads()->members;
+        }
+        return result;
+    }
+    // What the text's run replaces is what the borrowed tables say it declares: a class of the name, and a program-scope
+    // function of the same parameters. A function the engine holds with other parameters stays an overload beside the text's,
+    // so that name's callers are left unchecked, as are a namespace's functions (they collide or are written override) and
+    // the variables the text declares.
+    void pool_text_for_warning(engine& self, script_cache_entry& held, std::string_view source, const program_pools& before) {
+        pool_unit(held.declarations, held.source_path, unit_key(held, source));
+        program_globals_ = before.globals;
+        const auto declares_with = [&](std::string_view name, const std::vector<parameter>& parameters) {
+            return std::any_of(held.declarations.begin(), held.declarations.end(), [&](const declaration_ptr& d) {
+                return d && d->get_type() == node_type::function_decl && static_cast<const function_decl&>(*d).name == name &&
+                       detail::same_signature(static_cast<const function_decl&>(*d).parameters, parameters);
+            });
+        };
+        for (auto& [name, units] : program_functions_) {
+            const auto own = units.find(held.source_path);
+            if (own == units.end()) { continue; }
+            const auto kept = held_functions(self, name);
+            const bool beside = std::any_of(kept.begin(), kept.end(), [&](const std::shared_ptr<script_defined_function>& fn) { return fn && !declares_with(name, fn->parameters()); });
+            if (beside || name.find("::") != std::string::npos) { units.erase(own); }
+        }
+    }
+    void warn_text_dependents(engine& self, const std::shared_ptr<script_cache_entry>& held, std::string_view source) {
+        if (loaded_units_.empty() || unit_ran_before(*held, source) || !declares_held_code(self, held->declarations)) { return; }
+        program_pools pools = save_program_pools();
+        pool_text_for_warning(self, *held, source, pools);
+        std::vector<closure_stamp> failing_files;
+        std::vector<judged_unit> failing_units;
+        std::vector<check_diagnostic> found;
+        (void)reload_dependents_listing(self, {}, {}, failing_files, failing_units, &found);
+        restore_program_pools(std::move(pools));
+        for (const auto& d : found) {
+            std::string text = "a use in another unit no longer fits what this text declares: " + d.message + " (" + d.file + ":" + std::to_string(d.line) + ":" + std::to_string(d.column) + ")";
+            for (const auto& note : d.notes) { text += " " + note; }
+            last_check_.diagnostics.push_back({check_diagnostic::level::warning, 0, 0, std::move(text)});
+        }
+    }
+
+    // A file the host runs again from other text (execute_file, execute_file_source of a path that already ran) is a reload of
+    // that unit: every other loaded unit is checked against the declarations it brings before any of it runs, and one that
+    // no longer fits rejects it with its own file and line, nothing applied (docs/site/embedding/07-hot-reload.html "Callers
+    // in other files"). A module's import was judged with its group (check_group), and text the host executes as a string
+    // checks no unit but its own. The pools are the check's to borrow: they go back as they were either way.
+    void check_rerun_dependents(engine& self, const std::shared_ptr<script_cache_entry>& held, std::string_view source) {
+        if (held->loaded_noted) { return; }   // the entry its unit last ran: the same text, at no cost to a host that runs it every frame
+        const std::string& path = held->source_path;
+        if (path == "<script>") { warn_text_dependents(self, held, source); return; }
+        if (path.empty() || importing_.count(path)) { return; }
+        const uint32_t unit = loaded_unit_of(path);
+        const auto loaded = loaded_units_.find(unit);
+        if (unit == 0 || loaded == loaded_units_.end() || !loaded->second.entry || loaded->second.entry == held) { return; }
+        if (unit_key(*loaded->second.entry, loaded->second.source) == unit_key(*held, source)) { return; }   // the text it ran from
+        program_pools pools = save_program_pools();
+        pool_unit(held->declarations, path, unit_key(*held, source));
+        std::unordered_set<std::string> reads{path};
+        for (const auto& gathered : held->closure_stamps) { reads.insert(gathered.path); }
+        std::vector<closure_stamp> failing_files;
+        std::vector<judged_unit> failing_units;
+        const std::string listing = reload_dependents_listing(self, {unit}, reads, failing_files, failing_units);
+        restore_program_pools(std::move(pools));
+        if (!listing.empty()) { throw static_check_error("static check failed:\n" + listing); }
+    }
+
+    // The check tables as that reload finds them, taken before its check pools any of the new text: a reload rejected for its
+    // own mistake or for another unit's use puts them back, so nothing of it stays (as a module's rejected reload leaves
+    // nothing). Null for any other run.
+    std::shared_ptr<program_pools> pools_before_rerun(script_cache_entry& held, std::string_view source, bool textual) {
+        const std::string& path = held.source_path;
+        if (textual || held.loaded_noted || path.empty() || path == "<script>" || importing_.count(path)) { return nullptr; }
+        const auto loaded = loaded_units_.find(loaded_unit_of(path));
+        if (loaded == loaded_units_.end() || !loaded->second.entry || loaded->second.entry.get() == &held) { return nullptr; }
+        if (unit_key(*loaded->second.entry, loaded->second.source) == unit_key(held, source)) { return nullptr; }
+        return saved_pools();
+    }
+    struct rerun_pools {
+        implementation& impl;
+        std::shared_ptr<program_pools> before;
+        int unwinding = std::uncaught_exceptions();
+        ~rerun_pools() {
+            if (before && std::uncaught_exceptions() > unwinding) { impl.restore_program_pools(std::move(*before)); }
+        }
+        void accept() { before.reset(); }
+    };
 
     // A unit's run. A re-run of a unit whose source declares a reload hook snapshots the unit's program-scope variables first and
     // hands them to the hook once the run's top-level code finishes; a unit without one pays nothing. A textual include runs under
@@ -1740,6 +3344,7 @@ struct engine::implementation {
             previous = unit_snapshot(self, runner);
         }
         if (!entry.loaded_noted) { note_loaded_unit(held, source); }   // after the re-run test: noting numbers the unit
+        detail::load_phase_scope running(collector(), entry.source_path, load_phase::run);
         script_value result = self.execute_parsed(entry.declarations, compiled_slot, instanceVars, unit_of(entry, source), textual);
         if (previous) { run_reload_hook(self, *entry.reload_hook, runner, std::move(*previous)); }
         return result;
@@ -1799,14 +3404,15 @@ struct engine::implementation {
         return nullptr;
     }
 
-    // the files a parse spliced into function bodies, stamped now; a later stamp change makes the entry stale
-    void stamp_spliced(script_cache_entry& entry, const std::vector<std::string>& files) {
-        entry.spliced_stamps.clear();
-        for (const auto& f : files) { closure_stamp s{f, 0, 0}; (void)stat_mtime_size(f, s.mtime, s.size); entry.spliced_stamps.push_back(std::move(s)); }
+    // the files a parse spliced into function bodies, each under the stamp the spliced text was loaded with; a later stamp
+    // change makes the entry stale
+    void stamp_spliced(script_cache_entry& entry, const std::vector<closure_stamp>& files) {
+        entry.spliced_stamps = files;
     }
-    // A cached parse no longer stands for its text: an include it spliced changed, or a namespace class it asked about is answered otherwise
+    // A cached parse no longer stands for its text: an include it spliced changed, or a namespace class or enum it asked about is answered otherwise
     bool parse_moved(script_cache_entry& entry) {
         for (const auto& s : entry.spliced_stamps) { uint64_t mtime = 0, size = 0; if (!stat_mtime_size(s.path, mtime, size) || mtime != s.mtime || size != s.size) return true; }
+        if (less_moved(entry.declarations, entry.context)) { return true; }
         if (entry.context.namespace_queries.empty()) { return false; }
         const size_t classes = namespace_class_count();
         if (classes == entry.namespace_classes) { return false; }
@@ -1814,18 +3420,38 @@ struct engine::implementation {
         entry.namespace_classes = classes;
         return false;
     }
-    // A parse's namespace-class questions (parser::namespace_queries) as the engine answers them now, '1' where the class exists
+    // A parse's namespace-class questions (parser::namespace_queries) as the engine answers them now, '1' where the class or enum
+    // exists (an earlier run defined it, or a unit of the program declares it)
     std::string namespace_answers(const std::vector<std::string>& queries) const {
         std::string result;
         result.reserve(queries.size());
         for (const auto& q : queries) { result.push_back(namespace_class_known(q) ? '1' : '0'); }
         return result;
     }
+    // "outer::inner" opens a namespace; a bare "inner": some namespace nested in another ends in it
+    bool nested_namespace_known(std::string_view path) const {
+        const size_t cut = path.rfind("::");
+        if (cut != std::string_view::npos) {
+            if (program_names_.count(std::string(path) + "::") != 0) { return true; }
+            const auto id = string_symbolizer_.find(path);
+            return id && script_namespaces_.count(*id) != 0;
+        }
+        if (pooled_nested_namespaces_.count(std::string(path)) != 0) { return true; }
+        const std::string ending = "::" + std::string(path);
+        return std::any_of(script_namespaces_.begin(), script_namespaces_.end(), [&](const auto& entry) {
+            const std::string_view held = string_symbolizer_.get_string(entry.first);
+            return held.size() > ending.size() && held.compare(held.size() - ending.size(), ending.size(), ending) == 0;
+        });
+    }
     bool namespace_class_known(std::string_view query) const {
+        if (query.size() > 2 && query.compare(query.size() - 2, 2, "::") == 0) { return nested_namespace_known(query.substr(0, query.size() - 2)); }
         const size_t cut = query.rfind("::");
+        const std::string spelled(query);
+        if (cut == std::string_view::npos ? pooled_namespace_classes_.count(spelled) != 0 : program_classes_.count(spelled) != 0 || program_enums_.count(spelled) != 0) { return true; }
+        if (pooled_namespace_generics_.count(spelled) != 0) { return true; }   // a generic class is a class of its namespace
         const auto name = string_symbolizer_.find(cut == std::string_view::npos ? query : query.substr(cut + 2));
         if (!name) { return false; }
-        const auto declares = [&](const std::shared_ptr<script_namespace_data>& space) { return space && space->classes.count(*name) != 0; };
+        const auto declares = [&](const std::shared_ptr<script_namespace_data>& space) { return space && (space->classes.count(*name) != 0 || space->enums.count(*name) != 0); };
         if (cut == std::string_view::npos) {
             return std::any_of(script_namespaces_.begin(), script_namespaces_.end(), [&](const auto& entry) { return declares(entry.second); });
         }
@@ -1834,24 +3460,31 @@ struct engine::implementation {
         const auto it = script_namespaces_.find(*space);
         return it != script_namespaces_.end() && declares(it->second);
     }
-    // classes are only ever added to a namespace, so an unchanged count answers every question as before
+    // namespaces, and the classes and enums in them, are only ever added and the pools count their own moves, so an unchanged count answers every question as before
     size_t namespace_class_count() const {
-        size_t result = 0;
-        for (const auto& [id, space] : script_namespaces_) { if (space) { result += space->classes.size(); } }
+        size_t result = pooled_class_moves_ + script_namespaces_.size();
+        for (const auto& [id, space] : script_namespaces_) { if (space) { result += space->classes.size() + space->enums.size(); } }
         return result;
     }
-    // A bite's parse read a bare class name inside a namespace by namespace classes this engine answers otherwise: its text
-    // would parse otherwise here, and the bite carries no text to parse again
+    // A bite's parse read a bare class or enum name inside a namespace by namespace classes and enums this engine answers
+    // otherwise: its text would parse otherwise here, and the bite carries no text to parse again
     [[noreturn]] void refuse_namespace_answers(const detail::jaibite_context& context, const std::string& answers) {
         check_report report;
         for (size_t i = 0; i < context.namespace_queries.size() && i < answers.size(); ++i) {
             if (i < context.namespace_answers.size() && context.namespace_answers[i] == answers[i]) { continue; }
             const std::string& query = context.namespace_queries[i];
             const bool saved = i < context.namespace_answers.size() && context.namespace_answers[i] == '1';
+            if (query.size() > 2 && query.compare(query.size() - 2, 2, "::") == 0) {
+                const std::string path = query.substr(0, query.size() - 2);
+                const std::string nested = path.find("::") == std::string::npos ? "a namespace nested in another ending in '" + path + "'" : "'" + path + "' a namespace";
+                report.diagnostics.push_back({check_diagnostic::level::error, 0, 0, "the bite was parsed " + std::string(saved ? "with " : "without ") + nested + "; here " +
+                                              (saved ? "there is none" : "there is one") + ": save it again from source"});
+                continue;
+            }
             const size_t cut = query.rfind("::");
             const std::string what = cut == std::string::npos
-                ? std::string(saved ? "a namespace declared class '" : "no namespace declared class '") + query + "'; here " + (saved ? "none does" : "one does")
-                : "'" + query + "' " + (saved ? "was" : "was not") + " a class (a bare '" + query.substr(cut + 2) + "' inside namespace '" + query.substr(0, cut) +
+                ? std::string(saved ? "a namespace declared class or enum '" : "no namespace declared class or enum '") + query + "'; here " + (saved ? "none does" : "one does")
+                : "'" + query + "' " + (saved ? "was" : "was not") + " a class or an enum (a bare '" + query.substr(cut + 2) + "' inside namespace '" + query.substr(0, cut) +
                   "' names it); here it " + (saved ? "is not" : "is");
             report.diagnostics.push_back({check_diagnostic::level::error, 0, 0, "the bite was parsed where " + what + ": save it again from source"});
         }
@@ -1862,6 +3495,9 @@ struct engine::implementation {
         entry.context.namespace_queries = prs.namespace_queries();
         entry.context.namespace_answers = namespace_answers(entry.context.namespace_queries);
         entry.namespace_classes = namespace_class_count();
+        entry.context.less_queries = prs.less_queries();
+        entry.context.less_answers = prs.less_answers();
+        entry.context.less_settled = prs.less_settled();
     }
     static uint64_t mix_key(uint64_t h, uint64_t x) {
         h ^= x + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
@@ -1871,7 +3507,8 @@ struct engine::implementation {
     // A unit as the program pools hold it: its text and the namespace answers its parse rests on
     uint64_t unit_key(script_cache_entry& entry, std::string_view source) {
         const auto& id = identity_of(entry, source);
-        return mix_key(mix_key(id.size, id.hash), detail::jaibite_identity_of(entry.context.namespace_answers).hash);
+        const uint64_t key = mix_key(mix_key(id.size, id.hash), detail::jaibite_identity_of(entry.context.namespace_answers).hash);
+        return entry.context.less_queries.empty() ? key : mix_key(key, detail::jaibite_identity_of(entry.context.less_answers).hash + entry.context.less_settled);
     }
     // The unit that ran a declaration the engine holds, by its key; 0 when no unit that ran is it (the host's)
     uint64_t ran_unit_key(uint32_t unit) {
@@ -1983,6 +3620,7 @@ struct engine::implementation {
         if (const auto id = string_symbolizer_.find(name)) {
             if (const script_value* cell = global_environment_->get_value_ptr(*id)) { fold(value_signature(*cell)); }
             if (auto it = script_namespaces_.find(*id); it != script_namespaces_.end() && it->second) { fold(0x51); }
+            if (enum_names_.count(*id)) { fold(0xE1); }
         }
         if (auto c = class_registry_.find_script_class(name)) { fold(mix_key(0xC1, ran_unit_key(c->unit().id))); }
         if (const size_t cut = name.rfind("::"); cut != std::string::npos) {
@@ -1994,7 +3632,9 @@ struct engine::implementation {
                 if (auto f = ns.functions.find(*member); f != ns.functions.end()) {
                     for (const auto& decl : f->second) { fold(mix_key(0xF1, decl ? ran_unit_key(decl->unit.id) : 0)); }
                 }
-                if (auto v = ns.variables.find(*member); v != ns.variables.end()) { fold(mix_key(0xB1, value_signature(v->second))); }
+                if (auto v = ns.variables.find(*member); v != ns.variables.end()) {   // its kind too: the checker types a host's value by it
+                    fold(mix_key(0xB1, mix_key(value_signature(v->second), uint64_t(v->second.deref().raw_storage_index()))));
+                }
                 if (auto c = ns.classes.find(*member); c != ns.classes.end() && c->second) { fold(mix_key(0xC2, ran_unit_key(c->second->unit().id))); }
                 if (auto h = ns.signatures.find(*member); h != ns.signatures.end()) {
                     const host_entry_signature& sig = h->second;
@@ -2007,6 +3647,7 @@ struct engine::implementation {
         }
         for (const auto& [index, refusal] : self.constant_argument_indexes(name)) { fold(mix_key(0xA1, index)); }
         if (nodiscard_callables_.count(name)) { fold(0xD1); }
+        if (auto typed = type_result_callables_.find(name); typed != type_result_callables_.end()) { fold(mix_key(0xD2, typed->second)); }
         if (name == detail::k_outside_constants) {
             std::vector<const std::pair<const std::string, std::vector<std::string>>*> texts;
             for (const auto& entry : self.constant_texts_by_name()) { texts.push_back(&entry); }
@@ -2136,6 +3777,16 @@ struct engine::implementation {
     // A file's stamp through the host's engine::file_stamp_source, else the file system's
     engine::file_stamp_reading file_stamp_source;
     bool stat_mtime_size(const std::string& path, uint64_t& mtime, uint64_t& size) const {
+        detail::load_collector* report = collector();
+        if (report) [[unlikely]] {
+            detail::load_phase_scope querying(report, load_phase::stamp_query);
+            const bool stamped = query_stamp(path, mtime, size);
+            if (stamped) { report->retarget(report->row_of(path)); }   // a file that is not there has no row
+            return stamped;
+        }
+        return query_stamp(path, mtime, size);
+    }
+    bool query_stamp(const std::string& path, uint64_t& mtime, uint64_t& size) const {
         if (!file_stamp_source) { return stat_file(path, mtime, size); }
         const std::optional<engine::file_stamp> stamp = file_stamp_source(path);
         if (!stamp) { return false; }
@@ -2144,33 +3795,108 @@ struct engine::implementation {
         return true;
     }
 
-    // A file's text read under the (mtime, size) stamp taken just before the read: the stamp queried again after it must
-    // agree, or a save landed mid-read and the text may mix two versions (torn: read it again later)
-    enum class stamped_read { missing, torn, stable };
-    stamped_read read_under_stamp(const std::string& path, bool stamped, uint64_t mtime, uint64_t size, std::string& content) {
-        {
-            ++source_reads_;
-            std::ifstream file(path);
-            if (!file.is_open()) { return stamped_read::missing; }
-            std::stringstream buffer;
-            buffer << file.rdbuf();
-            content = buffer.str();
-        }
-        if (!stamped) { return stamped_read::stable; }
-        uint64_t after_mtime = 0, after_size = 0;
-        return stat_mtime_size(path, after_mtime, after_size) && after_mtime == mtime && after_size == size
-            ? stamped_read::stable : stamped_read::torn;
-    }
-
     // A load (an execute, or an import the host's call reached) reads each file once: the closure gather, the imports and
-    // includes that run the gathered units and the gathers nested in them take a text read earlier in the load while the
-    // file's stamp still matches the one it was read under. The texts go when the outermost load ends.
+    // includes that run the gathered units and the gathers nested in them take a text loaded earlier in the load while the
+    // file's stamp still matches the one it was loaded with. The texts go when the outermost load ends.
     struct load_text {
+        bool held = false;
         uint64_t mtime = 0, size = 0;
         std::string text;
     };
-    std::unordered_map<std::string, load_text> load_texts_;
+    std::unordered_map<std::string, std::array<load_text, 2>> load_texts_;   // per file, by detail::source_mode
     uint32_t load_depth_ = 0;
+    engine::source_file_observing source_file_observer;
+    // The load report while it is on. One replaced in the middle of a load stays until the engine goes: its scopes are still open.
+    std::unique_ptr<detail::load_collector> load_collector_;
+    std::vector<std::unique_ptr<detail::load_collector>> retired_load_collectors_;
+    detail::load_collector* collector() const noexcept {
+        if (!load_collector_) [[likely]] { return nullptr; }
+        return parallel_ && parallel_->active_region ? nullptr : load_collector_.get();
+    }
+
+    // What the platform's text mode reads of a file's bytes, as a script always was read: on Windows a "\r\n" is one '\n'
+    // and the text ends at a Ctrl-Z; elsewhere the bytes
+    static std::string text_mode_reading(std::string bytes) {
+#ifdef _WIN32
+        if (bytes.find_first_of("\r\x1A") == std::string::npos) { return bytes; }
+        size_t kept = 0;
+        for (size_t i = 0; i < bytes.size(); ++i) {
+            const char c = bytes[i];
+            if (c == '\x1A') { break; }
+            if (c == '\r' && i + 1 < bytes.size() && bytes[i + 1] == '\n') { continue; }
+            bytes[kept++] = c;
+        }
+        bytes.resize(kept);
+#endif
+        return bytes;
+    }
+
+    // THE source loader: the one place the engine, the parser and the template machinery open a source file (a root, a
+    // module, an include, a file spliced into a function body, a template, a generic's file). It returns the file's bytes
+    // with the stamp of exactly those bytes: the stamp is queried, the bytes are read, and the stamp queried again must
+    // agree, or a save landed in between and the file is read again, k_source_load_tries times in all. A file whose stamp
+    // moved during every read is unsettled: no read of it stands for a version of the file, so nothing is parsed, run or
+    // remembered from it. Every stamp the engine remembers for a file is one returned here with the bytes it stands for.
+    detail::loaded_source load_source(const std::string& path, detail::source_mode mode) {
+        detail::load_collector* report = collector();
+        detail::load_phase_scope reporting(report, load_phase::source_read);
+        const auto report_row = [&]() -> load_report_row& {   // the file is there: the read is its own
+            report->retarget(report->row_of(path));
+            return report->row(report->current_row());
+        };
+        detail::loaded_source result;
+        for (int attempt = 0; attempt < detail::k_source_load_tries; ++attempt) {
+            detail::text_stamp before;
+            before.stamped = stat_mtime_size(path, before.mtime, before.size);
+            load_text* kept = nullptr;
+            if (before.stamped && load_depth_ > 0) {
+                kept = &load_texts_[path][static_cast<size_t>(mode)];
+                if (kept->held && kept->mtime == before.mtime && kept->size == before.size) {
+                    if (report) { ++report_row().source_reuses; }
+                    result.status = detail::loaded_source::state::loaded;
+                    result.stamp = before;
+                    result.text = kept->text;
+                    return result;
+                }
+            }
+            std::string bytes;
+            {
+                ++source_reads_;
+                std::ifstream file(path, std::ios::binary);
+                if (!file.is_open()) { return result; }
+                if (report) { ++report_row().source_reads; }
+                std::stringstream buffer;
+                buffer << file.rdbuf();
+                bytes = std::move(buffer).str();
+                if (report) { report_row().source_bytes = bytes.size(); }
+            }
+            detail::text_stamp after;
+            after.stamped = stat_mtime_size(path, after.mtime, after.size);
+            if (after.stamped != before.stamped || after.mtime != before.mtime || after.size != before.size) { continue; }
+            if (source_file_observer) {
+                source_file_observer(path, before.stamped ? std::optional<engine::file_stamp>(engine::file_stamp{before.mtime, before.size}) : std::nullopt, bytes);
+            }
+            result.status = detail::loaded_source::state::loaded;
+            result.stamp = before;
+            result.text = mode == detail::source_mode::text ? text_mode_reading(std::move(bytes)) : std::move(bytes);
+            if (kept) { *kept = {true, before.mtime, before.size, result.text}; }
+            return result;
+        }
+        result.status = detail::loaded_source::state::unsettled;
+        return result;
+    }
+    // a parse that met a file that never read whole is no verdict on the program's text
+    static void refuse_unsettled(const parser& prs) {
+        if (!prs.unsettled_file().empty()) { throw detail::source_unsettled(prs.unsettled_file()); }
+    }
+    // every file still carries the stamp it is remembered under
+    bool stamps_stand(const std::vector<closure_stamp>& stamps) const {
+        for (const auto& s : stamps) {
+            uint64_t mtime = 0, size = 0;
+            if (!stat_mtime_size(s.path, mtime, size) || mtime != s.mtime || size != s.size) { return false; }
+        }
+        return true;
+    }
     struct load_scope {
         implementation& impl;
         explicit load_scope(implementation& a_impl) : impl(a_impl) { ++impl.load_depth_; }
@@ -2180,18 +3906,6 @@ struct engine::implementation {
             if (--impl.load_depth_ == 0) { impl.load_texts_.clear(); }
         }
     };
-    stamped_read read_for_load(const std::string& path, bool stamped, uint64_t mtime, uint64_t size, std::string& content) {
-        if (stamped) {
-            if (auto it = load_texts_.find(path); it != load_texts_.end() && it->second.mtime == mtime && it->second.size == size) {
-                content = it->second.text;
-                return stamped_read::stable;
-            }
-        }
-        const stamped_read result = read_under_stamp(path, stamped, mtime, size, content);
-        if (result == stamped_read::stable && stamped && load_depth_ > 0) { load_texts_[path] = {mtime, size, content}; }
-        return result;
-    }
-
     // Jaibite disk cache (engine.hpp doc): <folder>/.cache/<file>.jaibite, or below the host's cache directory, maintained
     // for every file-based load. std::filesystem only; every touch is best-effort via error_code.
     bool jaibite_cache_enabled = true;
@@ -2291,9 +4005,10 @@ struct engine::implementation {
     }
 
     // An in-memory hit rewrites its cache unless it is the file the entry last wrote or loaded, or a file whose header
-    // records this source (another engine's write, adopted whatever its surface, so engines sharing a file never take
-    // turns rewriting it on every hit; a miss still loads only under a matching fingerprint)
-    bool cache_holds(script_cache_entry& entry, const std::filesystem::path& cacheFile, const std::string& source) {
+    // records this source under this engine's registration fingerprint. Another registration's cache of the text is replaced
+    // once, so the next load of this surface hits, and adopted after that, so engines of two surfaces sharing a file never
+    // take turns rewriting it on every hit.
+    bool cache_holds(const engine& self, script_cache_entry& entry, const std::filesystem::path& cacheFile, const std::string& source) {
         uint64_t mtime = 0, size = 0;
         if (!stat_cache_file(cacheFile, mtime, size)) { return false; }
         if (entry.cache_stamped && mtime == entry.cache_mtime && size == entry.cache_size && entry.cache_file == cacheFile) { return true; }
@@ -2305,6 +4020,7 @@ struct engine::implementation {
         if (!detail::read_jaibite_header(header, sizeof(header), fingerprint, recorded) || recorded != identity_of(entry, source)) {
             return false;
         }
+        if (fingerprint != self.registration_fingerprint() && !entry.foreign_cache_replaced) { return false; }
         entry.cache_file = cacheFile;
         entry.cache_mtime = mtime;
         entry.cache_size = size;
@@ -2320,33 +4036,56 @@ struct engine::implementation {
     std::shared_ptr<script_cache_entry> try_load_jaibite_entry(engine& self, const std::filesystem::path& cacheFile,
                                                                const std::string& sourcePath, const std::string& source,
                                                                std::optional<detail::jaibite_source_identity>& identity) {
+        detail::load_collector* report = collector();
+        const auto missed = [&](const char* why) -> std::shared_ptr<script_cache_entry> {
+            if (report) { report->note_cache(sourcePath, load_cache::miss, why); }
+            return nullptr;
+        };
         try {
             uint64_t cacheMtime = 0, cacheSize = 0;
-            if (!stat_cache_file(cacheFile, cacheMtime, cacheSize)) {
-                return nullptr;
+            {
+                detail::load_phase_scope comparing(report, sourcePath, load_phase::freshness);
+                if (!stat_cache_file(cacheFile, cacheMtime, cacheSize)) {
+                    return missed("no file");
+                }
+                if (!identity) { identity = detail::jaibite_identity_of(source); }
             }
-            if (!identity) { identity = detail::jaibite_identity_of(source); }
-            std::ifstream file(cacheFile, std::ios::binary);
-            if (!file.is_open()) {
-                return nullptr;
+            std::vector<uint8_t> bytes;
+            {
+                detail::load_phase_scope reading(report, sourcePath, load_phase::cache_read);
+                std::ifstream file(cacheFile, std::ios::binary);
+                if (!file.is_open()) {
+                    return missed("no file");
+                }
+                bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+                if (report) { report->row(report->current_row()).cache_bytes = bytes.size(); }
             }
-            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             uint64_t savedFingerprint = 0;
             detail::jaibite_source_identity recorded;
             if (!detail::read_jaibite_header(bytes.data(), bytes.size(), savedFingerprint, recorded) ||
                 recorded != *identity || savedFingerprint != self.registration_fingerprint()) {
-                return nullptr;
+                if (!report) { return nullptr; }
+                if (bytes.size() < 8 || std::memcmp(bytes.data(), detail::k_jaibite_magic, 4) != 0) { return missed("corrupt"); }
+                if (std::memcmp(bytes.data() + 4, &detail::k_jaibite_version, 4) != 0) { return missed("format version"); }
+                if (bytes.size() < detail::k_jaibite_header_size) { return missed("corrupt"); }
+                return missed(recorded != *identity ? "different source" : "fingerprint");
             }
             uint32_t flags = 0;
             detail::jaibite_context context;
-            auto declarations = detail::deserialize_jaibite(bytes.data(), bytes.size(), &self, savedFingerprint, &flags, nullptr, sourcePath, &context);
-            if (namespace_answers(context.namespace_queries) != context.namespace_answers) {
-                return nullptr;   // a namespace class the parse asked about is answered otherwise here: the text parses otherwise
+            std::vector<declaration_ptr> declarations;
+            {
+                detail::load_phase_scope decoding(report, sourcePath, load_phase::decode);
+                declarations = detail::deserialize_jaibite(bytes.data(), bytes.size(), &self, savedFingerprint, &flags, nullptr, sourcePath, &context);
+                if (namespace_answers(context.namespace_queries) != context.namespace_answers) {
+                    return missed("namespace classes");   // a namespace class the parse asked about is answered otherwise here: the text parses otherwise
+                }
+                if (less_moved(declarations, context)) { return missed("names after '<'"); }   // a head names another kind of thing here
+                // jaibite carries structure, not the parser-pass flags (ref-escape,
+                // value-decl naming, transient reads) — re-derive
+                // them exactly like the parse tail does
+                if (detail::run_ast_marking_passes(declarations, &string_symbolizer_)) { entry_stamps = true; }
             }
-            // jaibite carries structure, not the parser-pass flags (ref-escape,
-            // value-decl naming, transient reads) — re-derive
-            // them exactly like the parse tail does
-            if (detail::run_ast_marking_passes(declarations, &string_symbolizer_)) { entry_stamps = true; }
+            if (report) { report->note_cache(sourcePath, load_cache::hit, ""); }
             auto hook = take_reload_hook(declarations);
             auto entry = store_cached_script(sourcePath, source, std::move(declarations));
             adopt_reload_hook(*entry, std::move(hook));
@@ -2359,10 +4098,54 @@ struct engine::implementation {
             entry->context = std::move(context);
             entry->namespace_classes = namespace_class_count();
             entry->stamp_loaded = detail::jaibite_stamped_clean(flags);   // it stands in for the first check while its names resolve alike
+            entry->cache_unstamped = !entry->stamp_loaded;
             return entry;
         } catch (...) {
-            return nullptr;
+            return missed("corrupt");
         }
+    }
+
+    // What only the program's trees can tell the load report: each file's functions, which were compiled, their encoded size
+    void count_report_functions(const std::vector<declaration_ptr>& declarations, const detail::load_collector& report, const std::string& path, load_report_row& row) const {
+        for (const auto& d : declarations) {
+            if (!d) { continue; }
+            if (d->get_type() == node_type::namespace_decl) {
+                count_report_functions(static_cast<const namespace_decl&>(*d).declarations, report, path, row);
+            } else if (d->get_type() == node_type::class_decl) {
+                std::vector<declaration_ptr> members;
+                for (const auto& m : static_cast<const class_decl&>(*d).members) { members.push_back(m.declaration); }
+                count_report_functions(members, report, path, row);
+            } else if (d->get_type() == node_type::function_decl) {
+                const auto& f = static_cast<const function_decl&>(*d);
+                if (!f.body) { continue; }
+                uint64_t bytes = 0;
+                try {
+                    bytes = detail::ast_writer(string_symbolizer_, true, path).in_body().as_parsed().node_key(f.body.get()).size();
+                } catch (const std::exception&) {
+                }
+                ++row.functions;
+                row.function_bytes += bytes;
+                if (report.body_compiled(f.body.get())) {
+                    ++row.functions_compiled;
+                    row.function_bytes_compiled += bytes;
+                }
+            }
+        }
+    }
+    load_report_summary load_report_snapshot() {
+        detail::load_collector& report = *load_collector_;
+        for (auto& [unit, loaded] : loaded_units_) {   // every text run as source shares the one "<script>" row
+            if (!loaded.entry) { continue; }
+            load_report_row& row = report.row(report.row_of(loaded.entry->source_path));
+            row.functions = row.functions_compiled = row.function_bytes = row.function_bytes_compiled = 0;
+        }
+        for (auto& [unit, loaded] : loaded_units_) {
+            if (!loaded.entry) { continue; }
+            load_report_row& row = report.row(report.row_of(loaded.entry->source_path));
+            detail::aggregate_source_view view(&loaded.entry->lowering);   // what a cache holds: the parsed bodies
+            count_report_functions(loaded.entry->declarations, report, loaded.entry->source_path, row);
+        }
+        return report.summary();
     }
 
     // Best-effort cache write: failures are SILENT (cache is an optimization, never an error — read-only asset dirs,
@@ -2744,12 +4527,14 @@ checked_result<void> host_reference_store(engine* eng, const host_slot& slot, sc
 }
 
 engine::engine() : impl(std::make_unique<implementation>()) {
+    impl->self_ = this;
     assert(detail::object_ref::layout_holds() && "object_ref reads a shared_ptr as (stored pointer, control block)");
     impl->global_environment_->bind_engine(this);
+    impl->global_environment_->explain_undefined([this](uint64_t id) { return detail::undeclared_instance_text(*this, id); });
 }
 
-bool engine_loading(const engine* a_engine) {
-    return a_engine && a_engine->loading();
+bool engine_quiet(const engine* a_engine) {
+    return a_engine && (a_engine->loading() || detail::engine_access::callbacks_released(*a_engine));
 }
 
 engine::load_session::load_session(engine* a_engine) : eng(a_engine) {
@@ -2790,7 +4575,10 @@ void engine::load_session::complete() {
         auto* def = instance ? instance->get_class_definition() : nullptr;
         script_value post_load = def ? def->get_method(post_load_id, false) : script_value(std::monostate{}, eng);
         if (post_load.type() != script_value_type::jai_function_type) { continue; }
-        auto ran = post_load.as_function()({ self, script_value(version, eng) });
+        auto ran = [&]() {
+            load_callout callout(eng);
+            return post_load.as_function()({ self, script_value(version, eng) });
+        }();
         if (!ran) { throw runtime_error(eng->format_error(ran)); }
         if (eng->backend_unwinding()) { throw runtime_error(eng->backend_exception_text()); }
     }
@@ -2853,6 +4641,41 @@ void engine::release_program_scope_in_reverse() noexcept {
     }
 }
 
+// Every definition an instance can still belong to, in name order: the teardown's walks over the instances alive take them in it
+std::vector<std::shared_ptr<class_definition>> engine::definitions_for_teardown() const {
+    std::vector<std::shared_ptr<class_definition>> result;
+    std::unordered_set<const class_definition*> seen;
+    const auto add = [&](std::shared_ptr<class_definition> def) {
+        if (def && seen.insert(def.get()).second) { result.push_back(std::move(def)); }
+    };
+    for (const auto& [name, def] : impl->class_registry_.script_classes_) { add(def); }
+    for (const auto& [name, def] : impl->classes) { add(def); }
+    for (const auto& [id, def] : impl->classesByTypeId) { add(def); }
+    for (const auto& [type, def] : impl->classesByType) { add(def); }
+    std::stable_sort(result.begin(), result.end(), [](const auto& a, const auto& b) { return a->get_name() < b->get_name(); });
+    return result;
+}
+
+// An instance alive here is one a reference cycle keeps or one the host still holds: its destructors run now, and it stays
+// pinned with its members in place until no script can run (release_surviving_instances), so no destructor meets a half-dead object
+void engine::destroy_surviving_instances() noexcept {
+    try {
+        std::vector<strong_ptr<class_instance>>& survivors = impl->teardown_survivors_;
+        for (const auto& def : definitions_for_teardown()) {
+            for (auto& live : def->live_instances()) { survivors.push_back(std::move(live)); }
+        }
+        if (!survivors.empty()) { class_definition::run_surviving_destructors(*this, survivors); }
+    } catch (...) {}
+}
+
+// Called with the backend gone and before the definitions detach: every instance alive is pinned across the detach, and
+// the caller lets go of their members after it
+void engine::release_surviving_instances() noexcept {
+    std::vector<strong_ptr<class_instance>> survivors = std::move(impl->teardown_survivors_);
+    impl->teardown_survivors_.clear();
+    for (size_t i = survivors.size(); i-- > 0;) { class_definition::release_survivor_members(*survivors[i]); }
+}
+
 // Reset the backend before impl members unwind so callable thunks (destructor deleters,
 // stored function values) firing during teardown see get_execution_backend() == nullptr
 // and fail soft instead of re-entering a half-destroyed backend.
@@ -2886,9 +4709,19 @@ engine::~engine() {
         if (impl->backend && impl->global_environment_) {
             release_program_scope_in_reverse();
         }
+        retire_coroutines();
+        // What the host still holds of the program goes next: the functions its callbacks and receivers call, then every
+        // instance still alive (a reference cycle keeps it, or a value the host kept) runs its destructors
+        release_held_values(true);
+        if (impl->backend) { destroy_surviving_instances(); }
         impl->format_literal_rows_.clear();
         impl->tearing_down = true;
         impl->backend.reset();
+        try {
+            for (const auto& def : definitions_for_teardown()) {
+                for (auto& live : def->live_instances()) { impl->teardown_survivors_.push_back(std::move(live)); }
+            }
+        } catch (...) {}
         // Definitions a host or a captured environment keeps alive past this point must not
         // consult the engine from an instance destructor (registry_lock reads it)
         for (auto& [name, def] : impl->classes) { if (def) { def->detach_for_teardown(); } }
@@ -2901,8 +4734,11 @@ engine::~engine() {
         for (auto& [name, def] : impl->class_registry_.script_classes_) { if (def) { def->release_values_for_teardown(); } }
         for (auto& [name, def] : impl->classes) { if (def && def->is_script_class()) { def->release_values_for_teardown(); } }
         script_value::release_deferred_cell_cycles(this);
+        release_surviving_instances();
         // a destructor that ran during teardown may have held a value
         release_held_values();
+        release_held_values(true);
+        retire_coroutines();
     }
 }
 
@@ -3204,10 +5040,37 @@ void engine::initialize_engine_reference() {
         return script_value(detail::same_object(args[0], args[1]), engine_weak);
     });
 
+    // debug::stack() and debug::locals([frame]) (docs/site/guide/05-control-flow.html): the running code's call stack, innermost first,
+    // each frame as a trace line names it, and a frame's locals (0, the default: the caller's) as name -> a copy of the value.
+    // Engine-core; they read the backend only when called.
+    add_function("debug::stack", [engine_weak]() -> std::vector<std::string> {
+        std::vector<std::string> out;
+        engine_weak->backend()->debug_settle_frames();
+        for (const auto& f : engine_weak->backend()->debug_frames()) { out.push_back(debug::controller::frame_text(f.function, f.file, f.line)); }
+        return out;
+    });
+    add_variadic_function("debug::locals", [engine_weak](const std::vector<script_value>& args) -> checked_result<script_value> {
+        if (args.size() > 1 || (args.size() == 1 && !args[0].deref().is_int())) {
+            throw runtime_error("'debug::locals' takes the frame to read as an int (0, the default: the caller's)");
+        }
+        const script_int frame = args.empty() ? 0 : args[0].deref().as_int();
+        execution_backend* be = engine_weak->backend();
+        be->debug_settle_frames();
+        if (frame < 0 || static_cast<size_t>(frame) >= be->debug_frames().size()) {
+            throw runtime_error("'debug::locals' has no frame " + std::to_string(frame) + ": debug::stack() lists the frames");
+        }
+        script_value out = script_value::make_map(engine_weak->get_type_info_string(), nullptr, engine_weak);
+        auto& entries = const_cast<script_map&>(out.as_map());
+        for (const auto& [name, value] : be->get_frame_locals(static_cast<size_t>(frame))) {
+            entries[script_value(name, engine_weak)] = clone_for_assignment(value);
+        }
+        return out;
+    });
+
     // Locations (docs/site/guide/10-modules.html "Where files are"): where the running code, the
     // program's root file and the executable are, and the same resolution ladder import walks.
     // Engine-core so a program answers the same on every host; the file IO that USES a path
-    // (read_file, write_file, list_dir) stays the host's to grant. Defined after the impl so
+    // (file::read, file::write, file::list_directory) stays the host's to grant. Defined after the impl so
     // the helpers above this constructor's TU position are visible: see location builtins below.
 	detail::register_math_namespace(*this);
 	detail::register_array_namespace(*this);
@@ -3279,6 +5142,8 @@ void engine::initialize_engine_reference() {
     // regex, regex::match and regex::escape (detail/regex_library.hpp): engine-core, so a constant pattern compiles once at load
     detail::regex_library::register_library(*this);
     detail::template_library::register_library(*this);
+    // reflect::type, the value a type argument passes (detail/type_value.hpp)
+    detail::register_type_library(*this);
     // the library's builtins that touch what other threads share: output, scheduling, a nested region, an object's class, a
     // callback into script; every other one is parallel
     for (const char* name : {"print", "sleep", "extend", "parallel_transform", "parallel_reduce", "array::map", "array::filter", "array::sort", "map::filter"}) {
@@ -3286,6 +5151,8 @@ void engine::initialize_engine_reference() {
     }
     serial_function(std::string(parallel_for_stmt::k_counted_range));
     serial_namespace("reflect");
+    serial_namespace("debug");   // the calling run's frames
+    impl->parallel_namespace_entries_ = {"reflect::type_of", "reflect::is_registered_type"};
 }
 
 
@@ -3293,13 +5160,19 @@ held_value::held_value(script_value value, engine* holder) : script_value(std::m
     if (engine_) { engine_->register_held(this); }
 }
 
-held_value::held_value(const held_value& other) : script_value(static_cast<const script_value&>(other)), engine_(other.engine_), outlived_(other.outlived_) {
+held_value::held_value(script_value value, engine* holder, bool callback) : script_value(std::move(value)), engine_(holder), callback_(callback) {
     if (engine_) { engine_->register_held(this); }
 }
 
-held_value::held_value(held_value&& other) noexcept : script_value(static_cast<script_value&&>(other)), engine_(other.engine_), outlived_(other.outlived_) {
+held_value::held_value(const held_value& other) : script_value(static_cast<const script_value&>(other)), engine_(other.engine_), outlived_(other.outlived_), callback_(other.callback_) {
     if (engine_) { engine_->register_held(this); }
-    other.rebind(nullptr, false);   // the moved-from value is a plain null: it names no engine
+}
+
+// A moved hold keeps its place among the engine's: the holds are released in the order they were made, wherever they moved since
+held_value::held_value(held_value&& other) noexcept : script_value(static_cast<script_value&&>(other)), engine_(other.engine_), outlived_(other.outlived_), callback_(other.callback_) {
+    if (engine_) { engine_->move_held(&other, this); }
+    other.engine_ = nullptr;   // the moved-from value is a plain null: it names no engine
+    other.outlived_ = false;
 }
 
 void held_value::rebind(engine* holder, bool outlived) {
@@ -3352,27 +5225,43 @@ void string_symbolizer::throw_frozen_miss(std::string_view name) {
 
 void engine::register_held(held_value* held) {
     std::scoped_lock lock(impl->held_lock);
+    held_value*& head = impl->held_head[held->callback_];
     held->previous_ = nullptr;
-    held->next_ = impl->held_head;
-    if (impl->held_head) { impl->held_head->previous_ = held; }
-    impl->held_head = held;
+    held->next_ = head;
+    if (head) { head->previous_ = held; }
+    head = held;
 }
 
 void engine::unregister_held(held_value* held) noexcept {
     std::scoped_lock lock(impl->held_lock);
-    if (held->previous_) { held->previous_->next_ = held->next_; } else if (impl->held_head == held) { impl->held_head = held->next_; }
+    held_value*& head = impl->held_head[held->callback_];
+    if (held->previous_) { held->previous_->next_ = held->next_; } else if (head == held) { head = held->next_; }
     if (held->next_) { held->next_->previous_ = held->previous_; }
     held->previous_ = held->next_ = nullptr;
 }
 
-void engine::release_held_values() noexcept {
+void engine::move_held(held_value* from, held_value* to) noexcept {
+    std::scoped_lock lock(impl->held_lock);
+    held_value*& head = impl->held_head[from->callback_];
+    to->previous_ = from->previous_;
+    to->next_ = from->next_;
+    if (to->previous_) { to->previous_->next_ = to; } else if (head == from) { head = to; }
+    if (to->next_) { to->next_->previous_ = to; }
+    from->previous_ = from->next_ = nullptr;
+}
+
+// A callback's hold released here leaves its receiver connected and its std::function callable: from then on the engine's
+// script receivers stay quiet (engine_quiet) and a kept callback throws
+void engine::release_held_values(bool callbacks) noexcept {
+    if (callbacks) { callbacks_released_ = true; }
     for (;;) {
         script_value doomed(std::monostate{}, nullptr);
         {
             std::scoped_lock lock(impl->held_lock);
-            held_value* held = impl->held_head;
+            held_value*& head = impl->held_head[callbacks];
+            held_value* held = head;
             if (!held) { return; }
-            impl->held_head = held->next_;
+            head = held->next_;
             if (held->next_) { held->next_->previous_ = nullptr; }
             held->previous_ = held->next_ = nullptr;
             held->engine_ = nullptr;
@@ -3384,8 +5273,36 @@ void engine::release_held_values() noexcept {
     }
 }
 
+void engine::register_coroutine(coroutine_handle* a_coroutine) noexcept {
+    a_coroutine->previous_ = nullptr;
+    a_coroutine->next_ = impl->coroutine_head;
+    if (impl->coroutine_head) { impl->coroutine_head->previous_ = a_coroutine; }
+    impl->coroutine_head = a_coroutine;
+}
+
+void engine::unregister_coroutine(coroutine_handle* a_coroutine) noexcept {
+    if (a_coroutine->previous_) { a_coroutine->previous_->next_ = a_coroutine->next_; } else if (impl->coroutine_head == a_coroutine) { impl->coroutine_head = a_coroutine->next_; }
+    if (a_coroutine->next_) { a_coroutine->next_->previous_ = a_coroutine->previous_; }
+    a_coroutine->previous_ = a_coroutine->next_ = nullptr;
+}
+
+// A coroutine still alive here is one the host owns or one a cycle keeps (a field of its own receiver): its frame, receiver and
+// arguments die now, the last made first, and the handle names no engine afterwards. A destructor this runs may make or drop others
+void engine::retire_coroutines() noexcept {
+    while (coroutine_handle* coroutine = impl->coroutine_head) {
+        unregister_coroutine(coroutine);
+        // what it lets go may hold the last reference to it
+        const std::shared_ptr<coroutine_handle> alive = coroutine->weak_from_this().lock();
+        coroutine->retire();
+    }
+}
+
 held_value engine::hold(script_value result) const {
     return held_value(std::move(result), const_cast<engine*>(this));
+}
+
+held_value engine::hold_callback(script_value value) const {
+    return held_value(std::move(value), const_cast<engine*>(this), true);
 }
 
 namespace {
@@ -3520,24 +5437,45 @@ held_value engine::execute(const std::string& scriptContent, const instance_vari
     return hold(execute_source(scriptContent, instanceVars, "<script>"));
 }
 
+const instance_variables* engine::debug_evaluation_scope() const noexcept { return impl->evaluation_scope_; }
+
+script_value engine::debug_evaluate(const std::string& text, instance_variables& scope) {
+    const instance_variables names = scope;
+    struct scope_guard { instance_variables*& slot; instance_variables* saved; ~scope_guard() { slot = saved; } } guard{impl->evaluation_scope_, impl->evaluation_scope_};
+    impl->evaluation_scope_ = &scope;
+    return execute_source(text, names, std::string(debug::evaluation_source));
+}
+
 script_value engine::execute_file_source(const std::string& resolvedPath, const std::string& content) {
+    detail::load_phase_scope reporting(impl->collector(), detail::load_collector::k_no_file, load_phase::other);
     std::error_code ec;
     const std::filesystem::path canonical = is_enabled(permissions::filesystem) ? std::filesystem::weakly_canonical(resolvedPath, ec) : std::filesystem::path();
     implementation::running_root_scope running_root(impl->running_roots_, canonical.empty() || ec ? resolvedPath : canonical.string());
     return execute_source(content, instance_variables{}, resolvedPath);
 }
 
-bool engine::read_include_file(const std::string& resolvedPath, std::string& content) {
-    uint64_t mtime = 0, size = 0;
-    const bool stamped = impl->stat_mtime_size(resolvedPath, mtime, size);
-    const auto read = impl->read_for_load(resolvedPath, stamped, mtime, size, content);
-    if (read == implementation::stamped_read::missing) { return false; }
-    impl->note_closure_file(resolvedPath, stamped && read == implementation::stamped_read::stable, mtime, size);
-    return true;
+detail::loaded_source engine::read_include_file(const std::string& resolvedPath) {
+    detail::loaded_source loaded = impl->load_source(resolvedPath, detail::source_mode::text);
+    if (loaded.status != detail::loaded_source::state::missing) {
+        impl->note_closure_file(resolvedPath, loaded.status == detail::loaded_source::state::loaded && loaded.stamp.stamped, loaded.stamp.mtime, loaded.stamp.size);
+    }
+    return loaded;
 }
 
-script_value engine::execute_include_source(const std::string& resolvedPath, const std::string& content, std::string_view scope) {
-    return execute_source(content, instance_variables{}, resolvedPath, true, scope);
+detail::loaded_source engine::load_source(const std::string& path, detail::source_mode mode) {
+    return impl->load_source(path, mode);
+}
+
+bool engine::stamp_source(const std::string& path, uint64_t& mtime, uint64_t& size) const {
+    return impl->stat_mtime_size(path, mtime, size);
+}
+
+bool engine::stamps_stand(const std::vector<detail::source_stamp>& stamps) const {
+    return impl->stamps_stand(stamps);
+}
+
+script_value engine::execute_include_source(const std::string& resolvedPath, const detail::loaded_source& content, std::string_view scope) {
+    return execute_source(content.text, instance_variables{}, resolvedPath, true, scope, &content.stamp);
 }
 
 held_value engine::execute(script_source source) { return hold(execute_unheld(source)); }
@@ -3548,7 +5486,7 @@ script_value engine::execute_unheld(script_source source) {
         if (it != impl->literal_script_cache.end()) {
             if (it->second->epoch == impl->script_cache_epoch && !impl->parse_moved(*it->second)) {   // a spliced include's change re-parses on this tier too
                 auto entry = it->second;
-                return impl->execute_cache_hit(*this, entry, instance_variables{},
+                return impl->execute_cache_hit(*this, std::move(entry), instance_variables{},
                                                std::string_view(source.data(), source.size()));
             }
             impl->literal_script_cache.erase(it);
@@ -3568,7 +5506,9 @@ script_value engine::execute_unheld(script_source source) {
     return result;
 }
 
-script_value engine::execute_source(const std::string& scriptContent, const instance_variables& instanceVars, const std::string& sourcePath, bool textual, std::string_view include_scope) {
+script_value engine::execute_source(const std::string& scriptContent, const instance_variables& instanceVars, const std::string& sourcePath, bool textual, std::string_view include_scope, const detail::text_stamp* loaded_under) {
+    detail::load_collector* report = impl->collector();
+    detail::load_phase_scope reporting(report, sourcePath, load_phase::other);
     impl->binding_gate(*this);
     impl->has_executed_ = true;
     implementation::load_scope loading(*impl);
@@ -3588,11 +5528,19 @@ script_value engine::execute_source(const std::string& scriptContent, const inst
         std::filesystem::path cacheFile;
         bool cacheFresh = false;
         auto cached = impl->acquire_entry(*this, scriptContent, sourcePath, cacheFile, cacheFresh);
+        impl->note_text_stamp(*cached, loaded_under);
         for (const auto& s : cached->spliced_stamps) { impl->note_closure_file(s.path, true, s.mtime, s.size); }
+        implementation::rerun_pools rerun{*impl, impl->pools_before_rerun(*cached, scriptContent, textual)};
 
         // Static-check hook: one place, at the parse-cache entry — covers execute(),
         // hot-reload re-parses (new source = new entry) and registration-epoch changes.
-        const check_report& rep = impl->checked_report(*this, *cached, scriptContent);
+        const auto parsed = cached;
+        const size_t parsed_declarations = cached->declarations.size();
+        const check_report& rep = impl->checked_report(*this, cached, scriptContent);
+        // the check made the generic instances the unit names: their bodies' lines are statements a breakpoint binds to
+        if (impl->debugger_ && (cached != parsed || cached->declarations.size() != parsed_declarations)) { impl->debugger_->note_source(sourcePath, &cached->declarations); }
+        if (cached != parsed && !cacheFile.empty()) { cacheFresh = impl->cache_holds(*this, *cached, cacheFile, scriptContent); }   // the gather parsed the root again
+        for (const auto& s : cached->spliced_stamps) { impl->note_closure_file(s.path, true, s.mtime, s.size); }   // the generics its instances were made from
         // a unit from a file (the root file, an include, an import) lists under its path
         const std::string_view listing_name = sourcePath.empty() ? std::string_view("<script>") : std::string_view(sourcePath);
         if (instanceVars.empty()) {
@@ -3603,13 +5551,19 @@ script_value engine::execute_source(const std::string& scriptContent, const inst
             impl->gate_checked(impl->check_with_instance_vars(*this, *cached, instanceVars), scriptContent, listing_name);
         }
         if (!include_scope.empty()) { impl->warn_scoped_enums(*this, *cached, sourcePath, include_scope); }
+        if (!textual) { impl->check_rerun_dependents(*this, cached, scriptContent); }
+        rerun.accept();   // checked: what runs from here is no rejected reload
 
         // Rewrite a missing/stale/rejected cache AFTER the check hook so a clean check
         // stamps checked_clean, and BEFORE execution on purpose: a runtime error doesn't
         // invalidate a good parse.
-        if (!cacheFile.empty() && (!cacheFresh || cached->restamp) && cached->spliced_stamps.empty()) {   // a unit with spliced includes keeps no cache: its freshness knows only its own file
+        const bool cacheWanted = !cacheFile.empty() && (!cacheFresh || cached->restamp);
+        if (cacheWanted) { cached->foreign_cache_replaced = true; }
+        if (cacheWanted && cached->spliced_stamps.empty() && !cached->outside_generics) {   // a unit with spliced includes keeps no cache: its freshness knows only its own file
+            detail::load_phase_scope writing(report, load_phase::cache_write);
             impl->write_jaibite_cache(*this, cacheFile, *cached, sourcePath, scriptContent);
         }
+        if (report && !cacheFile.empty()) { impl->note_cache_write(*report, *cached, sourcePath, cacheFile, cacheWanted); }
 
         // a textual include runs under the including unit and compiles once per such unit: the VM's chunk caches belong to one unit
         std::shared_ptr<void>& compiled_slot = textual ? cached->textual_compiled[backend()->current_unit().id] : cached->compiled;
@@ -3626,6 +5580,7 @@ script_value engine::execute_parsed(const std::vector<declaration_ptr>& declarat
                                     std::shared_ptr<void>& compiled_slot,
                                     const instance_variables* instanceVars, uint32_t unit, bool textual) {
     ++impl->definition_epoch_;   // a run may (re)define anything a cached cross-function proof relied on
+    impl->register_generics(declarations, impl->unit_file(declarations));   // a later unit instantiates what this one declares
     // after a nested run the ambient re-aligns with the frame that resumes (the run may have made the first shadow under it)
     struct unit_scope { string_symbolizer& s; unit_stamp prev; execution_backend* be; ~unit_scope() { s.set_current_unit(prev); if (be) { be->sync_unit(); } } } unitScope{ impl->string_symbolizer_, impl->string_symbolizer_.current_unit(), backend() };
     if (!textual) {   // an include runs under the including unit
@@ -3633,6 +5588,11 @@ script_value engine::execute_parsed(const std::vector<declaration_ptr>& declarat
         impl->unit_first_run_.emplace(stamp.id, stamp.seq);
         impl->string_symbolizer_.set_current_unit(stamp);
     }
+    struct running_scope {
+        std::vector<const std::vector<declaration_ptr>*>& running;
+        ~running_scope() { running.pop_back(); }
+    } running{impl->running_declarations_};
+    impl->running_declarations_.push_back(&declarations);
     try {
         execution_backend* be = backend();
         const bool nested = be->is_executing();
@@ -3651,11 +5611,19 @@ script_value engine::execute_parsed(const std::vector<declaration_ptr>& declarat
         }
 
         script_value result = textual ? be->execute_textual(declarations, compiled_slot) : be->execute(declarations, compiled_slot);
+        if (impl->evaluation_scope_ && hasInstanceVars && !be->is_unwinding()) {
+            if (const auto scope = be->get_current_environment()) {
+                for (auto& [name, value] : *impl->evaluation_scope_) {
+                    if (const script_value* now = scope->get_own_value_ptr(impl->string_symbolizer_.intern(name))) { value = *now; }
+                }
+            }
+        }
 
         if (be->is_unwinding()) {
             if (be->is_executing()) { be->park_nested_failure(); }
             throw without_category_suffix(be->get_current_exception());
         }
+        if (!nested && be->budget_overrun_at_return()) [[unlikely]] { throw script_exception(std::string(detail::raise_execution_budget(impl->limits_).static_msg)); }
 
         // No need to sync globals - they're already in the shared environment!
 
@@ -3693,6 +5661,9 @@ jai::jaibite engine::jaibite(const std::string& scriptContent) {
     bite.reload_hook_ = std::move(hook);
     bite.context_.namespace_queries = parser.namespace_queries();
     bite.context_.namespace_answers = impl->namespace_answers(bite.context_.namespace_queries);
+    bite.context_.less_queries = parser.less_queries();
+    bite.context_.less_answers = parser.less_answers();
+    bite.context_.less_settled = parser.less_settled();
     check_bite(bite, &scriptContent);
     return bite;
 }
@@ -3701,14 +5672,20 @@ jai::jaibite engine::jaibite(const std::string& scriptContent) {
 // whenever the switch or the surface epoch moved. Source is only available at creation time (loaded
 // bites format their listing without snippets).
 void engine::check_bite(jai::jaibite& bite, const std::string* source) {
-    if (bite.stamp_loaded_ && impl->outside_key(*this, bite.context_.outside) == bite.context_.outside_key) {
+    // a bite outlives the parses a change of the program's generics makes again: the instances it carries follow that change here
+    const bool stale = impl->withdraw_stale_instances(*this, bite.declarations_);
+    if (stale) { bite.compiled_.reset(); }
+    const bool remakes = impl->remakes_instances(*this, bite.declarations_) || stale;   // as for a unit's entry (check_entry)
+    if (bite.stamp_loaded_ && !remakes && impl->outside_key(*this, bite.context_.outside) == bite.context_.outside_key) {
         bite.check_state_ = jaibite::check_state::clean;   // the names the stamp resolved resolve here as where it was checked
+        std::vector<implementation::closure_stamp> generic_files;
+        impl->expand_generics(*this, bite.declarations_, generic_files);   // a loaded bite holds its instances: the engine learns what each was made from
     }
     bite.stamp_loaded_ = false;
     if (!bite.lowering_) { bite.lowering_ = std::make_shared<detail::aggregate_lowering_state>(); }
     auto& lowering = *std::static_pointer_cast<detail::aggregate_lowering_state>(bite.lowering_);
     const uint64_t want_proof_epoch = impl->type_proofs_ ? impl->check_surface_epoch_ : UINT64_MAX;
-    const bool need_check = bite.check_state_ == jaibite::check_state::unchecked;
+    const bool need_check = bite.check_state_ == jaibite::check_state::unchecked || remakes;
     const bool need_proofs = bite.proof_epoch_ != want_proof_epoch || !bite.autos_typed_ ||
                              (impl->lowering_on() && !lowering.built) || lowering.lowered_view != impl->lowering_on();
     if (need_check) { detail::set_aggregate_view(lowering, false); }   // diagnostics read the parsed bodies
@@ -3727,7 +5704,15 @@ void engine::check_bite(jai::jaibite& bite, const std::string* source) {
         std::vector<std::string> outside;
         const bool record = need_check && !bite.context_recorded_;
         if (record) { o.outside = &outside; }
-        check_report r = detail::run_static_check(*this, bite.declarations_, nullptr, o);
+        check_report r;
+        if (need_check) {   // the bite declares the instances its text needs (detail/generics.hpp)
+            std::vector<implementation::closure_stamp> generic_files;
+            bool expanded = false;
+            r = impl->check_expanding(*this, bite.declarations_, [&]() -> const std::vector<declaration_ptr>& { return bite.declarations_; }, o, generic_files, expanded);
+            if (expanded) { bite.compiled_.reset(); }
+        } else {
+            r = detail::run_static_check(*this, bite.declarations_, nullptr, o);
+        }
         if (need_check) {
             bite.check_report_ = std::move(r);
             bite.check_state_ = bite.check_report_.has_errors()
@@ -3780,10 +5765,9 @@ std::vector<uint8_t> jaibite::save_bytes() const {
     }
     uint32_t flags = (check_state_ == check_state::clean) ? detail::jaibite_checked_clean_flags() : 0;
     detail::aggregate_source_view source(lowering_ ? std::static_pointer_cast<detail::aggregate_lowering_state>(lowering_).get() : nullptr);
-    if (!reload_hook_) { return detail::serialize_jaibite(declarations_, *detail::engine_access::get_symbolizer(*owner), owner->registration_fingerprint(), flags, {}, {}, &context_); }
-    std::vector<declaration_ptr> with_hook = declarations_;
-    with_hook.push_back(reload_hook_);
-    return detail::serialize_jaibite(with_hook, *detail::engine_access::get_symbolizer(*owner), owner->registration_fingerprint(), flags, {}, {}, &context_);
+    std::vector<declaration_ptr> carried = detail::engine_access::carried_declarations(*owner, declarations_);   // no instance the unit only made again
+    if (reload_hook_) { carried.push_back(reload_hook_); }
+    return detail::serialize_jaibite(carried, *detail::engine_access::get_symbolizer(*owner), owner->registration_fingerprint(), flags, {}, {}, &context_);
 }
 
 void jaibite::save(const std::string& path) const {
@@ -3825,6 +5809,7 @@ jai::jaibite engine::jaibite_load_bytes(const uint8_t* data, size_t size, const 
     if (const std::string answers = impl->namespace_answers(context.namespace_queries); answers != context.namespace_answers) {
         impl->refuse_namespace_answers(context, answers);
     }
+    impl->refuse_less_answers(context, declarations);
     auto hook = impl->take_reload_hook(declarations);
     jai::jaibite bite(weak_from_this(), std::move(declarations));
     bite.reload_hook_ = std::move(hook);
@@ -4017,15 +6002,17 @@ check_report engine::check(const std::string& scriptContent) {
         auto tokens = lexer.tokenize();
         parser parser(tokens, &impl->string_symbolizer_, this, impl->registeredTemplateTypes);
         parser.source_text(scriptContent);
+        parser.less_provisional(true);
         auto parse_result = parser.parse();
         if (!parse_result) {
+            implementation::refuse_unsettled(parser);
             throw parse_error(format_error(parse_result));
         }
         cached = impl->store_cached_script("<script>", scriptContent, std::move(parse_result.value()));
         impl->stamp_spliced(*cached, parser.spliced_files());
         impl->note_parse_context(*cached, parser);
     }
-    return impl->program_report(impl->checked_report(*this, *cached, scriptContent));
+    return impl->program_report(impl->checked_report(*this, cached, scriptContent));
 }
 
 bool engine::host_function_signatures(const std::string& name, std::vector<host_overload_signature>& out) const {
@@ -4076,6 +6063,13 @@ uint64_t engine::registration_fingerprint() const {
         hash ^= 0xFEu; hash *= 1099511628211ull;  // plain-function separator
         hash ^= static_cast<unsigned char>(kind); hash *= 1099511628211ull;
     }
+    // The classes bound final, whose derivations a bite checked clean before they were marked never met: folded in after the rest
+    // under their own separator, so engines that mark none hash as before
+    for (const auto& [name, def] : impl->class_registry_.cpp_classes_) {
+        if (!def || !def->is_final()) { continue; }
+        for (unsigned char c : name) { hash ^= c; hash *= 1099511628211ull; }
+        hash ^= 0xFDu; hash *= 1099511628211ull;   // final-class separator
+    }
     return hash;
 }
 
@@ -4090,6 +6084,7 @@ held_value engine::execute_file(const std::string& scriptPath, const instance_va
 script_value engine::execute_file_unheld(const std::string& scriptPath, const instance_variables& instanceVars) {
     auto allowed = require_permission(permissions::filesystem);
     if (!allowed) { throw runtime_error(format_error(allowed)); }
+    detail::load_phase_scope reporting(impl->collector(), detail::load_collector::k_no_file, load_phase::other);
     // File fast lane (parse-avoidance ladder): canonical-path key + one-stat gate. A
     // stamp-valid re-execute touches zero file bytes. Any stamp change, epoch bump or a
     // failed verify falls through to the read below. The unit is attributed to the
@@ -4109,6 +6104,8 @@ script_value engine::execute_file_unheld(const std::string& scriptPath, const in
     const std::string& attributed = canon.empty() ? scriptPath : canon;
     impl->note_root_source(attributed);
     implementation::running_root_scope running_root(impl->running_roots_, attributed);
+    detail::loaded_source loaded;
+    bool reloaded = false;
     if (statOk) {
         auto it = impl->file_script_cache.find(canon);
         if (it != impl->file_script_cache.end()) {
@@ -4120,12 +6117,10 @@ script_value engine::execute_file_unheld(const std::string& scriptPath, const in
             if (stampValid && !node.verified) {
                 // One-shot equal-stamp verify: an edit in the same filesystem tick as
                 // the original read is invisible to the stat, so compare bytes once.
-                std::ifstream verifyFile(scriptPath);
-                std::stringstream verifyBuffer;
-                if (verifyFile.is_open()) {
-                    verifyBuffer << verifyFile.rdbuf();
-                }
-                if (verifyFile.is_open() && verifyBuffer.view() == node.source) {
+                loaded = impl->load_source(scriptPath, detail::source_mode::text);
+                reloaded = true;
+                if (loaded.status == detail::loaded_source::state::loaded && loaded.stamp.stamped && loaded.stamp.mtime == node.mtime &&
+                    loaded.stamp.size == node.size && loaded.text == node.source) {
                     node.verified = true;
                 } else {
                     stampValid = false;
@@ -4138,22 +6133,21 @@ script_value engine::execute_file_unheld(const std::string& scriptPath, const in
         }
     }
 
-    // a save landing mid-read re-reads at once (bounded); text still torn after that runs, but is not remembered
-    std::string content;
-    bool stable = false;
-    for (int attempt = 0; ; ++attempt) {
-        const auto read = impl->read_under_stamp(scriptPath, statOk, mtime, size, content);
-        if (read == implementation::stamped_read::missing) {
-            throw runtime_error("Failed to open script file: " + scriptPath);
-        }
-        stable = read == implementation::stamped_read::stable;
-        if (stable || attempt == 3) { break; }
-        statOk = impl->stat_mtime_size(scriptPath, mtime, size);
+    // the text and its stamp come from the loader together; a file that never read whole runs nothing and is not remembered
+    if (!reloaded) { loaded = impl->load_source(scriptPath, detail::source_mode::text); }
+    if (loaded.status == detail::loaded_source::state::missing) {
+        throw runtime_error("Failed to open script file: " + scriptPath);
     }
-    script_value result = execute_source(content, instanceVars, attributed);
+    if (loaded.status == detail::loaded_source::state::unsettled) {
+        throw detail::source_unsettled(scriptPath);
+    }
+    std::string& content = loaded.text;
+    mtime = loaded.stamp.mtime;
+    size = loaded.stamp.size;
+    script_value result = execute_source(content, instanceVars, attributed, false, {}, &loaded.stamp);
 
-    // Stamp AFTER a successful execute, with the stamp the read was taken under
-    if (statOk && stable && !canon.empty()) {
+    // Stamp AFTER a successful execute, with the stamp the text was loaded with
+    if (loaded.stamp.stamped && !canon.empty()) {
         if (auto entry = impl->find_cached_script(attributed, content)) {
             if (impl->file_script_cache.size() >= implementation::script_cache_max &&
                 impl->file_script_cache.find(canon) == impl->file_script_cache.end()) {
@@ -4184,6 +6178,30 @@ void engine::jaibite_cache(bool enabled) {
 
 bool engine::jaibite_cache() const {
     return impl->jaibite_cache_enabled;
+}
+
+void engine::load_report(bool enabled) {
+    if (impl->load_collector_ && impl->load_collector_->active()) { impl->retired_load_collectors_.push_back(std::move(impl->load_collector_)); }
+    impl->load_collector_ = enabled ? std::make_unique<detail::load_collector>() : nullptr;
+}
+
+bool engine::load_report() const {
+    return impl->load_collector_ != nullptr;
+}
+
+void engine::load_report_setup_time(double seconds) {
+    if (impl->load_collector_) { impl->load_collector_->setup_nanoseconds = static_cast<uint64_t>(seconds * 1e9); }
+}
+
+load_report_summary engine::load_report_snapshot() const {
+    if (!impl->load_collector_) { return {}; }
+    load_report_summary result = impl->load_report_snapshot();
+    result.vm = get_backend_type() == backend_type::vm;
+    return result;
+}
+
+detail::load_collector* engine::load_report_collector() const noexcept {
+    return impl->collector();
 }
 
 size_t engine::jaibite_cache_write_failures() const {
@@ -4385,10 +6403,89 @@ void engine::nodiscard_function(const std::string& callable) { impl->nodiscard_c
 
 bool engine::is_nodiscard_function(const std::string& callable) const { return impl->nodiscard_callables_.count(callable) != 0; }
 
+void engine::type_result_function(const std::string& callable, uint8_t shape) { impl->type_result_callables_[callable] = shape; }
+
+uint8_t engine::type_argument_result(const std::string& callable) const {
+    auto found = impl->type_result_callables_.find(callable);
+    return found != impl->type_result_callables_.end() ? found->second : 0;
+}
+
+std::shared_ptr<void> engine::instance_owner(const class_decl* a_declaration) const {
+    const std::function<bool(const declaration&)> holds = [&](const declaration& d) {
+        if (&d == a_declaration) { return true; }
+        if (d.get_type() != node_type::namespace_decl) { return false; }
+        for (const auto& member : static_cast<const namespace_decl&>(d).declarations) { if (member && holds(*member)) { return true; } }
+        return false;
+    };
+    for (size_t i = impl->running_declarations_.size(); i-- > 0;) {
+        for (const auto& d : *impl->running_declarations_[i]) { if (d && holds(*d)) { return d; } }
+    }
+    return nullptr;
+}
+
+const std::vector<detail::generic_definition_ptr>* engine::find_generics(const std::string& qualified) const {
+    const auto held = impl->generics_.find(qualified);
+    return held != impl->generics_.end() && !held->second.empty() ? &held->second : nullptr;
+}
+
+bool engine::generic_instance(const std::string& name, std::string& generic, std::vector<type_info_ptr>& arguments) const {
+    auto made = impl->generic_instances_.find(name);
+    if (made == impl->generic_instances_.end() && name.find_first_of("<, \t\r\n") != std::string::npos) {   // a name that arrived as text: the instance of its key
+        const std::string key = detail::type_name_key(name);
+        made = std::find_if(impl->generic_instances_.begin(), impl->generic_instances_.end(), [&](const auto& held) { return detail::type_name_key(held.first) == key; });
+    }
+    if (made == impl->generic_instances_.end()) { return false; }
+    generic = made->second.generic;
+    arguments = made->second.arguments;
+    return true;
+}
+
+std::vector<declaration_ptr> engine::carried_declarations(const std::vector<declaration_ptr>& declarations) const { return implementation::carried_declarations(declarations); }
+
+bool engine::declares_generics() const { return !impl->generics_.empty(); }
+
+bool engine::names_generic_method(const std::string& name) const { return impl->generic_method_names_.count(name) != 0; }
+
+check_report engine::check_expanding(std::vector<declaration_ptr>& declarations, detail::check_options options, const std::vector<std::string>* extra_globals) {
+    std::vector<implementation::closure_stamp> files;
+    bool expanded = false;
+    return impl->check_expanding(*this, declarations, [&]() -> const std::vector<declaration_ptr>& { return declarations; }, std::move(options), files, expanded, extra_globals);
+}
+
+void engine::register_generics(const std::vector<declaration_ptr>& declarations, const std::string& file) { impl->register_generics(declarations, file); }
+
+void engine::forget_generics() { impl->forget_generics(); }
+
+std::string engine::less_than_answers(const std::vector<declaration_ptr>& declarations, const std::vector<std::string>& queries) {
+    return impl->less_answers_now(declarations, queries);
+}
+
+bool engine::type_argument_method(const std::string& name) const {
+    for (const auto& [callable, shape] : impl->type_result_callables_) {
+        const size_t dot = callable.rfind('.');
+        if (dot != std::string::npos && callable.compare(dot + 1, std::string::npos, name) == 0) { return true; }
+    }
+    const auto id = impl->string_symbolizer_.find(name);
+    if (!id) { return false; }
+    for (const auto& [class_name, cls] : impl->classes) {
+        if (!cls || !cls->is_cpp_class()) { continue; }
+        const auto& table = cls->cpp_method_overload_table();
+        const auto held = table.find(*id);
+        if (held == table.end()) { continue; }
+        for (const auto& [arity, entries] : held->second) {
+            for (const auto& entry : entries) {
+                for (const auto& parameter : entry.param_types) { if (parameter.cpp_type == std::type_index(typeid(script_type))) { return true; } }
+            }
+        }
+    }
+    return false;
+}
+
 void engine::serial_namespace(const std::string& space) { impl->serial_namespaces_.insert(space); }
 
 bool engine::host_function_serial(const std::string& name) const {
     if (impl->serial_functions_.count(name)) { return true; }
+    if (impl->parallel_namespace_entries_.count(name)) { return false; }
     const size_t cut = name.rfind("::");
     return cut != std::string::npos && impl->serial_namespaces_.count(name.substr(0, cut)) != 0;
 }
@@ -4491,7 +6588,15 @@ uint64_t engine::park_error_text(std::string_view text) const {
     return symbols.park(text);
 }
 
+// A script class keeps its name: its objects and the units that declared it hold that class
+void engine::refuse_script_class_name(const std::string& name) const {
+    if (impl->class_registry_.find_script_class(name)) {
+        throw runtime_error("the script name '" + name + "' already names a script class, so a C++ type cannot bind under it");
+    }
+}
+
 void engine::add_class_impl(const std::string& name, std::shared_ptr<class_definition> classDef) {
+    refuse_script_class_name(name);
     ++impl->script_cache_epoch;   // class registration can change how source parses
     ++impl->check_surface_epoch_;
     impl->classes[name] = classDef;
@@ -4670,6 +6775,8 @@ std::unordered_set<std::string> engine::get_registered_template_types() const {
     return impl->registeredTemplateTypes;
 }
 
+bool engine::is_template_type(const std::string& baseTemplateName) const { return impl->registeredTemplateTypes.count(baseTemplateName) != 0; }
+
 // Single source of backend configuration: every backend, however installed (construction,
 // set_backend by type, or injected instance), gets the full engine wiring.
 void engine::wire_backend() {
@@ -4758,6 +6865,22 @@ std::unordered_map<uint64_t, std::shared_ptr<script_namespace_data>>& engine::sc
     return impl->script_namespaces_;
 }
 
+bool engine::namespace_class_known(std::string_view query) const {
+    return impl->namespace_class_known(query);
+}
+
+void engine::pool_program_classes(const detail::program_class_map& classes, const detail::program_enum_map& enums, const std::unordered_set<std::string>& names,
+                                  const detail::program_function_map& functions, const detail::program_global_map& globals) {
+    impl->program_functions_ = functions;
+    impl->program_globals_ = globals;
+    impl->program_classes_ = classes;
+    impl->program_enums_ = enums;
+    impl->program_names_ = names;
+    impl->index_pooled_namespace_paths();
+    impl->index_pooled_namespace_classes();
+    ++impl->program_union_epoch_;
+}
+
 type_info* engine::note_enum(uint64_t name_id, std::string_view name, const std::vector<int64_t>& numbers) {
     impl->enum_names_.insert(name_id);
     type_info* slot = get_type_info_object(std::string(name));
@@ -4791,6 +6914,18 @@ void engine::register_class_by_type(std::type_index type, std::shared_ptr<class_
             if (!derived->add_parent(classDef)) {
                 throw std::runtime_error("Diamond inheritance detected while resolving a deferred base-class link");
             }
+            // the link may complete a diamond below it, in a class already derived from the one it linked
+            std::vector<std::shared_ptr<class_definition>> below{derived};
+            for (size_t i = 0; i < below.size(); ++i) {
+                for (const auto& weak : below[i]->derived_classes()) {
+                    auto descendant = weak.lock();
+                    if (!descendant || std::find(below.begin(), below.end(), descendant) != below.end()) { continue; }
+                    if (descendant->has_diamond_inheritance()) {
+                        throw std::runtime_error("Diamond inheritance detected while resolving a deferred base-class link: class '" + descendant->get_name() + "'");
+                    }
+                    below.push_back(std::move(descendant));
+                }
+            }
         }
     }
 }
@@ -4815,6 +6950,43 @@ std::string readable_cpp_type_name(const std::type_index& type) {
         }
     }
     return result;
+}
+
+std::string unbound_instantiation_text(const engine& eng, std::string_view type_name) {
+    const size_t arguments = type_name.find('<');
+    if (arguments == std::string_view::npos || eng.is_type_registered(std::string(type_name))) { return {}; }
+    const std::string_view base = type_name.substr(0, arguments);
+    if (!engine_access::get_registered_template_types(eng).contains(std::string(base))) { return {}; }
+    std::vector<std::string> bound;
+    for (std::string& name : eng.registered_class_names()) {
+        if (name.size() > arguments && name[arguments] == '<' && std::string_view(name).substr(0, arguments) == base) { bound.push_back(std::move(name)); }
+    }
+    // the plainest spellings lead, so a long list keeps the ones a script most likely meant
+    std::sort(bound.begin(), bound.end(), [](const std::string& a_left, const std::string& a_right) {
+        return a_left.size() != a_right.size() ? a_left.size() < a_right.size() : a_left < a_right;
+    });
+    constexpr size_t k_listed_instantiations = 8;
+    std::string result = "'" + std::string(type_name) + "' is not bound: the host binds ";
+    if (bound.empty()) { return result + "no instantiation of " + std::string(base); }
+    for (size_t i = 0; i < bound.size() && i < k_listed_instantiations; ++i) {
+        if (i) { result += ", "; }
+        result += bound[i];
+    }
+    if (bound.size() > k_listed_instantiations) { result += " and " + std::to_string(bound.size() - k_listed_instantiations) + " more"; }
+    return result;
+}
+
+error_text no_constructor_text(const engine* eng, const type_info& type) {
+    if (eng && !type.type_params.empty()) {
+        if (const std::string unbound = unbound_instantiation_text(*eng, type.type_name); !unbound.empty()) {
+            if (const uint64_t id = engine_access::park_error_text(*eng, unbound)) { return {"{0}", id}; }
+        }
+    }
+    // a generic's instance that still waits says what for (environment::undefined_text)
+    if (const auto global = engine_access::get_global_environment(eng)) {
+        if (const std::string_view reason = global->undefined_text(type.id, {}); !reason.empty()) { return {reason, type.id}; }
+    }
+    return {"No constructor found for class '{0}'", type.id};
 }
 
 }
@@ -4873,6 +7045,7 @@ pending_binder::pending_binder(engine& owner, const std::string& class_name, com
     previous_(owner.impl->last_pending_binder_),
     commit_(commit) {
 
+    owner.refuse_script_class_name(class_name);   // before the binder registers a constructor under the name
     (previous_ ? previous_->next_ : owner.impl->first_pending_binder_) = this;
     owner.impl->last_pending_binder_ = this;
     owner.impl->bindings_unsettled_ = true;
@@ -5208,11 +7381,16 @@ type_info* engine::get_type_info_function(type_info* return_type, const std::vec
     return get_type_info(temp);
 }
 
+// A function value's stamp: the `function` spelling, which names no signature (function<void()> is a signature of its own)
 type_info* engine::get_type_info_untyped_function() {
     if (impl->type_info_untyped_function_) { return impl->type_info_untyped_function_; }
-    type_info* ptr = get_type_info_function(get_type_info_void(), {});
+    type_info* ptr = get_type_info(type_info::make_callable(impl->string_symbolizer_));
     if (!parallel_region_active()) { impl->type_info_untyped_function_ = ptr; }
     return ptr;
+}
+
+type_info* engine::get_type_info_coroutine(type_info* yield_type) {
+    return get_type_info(type_info::make_coroutine(impl->string_symbolizer_, type_info_ptr(yield_type)));
 }
 
 type_info* engine::get_type_info(const type_info& temp) {
@@ -5270,6 +7448,30 @@ type_info* engine::get_type_info_by_name(const std::string& canonical_name) {
     // Intern the name to get the ID, then do ID-based lookup
     uint64_t type_id = impl->string_symbolizer_.intern(canonical_name);
     return get_type_info_by_id(type_id);
+}
+
+type_info* engine::type_named(std::string_view canonical_name) {
+    if (canonical_name.empty()) { return nullptr; }
+    if (canonical_name == "any" || canonical_name == "var") { return get_type_info_any(); }
+    if (canonical_name == "function") { return get_type_info_untyped_function(); }
+    if (const auto known = impl->string_symbolizer_.find(canonical_name)) {   // a type the engine already holds by this name
+        if (type_info* held = get_type_info_by_id(*known)) { return held; }
+    }
+    std::string_view base;
+    std::vector<std::string_view> arguments;
+    if (template_name_arguments(canonical_name, base, arguments)) {
+        const bool handle = base == "shared_ptr", observer = base == "weak_ptr";
+        if (base == "function") { return nullptr; }
+        if (base == "array" || base == "map" || handle || observer) {
+            if (arguments.size() != (base == "map" ? 2u : 1u)) { return nullptr; }
+            type_info* first = type_named(arguments[0]);
+            type_info* second = base == "map" ? type_named(arguments[1]) : nullptr;
+            if (!first || (base == "map" && !second)) { return nullptr; }
+            return base == "array" ? get_type_info_array(first) : base == "map" ? get_type_info_map(first, second)
+                 : handle ? get_type_info_shared_ptr(first) : get_type_info_weak_ptr(first);
+        }
+    }
+    return get_type_info_object(std::string(canonical_name));
 }
 
 void engine::set_conversion_registry(std::shared_ptr<conversions::conversion_registry> registry) {
@@ -5470,6 +7672,11 @@ void engine::set_permissions(const permission_set& permissions, bool enabled) {
     else { impl->permissions_.remove(permissions); }
 }
 
+void engine::set_strict() {
+    check_permission_mutation();
+    impl->permissions_ = permission_set{};
+}
+
 void engine::check_permission_mutation() const {
     if (impl->parallel_ && impl->parallel_->active_region) {
         throw runtime_error("Cannot change permissions during a parallel region");
@@ -5491,8 +7698,9 @@ checked_result<void> engine::require_permissions(const permission_set& required)
     if (impl->permissions_.covers(required)) { return {}; }
     const std::int32_t missing = *impl->permissions_.first_missing(required);
     static constexpr const char* built_in_denials[] = {
-        "Insufficient permission: filesystem.", "Insufficient permission: scoped_template.", "Insufficient permission: network.",
+        "Insufficient permission: filesystem.", "Insufficient permission: untrusted_template.", "Insufficient permission: network.",
         "Insufficient permission: debug.", "Insufficient permission: trusted.", "Insufficient permission: untrusted.",
+        "Insufficient permission: source_receivers.",
     };
     static_assert(std::size(built_in_denials) == permissions::count);
     if (missing >= 0 && missing < permissions::count) {
@@ -5525,8 +7733,9 @@ void engine::register_permission_builtins() {
     auto& permissions_namespace = script_namespaces()[symbolize("jai::permissions")];
     if (!permissions_namespace) { permissions_namespace = std::make_shared<script_namespace_data>(); }
     const std::pair<const char*, permission> built_ins[] = {
-        {"filesystem", permissions::filesystem}, {"scoped_template", permissions::scoped_template}, {"network", permissions::network},
+        {"filesystem", permissions::filesystem}, {"untrusted_template", permissions::untrusted_template}, {"network", permissions::network},
         {"debug", permissions::debug}, {"trusted", permissions::trusted}, {"untrusted", permissions::untrusted},
+        {"source_receivers", permissions::source_receivers},
     };
     for (const auto& [name, id] : built_ins) {
         permissions_namespace->variables[symbolize(name)] = script_value(static_cast<script_int>(detail::permission_id(id)), this);
@@ -5563,7 +7772,7 @@ void engine::register_permission_builtins() {
         }, this);
     };
     reflect_namespace->variables[symbolize("template_output_limit")] = limit_reader("template_output_limit", &detail::execution_limits::template_output_limit);
-    reflect_namespace->variables[symbolize("scoped_template_output_limit")] = limit_reader("scoped_template_output_limit", &detail::execution_limits::scoped_template_output_limit);
+    reflect_namespace->variables[symbolize("untrusted_template_output_limit")] = limit_reader("untrusted_template_output_limit", &detail::execution_limits::untrusted_template_output_limit);
 }
 
 void engine::max_call_depth(backend_type type, size_t depth) {
@@ -5637,44 +7846,65 @@ size_t engine::template_output_limit() const {
     return impl->limits_.template_output_limit;
 }
 
-void engine::add_scoped_template_dir(const std::string& dir) {
+void engine::add_untrusted_template_dir(const std::string& dir) {
     check_permission_mutation();
-    auto& dirs = impl->scoped_template_dirs_;
+    auto& dirs = impl->untrusted_template_dirs_;
     if (std::find(dirs.begin(), dirs.end(), dir) == dirs.end()) { dirs.push_back(dir); }
 }
 
-void engine::remove_scoped_template_dir(const std::string& dir) {
+void engine::remove_untrusted_template_dir(const std::string& dir) {
     check_permission_mutation();
-    auto& dirs = impl->scoped_template_dirs_;
+    auto& dirs = impl->untrusted_template_dirs_;
     dirs.erase(std::remove(dirs.begin(), dirs.end(), dir), dirs.end());
 }
 
-void engine::set_scoped_template_dirs(std::vector<std::string> dirs) {
+void engine::set_untrusted_template_dirs(std::vector<std::string> dirs) {
     check_permission_mutation();
-    impl->scoped_template_dirs_ = std::move(dirs);
+    impl->untrusted_template_dirs_ = std::move(dirs);
 }
 
-const std::vector<std::string>& engine::scoped_template_dirs() const {
-    return impl->scoped_template_dirs_;
+const std::vector<std::string>& engine::untrusted_template_dirs() const {
+    return impl->untrusted_template_dirs_;
 }
 
-void engine::scoped_template_output_limit(size_t bytes) {
+void engine::untrusted_template_output_limit(size_t bytes) {
     check_permission_mutation();
-    impl->limits_.scoped_template_output_limit = bytes;
+    impl->limits_.untrusted_template_output_limit = bytes;
 }
 
-size_t engine::scoped_template_output_limit() const {
-    return impl->limits_.scoped_template_output_limit;
+size_t engine::untrusted_template_output_limit() const {
+    return impl->limits_.untrusted_template_output_limit;
 }
 
-checked_result<script_value> engine::run_template_unit(const std::string& unit, const std::string& source) {
+checked_result<script_value> engine::run_template_unit(const std::string& unit, const std::string& source, std::vector<detail::source_stamp>& read, bool& unsettled) {
     std::string failure;
+    read.clear();
+    unsettled = false;
+    // the files the unit's load reads are noted in a frame of its own, then join the import that is running (its closure)
+    impl->import_frames_.emplace_back();
+    const auto end_frame = [&](bool failed, bool never_settled) {
+        implementation::import_frame frame = impl->end_import_frame();
+        for (const auto& s : frame.files) { impl->note_closure_file(s.path, s.mtime != 0 || s.size != 0, s.mtime, s.size); }
+        for (const auto& c : frame.children) { impl->note_import_child(c); }
+        unsettled = never_settled;
+        if (failed && !never_settled) { read = std::move(frame.files); }
+    };
     try {
-        return execute_source(source, instance_variables{}, unit);
+        script_value result = execute_source(source, instance_variables{}, unit);
+        end_frame(false, false);
+        return result;
     } catch (const parse_error& e) {
         failure = e.what();
+        end_frame(true, false);
     } catch (const static_check_error& e) {
         failure = e.what();
+        end_frame(true, false);
+    } catch (const detail::source_unsettled& e) {
+        failure = e.what();
+        end_frame(true, true);
+    } catch (...) {
+        end_frame(false, false);
+        throw;
     }
     return checked_result<script_value>(make_error_code(runtime_error_code::evaluation_failed), "{0}", park_error_text(failure));
 }
@@ -5695,6 +7925,52 @@ detail::execution_limits& engine::execution_limits() noexcept {
         }
     }
     return impl->limits_;
+}
+
+bool detail::charge_work(engine& a_engine, size_t a_units) {
+    detail::execution_limits& limits = engine_access::execution_limits(a_engine);
+    if (a_units < k_work_chunk - limits.work_units) [[likely]] {
+        limits.work_units += static_cast<uint32_t>(a_units);
+        return false;
+    }
+    limits.work_units = 0;
+    execution_backend* backend = engine_access::calling_backend(a_engine);
+    return backend && backend->is_executing() && backend->budget_spent_now();
+}
+
+void detail::credit_host_ticks(execution_backend& a_backend, execution_limits& a_limits, uint64_t a_ticks) noexcept {
+    a_limits.host_ticks_credited += a_ticks;
+    a_backend.extend_execution_deadline(host_ticks_span(a_ticks));
+}
+
+detail::execution_limits* detail::host_call_limits(engine& a_engine, execution_backend*& a_backend) noexcept {
+    a_backend = engine_access::calling_backend(a_engine);
+    if (!a_backend || a_backend->execution_deadline() == std::chrono::steady_clock::time_point{}) { return nullptr; }
+    return &engine_access::execution_limits(a_engine);
+}
+
+namespace {
+    // Every binding marked jai::exclude_execution_time stores this one callable around its own
+    struct time_excluded_call {
+        script_function call;
+        engine* eng;
+        checked_result<script_value> operator()(const std::vector<script_value>& args) const {
+            detail::host_call_time timed(*eng);
+            return call(args);
+        }
+    };
+}
+
+script_function engine::time_excluded_function(script_function function) {
+    return time_excluded_call{ std::move(function), this };
+}
+
+error_propagator detail::work_budget_error(engine& a_engine) noexcept {
+    return raise_execution_budget(engine_access::execution_limits(a_engine));
+}
+
+void detail::throw_work_budget(engine& a_engine) {
+    throw script_exception(std::string(work_budget_error(a_engine).static_msg));
 }
 
 detail::parallel_engine_state& engine::parallel_state() {
@@ -5951,6 +8227,10 @@ void engine::file_stamp_source(file_stamp_reading source) {
     impl->file_stamp_source = std::move(source);
 }
 
+void engine::source_file_observer(source_file_observing observer) {
+    impl->source_file_observer = std::move(observer);
+}
+
 void engine::http_transport(std::shared_ptr<jai::http_transport> transport) {
     impl->http_transport = std::move(transport);
 }
@@ -6045,6 +8325,7 @@ checked_result<script_value> engine::checked_host_entry(host_entry_body run, voi
         if (result.has_value() && backend->is_unwinding()) [[unlikely]] {   // an uncaught script throw: its text, as execute() throws it
             return failure(without_category_suffix(backend->get_current_exception()).what());
         }
+        if (result.has_value() && backend->budget_overrun_at_return()) [[unlikely]] { return detail::raise_execution_budget(impl->limits_); }
         return result;
     } catch (const std::exception& e) {   // a nested run's failure (an import that is missing or fails its check) leaves as an exception
         return failure(e.what());
@@ -6142,6 +8423,7 @@ void engine::swap_run_entry_state(detail::run_entry_state& s) noexcept {
     m.string_symbolizer_.set_current_unit(s.unit);
     s.unit = unit;
     swap(load_depth_, s.load_depth);
+    swap(typed_load_who_, s.typed_load_who);
     swap(deferred_post_loads_, s.deferred_post_loads);
     detail::execution_limits& l = m.limits_;
     swap(l.terminal_error, s.terminal_error);
@@ -6217,8 +8499,8 @@ void engine::register_location_builtins() {
     add_function("file_name", [](const std::string& path) -> std::string {
         return std::filesystem::path(path).filename().generic_string();
     }, permissions::filesystem);
-    // file_data(path): a file's or folder's metadata, found by the resolve_path ladder; null when nothing is there
-    add_function_with_arity_and_full_types("file_data", guard_function(
+    // file::data(path): a file's or folder's metadata, found by the resolve_path ladder; null when nothing is there
+    add_function_with_arity_and_full_types("file::data", guard_function(
         [this](const std::vector<script_value>& args) -> checked_result<script_value> {
             if (args.size() != 1) {
                 return checked_result<script_value>(make_error_code(runtime_error_code::argument_count_mismatch),
@@ -6262,7 +8544,7 @@ void engine::register_location_builtins() {
     add_function("app_data_dir", [this](const std::string& app) -> std::string { return app_data_dir(app); }, permissions::filesystem);
     add_function("app_cache_dir", [this](const std::string& app) -> std::string { return app_cache_dir(app); }, permissions::filesystem);
     // the file system, the import settings and the host's directory resolvers are shared
-    for (const char* name : {"resolve_path", "file_data", "import_recheck_interval", "app_data_dir", "app_cache_dir"}) { serial_function(name); }
+    for (const char* name : {"resolve_path", "file::data", "import_recheck_interval", "app_data_dir", "app_cache_dir"}) { serial_function(name); }
 }
 
 std::string engine::format_stack_trace() const {
@@ -6501,6 +8783,12 @@ script_value engine::make_caught_error(const script_value& thrown_in, bool by_th
     return caught;
 }
 
+std::vector<stack_frame> engine::caught_error_trace(const script_value& caught) const {
+    const void* node = impl->caught_errors_.empty() ? nullptr : caught_node(caught.deref());
+    const auto it = node ? impl->caught_errors_.find(node) : impl->caught_errors_.end();
+    return it == impl->caught_errors_.end() ? std::vector<stack_frame>{} : it->second.trace;
+}
+
 void engine::end_caught_error(const script_value& caught) noexcept {
     try {
         auto& table = impl->caught_errors_;
@@ -6641,6 +8929,7 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
     if (!allowed) { return allowed.error_value(); }
     implementation& I = *impl;
     implementation::load_scope loading(I);
+    detail::load_phase_scope reporting(I.collector(), detail::load_collector::k_no_file, load_phase::import_bookkeeping);
     detail::execution_limits& limits = I.limits_;
     const bool always = I.import_behavior == import_behavior::always;
     const bool once = I.import_behavior == import_behavior::once;
@@ -6754,7 +9043,7 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
                 walking.insert(walking.end(), crec->second.children.rbegin(), crec->second.children.rend());
                 continue;
             }
-            if (!same && I.held_failure(crec->second, u.mtime, u.size)) { continue; }
+            if (I.held_failure(crec->second, u.mtime, u.size)) { continue; }
             nested_changed.push_back(std::move(u));
         }
     };
@@ -6794,7 +9083,7 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
         if (rec->second.missing) { changed.push_back(i); continue; }
         const bool same = m.mtime == rec->second.mtime && m.size == rec->second.size;
         if (same && !I.closure_moved(rec->second)) { walk(rec->second); continue; }
-        if (!same && I.held_failure(rec->second, m.mtime, m.size)) { held = true; continue; }
+        if (I.held_failure(rec->second, m.mtime, m.size)) { held = true; continue; }
         changed.push_back(i);
     }
     for (const auto& m : mods) { I.note_import_child(m.resolved); }
@@ -6818,35 +9107,61 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
         rec->second.failed_mtime = m.mtime;
         rec->second.failed_size = m.size;
         rec->second.failed_closure.clear();
+        rec->second.failed_units.clear();
     };
-    // a failure before the run waits on every file it involved, each stamped now: the module's closure, what its parse read,
-    // the dependents it broke
-    const auto involve_in_failure = [&](const import_unit& m, const std::vector<implementation::closure_stamp>& files) {
+    // a failure of the run itself waits on the files that run read, each under the stamp of the text it read (the module's
+    // closure, the failed run's reads merged in)
+    const auto record_run_failure = [&](const import_unit& m) {
+        record_failure(m);
+        if (auto rec = I.import_cache.find(m.resolved); rec != I.import_cache.end()) { rec->second.failed_closure = rec->second.closure; }
+    };
+    // a failure before the run waits on every file it involved, each under the stamp of the text the failing check judged:
+    // what its load read (as the loader stamped it), the dependents it broke (a module under the stamp it last ran from; a
+    // unit whose text the host supplied was never loaded here, so its file is stamped as it stands now), and the rest of the
+    // module's closure where it still stands as the module last loaded it (the check read none of those). It waits on the
+    // dependents themselves too: one that is loaded again is other code than the check judged, whatever its file's stamp.
+    const auto involve_in_failure = [&](const import_unit& m, const std::vector<implementation::closure_stamp>& files, const std::vector<implementation::judged_unit>& units) {
         auto rec = I.import_cache.find(m.resolved);
         if (rec == I.import_cache.end() || !rec->second.failed) { return; }
+        rec->second.failed_units = units;
         auto& involved = rec->second.failed_closure;
-        const auto add = [&](const std::string& path) {
-            for (const auto& s : involved) { if (s.path == path) { return; } }
-            implementation::closure_stamp stamp{path, 0, 0};
-            ++I.import_stats_;
-            if (impl->stat_mtime_size(path, stamp.mtime, stamp.size)) { involved.push_back(std::move(stamp)); }
+        const auto known = [&](const std::string& path) {
+            return std::any_of(involved.begin(), involved.end(), [&](const implementation::closure_stamp& s) { return s.path == path; });
         };
-        for (const auto& s : rec->second.closure) { add(s.path); }
-        for (const auto& s : files) { add(s.path); }
+        for (const auto& s : files) {
+            if (known(s.path)) { continue; }
+            if (s.mtime != 0 || s.size != 0) { involved.push_back(s); continue; }
+            implementation::closure_stamp stamp{s.path, 0, 0};
+            ++I.import_stats_;
+            if (const auto loaded = I.import_cache.find(s.path); loaded != I.import_cache.end() && !loaded->second.missing) {
+                stamp.mtime = loaded->second.mtime;
+                stamp.size = loaded->second.size;
+                involved.push_back(std::move(stamp));
+            } else if (impl->stat_mtime_size(s.path, stamp.mtime, stamp.size)) {
+                involved.push_back(std::move(stamp));
+            }
+        }
+        for (const auto& s : rec->second.closure) {
+            if (known(s.path)) { continue; }
+            ++I.import_stats_;
+            if (I.stamps_stand({s})) { involved.push_back(s); }
+        }
     };
-    // a module runs only from text read under its stamp: a save landing mid-read holds a module that ran before until the next
-    // pass (its record keeps the old stamp), and a first load reads again at once (bounded); false = held
+    // a module runs only from text the loader read whole, under that text's stamp: a file that never settles holds a module
+    // that ran before until the next pass (its record keeps the stamp it ran from), and is a first load's error; false = held
     const auto read_module = [&](import_unit& m, std::string& content) -> bool {
         const bool loaded_before = I.import_cache.count(m.resolved) != 0;
-        for (int attempt = 0; ; ++attempt) {
-            const auto read = impl->read_for_load(m.resolved, m.stamped, m.mtime, m.size, content);
-            if (read == implementation::stamped_read::missing) { throw runtime_error("Failed to open import file: " + m.resolved); }
-            if (read == implementation::stamped_read::stable) { return true; }
+        detail::loaded_source loaded = impl->load_source(m.resolved, detail::source_mode::text);
+        if (loaded.status == detail::loaded_source::state::missing) { throw runtime_error("Failed to open import file: " + m.resolved); }
+        if (loaded.status == detail::loaded_source::state::unsettled) {
             if (loaded_before) { return false; }
-            if (attempt == 3) { return true; }
-            ++I.import_stats_;
-            m.stamped = impl->stat_mtime_size(m.resolved, m.mtime, m.size);
+            throw detail::source_unsettled(m.resolved);
         }
+        m.stamped = loaded.stamp.stamped;
+        m.mtime = loaded.stamp.mtime;
+        m.size = loaded.stamp.size;
+        content = std::move(loaded.text);
+        return true;
     };
     // parses and checks a group (the names its modules declare known to each other), then, for a re-run, its dependents: every
     // loaded unit outside the group, against the new declarations. The group's first `originals` modules are the ones reached:
@@ -6855,8 +9170,10 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
     struct group_verdict {
         size_t failed = 0;
         std::exception_ptr first;
+        std::exception_ptr unsettled;   // a file the check needed never read whole: no verdict, nothing recorded
         std::string failures;
         std::vector<implementation::closure_stamp> involved;
+        std::vector<implementation::judged_unit> units;   // the loaded units the reload would break
     };
     const auto check_group = [&](std::vector<import_unit>& group, const std::vector<std::string>& contents, size_t originals, bool rerun) {
         group_verdict v;
@@ -6867,17 +9184,31 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
             if (!v.failed++) { v.first = std::current_exception(); }
         };
         auto pools = I.save_program_pools();
+        struct deciding_scope {
+            implementation& impl;
+            std::unordered_set<std::string> outer;
+            ~deciding_scope() { impl.reload_group_ = std::move(outer); }
+        } deciding{I, I.reload_group_};
+        for (const auto& m : group) { I.reload_group_.insert(m.resolved); }
         I.import_frames_.emplace_back();   // what the parses read: a failure waits on those files too
         struct frame_scope {
             implementation& impl;
             bool open = true;
             ~frame_scope() { if (open) { impl.end_import_frame(); } }
         } parse_frame{I};
+        const auto unsettle = [&] {
+            if (!v.unsettled) { v.unsettled = std::current_exception(); }
+            ++v.failed;
+        };
         for (size_t k = 0; k < group.size(); ++k) {
             std::filesystem::path cacheFile;
             bool fresh = false;
             try {
                 entries[k] = I.acquire_entry(*this, contents[k], group[k].resolved, cacheFile, fresh);
+                const detail::text_stamp loaded_under{group[k].mtime, group[k].size, group[k].stamped};
+                I.note_text_stamp(*entries[k], &loaded_under);
+            } catch (const detail::source_unsettled&) {
+                unsettle();
             } catch (const std::exception& e) {
                 fail(k, e);
             }
@@ -6886,12 +9217,25 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
             if (entries[k]) { I.pool_unit(entries[k]->declarations, group[k].resolved, I.unit_key(*entries[k], contents[k])); }
         }
         for (size_t k = 0; k < group.size(); ++k) {
+            try {
+                if (entries[k]) { I.reparse_if_moved(*this, entries[k], contents[k]); }
+            } catch (const detail::source_unsettled&) {
+                entries[k] = nullptr;
+                unsettle();
+            } catch (const std::exception& e) {
+                entries[k] = nullptr;
+                fail(k, e);
+            }
+        }
+        for (size_t k = 0; k < group.size(); ++k) {
             if (!entries[k]) { continue; }
             const std::string& path = group[k].resolved;
             I.importing_.insert(path);
             if (originals < group.size()) { entries[k]->checked = false; }   // a cached verdict never knew the pending modules' text
             try {
-                I.gate_checked(I.checked_report(*this, *entries[k], contents[k]), contents[k], path);
+                I.gate_checked(I.checked_report(*this, entries[k], contents[k]), contents[k], path);
+            } catch (const detail::source_unsettled&) {
+                unsettle();
             } catch (const std::exception& e) {
                 fail(k, e);
             }
@@ -6899,8 +9243,13 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
         }
         if (!v.failed && rerun) {
             std::unordered_set<uint32_t> rerunning;
-            for (const auto& m : group) { rerunning.insert(I.loaded_unit_of(m.resolved)); }
-            const std::string listing = I.reload_dependents_listing(*this, rerunning, v.involved);
+            std::unordered_set<std::string> reads;   // the group's files and what their checks gathered: what each declares now is pooled
+            for (size_t k = 0; k < group.size(); ++k) {
+                rerunning.insert(I.loaded_unit_of(group[k].resolved));
+                reads.insert(group[k].resolved);
+                if (entries[k]) { for (const auto& gathered : entries[k]->closure_stamps) { reads.insert(gathered.path); } }
+            }
+            const std::string listing = I.reload_dependents_listing(*this, rerunning, reads, v.involved, v.units);
             if (!listing.empty()) {
                 for (size_t k = 0; k < originals; ++k) { record_failure(group[k]); }
                 v.failures = "static check failed:\n" + listing;
@@ -6919,7 +9268,11 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
         if (v.failed) {
             I.restore_program_pools(std::move(pools));
             v.involved.insert(v.involved.end(), reads.files.begin(), reads.files.end());
-            for (const auto& e : entries) { if (e) { v.involved.insert(v.involved.end(), e->spliced_stamps.begin(), e->spliced_stamps.end()); } }
+            for (const auto& e : entries) {
+                if (!e) { continue; }
+                v.involved.insert(v.involved.end(), e->spliced_stamps.begin(), e->spliced_stamps.end());
+                v.involved.insert(v.involved.end(), e->closure_stamps.begin(), e->closure_stamps.end());   // what its gather loaded
+            }
         } else if (originals < group.size()) {
             I.restore_program_pools(std::move(pools));
             for (size_t k = 0; k < originals; ++k) { I.pool_unit(entries[k]->declarations, group[k].resolved, I.unit_key(*entries[k], contents[k])); }
@@ -6962,7 +9315,7 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
         if (group.size() > 1 || rerun) {
             const size_t originals = group.size();
             group_verdict verdict = check_group(group, contents, originals, rerun);
-            if (verdict.failed && rerun) {
+            if (verdict.failed && rerun && !verdict.unsettled) {
                 std::vector<import_unit> pending = pending_modules(group);
                 std::vector<import_unit> widened = group;
                 std::vector<std::string> widened_contents = contents;
@@ -6974,13 +9327,23 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
                 }
                 if (widened.size() > originals) {
                     group_verdict together = check_group(widened, widened_contents, originals, true);
-                    for (size_t k = originals; k < widened.size(); ++k) { together.involved.push_back({widened[k].resolved, 0, 0}); }
+                    for (size_t k = originals; k < widened.size(); ++k) { together.involved.push_back({widened[k].resolved, widened[k].mtime, widened[k].size}); }   // as read for this check
                     together.involved.insert(together.involved.end(), verdict.involved.begin(), verdict.involved.end());
+                    together.units.insert(together.units.end(), verdict.units.begin(), verdict.units.end());
                     verdict = std::move(together);
                 }
             }
+            if (verdict.unsettled) {   // a reload keeps the code it had and tries again on the next pass; a first load raises
+                if (rerun) {
+                    for (size_t k = 0; k < originals; ++k) {
+                        if (auto rec = I.import_cache.find(group[k].resolved); rec != I.import_cache.end()) { rec->second.failed = false; }
+                    }
+                    return false;
+                }
+                std::rethrow_exception(verdict.unsettled);
+            }
             if (verdict.failed) {
-                for (size_t k = 0; k < originals; ++k) { involve_in_failure(group[k], verdict.involved); }
+                for (size_t k = 0; k < originals; ++k) { involve_in_failure(group[k], verdict.involved, verdict.units); }
                 if (verdict.failed == 1) { std::rethrow_exception(verdict.first); }
                 throw static_check_error(verdict.failures);
             }
@@ -7004,14 +9367,15 @@ checked_result<bool> engine::import_modules(import_site& site, const std::vector
             } scope{I.importing_, m.resolved};
             I.import_frames_.emplace_back();
             try {
-                execute_source(contents[k], instance_variables{}, m.resolved);
+                const detail::text_stamp loaded_under{m.mtime, m.size, m.stamped};
+                execute_source(contents[k], instance_variables{}, m.resolved, false, {}, &loaded_under);
             } catch (const static_check_error&) {
                 I.merge_import_frame(m.resolved, I.end_import_frame());
-                record_failure(m);
+                record_run_failure(m);
                 throw;
             } catch (const parse_error&) {
                 I.merge_import_frame(m.resolved, I.end_import_frame());
-                record_failure(m);
+                record_run_failure(m);
                 throw;
             } catch (...) {
                 I.merge_import_frame(m.resolved, I.end_import_frame());
@@ -7279,9 +9643,14 @@ std::vector<std::string> engine::get_imported_files() const {
     return result;
 }
 
+std::string detail::unsettled_source_text(const std::string& path) {
+    return "Failed to read source file: " + path + " (it kept changing while it was read)";
+}
+
 script_value engine::execute_import(const std::string& resolved_path) {
     auto allowed = require_permission(permissions::filesystem);
     if (!allowed) { throw runtime_error(format_error(allowed)); }
+    detail::load_phase_scope reporting(impl->collector(), detail::load_collector::k_no_file, load_phase::import_bookkeeping);
     // Check import behavior
     bool should_import = false;
     
@@ -7305,11 +9674,6 @@ script_value engine::execute_import(const std::string& resolved_path) {
                 uint64_t current_mtime = 0, current_size = 0;
                 if (impl->stat_mtime_size(resolved_path, current_mtime, current_size)) {
                     should_import = current_mtime != it->second.mtime || current_size != it->second.size || impl->closure_moved(it->second);
-                    if (should_import) {
-                        // Update the stamp for next check
-                        it->second.mtime = current_mtime;
-                        it->second.size = current_size;
-                    }
                 } else {
                     // If we can't stat the file, import it
                     should_import = true;
@@ -7329,23 +9693,26 @@ script_value engine::execute_import(const std::string& resolved_path) {
             ~importing_scope() { set.erase(path); }
         } scope{impl->importing_, resolved_path};
 
-        // the record keeps the stamp the text was read under; a zero stamp (no stat, or a save landing mid-read) makes
+        // the record keeps the stamp the text was loaded with; a zero stamp (a file the stamp source cannot stamp) makes
         // the next file_timestamp check import again
         implementation::import_record record;
         record.resolved_path = resolved_path;
-        const bool stamped = impl->stat_mtime_size(resolved_path, record.mtime, record.size);
-        std::string content;
-        const auto read = impl->read_for_load(resolved_path, stamped, record.mtime, record.size, content);
-        if (read == implementation::stamped_read::missing) {
+        const detail::loaded_source loaded = impl->load_source(resolved_path, detail::source_mode::text);
+        if (loaded.status == detail::loaded_source::state::missing) {
             throw runtime_error("Failed to open import file: " + resolved_path);
         }
-        if (read != implementation::stamped_read::stable || !stamped) { record.mtime = 0; record.size = 0; }
+        if (loaded.status == detail::loaded_source::state::unsettled) {
+            throw detail::source_unsettled(resolved_path);
+        }
+        record.mtime = loaded.stamp.mtime;
+        record.size = loaded.stamp.size;
+        const std::string& content = loaded.text;
 
         // Attribute the imported unit to its resolved path (stack traces / debugger).
         impl->import_frames_.emplace_back();
         script_value result = [&] {
             try {
-                return execute_source(content, instance_variables{}, resolved_path);
+                return execute_source(content, instance_variables{}, resolved_path, false, {}, &loaded.stamp);
             } catch (...) {
                 impl->merge_import_frame(resolved_path, impl->end_import_frame());
                 throw;
@@ -7473,6 +9840,7 @@ strong_ptr<class_instance> engine::construct_script_layer_for_load(const std::st
     if (!ctor.is_function()) { return nullptr; }
     checked_result<script_value> constructed = [&]() {
         construction_access_waiver waiver(this);
+        load_callout callout(this);
         return ctor.as_function()({});
     }();
     if (!constructed) { throw runtime_error(format_error(constructed)); }
@@ -7533,6 +9901,7 @@ checked_result<std::shared_ptr<class_definition>> engine::resolve_script_class(c
             "extend: the second argument must name a script class (a class name or a string)");
     }
     auto script_def = get_class_registry().find_script_class(name);
+    if (!script_def && script_class.is_string()) { script_def = get_class_registry().find_script_class(detail::registered_type_spelling(this, name)); }
     if (!script_def) {
         return result(make_error_code(runtime_error_code::extend_rejected),
             "extend: '{0}' is not a script class defined in this engine", symbolize(name));
@@ -7876,6 +10245,10 @@ bool shared_element_admits(const script_value& v, const type_info_ptr& element_t
 
 bool weak_element_takes_shared(const script_value& v, const type_info_ptr& element_type, engine* eng) {
     return weak_slot_takes_shared(v, element_type, eng);
+}
+
+bool weak_element_admits(const script_value& v, const type_info_ptr& element_type, engine* eng) {
+    return v.raw_storage_index() != script_value::TYPEID_WEAK_PTR || weak_handle_admits(v, element_type, eng);
 }
 
 checked_result<script_value> weak_element_from_shared(const script_value& v, engine* eng) {

@@ -9,8 +9,8 @@ function main() -> int {
 	var path = wad_path("doom1");
 	var mapname = "E1M1";
 	int cells_w = 188;
-	if (ARGS.size() > 0) { path = ARGS[0]; }
-	if (ARGS.size() > 1) { mapname = ARGS[1]; }
+	if (args.size() > 0) { path = args[0]; }
+	if (args.size() > 1) { mapname = args[1]; }
 
 	if (!wad_load(path)) { print("wad_load failed"); return 1; }
 	if (!map_load(mapname)) { print(`no map ${mapname}`); return 1; }
@@ -80,7 +80,7 @@ function main() -> int {
 		}
 		preview += row + "\n";
 	}
-	write_file("p2_preview.txt", preview);
+	file::write("p2_preview.txt", preview);
 	return 0;
 }
 

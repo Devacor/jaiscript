@@ -10,6 +10,7 @@
 #include <jaiscript/detail/parser.hpp>
 #include <jaiscript/stdlib/stdlib.hpp>
 #include "../case_table.hpp"
+#include "jaibite_sweep.hpp"
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
@@ -136,6 +137,86 @@ class jaibite_serialization_tests : public suite {
 public:
     jaibite_serialization_tests() : suite("Jaibite Serialization") {}
 
+    static std::filesystem::path unit_directory(const std::string& test) {
+        const std::filesystem::path directory = test_temp_directory() / ("jaibite_" + test);
+        std::error_code ignored;
+        std::filesystem::remove_all(directory, ignored);
+        std::filesystem::create_directories(directory);
+        return directory;
+    }
+    static std::string write_unit(const std::filesystem::path& directory, const std::string& name, const std::string& text) {
+        const std::filesystem::path path = directory / name;
+        std::ofstream(path, std::ios::binary) << text;
+        return path.string();
+    }
+    static std::string file_bytes(const std::filesystem::path& path) {
+        std::ifstream in(path, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    static void write_bytes(const std::filesystem::path& path, const std::string& bytes) {
+        std::ofstream(path, std::ios::binary | std::ios::trunc) << bytes;
+    }
+    static std::shared_ptr<engine> stdlib_engine() {
+        auto e = make_engine();
+        stdlib::register_all(*e);
+        return e;
+    }
+
+    // Bytes of a unit's cache file take a low-bit and a high-bit flip. As damaged, the cache is never the unit: the source is
+    // parsed, answers as the source does, and the cache is written again; every byte of the header is tried, and every
+    // stride-th of the bytes after it, which the integrity value answers for alike. With its integrity value written again the
+    // file reaches the loader's own checks: it is refused and the source parsed, or it loads and runs as the program it now
+    // is. Each mutant costs several file writes, so the stride is coarse here: JAIBITE_SWEEP_STRIDE=1 tries every byte, and the
+    // bite sweep of the validation suite, which touches no file, is the fine one.
+    static void sweep_disk_cache(bool a_resealed) {
+        const auto directory = unit_directory(a_resealed ? "resealed_cache" : "corrupt_cache");
+        const std::string root = write_unit(directory, "root.jai",
+            "class Box<T> { T v; Box() { } Box(T x) { v = x; } T twice() { return v + v; } }\nT same<T>(T x) { return x; }\nauto a = Box<int>(21);\nBox<string> b; b.v = same(\"ab\");\nto_string(a.twice()) + b.twice();\n");
+        check_eq(std::string("42abab"), stdlib_engine()->execute_file(root).to_string(), "the first run writes the cache");
+        const std::filesystem::path cache = jaibite_cache_beside(root);
+        check_true(std::filesystem::exists(cache), "the cache exists");
+        const std::string original = file_bytes(cache);
+        size_t mutants = 0;
+        size_t same = 0;
+        size_t other = 0;
+        size_t raised = 0;
+        size_t rewritten = 0;
+        std::string first_wrong;
+        const size_t stride = sweep_stride(std::max<size_t>(1, original.size() / (a_resealed ? 150 : 100)));
+        const size_t dense = a_resealed ? 0 : detail::k_jaibite_header_size;
+        for (size_t at = sweep_start(); at < sweep_end(original.size()); at += at < dense ? 1 : stride) {
+            for (const char flip : {char(0x01), char(0x80)}) {
+                std::string mutated = original;
+                mutated[at] = static_cast<char>(mutated[at] ^ flip);
+                if (a_resealed) { detail::jaibite_seal(reinterpret_cast<uint8_t*>(mutated.data()), mutated.size()); }
+                write_bytes(cache, mutated);
+                const std::string what = "cache byte " + std::to_string(at) + " ^ " + std::to_string(int(static_cast<unsigned char>(flip)));
+                sweep_note(what);
+                ++mutants;
+                auto e = stdlib_engine();
+                e->execution_budget(0);   // a clock-free bound: a mutant that loops ends at the same step under any load
+                e->execution_step_budget(256);
+                e->memory_cap(size_t(256) * 1024 * 1024);
+                std::string got;
+                try { got = e->execute_file(root).to_string(); } catch (const std::exception& ex) { got = std::string("ERR: ") + ex.what(); ++raised; }
+                if (got == "42abab") { ++same; } else if (!got.starts_with("ERR: ")) { ++other; }
+                if (got != "42abab") { sweep_note("  answered " + got.substr(0, 200)); }
+                if (got != "42abab" && first_wrong.empty()) { first_wrong = what + " -> " + got.substr(0, 300); }
+                if (file_bytes(cache) == original) { ++rewritten; }
+            }
+        }
+        sweep_note(std::string(a_resealed ? "resealed" : "damaged") + " cache of " + std::to_string(original.size()) + " bytes: " + std::to_string(mutants) +
+                   " mutants, " + std::to_string(same) + " answered as the source, " + std::to_string(other) + " another result, " + std::to_string(raised) +
+                   " an error, " + std::to_string(rewritten) + " rewritten as first written");
+        check_true(mutants >= 250 || !sweep_whole(), "the sweep's size: " + std::to_string(mutants));
+        if (!a_resealed) {
+            check_eq(mutants, same, "a damaged cache changes what the unit answers; the first: " + first_wrong);
+            check_eq(mutants, rewritten, "a damaged cache is written again from the source");
+        }
+        write_bytes(cache, original);
+        check_eq(std::string("42abab"), stdlib_engine()->execute_file(root).to_string(), "the cache as first written still loads");
+    }
+
     void forge_tests() override {
         using namespace jaibite_test_detail;
 
@@ -168,6 +249,25 @@ public:
 
         test("programs_of_every_construct_run_alike_fresh_and_after_save_and_load", [check_roundtrip]() {
             const std::pair<std::string, std::string> programs[] = {
+                {"typed_callables", R"(
+                class Hero { int hp = 3; }
+                function<string(int)> name = x => reflect::type_of(x);
+                array<function<int(int)>> steps = [x => x + 1, x => x * 2];
+                int apply(function<int(Hero)> key, Hero h) { return key(h); }
+                coroutine int gen() { yield 4; }
+                coroutine<int> h = gen();
+                class Button { function<string(float)> label; Button() : label(v => reflect::type_of(v)) {} }
+                Button b;
+                name(1) + "|" + to_string(steps[1](steps[0](1))) + "|" + to_string(apply(e => e.hp, Hero())) + "|" + reflect::type_of(h) + "|" + to_string(h.next()) + "|" + b.label(1);
+            )"},
+                {"returning_nothing", R"(
+                var xs = [1, 2]; var ys = [];
+                xs.for_each(x => ys.push(x));
+                var m = array::map(xs, x => ys.push(x));
+                void add(var x) { return ys.push(x); }
+                add(3);
+                to_json(ys) + "|" + to_json(m);
+            )"},
                 {"arithmetic_strings", R"(
                 int a = 7; int b = 3;
                 float f = 2.5 * 4.0 + a;
@@ -250,7 +350,7 @@ public:
                 var last = t.next();
                 string e = "";
                 try { t.next(); } catch (err) { e = to_string(err); }
-                to_string(total) + "|" + s + "|" + type_of(last) + ":" + to_string(last) + "|" + e;
+                to_string(total) + "|" + s + "|" + reflect::type_of(last) + ":" + to_string(last) + "|" + e;
             )"},
                 {"coroutines_range_for", R"(
                 coroutine int gen(int n) {
@@ -333,15 +433,26 @@ public:
                 cast<T&>(h.p).t = 5;
                 T tv = cast<T>(h.p);
                 tv.t = 9;
-                shared_ptr<T> th = cast<shared_ptr<T>>(h.p);
+                shared_ptr<S> held = new T();
+                shared_ptr<T> th = cast<shared_ptr<T>>(held);
                 th.t += 1;
+                class Counted { int copies = 0; Counted() {} Counted(const Counted& o) { copies = o.copies + 1; } }
+                var counted = Counted();
+                int before = counted.copies;
+                if (dynamic_cast<Counted>(counted)) { before += 100; }
+                auto handed = dynamic_cast<Counted>(counted);
+                before += handed.copies * 10 + counted.copies;
+                class Owner { shared_ptr<Owner> me() { shared_ptr<Owner> s = this; return s; } }
+                Owner owner;
+                var raised = "";
+                try { owner.me(); } catch (e) { raised = e; }
                 T tmp = T();
                 auto& r = cast<T&>(tmp);
                 r.t = 3;
                 var f = 2.7;
                 var c = "";
                 try { var bad = cast<H>(h.p); } catch (e) { c = e; }
-                to_string(cast<T&>(h.p).t) + "|" + to_string(tv.t) + "|" + to_string(tmp.t) + "|" + to_string(cast<int>(f)) + "|" + cast<string>(42) + "|" + c;
+                raised + "|" + to_string(before) + "|" + to_string(cast<T&>(h.p).t) + "|" + to_string(tv.t) + "|" + to_string(tmp.t) + "|" + to_string(cast<int>(f)) + "|" + cast<string>(42) + "|" + c;
             )"},
                 {"namespace_classes_keep_their_qualified_names", R"(
                 namespace spider {
@@ -349,7 +460,7 @@ public:
                     class SessionStore { int db = 0; SessionStore() {} SessionStore(int d) { db = d; } Session load() { Session s; s.a = db; return s; } }
                 }
                 spider::SessionStore sessions = spider::SessionStore(3);
-                type_of(sessions) + " " + type_of(sessions.load()) + " " + to_string(sessions.load().a);
+                reflect::type_of(sessions) + " " + reflect::type_of(sessions.load()) + " " + to_string(sessions.load().a);
             )"},
             };
             check_each(programs, [&](const auto& program) { check_roundtrip(program.second); });
@@ -387,7 +498,7 @@ public:
                 const auto bytes = saved_after_points(saved);
                 check_eq(std::string(saved ? "VALUE 1" : "VALUE 2"), load(bytes, saved), "the same namespace classes load the bite");
                 const std::string refused = load(bytes, !saved);
-                check_true(refused.find("static check failed") != std::string::npos && refused.find("class 'Point'") != std::string::npos, refused);
+                check_true(refused.find("static check failed") != std::string::npos && refused.find("class or enum 'Point'") != std::string::npos, refused);
             }
         });
 
@@ -422,7 +533,7 @@ public:
             // the format version sits right after the 4-byte magic
             using namespace jaibite_test_detail;
             auto bytes = fresh_engine(false, {})->jaibite("[[warn_mode]];\nextern int q;\nvar v = 1;").save_bytes();
-            check_eq((int)58, (int)bytes[4], "jaibite format version");
+            check_eq((int)76, (int)bytes[4], "jaibite format version");
             {   // import(...) round-trips: literal paths, a group, computed arguments and jai::force
                 const auto dir = jai::foundry::test_temp_directory();
                 { std::ofstream(dir / "jb_imp_a.jai") << "int JB_A = 3;\n"; }
@@ -701,6 +812,14 @@ public:
                 check_true(std::string(ex.what()).find("version") != std::string::npos);
             }
             check_true(threw);
+            // a bite of an earlier version is named as one whatever its header held then: the version is read before the rest
+            std::vector<uint8_t> earlier(38, uint8_t(0));
+            std::copy(detail::k_jaibite_magic, detail::k_jaibite_magic + 4, earlier.begin());
+            earlier[4] = static_cast<uint8_t>(detail::k_jaibite_version - 1);
+            std::string text;
+            try { e->jaibite_load_bytes(earlier); } catch (const jai::runtime_error& ex) { text = ex.what(); }
+            check_eq("jaibite: unsupported format version " + std::to_string(detail::k_jaibite_version - 1) + " (expected " +
+                     std::to_string(detail::k_jaibite_version) + ")", text);
         });
 
         // Every strict prefix must fail with a clean error — never UB, crash, or success.
@@ -713,10 +832,45 @@ public:
                 var m = {"k": [1, 2, 3]};
                 c.get() + m["k"][2];
             )").save_bytes();
-            for (size_t len = 0; len < bytes.size(); len += (len < 32 ? 1 : 7)) {
+            // as cut, and with the integrity value written again so the cut reaches the reader
+            for (size_t len = 0; len < bytes.size(); len += (len < 64 ? 1 : 7)) {
                 std::vector<uint8_t> cut(bytes.begin(), bytes.begin() + len);
                 check_throws([&]() { e->jaibite_load_bytes(cut); });
+                detail::jaibite_seal(cut.data(), cut.size());
+                check_throws([&]() { e->jaibite_load_bytes(cut); });
             }
+        });
+
+        // The value in a bite's header answers for every byte after it: one changed byte anywhere is refused before any of
+        // the bite is read, on a host of either byte order (the value is defined over bytes)
+        test("load_rejects_a_bite_whose_bytes_changed", [this]() {
+            using namespace jaibite_test_detail;
+            auto e = fresh_engine(false, {});
+            const auto bytes = e->jaibite("string s = \"ab\"; s + s;").save_bytes();
+            check_eq(std::string("abab"), e->jaibite_load_bytes(bytes).execute().to_string());
+            const auto refusal = [&](const std::vector<uint8_t>& changed) {
+                std::string text;
+                try { e->jaibite_load_bytes(changed); } catch (const jai::runtime_error& ex) { text = ex.what(); }
+                return text;
+            };
+            for (size_t at = detail::k_jaibite_integrity_at; at < bytes.size(); ++at) {
+                for (int bit = 0; bit < 8; ++bit) {
+                    auto changed = bytes;
+                    changed[at] = static_cast<uint8_t>(changed[at] ^ (1u << bit));
+                    check_eq(std::string("jaibite: corrupt data"), refusal(changed), "byte " + std::to_string(at) + " bit " + std::to_string(bit));
+                }
+            }
+            auto longer = bytes;
+            longer.push_back(0);
+            check_eq(std::string("jaibite: corrupt data"), refusal(longer));
+            auto shorter = bytes;
+            shorter.pop_back();
+            check_eq(std::string("jaibite: corrupt data"), refusal(shorter));
+            // the values a host of either byte order computes, worked out apart from this code
+            const uint8_t text[] = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k'};
+            check_eq(uint64_t(0x49f7774e9590d70bull), detail::jaibite_integrity_of(text, 0));
+            check_eq(uint64_t(0xc2cf8ad362669225ull), detail::jaibite_integrity_of(text, 8));
+            check_eq(uint64_t(0x63e0b0e82a8bf437ull), detail::jaibite_integrity_of(text, sizeof(text)));
         });
 
         test("load_rejects_trailing_bytes", [this]() {
@@ -724,7 +878,10 @@ public:
             auto e = fresh_engine(false, {});
             auto bytes = e->jaibite("1 + 1;").save_bytes();
             bytes.push_back(0);
-            check_throws([&]() { e->jaibite_load_bytes(bytes); });
+            detail::jaibite_seal(bytes.data(), bytes.size());
+            std::string text;
+            try { e->jaibite_load_bytes(bytes); } catch (const jai::runtime_error& ex) { text = ex.what(); }
+            check_eq(std::string("jaibite: trailing bytes after declarations"), text);
         });
 
         // A count or a slot the file's own syntax does not account for is refused at load: a frame's local count, a parallel
@@ -787,6 +944,28 @@ public:
             static_cast<block_stmt*>(parallel_of(parallel_break)->body.get())->declarations.push_back(std::make_shared<statement_decl>(at, std::make_shared<break_stmt>(at)));
             refused(parallel_break, "jaibite: invalid program: 'break' outside a loop or switch");
         });
+
+        // "The source on disk always wins": a cache whose bytes changed under an unchanged source is not the unit
+        test("a_disk_cache_whose_text_changed_on_disk_is_not_run_for_the_source", [this]() {
+            const auto directory = unit_directory("edited_cache");
+            const std::string root = write_unit(directory, "root.jai",
+                "class Box<T> { T v; T twice() { return v + v; } }\nT same<T>(T x) { return x; }\nBox<string> b; b.v = same(\"ab\");\nb.twice();\n");
+            check_eq(std::string("abab"), stdlib_engine()->execute_file(root).to_string(), "the first run writes the cache");
+            const std::filesystem::path cache = jaibite_cache_beside(root);
+            check_true(std::filesystem::exists(cache), "the cache exists");
+            std::string bytes = file_bytes(cache);
+            const size_t at = bytes.find("ab");
+            check_true(at != std::string::npos, "the cache holds the literal");
+            bytes[at] = 'x';
+            bytes[at + 1] = 'y';
+            write_bytes(cache, bytes);
+            check_eq(std::string("abab"), stdlib_engine()->execute_file(root).to_string(), "a cache that no longer matches its source");
+        });
+
+        // "A corrupt or truncated cache: the source is parsed and the cache rewritten, silently"
+        test("a_corrupted_disk_cache_of_a_generic_unit_is_parsed_again", [this]() { sweep_disk_cache(false); });
+
+        test("a_disk_cache_damaged_under_a_recomputed_integrity_value_never_crashes", [this]() { sweep_disk_cache(true); });
 
         // Registration fingerprint: advisory warning only — a mismatched engine still loads.
         test("registration_fingerprint_warning", [this]() {

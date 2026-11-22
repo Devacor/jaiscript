@@ -48,8 +48,8 @@ void recent_load() {
 	RECENT_ADDR = [];
 	RECENT_PORT = [];
 	RECENT_NAME = [];
-	if (!file_exists(recent_path())) { return; }
-	array<string> ls = read_file(recent_path()).lines();
+	if (!file::exists(recent_path())) { return; }
+	array<string> ls = file::read(recent_path()).lines();
 	for (int i = 0; i < ls.size() && RECENT_ADDR.size() < RECENT_MAX; ++i) {
 		array<string> f = string::trim(ls[i]).split(" ");
 		if (f.size() < 4 || f[0] != "server") { continue; }
@@ -64,8 +64,8 @@ void recent_load() {
 void recent_save() {
 	string text = "GATORQUEST-SERVERS 1\n";
 	for (int i = 0; i < RECENT_ADDR.size(); ++i) { text += `server ${RECENT_ADDR[i]} ${RECENT_PORT[i]} ${RECENT_NAME[i]}\n`; }
-	make_dirs(save_dir());
-	write_file(recent_path(), text);
+	file::make_directories(save_dir());
+	file::write(recent_path(), text);
 }
 
 void recent_remove(int i) {
@@ -409,8 +409,8 @@ string title_prompt(bool has_save) {
 // the names of the character files in the save folder (as typed: underscores read as spaces)
 array<string> saved_gators() {
 	array<string> out;
-	if (!SAVES_ON || !dir_exists(save_dir() + "/chars")) { return out; }
-	array<string> files = list_dir(save_dir() + "/chars");
+	if (!SAVES_ON || !file::directory_exists(save_dir() + "/chars")) { return out; }
+	array<string> files = file::list_directory(save_dir() + "/chars");
 	for (int i = 0; i < files.size(); ++i) {
 		if (!files[i].ends_with(".gqc")) { continue; }
 		string n = files[i].substr(0, files[i].size() - 4);
@@ -438,7 +438,7 @@ string title_screen(bool has_save, int auto_frames) {
 	int frames = 0;
 	TM_F0 = FRAME;
 	while (true) {
-		int frame_start = cast<int>(time::now() * 1000);
+		int frame_start = cast<int>(time::engine_elapsed() * 1000);
 		NOW_MS = loop_clock_ms();
 		int dt = imin(250, NOW_MS - last);
 		last = NOW_MS;
@@ -520,7 +520,7 @@ string title_frame(bool has_save) {
 // dev: every title page as a capture (shot title [out DIR])
 int run_title_shots() {
 	string dir = arg_value("out", data_root() + "/shots");
-	make_dirs(dir);
+	file::make_directories(dir);
 	SAVES_ON = false;
 	sim_init(1);
 	string size = arg_value("screen", "150x44");
@@ -564,7 +564,7 @@ int run_title_shots() {
 		string frame = title_frame(false);
 		frame_hash = mix32(frame_hash, text_checksum(frame));
 		string name = dir + "/title_" + pages[i];
-		write_file(name + ".ans", frame);
+		file::write(name + ".ans", frame);
 		string sketch = "";
 		array<string> pane = title_pane(PANE_WIDTH, VIEW_ROWS);
 		string ramp = " .:-=+*#%@";
@@ -578,7 +578,7 @@ int run_title_shots() {
 			}
 			sketch += row + strip_sgr(pane[r]) + "\n";
 		}
-		write_file(name + ".txt", sketch + title_keys_hint() + "\n");
+		file::write(name + ".txt", sketch + title_keys_hint() + "\n");
 		png_write_canvas(name + ".png", 3);
 	}
 	print(`wrote ${pages.size()} title page captures to ${dir} (FRAME_HASH ${frame_hash})`);

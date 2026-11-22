@@ -5,6 +5,7 @@
 
 #include <jaiscript/core/value.hpp>
 #include <jaiscript/detail/environment.hpp>
+#include <jaiscript/detail/lvalue_shape.hpp>
 
 namespace jai::detail {
 
@@ -21,6 +22,30 @@ namespace jai::detail {
         case script_value::TYPEID_MAP: return v.unchecked_get_map_storage() && v.unchecked_get_map_storage().use_count() == 1;
         default: return false;
         }
+    }
+
+    // A value no slot holds, of a script class or a host class
+    inline bool object_is_prvalue(const script_value& v) noexcept {
+        if (v.raw_storage_index() != script_value::TYPEID_OBJECT) { return false; }
+        const auto& holder = v.unchecked_object_handle();
+        return holder && holder.use_count() == 1 && (holder->holds_object() ? holder->object_use_count() == 1 : holder->has_keep_alive());
+    }
+
+    // What a handle takes from a class value: a handle never aliases a value slot, so a prvalue is the handle's object and a value
+    // a slot holds is copied, as make_shared<T>(value) copies it. A handle stays the handle
+    inline void value_into_handle(script_value& value) {
+        if (value.raw_storage_index() != script_value::TYPEID_OBJECT || value.is_shared_ptr_type() || object_is_prvalue(value)) { return; }
+        script_value copy = clone_for_assignment(value);
+        value = std::move(copy);
+    }
+
+    // A class value bound for a handle slot (a declaration, a store, an element, a field): no implicit conversion, as in C++; the
+    // class's name for the refusal, empty when the value is a handle, null or no class value
+    std::string value_for_handle_slot(const script_value& value_in);   // value.cpp
+    [[noreturn]] JAI_NOINLINE inline void refuse_value_into_handle(const std::string& class_name) {
+        std::string text(value_into_handle_text);
+        for (size_t at = text.find("{0}"); at != std::string::npos; at = text.find("{0}", at + class_name.size())) { text.replace(at, 3, class_name); }
+        throw runtime_error(text);
     }
 
     // A replacing store's value: a prvalue (uniquely held) moves in and is the stored object, anything else is the

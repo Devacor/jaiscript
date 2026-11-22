@@ -47,7 +47,7 @@ var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="../index.html">Docs</a><span class="sep" aria-hidden="true">/</span><a href="index.html">Bridges</a><span class="sep" aria-hidden="true">/</span>02</nav>
 <article class="chapter"><h1 id="from-cpp">From C++<a class="hlink" href="#from-cpp" aria-label="link">&#8203;</a></h1>
 <p class="lead">JaiScript reads like C++ and keeps C++'s semantics as its contract: classes are values that copy, references are declared with <code>&amp;</code>, destructors run when a scope ends, operators overload, and <code>auto</code>, range-<code>for</code>, capture lists, <code>switch</code> and <code>try</code>/<code>catch</code> mean what they mean in C++.</p>
-<p>It leaves out what a script does not need (raw pointers, <code>delete</code>, templates, headers, undefined behavior), checks the whole program before the first statement runs, and borrows <code>var</code>, <code>function</code> and arrow lambdas from JavaScript. Five ported programs come first, then the tables; <a href="#watch-out">Watch out</a> lists where a C++ habit gets a different answer.</p>
+<p>It leaves out what a script does not need (raw pointers, <code>delete</code>, template metaprogramming, headers, undefined behavior), checks the whole program before the first statement runs, and borrows <code>var</code>, <code>function</code> and arrow lambdas from JavaScript. Five ported programs come first, then the tables; <a href="#watch-out">Watch out</a> lists where a C++ habit gets a different answer.</p>
 <h2 id="ported">Ported side by side<a class="hlink" href="#ported" aria-label="link">&#8203;</a></h2>
 <p>Five small C++20 programs and their JaiScript ports. Each pair was run, built with MSVC and on both JaiScript backends, and printed the output shown. Top-level statements stand in for <code>main</code>, <code>array&lt;T&gt;</code> for <code>std::vector&lt;T&gt;</code> and <code>float</code> for <code>double</code>.</p>
 <h3 id="port-a">A value type and its operators<a class="hlink" href="#port-a" aria-label="link">&#8203;</a></h3>
@@ -88,6 +88,7 @@ int main() {
     float y = 0.0;
     Vec2 operator+(const Vec2&amp; o) { return Vec2{x + o.x, y + o.y}; }
     Vec2 operator*(float s) { return Vec2{x * s, y * s}; }
+    Vec2&amp; operator+=(const Vec2&amp; o) { x += o.x; y += o.y; return this; }
 }
 
 array&lt;Vec2&gt; points = [Vec2{1.0, 2.0}, Vec2{3.0, 4.0}, Vec2{-2.0, 0.5}];
@@ -103,7 +104,7 @@ print("{:.1f} {:.1f} {}", sum.x, sum.y, points[0] == Vec2{2.0, 0.0});</code></pr
 </div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2.0 100.0
 5.0 0.5 true</code></pre></div>
-<ul><li>The rest is C++ as written: a class is a value, <code>auto&amp;</code> names the element, and <code>Vec2 first = points[0];</code> copies.</li><li><code>+=</code> runs <code>operator+</code> and stores the result; a compound operator is not declared on its own. <code>==</code> compares fields without a declaration. Braces name their class (<code>Vec2{1.0, 2.0}</code>), and there are no const methods.</li></ul>
+<ul><li>The rest is C++ as written: a class is a value, <code>auto&amp;</code> names the element, and <code>Vec2 first = points[0];</code> copies.</li><li><code>operator+=</code> is declared as in C++ and runs on the element in place; <code>return this;</code> is C++&#x27;s <code>return *this;</code>, and a class without one runs <code>a = a + b</code>. <code>==</code> compares fields without a declaration. Braces name their class (<code>Vec2{1.0, 2.0}</code>), and there are no const methods.</li></ul>
 <h3 id="port-b">Shared ownership<a class="hlink" href="#port-b" aria-label="link">&#8203;</a></h3>
 <div class="tabs" id="port-b-tabs">
 <div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
@@ -148,7 +149,7 @@ int main() {
     string name;
     array&lt;shared_ptr&lt;Node&gt;&gt; children;
     weak_ptr&lt;Node&gt; parent;
-    Node(string n) { name = n; }
+    Node(string n) : name(n) {}
     ~Node() { print("~", name); }
 }
 
@@ -175,7 +176,7 @@ print("expired: ", watch.expired());</code></pre></div>
 ~branch
 ~leaf
 expired: true</code></pre></div>
-<ul><li><code>new Node("root")</code> is <code>make_shared&lt;Node&gt;("root")</code>: it returns a <code>shared_ptr&lt;Node&gt;</code>, and nothing is ever deleted by hand. The last handle frees the object, so the destructors run in C++'s order.</li><li><code>weak_ptr</code>, <code>lock()</code>, <code>expired()</code> and <code>use_count()</code> keep their meaning. There is no member initializer list: a constructor assigns its fields in its body.</li></ul>
+<ul><li><code>new Node("root")</code> is <code>make_shared&lt;Node&gt;("root")</code>: it returns a <code>shared_ptr&lt;Node&gt;</code>, and nothing is ever deleted by hand. The last handle frees the object, so the destructors run in C++'s order.</li><li><code>weak_ptr</code>, <code>lock()</code>, <code>expired()</code> and <code>use_count()</code> keep their meaning. The member initializer list is C++&#x27;s: the fields initialize in declaration order, each named one from its initializer.</li></ul>
 <h3 id="port-c">A class hierarchy<a class="hlink" href="#port-c" aria-label="link">&#8203;</a></h3>
 <div class="tabs" id="port-c-tabs">
 <div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
@@ -201,6 +202,7 @@ public:
     explicit Circle(double r) : radius(r) {}
     std::string name() const override { return "circle"; }
     double area() const override { return 3.14159 * radius * radius; }
+    double diameter() const { return radius * 2.0; }
 private:
     double radius;
 };
@@ -220,6 +222,7 @@ int main() {
     double total = 0.0;
     for (const auto&amp; s : shapes) {
         std::cout &lt;&lt; s-&gt;describe() &lt;&lt; "\n";
+        if (auto round = dynamic_cast&lt;const Circle*&gt;(s.get())) { std::cout &lt;&lt; std::format("diameter {:.2f}\n", round-&gt;diameter()); }
         total += s-&gt;area();
     }
     std::cout &lt;&lt; std::format("total {:.2f}\n", total);
@@ -237,6 +240,7 @@ public:
     Circle(float r) { radius = r; }
     string name() override { return "circle"; }
     float area() override { return 3.14159 * radius * radius; }
+    float diameter() { return radius * 2.0; }
 private:
     float radius;
 }
@@ -255,15 +259,17 @@ shapes.push(make_shared&lt;Rect&gt;(2.0, 3.5));
 float total = 0.0;
 for (const auto&amp; s : shapes) {
     print(s-&gt;describe());
+    if (auto round = dynamic_cast&lt;Circle&gt;(s)) { print("diameter {:.2f}", round-&gt;diameter()); }
     total += s-&gt;area();
 }
 print("total {:.2f}", total);</code></pre></div>
 </div>
 </div>
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">circle 3.14
+diameter 2.00
 shape 7.00
 total 10.14</code></pre></div>
-<ul><li>No <code>virtual</code>: every method is virtual, and a redefinition must say <code>override</code>. <code>private:</code> admits subclasses.</li><li>No <code>unique_ptr</code>: the container holds <code>shared_ptr&lt;Shape&gt;</code>. An <code>array&lt;Shape&gt;</code> of values works too, because a base-typed element is <a href="#no-slicing">never sliced</a>.</li></ul>
+<ul><li><code>dynamic_cast</code> ports as written. The pointer form drops its <code>*</code>, since the handle is the pointer: <code>dynamic_cast&lt;const Circle*&gt;(s.get())</code> is <code>dynamic_cast&lt;Circle&gt;(s)</code>, a <code>shared_ptr&lt;Circle&gt;</code> that is null when the shape is no circle, and the condition declares its result as C++17&#x27;s does. <code>dynamic_cast&lt;Circle&amp;&gt;(*s)</code> is <code>dynamic_cast&lt;Circle&amp;&gt;(s)</code> and raises <code>Cannot cast 'Rect' to 'Circle&amp;'</code> where C++ throws <code>std::bad_cast</code>.</li><li>No <code>virtual</code>: every method is virtual, and a redefinition must say <code>override</code>. <code>private:</code> admits subclasses.</li><li>No <code>unique_ptr</code>: the container holds <code>shared_ptr&lt;Shape&gt;</code>. An <code>array&lt;Shape&gt;</code> of values works too, because a base-typed element is <a href="#no-slicing">never sliced</a>.</li></ul>
 <h3 id="port-d">Lambdas and a callback<a class="hlink" href="#port-d" aria-label="link">&#8203;</a></h3>
 <div class="tabs" id="port-d-tabs">
 <div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
@@ -306,7 +312,7 @@ int main() {
 <div class="tab-panel" id="port-d-jai" role="tabpanel" aria-labelledby="port-d-tab-jai" tabindex="0">
 <div class="codeblock cb-jai" data-run="main.jai"><span class="cb-label">jaiscript</span><pre><code class="lang-jai">class Button {
     string label;
-    function on_click;
+    function&lt;void(string)&gt; on_click;
     void click() { if (on_click != nullptr) { on_click(label); } }
 }
 
@@ -330,7 +336,7 @@ print(clicks, " ", log.size(), " ", add_base(1), " ", counter(), " ", copy());</
 <div class="codeblock cb-output"><span class="cb-label">output</span><pre><code class="lang-output">2 2 11 3 4</code></pre></div>
 </div>
 </div>
-<ul><li>Capture lists mean what they mean in C++, and a by-value capture is writable without <code>mutable</code>. A <code>function</code> slot holds any callable or null and declares no signature.</li><li>The last number differs. C++ copies a lambda together with its <code>n</code>; in JaiScript <code>copy</code> and <code>counter</code> are two names for one lambda and count on one <code>n</code>.</li></ul>
+<ul><li>Capture lists mean what they mean in C++, and a by-value capture is writable without <code>mutable</code>. <code>function&lt;void(string)&gt;</code> is the <code>std::function</code>: a handler that does not fit it, or a call that passes something else, fails the load. A bare <code>function</code> slot holds any callable or null and declares no signature.</li><li>The last number differs. C++ copies a lambda together with its <code>n</code>; in JaiScript <code>copy</code> and <code>counter</code> are two names for one lambda and count on one <code>n</code>.</li></ul>
 <h3 id="port-e">A thrown class, a destructor and a map<a class="hlink" href="#port-e" aria-label="link">&#8203;</a></h3>
 <div class="tabs" id="port-e-tabs">
 <div class="tab-list" role="tablist" aria-label="C++ and its JaiScript port" hidden>
@@ -427,27 +433,34 @@ rope=2</code></pre></div>
 <tr><td>initialization</td><td><code>int i{5};</code>, <code>T x;</code>, <code>T x(a, b);</code></td><td>the same three; <code>T x;</code> default-constructs a class and zeroes a number</td></tr>
 <tr><td>containers</td><td><code>std::vector&lt;int&gt;</code>, <code>std::map&lt;std::string, int&gt;</code>, <code>{1, 2, 3}</code></td><td><code>array&lt;int&gt;</code>, <code>map&lt;string, int&gt;</code> (iterates in key order), <code>[1, 2, 3]</code>, <code>{"key": 1}</code></td></tr>
 <tr><td>casts</td><td><code>static_cast&lt;int&gt;(2.7)</code>, <code>dynamic_cast&lt;Square&amp;&gt;(s)</code>, <code>std::static_pointer_cast&lt;Square&gt;(p)</code></td><td><code>cast&lt;int&gt;(2.7)</code>, <code>cast&lt;Square&amp;&gt;(s)</code>, <code>cast&lt;shared_ptr&lt;Square&gt;&gt;(p)</code>; a wrong class raises the catchable <code>Cannot cast 'X' to 'T'</code> (<a href="../guide/02-type-ladder.html#cast-the-explicit-boundary">cast</a>)</td></tr>
-<tr><td>is it a Square?</td><td><code>if (dynamic_cast&lt;Square*&gt;(p))</code></td><td><code>if (s instanceof Square)</code>, then <code>cast&lt;Square&amp;&gt;(s)</code>, which cannot fail after the test (<a href="../guide/07-classes.html#instanceof">instanceof</a>)</td></tr>
+<tr><td>is it a Square?</td><td><code>if (auto sq = dynamic_cast&lt;Square*&gt;(p))</code>, <code>std::dynamic_pointer_cast&lt;Square&gt;(p)</code>, <code>dynamic_cast&lt;Square&amp;&gt;(s)</code></td><td><code>if (auto sq = dynamic_cast&lt;Square&gt;(p))</code>, <code>dynamic_cast&lt;Square&amp;&gt;(s)</code>: a handle or null, and a reference or an error. A bare cast as the condition, <code>if (dynamic_cast&lt;Square&gt;(p))</code>, makes <code>p</code> itself a <code>Square</code> in the branch until something stores to it (<a href="../guide/07-classes.html#dynamic-cast">dynamic_cast</a>, <a href="../reference/rules.html#flow-narrowing">flow narrowing</a>)</td></tr>
+<tr><td>what is it?</td><td><code>typeid(x).name()</code></td><td><code>reflect::type_of(x)</code>: the kind (<code>"int"</code>, <code>"array"</code>, a class&#x27;s name); <code>reflect::type_name(x)</code> spells a container in full (<code>"array&lt;int&gt;"</code>)</td></tr>
+<tr><td>a declaration in a condition</td><td><code>if (auto it = find(k); it != end)</code>, <code>while (auto line = next())</code></td><td>the same: <code>if (init; condition)</code>, <code>if (auto x = e)</code>, <code>while (auto x = e)</code> (<a href="../reference/rules.html#rule-condition-declaration">condition declarations</a>)</td></tr>
 <tr><td>identity</td><td><code>&amp;a == &amp;b</code></td><td><code>same_object(a, b)</code></td></tr>
 </tbody></table></div>
 <h3 id="functions-references-lambdas">Functions, references and lambdas<a class="hlink" href="#functions-references-lambdas" aria-label="link">&#8203;</a></h3>
 <div class="tablewrap"><table><thead><tr><th></th><th>C++</th><th>JaiScript</th></tr></thead><tbody>
 <tr><td>function</td><td><code>int add(int a, int b)</code>, default arguments, overloads</td><td>the same, at program scope, in namespaces and in classes; a default cannot name an earlier parameter</td></tr>
-<tr><td>reference</td><td><code>void heal(int&amp; hp)</code>, <code>auto&amp; r = x;</code></td><td>the same; a field or an element binds too (<code>heal(h.hp)</code>, <code>heal(arr[i])</code>); a reference cannot be a field or an element</td></tr>
-<tr><td>template</td><td><code>template&lt;class T&gt; T biggest(T a, T b)</code></td><td><code>auto biggest(auto a, auto b)</code>; no templates, no variadics in script</td></tr>
+<tr><td>reference</td><td><code>void heal(int&amp; hp)</code>, <code>auto&amp; r = x;</code>, <code>Hero&amp; h = *p;</code></td><td>the same; a field or an element binds too (<code>heal(h.hp)</code>, <code>heal(arr[i])</code>), and over a handle <code>Hero&amp; h = p;</code> binds the object; a reference cannot be a field or an element</td></tr>
+<tr><td>template</td><td><code>template&lt;class T&gt; T biggest(T a, T b)</code></td><td><code>T biggest&lt;T&gt;(T a, T b)</code>: the parameters go after the name (<a href="../guide/21-generics.html">Generics</a>); <code>auto biggest(auto a, auto b)</code> where no type needs a name. No variadics in script</td></tr>
+<tr><td>class template</td><td><code>template&lt;class T&gt; class Stack { ... };</code></td><td><code>class Stack&lt;T&gt; { ... }</code>, instantiated at load like a C++ template: <code>Stack&lt;int&gt;</code> is a class of its own, with its own statics. No specialization, default arguments or non-type parameters; <code>T : Base</code> bounds a parameter</td></tr>
 <tr><td>lambda</td><td><code>[x, &amp;y](int v) { ... }</code></td><td>the same captures: <code>[]</code>, <code>[x]</code>, <code>[&amp;x]</code>, <code>[=]</code>, <code>[&amp;]</code>, <code>[this]</code>, <code>[n = expr]</code>; a by-value capture is writable without <code>mutable</code></td></tr>
-<tr><td>callable slot</td><td><code>std::function&lt;int(int)&gt; f;</code></td><td><code>function f;</code>: any callable or null, with no signature</td></tr>
+<tr><td>callable slot</td><td><code>std::function&lt;int(int)&gt; f;</code></td><td><code>function&lt;int(int)&gt; f;</code>: the same, checked at load (<code>f = x =&gt; x * 2;</code> types <code>x</code> as an <code>int</code>); <code>function f;</code> holds any callable or null, with no signature</td></tr>
+<tr><td>coroutine</td><td><code>std::generator&lt;int&gt;</code>, a <code>std::coroutine_handle</code></td><td><code>coroutine int f()</code>; a call makes a <code>coroutine&lt;int&gt;</code> (<a href="12-from-coroutines.html">From coroutines</a>)</td></tr>
 </tbody></table></div>
 <h3 id="classes">Classes<a class="hlink" href="#classes" aria-label="link">&#8203;</a></h3>
 <div class="tablewrap"><table><thead><tr><th></th><th>C++</th><th>JaiScript</th></tr></thead><tbody>
 <tr><td>class</td><td><code>class Hero { public: int hp = 10; };</code>, <code>struct</code></td><td><code>class Hero { int hp = 10; }</code>: members start public; no <code>struct</code> keyword</td></tr>
+<tr><td>initializer list</td><td><code>Ship(std::string n) : name(std::move(n)), engine(900) {}</code>, <code>Ship() : Ship("dinghy") {}</code></td><td><code>Ship(string n) : name(n), engine(900) {}</code>, <code>Ship() : Ship("dinghy") {}</code>: bases, then fields in declaration order (a list out of order warns)</td></tr>
+<tr><td>copy construction</td><td><code>Hero b(a);</code>, <code>std::make_shared&lt;Hero&gt;(*h)</code></td><td><code>Hero b(a);</code>, <code>new Hero(h)</code>: one argument of the class, a value or a handle, copies (the declared <code>Hero(const Hero&amp;)</code>, else member by member)</td></tr>
 <tr><td>inheritance</td><td><code>class Mage : public Hero</code>, <code>Mage() : Hero(5) {}</code>, <code>Hero::describe()</code></td><td><code>class Mage : Hero</code>, <code>Mage() : super(5) {}</code> (<code>: this(...)</code> delegates), <code>super::describe()</code></td></tr>
 <tr><td>virtual</td><td><code>virtual</code> in the base, <code>override</code> optional</td><td>every method is virtual; a redefinition requires <code>override</code></td></tr>
 <tr><td>destructor</td><td><code>~Hero()</code></td><td><code>~Hero()</code>, run when the value's scope ends, a throw included</td></tr>
-<tr><td>heap object</td><td><code>std::make_shared&lt;Hero&gt;()</code>, <code>Hero*</code>, <code>delete</code></td><td><code>make_shared&lt;Hero&gt;()</code> or <code>new Hero()</code>: a <code>shared_ptr&lt;Hero&gt;</code>. <code>weak_ptr&lt;T&gt;</code> with <code>lock()</code> and <code>expired()</code>. No raw pointers; the last handle frees the object</td></tr>
+<tr><td>heap object</td><td><code>std::make_shared&lt;Hero&gt;()</code>, <code>Hero*</code>, <code>delete</code></td><td><code>make_shared&lt;Hero&gt;()</code> or <code>new Hero()</code>: a <code>shared_ptr&lt;Hero&gt;</code>. <code>weak_ptr&lt;T&gt;</code> with <code>lock()</code> and <code>expired()</code>. No raw pointers; the last handle frees the object, and a reference into it (<code>Hero&amp; h = p;</code>) then raises <code>Reference to a destroyed object</code> instead of dangling. As in C++, a <code>Hero</code> value never becomes a handle on its own: <code>make_shared&lt;Hero&gt;(h)</code> copies it into one</td></tr>
 <tr><td>statics</td><td><code>Hero::count</code></td><td><code>Hero::count</code></td></tr>
 <tr><td>no copies</td><td><code>Hero(const Hero&amp;) = delete;</code></td><td><code>nocopy class Hero { ... }</code></td></tr>
-<tr><td>operators</td><td><code>Vec operator+(const Vec&amp; o) const</code></td><td><code>Vec operator+(Vec o)</code>; C++'s set less <code>&amp;&amp;</code>, <code>||</code>, <code>,</code>, <code>-&gt;</code>, <code>new</code>, <code>delete</code> and <code>!</code>; <code>operator&lt;=&gt;</code> supplies the comparisons as in C++20</td></tr>
+<tr><td>reference member</td><td><code>Account&amp; account;</code>, bound by <code>Teller(Account&amp; a) : account(a) {}</code></td><td>a handle: <code>shared_ptr&lt;Account&gt; account;</code> to own it, <code>weak_ptr&lt;Account&gt; account;</code> to observe it. A reference field fails the parse: <code>A reference cannot be a field: hold a shared_ptr&lt;Account&gt; (owning) or a weak_ptr&lt;Account&gt; (observing)</code></td></tr>
+<tr><td>operators</td><td><code>Vec operator+(const Vec&amp; o) const</code></td><td><code>Vec operator+(Vec o)</code>, <code>Vec&amp; operator+=(Vec o)</code>, <code>operator++()</code> / <code>operator++(int)</code>; C++'s set less <code>&amp;&amp;</code>, <code>||</code>, <code>,</code>, <code>-&gt;</code>, <code>-&gt;*</code>, unary <code>&amp;</code> and <code>*</code>, <code>new</code>, <code>delete</code> and <code>!</code>; <code>operator&lt;=&gt;</code> supplies the comparisons as in C++20</td></tr>
 <tr><td>bool conversion</td><td><code>explicit operator bool() const</code></td><td><code>bool to_bool()</code></td></tr>
 </tbody></table></div>
 <h3 id="control-flow-and-errors">Control flow and the rest<a class="hlink" href="#control-flow-and-errors" aria-label="link">&#8203;</a></h3>
@@ -558,6 +571,10 @@ print("{} {}", cast&lt;int&gt;(d), d == cast&lt;Dir&gt;(5));</code></pre></div>
 <tr><td>copying a lambda copies its captures</td><td>a copy of a lambda shares its by-value capture state: both copies count on one <code>n</code></td></tr>
 <tr><td>a non-const reference never binds a literal</td><td><code>const T&amp;</code> binds one, and so does a plain <code>T&amp;</code> the body never writes through. A <code>string&amp;</code> takes a literal even when written (a writable temporary); a written <code>int&amp;</code> needs a variable: <code>'bump' writes through parameter 'x' (line 1); pass a variable</code></td></tr>
 <tr id="reference-captures"><td>a returned <code>[&amp;]</code> lambda dangles</td><td>a reference capture keeps its variable alive, and a C-style <code>for</code> variable captured by reference is fresh per iteration</td></tr>
+<tr id="returned-reference"><td>returning a reference to a local dangles</td><td>a <code>T&amp;</code> return of a local shares the local, as a <code>[&amp;]</code> capture does: the caller's reference keeps it alive (<a href="../guide/03-value-semantics.html#no-pointers">what a reference keeps alive</a>)</td></tr>
+<tr id="reference-across-insert"><td>a reference held across <code>insert</code> or <code>erase</code> dangles or names another element</td><td>a reference never reseats: after an <code>insert</code> or <code>remove</code> at or below its index it raises <code>Reference to a moved array element</code>, and once its element or map entry is gone it raises <code>Reference to a removed array element</code> or <code>Reference to a removed map entry</code>, a reference to a field of the element alike; growth and reallocation keep it valid, <code>sort</code> and <code>reverse</code> keep it on its slot</td></tr>
+<tr id="reference-to-pointee"><td><code>T&amp; r = *p;</code></td><td>spelled <code>T&amp; r = p;</code>: a class reference over a handle binds the object, never the handle, and does not own it (<code>auto&amp; r = p;</code> names the handle variable)</td></tr>
+<tr id="reference-type-holds"><td>a <code>Dog&amp;</code> into an <code>Animal</code> that later holds a <code>Cat</code> is undefined</td><td>a reference keeps its type: its next use raises <code>Reference to a 'Dog' now names a 'Cat'</code></td></tr>
 <tr id="switch"><td><code>switch</code> falls through</td><td>a case with statements ends at the next case; empty stacked labels (<code>case 1: case 2:</code>) share a body, and <code>fallthrough;</code> continues on purpose</td></tr>
 <tr><td><code>catch (const E&amp; e)</code> avoids a copy</td><td><code>catch (E e)</code> names the thrown value itself; no copy is made either way</td></tr>
 <tr><td><code>obj.count</code> reads a static</td><td>a static through an instance is a load error naming <code>Counter::count</code>; so is <code>Counter.count</code></td></tr>
@@ -671,14 +688,14 @@ int i = f;</code></pre></div>
 </div>
 <p>The C++ side links through a pointer and compiles with one conversion warning; the same intent written with values stops the JaiScript load.</p>
 <h3 id="not-there">What is not there<a class="hlink" href="#not-there" aria-label="link">&#8203;</a></h3>
-<p>Raw pointers (<code>T*</code>, <code>&amp;x</code>, <code>delete</code>), templates, const methods and types, <code>const_cast</code>, <code>constexpr</code>, <code>unsigned</code> and sized integers, <code>struct</code>, <code>virtual</code>, <code>mutable</code>, <code>enum class</code>, <code>goto</code>, <code>static_cast</code> (spelled <code>cast</code>) and <code>sizeof</code>. <code>&amp;x</code>, <code>delete</code>, a const method or type, <code>const_cast</code>, <code>constexpr</code>, a <code>mutable</code> field, <code>virtual</code> and <code>goto</code> are parse errors that name the JaiScript spelling; the others fail with a message that does not name the missing feature, so a puzzling error on a C++-shaped line is worth checking against this list.</p>
+<p>Raw pointers (<code>T*</code>, <code>&amp;x</code>, <code>delete</code>), the <code>template&lt;...&gt;</code> prefix with its specializations and non-type parameters (a <a href="../guide/21-generics.html">generic</a> lists its type parameters after its name), const methods and types, <code>const_cast</code>, <code>constexpr</code>, <code>unsigned</code> and sized integers, <code>struct</code>, <code>virtual</code>, <code>mutable</code>, <code>enum class</code>, <code>goto</code>, <code>static_cast</code> (spelled <code>cast</code>) and <code>sizeof</code>. <code>&amp;x</code>, <code>delete</code>, a const method or type, <code>const_cast</code>, <code>constexpr</code>, a <code>mutable</code> field, <code>virtual</code> and <code>goto</code> are parse errors that name the JaiScript spelling; the others fail with a message that does not name the missing feature, so a puzzling error on a C++-shaped line is worth checking against this list.</p>
 <h2 id="where-to-next">Where to next<a class="hlink" href="#where-to-next" aria-label="link">&#8203;</a></h2>
 <p><a href="../guide/03-value-semantics.html">Value Semantics &amp; References</a> has the copy and reference rules, <a href="../guide/07-classes.html">Classes</a> constructors, access and hot reload, and <a href="../guide/13-strict-checking.html">Types That Fail Early</a> what the checker stops at load. Embedding starts at the <a href="../embedding/01-embedding-quickstart.html">Embedding Quickstart</a>.</p>
 <nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../bridges/index.html"><span>&larr; bridges</span>Bridges</a><a class="next" rel="next" href="../guide/01-hello.html"><span>next &middot; the guide &rarr;</span>Hello &amp; Basics</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

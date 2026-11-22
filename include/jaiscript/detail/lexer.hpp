@@ -64,10 +64,12 @@ namespace jai {
     struct token {
         token_type type;
         bool joins_text = false;   // a template string's own '+': its splice becomes text, as `${x}` promises
-        std::string_view lexeme;  // Points to symbolizer storage (permanent) or static strings
+        uint8_t less_reading = 0;  // a '<' of a generic's text whose reading its declaration settled (detail/less_than.hpp): 1 compares, 2 opens type arguments
+        std::string_view lexeme;  // symbolizer storage or a static string; a literal's points into the lexer's copy of the source, which dies with the lexer (a token kept longer owns its text: detail::own_token_text)
         uint64_t symbol_id = 0;   // Pre-interned symbol ID for identifiers (0 = not interned)
         source_location location;
         std::string_view using_name;   // the first token of a name a using declaration rewrote: the name as written (declaration sites reject it)
+        uint32_t offset = 0;   // a punctuation token's byte offset in the lexed source (a lambda's saved text is cut by it)
 
         union {
             script_int int_value;
@@ -128,6 +130,7 @@ namespace jai {
         token error_token(const std::string& message);
         size_t token_line_ = 1;     // where the token being scanned starts: its location, an error's too
         size_t token_column_ = 1;
+        size_t token_offset_ = 0;
         source_location token_start() const;
 
         token scan_number();

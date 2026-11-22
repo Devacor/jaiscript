@@ -213,7 +213,7 @@ function serial(int n) -> string { array<int> xs = []; for (int i = 0; i < n; ++
 function par(int n) -> string { array<int> xs = []; for (int i = 0; i < n; ++i) { xs.push(i); } parallel_for (auto& v : xs) { body(v); } return to_string(xs); }
 0;)JAI", "par(300) == serial(300);", "par(300) == serial(300);", "enum Mode { Run, Idle, Walk } 0;", "par(300) == serial(300);", "par(300) == serial(300);",
 				  "class Tune { static int K = 7; } 0;", "try { par(30); } catch (err) { return err; } return \"ran\";" },
-				"0|true|true|0|true|true|0|parallel_for: 'Tune::K' is no longer a constant (a parallel body reads only const statics of a primitive value)|", "scoped const folds");
+				"0|true|true|0|true|true|0|ran|", "scoped const folds");
 		});
 
 		test("a_slots_kept_pins_follow_the_element_classes_between_regions", [this]() {

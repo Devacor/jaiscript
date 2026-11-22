@@ -19,8 +19,8 @@ public:
 			check_eq(std::string("plain text, no change"), es("web::html_escape(\"plain text, no change\");"));
 			check_eq(std::string("&amp;amp;"), es("web::html_escape(\"&amp;\");"));
 			check_eq(std::string("caf\xC3\xA9 &lt;\xF0\x9F\x99\x82&gt; \xFF\x00x", 22), es("web::html_escape(\"caf\xC3\xA9 <\xF0\x9F\x99\x82> \\xFF\\x00x\");"));
-			check_eq(std::string("utf8_string 10 \xC3\xA9&lt;b&gt;"), es("var u = web::html_escape(utf8_string(\"\xC3\xA9<b>\")); type_of(u) + \" \" + to_string(u.size()) + \" \" + u;"));
-			check_eq(std::string("string utf8_string"), es("`${type_of(web::html_escape(\"a\"))} ${type_of(web::html_escape(utf8_string(\"a\")))}`;"));
+			check_eq(std::string("utf8_string 10 \xC3\xA9&lt;b&gt;"), es("var u = web::html_escape(utf8_string(\"\xC3\xA9<b>\")); reflect::type_of(u) + \" \" + to_string(u.size()) + \" \" + u;"));
+			check_eq(std::string("string utf8_string"), es("`${reflect::type_of(web::html_escape(\"a\"))} ${reflect::type_of(web::html_escape(utf8_string(\"a\")))}`;"));
 			check_eq(std::string("x untouched"), es("string s = \"x\"; string t = web::html_escape(s); t += \" untouched\"; `${s} untouched`;"));
 		});
 
@@ -49,9 +49,9 @@ public:
 		});
 
 		test("html_unescape_keeps_the_text_kind_and_bytes_it_does_not_read", [this, es]() {
-			check_eq(std::string("utf8_string 4 \xC3\xA9<\xE2\x82\xAC>"), es("var u = web::html_unescape(utf8_string(\"\xC3\xA9&lt;&euro;&gt;\")); type_of(u) + \" \" + to_string(u.size()) + \" \" + u;"));
+			check_eq(std::string("utf8_string 4 \xC3\xA9<\xE2\x82\xAC>"), es("var u = web::html_unescape(utf8_string(\"\xC3\xA9&lt;&euro;&gt;\")); reflect::type_of(u) + \" \" + to_string(u.size()) + \" \" + u;"));
 			check_eq(std::string("\xFF<\x00", 3), es("web::html_unescape(\"\\xFF&lt;\\x00\");"));
-			check_eq(std::string("string no references"), es("`${type_of(web::html_unescape(\"no references\"))} ${web::html_unescape(\"no references\")}`;"));
+			check_eq(std::string("string no references"), es("`${reflect::type_of(web::html_unescape(\"no references\"))} ${web::html_unescape(\"no references\")}`;"));
 		});
 
 		test("html_escape_then_unescape_round_trips_every_byte_string", [this, es]() {

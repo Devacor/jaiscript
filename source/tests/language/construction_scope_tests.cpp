@@ -201,7 +201,8 @@ public:
 		});
 
 		test("a_reference_parameter_without_a_place_raises", [this]() {
-			both("int f() { return 3; } class D { int d = 0; D(int& r) { r = r + 1; d = r; } } string s = \"made\"; try { D(f()); } catch (e) { s = to_string(e); } s;",
+			// the checker sees this call and refuses it at load; a [[warn_mode]] region leaves it to the bind
+			both("[[warn_mode]]; int f() { return 3; } class D { int d = 0; D(int& r) { r = r + 1; d = r; } } string s = \"made\"; try { D(f()); } catch (e) { s = to_string(e); } s;",
 			     "Cannot pass non-lvalue to reference parameter", "the class's own constructor");
 			both("int f() { return 3; } class S { S(int& x) { x = x * 2; } } class U : S { U() : super(f()) {} } string s = \"made\"; try { U(); } catch (e) { s = to_string(e); } s;",
 			     "Cannot pass non-lvalue to reference parameter", "a base level's constructor");
@@ -250,6 +251,53 @@ public:
 
 		test("constructions_repeat_with_their_own_parameters", [this]() {
 			both("class B0 { int s = 0; B0(int v) { s = v; } } class S : B0 { S(int k) : super(k * k) {} } int t = 0; for (int i = 0; i < 200; ++i) { t += S(i).s; } t;", "2646700", "two hundred constructions");
+		});
+
+		// C++ [class.base.init]: the bases construct first, then every field in declaration order whatever the list's order; a field
+		// the list names takes that initializer, which reads the constructor's parameters, and skips its own
+		test("a_member_initializer_list_initializes_fields_in_declaration_order", [this]() {
+			const std::string note = "string log = \"\"; int note(string s, int v) { log = log + s; return v; } ";
+			both(note + "class B { int b = note(\"b\", 1); B(int k) { note(\"B\", 0); } } "
+			     "class C : B { int x = note(\"x\", 1); int y = note(\"y\", 2); int z = note(\"z\", 3); "
+			     "C(int k) : z(note(\"Z\", k)), x(note(\"X\", k + 1)), super(note(\"S\", k)) { note(\"C\", 0); } } "
+			     "C c = C(5); log + \" \" + to_string(c.x) + to_string(c.y) + to_string(c.z);", "SbBXyZC 625", "out of order, over a base");
+			both("class N { string name; int n = 3; N(string s) : name(s + \"!\") {} N() : N(\"d\") {} } N().name + N(\"q\").name + to_string(N().n);", "d!q!3",
+			     "a delegation names its target by the class's name");
+			both("namespace ns { class N { int v; N(int k) : v(k) {} N() : N(3) {} } } ns::N().v;", "3", "a namespace's class delegates by its bare name");
+			both("class P { int v = 1; int w = v * 10; P(int v) : w(v) {} } P(7).w;", "7", "a member initializer reads the parameter its own initializer cannot");
+			both("class Q { int a = 2; int b; Q() : b(a + 1) {} } Q().b;", "3", "a member initializer reads a field declared above it");
+			both("class R { int x; R(int v) : x{v} {} } R(4).x;", "4", "braces");
+			both("class F { float f; string s; F(int k) : f(k), s('c') {} } to_string(F(2).f) + F(2).s;", "2.0c", "each value converts as a store to its field does");
+		});
+
+		test("a_member_initializer_constructs_every_kind_of_field", [this]() {
+			both("class V { int x; V(int a) { x = a; } } "
+			     "class H { V v; array<int> xs; array<int> sized; math::vec2 p; map<string, int> m; shared_ptr<V> h; "
+			     "H(int k) : v(k), xs{k, k + 1}, sized(2, k), p(1.0, 2.0), m({\"a\": k}), h(new V(k * 2)) {} } "
+			     "H h = H(4); `${h.v.x} ${h.xs} ${h.sized} ${h.p} ${h.m[\"a\"]} ${h.h.x}`;", "4 [4, 5] [4, 4] (1.0, 2.0) 4 8",
+			     "a class value with no default constructor, arrays, a math value, a map and a handle");
+			both("class V { int x; V(int a) { x = a; } } class D { V v; D(int k) : v(k) {} D() : D(9) {} } D().v.x;", "9",
+			     "a class value field every constructor initializes, one through its delegation");
+		});
+
+		test("a_member_initializer_that_throws_destroys_what_was_initialized", [this]() {
+			both("string log = \"\"; class M { string n; M(string s) { n = s; log = log + \"+\" + n; } ~M() { log = log + \"-\" + n; } } "
+			     "class B { M bm = M(\"bm\"); B() {} ~B() { log = log + \"~B\"; } } int boom() { throw \"boom\"; } "
+			     "class D : B { M a; M b; int c; D(bool fail) : b(M(\"b\")), a(M(\"a\")), c(fail ? boom() : 1) {} ~D() { log = log + \"~D\"; } } "
+			     "{ D ok = D(false); } log = log + \"|\"; try { D bad = D(true); } catch (e) { log = log + \"!\" + e; } log;",
+			     "+bm+a+b~D-b-a~B-bm|+bm+a+b-b-a~B-bm!boom", "the members and the base, in reverse, and a prvalue argument is the member itself");
+		});
+
+		test("an_initializer_list_names_each_field_or_base_once", [this]() {
+			refused("class E { int x; int y; E() : x(1), x(2) {} } E();", "Class 'E' initializes field 'x' twice", "Class 'E' initializes field 'x' twice", "a field twice");
+			refused("class E { int x; E() : nope(1) {} } E();", "Class 'E' has no base or field 'nope' to initialize", "Class 'E' has no base or field 'nope' to initialize",
+			        "a name that is neither");
+			refused("class E { int x; static int s = 0; E() : s(1) {} } E();", "Class 'E' cannot initialize static member 's' in a constructor's initializer list",
+			        "Class 'E' cannot initialize static member 's' in a constructor's initializer list", "a static");
+			refused("class E { int x; E(int k) : x(k) {} E() : this(1), x(2) {} } E();", "A constructor of 'E' that delegates names nothing else in its initializer list: remove 'x'",
+			        "A constructor of 'E' that delegates names nothing else in its initializer list: remove 'x'", "a delegation beside a field");
+			refused("class E { int x; E() : x(\"s\") {} } E();", "cannot assign 'string' to field 'x' declared 'int'", "Cannot assign string to field 'x' of E (declared int)",
+			        "a value the field refuses");
 		});
 	}
 };

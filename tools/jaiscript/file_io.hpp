@@ -1,6 +1,6 @@
 #pragma once
-// The host file IO the runner and the jai_spider host register: read_file, write_file, file_exists, delete_file,
-// move_file, dir_exists, make_dirs, writable_dir and list_dir, each requiring the engine's filesystem permission.
+// The host file IO the runner and the jai_spider host register in the file namespace: read, write, exists, remove, move,
+// directory_exists, make_directories, ensure_writable_directory and list_directory, each requiring the engine's filesystem permission.
 #include <jaiscript/jaiscript.hpp>
 
 #include <algorithm>
@@ -24,7 +24,7 @@
 
 namespace jai_runner {
 
-// read_file: the file's bytes, "" for an empty file; a missing or unreadable one raises the catchable
+// file::read: the file's bytes, "" for an empty file; a missing or unreadable one raises the catchable
 // "Cannot read file '<path>': <reason>" (docs/site/guide/10-modules.html "Where files are")
 inline std::string read_file_or_raise(const std::string& path) {
 	namespace fs = std::filesystem;
@@ -63,18 +63,18 @@ inline bool spill_file(const std::string& path, const std::string& content) {
 
 inline void register_file_io(jai::engine& eng) {
 	namespace fs = std::filesystem;
-	eng.add_function("read_file", [](const std::string& path) -> std::string { return read_file_or_raise(path); }, jai::permissions::filesystem);
-	eng.add_function("write_file", [](const std::string& path, const std::string& content) -> bool {
+	eng.add_function("file::read", [](const std::string& path) -> std::string { return read_file_or_raise(path); }, jai::permissions::filesystem);
+	eng.add_function("file::write", [](const std::string& path, const std::string& content) -> bool {
 		return spill_file(path, content);
 	}, jai::permissions::filesystem);
-	eng.add_function("file_exists", [](const std::string& path) -> bool { return fs::exists(path); }, jai::permissions::filesystem);
-	eng.add_function("delete_file", [](const std::string& path) -> bool {
+	eng.add_function("file::exists", [](const std::string& path) -> bool { return fs::exists(path); }, jai::permissions::filesystem);
+	eng.add_function("file::remove", [](const std::string& path) -> bool {
 		std::error_code ec;
 		return fs::remove(path, ec);
 	}, jai::permissions::filesystem);
 	// the safe-save step: the destination is replaced in one operation on the same volume (MoveFileEx / rename(2)), a
 	// reader sees the old file or the new one; across volumes the move copies, then removes the source
-	eng.add_function("move_file", [](const std::string& from, const std::string& to) -> bool {
+	eng.add_function("file::move", [](const std::string& from, const std::string& to) -> bool {
 		std::error_code ec;
 		if (!fs::is_regular_file(from, ec)) { return false; }
 #ifdef _WIN32
@@ -89,11 +89,11 @@ inline void register_file_io(jai::engine& eng) {
 		return !ec && fs::remove(from, ec);
 #endif
 	}, jai::permissions::filesystem);
-	eng.add_function("dir_exists", [](const std::string& path) -> bool {
+	eng.add_function("file::directory_exists", [](const std::string& path) -> bool {
 		std::error_code ec;
 		return fs::is_directory(path, ec);
 	}, jai::permissions::filesystem);
-	eng.add_function("make_dirs", [](const std::string& path) -> bool {
+	eng.add_function("file::make_directories", [](const std::string& path) -> bool {
 		std::error_code ec;
 		fs::create_directories(path, ec);
 		return fs::is_directory(path, ec);
@@ -101,7 +101,7 @@ inline void register_file_io(jai::engine& eng) {
 	// The save-side question resolve_path cannot answer: can this folder take a file? Creates it
 	// if missing, writes and removes a probe. A program picks its save anchor with it:
 	// root_script_dir() when writable, app_data_dir(name) otherwise.
-	eng.add_function("writable_dir", [](const std::string& path) -> bool {
+	eng.add_function("file::ensure_writable_directory", [](const std::string& path) -> bool {
 		std::error_code ec;
 		fs::create_directories(path, ec);
 		if (!fs::is_directory(path, ec)) { return false; }
@@ -113,7 +113,7 @@ inline void register_file_io(jai::engine& eng) {
 		fs::remove(probe, ec);
 		return true;
 	}, jai::permissions::filesystem);
-	eng.add_function("list_dir", [](const std::string& path) -> std::vector<std::string> {
+	eng.add_function("file::list_directory", [](const std::string& path) -> std::vector<std::string> {
 		std::vector<std::string> names;
 		std::error_code ec;
 		for (const auto& entry : fs::directory_iterator(path, ec)) { names.push_back(entry.path().filename().generic_string()); }

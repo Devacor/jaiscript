@@ -113,6 +113,49 @@ public:
 			e->parallel_thread_count(2);
 			check_true(e->execute(src + "pb[11] == 344.0;").as_bool(), "the second region reads the rebound globals");
 		});
+		// a class's static is program state as a global is: read as of the statement through its class or bare in the class's methods,
+		// a write refused, in every parallel form and at every worker count
+		test("a_class_static_reads_as_a_global_does_in_a_parallel_body", [this]() {
+			const std::string prelude = R"(
+				class Plain { static int made = 7; static string tag = "t"; static array<int> list = [1, 2, 3]; static float f = 1.5;
+					int bare() { return made + list.size(); } }
+				class Kid : Plain { }
+				class Acc<T> { static T made = 9; }
+				namespace ns { class In { static int k = 4; } int g = 6; }
+				int via_fn() { return Plain::made; }
+			)";
+			const std::pair<const char*, const char*> cases[] = {
+				{"array<int> xs = [0, 0, 0]; parallel_for (auto& x : xs) { x = Plain::made; } to_string(xs);", "[7, 7, 7]"},
+				{"array<string> xs = [\"\", \"\"]; parallel_for (auto& x : xs) { x = Plain::tag + \"!\"; } to_string(xs);", "[\"t!\", \"t!\"]"},
+				{"array<int> xs = [0, 0]; parallel_for (auto& x : xs) { x = Plain::list[1] + Plain::list.size(); } to_string(xs);", "[5, 5]"},
+				{"array<float> xs = [0.0]; parallel_for (auto& x : xs) { x = Plain::f; } to_string(xs);", "[1.5]"},
+				{"array<int> xs = [0, 0]; parallel_for (auto& x : xs) { x = Kid::made; } to_string(xs);", "[7, 7]"},
+				{"array<int> xs = [0, 0]; parallel_for (auto& x : xs) { x = Acc<int>::made; } to_string(xs);", "[9, 9]"},
+				{"array<int> xs = [0, 0]; parallel_for (auto& x : xs) { x = via_fn(); } to_string(xs);", "[7, 7]"},
+				{"array<int> xs = [0, 0]; parallel_for (auto& x : xs) { x = ns::In::k + ns::g; } to_string(xs);", "[10, 10]"},
+				{"string r = \"ran\"; try { array<int> xs = [0, 0]; parallel_for (auto& x : xs) { ns::g = x; } } catch (e) { r = e; } r;",
+				 "parallel_for: body writes enclosing state 'ns::g' at 8:86"},
+				{"array<Plain> ps = [Plain(), Plain()]; array<int> xs = [0, 0]; parallel_for (auto& p, auto& x : ps, xs) { x = p.bare(); } to_string(xs);", "[10, 10]"},
+				{"to_string(parallel_transform([1, 2], [](int x) { return x + Plain::made; }));", "[8, 9]"},
+				{"to_string(parallel_reduce([1, 2], 0, [](int a, int x) { return a + x + Plain::made; }, [](int a, int b) { return a + b; }));", "17"},
+				{"Plain::made = 11; array<int> xs = [0, 0]; parallel_for (auto& x : xs) { x = Plain::made; } Plain::made = 7; to_string(xs);", "[11, 11]"},
+				{"string r = \"ran\"; try { array<int> xs = [0, 0]; parallel_for (auto& x : xs) { Plain::made = x; } } catch (e) { r = e; } r;",
+				 "parallel_for: body writes enclosing state 'Plain::made' at 8:89"},
+				{"string r = \"ran\"; try { array<int> xs = [0, 0]; parallel_for (auto& x : xs) { Plain::list.push(1); } } catch (e) { r = e; } r;",
+				 "parallel_for: method 'push' may mutate captured state 'Plain::list' at 8:94"},
+				{"string r = \"ran\"; try { array<int> xs = [0, 0]; parallel_for (auto& x : xs) { for (auto& v : Plain::list) { v = 1; } } } catch (e) { r = e; } r;",
+				 "parallel_for: cannot iterate captured state 'Plain::list' by reference in a parallel body (captured reads are read-only) at 8:82"},
+				{"to_string(Plain::made) + to_string(Plain::list);", "7[1, 2, 3]"},
+			};
+			for (size_t workers : {size_t(1), size_t(2), size_t(4)}) {
+				check_each(cases, [&](const auto& c) {
+					auto e = make_engine();
+					jai::stdlib::register_all(*e);
+					e->parallel_thread_count(workers);
+					check_eq(std::string(c.second), e->execute(prelude + c.first).to_string());
+				});
+			}
+		});
 		// every body shape (strings, float math, nested containers, recursion, captured scalars, maps and read-only methods,
 		// a weight fn) lands what the serial loop lands at every worker count
 		test("parallel_transform_lands_what_the_serial_loop_lands", [this]() {
@@ -2432,8 +2475,8 @@ public:
 				parallel_for (auto& x : bs) { x.a = x.a + 10; }
 				for (auto& x : serial) { x.a = x.a + 10; }
 				var p = []; var q = [];
-				for (auto x : bs) { p.push(x.a); p.push(type_of(x)); }
-				for (auto x : serial) { q.push(x.a); q.push(type_of(x)); }
+				for (auto x : bs) { p.push(x.a); p.push(reflect::type_of(x)); }
+				for (auto x : serial) { q.push(x.a); q.push(reflect::type_of(x)); }
 				p.push(cast<D>(bs[3]).b); p.push(cast<D>(bs[3]).tag);
 				q.push(cast<D>(serial[3]).b); q.push(cast<D>(serial[3]).tag);
 				return [p, q];
@@ -3626,29 +3669,30 @@ public:
 			}
 			const std::set<std::string> serial = {
 				"__jai_parallel_range",
-				"app_cache_dir", "app_data_dir", "array::filter", "array::map", "array::sort", "crypto::sha256_file", "extend",
-				"file_data", "from_base64", "from_binary", "from_json", "import_recheck_interval", "map::filter", "parallel_reduce",
+				"app_cache_dir", "app_data_dir", "array::filter", "array::map", "array::sort", "crypto::sha256_file", "debug::locals",
+				"debug::stack", "extend",
+				"file::data", "from_binary", "from_json", "import_recheck_interval", "map::filter", "parallel_reduce",
 				"parallel_transform", "print", "reflect::bases", "reflect::bind", "reflect::call", "reflect::classes",
 				"reflect::construct", "reflect::construct_shared", "reflect::fields", "reflect::function_arguments",
 				"reflect::functions", "reflect::generation", "reflect::get", "reflect::globals", "reflect::has_field",
-				"reflect::has_method", "reflect::instances", "reflect::invoke", "reflect::is_a", "reflect::is_cpp_bound",
-				"reflect::method_arguments", "reflect::methods", "reflect::scoped_template_dirs",
-				"reflect::scoped_template_output_limit", "reflect::set", "reflect::template_output_limit", "reflect::type_name",
-				"resolve_path", "sleep", "spider::Response", "spider::catch", "spider::get", "spider::post", "spider::sling",
-				"template#dynamic", "template#html", "template#raw", "template#scoped", "template#scoped_file", "template#splice",
+				"reflect::has_method", "reflect::instances", "reflect::invoke", "reflect::is_cpp_bound", "reflect::is_instance_of",
+				"reflect::method_arguments", "reflect::methods", "reflect::untrusted_template_dirs",
+				"reflect::untrusted_template_output_limit", "reflect::set", "reflect::template_output_limit", "reflect::type_name",
+				"resolve_path", "sleep", "spider::catch", "spider::get", "spider::post", "spider::response", "spider::sling",
+				"template#dynamic", "template#html", "template#raw", "template#untrusted", "template#untrusted_file", "template#splice",
 				"time::date", "time::date_from_unix", "time::date_now", "time::engine_elapsed", "time::execute_elapsed",
-				"time::local_date", "time::local_now", "time::now", "time::stopwatch", "time::unix_ms", "time::unix_time",
-				"time::utc_date", "time::utc_now", "to_base64", "to_binary", "to_json"
+				"time::local_date", "time::local_now", "time::stopwatch", "time::unix_ms", "time::unix_time",
+				"time::utc_date", "time::utc_now", "to_binary", "to_json"
 			};
 			const std::set<std::string> parallel = {
 				"array::append", "array::concat", "array::fill", "array::resize", "array::reverse", "array::slice", "base64_decode",
 				"base64_encode", "bin_dir", "binary::bytes", "binary::layout", "binary::reader", "binary::text", "binary::width",
-				"binary::writer", "catch_takes#", "catch_value#", "crypto::equals", "crypto::hmac_sha256", "crypto::hmac_sha256_bytes", "crypto::hmac_sha512",
+				"binary::writer", "catch_takes#", "catch_value#", "crypto::constant_time_equals", "crypto::hmac_sha256", "crypto::hmac_sha256_bytes", "crypto::hmac_sha512",
 				"crypto::hmac_sha512_bytes", "crypto::md5", "crypto::md5_bytes", "crypto::password_hash", "crypto::password_verify",
 				"crypto::random_bytes", "crypto::random_hex", "crypto::random_int", "crypto::sha1", "crypto::sha1_bytes",
 				"crypto::sha256", "crypto::sha256_bytes", "crypto::sha512", "crypto::sha512_bytes", "current_script_dir",
 				"current_script_path", "executable_dir", "executable_path", "file_name", "format", "format_value",
-				"is_registered_type", "jai::permissions::is_enabled", "math::abs", "math::acos", "math::angle", "math::angle_between", "math::asin", "math::atan", "math::atan2",
+				"reflect::is_registered_type", "jai::permissions::is_enabled", "map::merge", "math::abs", "math::acos", "math::angle", "math::angle_between", "math::asin", "math::atan", "math::atan2",
 				"math::cbrt", "math::ceil", "math::clamp", "math::color", "math::cos", "math::cosh", "math::cross", "math::degrees",
 				"math::degrees_to_radians", "math::distance", "math::distance_squared", "math::dot", "math::exp", "math::exp2",
 				"math::floor", "math::fmod", "math::from_angle", "math::hypot", "math::ifloor", "math::is_inf", "math::is_nan", "math::itrunc",
@@ -3658,11 +3702,11 @@ public:
 				"math::project", "math::radians", "math::radians_to_degrees", "math::reflect", "math::remap", "math::rotate", "math::rotate_around",
 				"math::round", "math::saturate", "math::sign", "math::sin", "math::sinh", "math::sqrt", "math::tan", "math::tanh",
 				"math::trunc", "math::unmix", "math::unmix_in", "math::unmix_in_out", "math::unmix_out", "math::unmix_out_in",
-				"math::vec2", "math::vec3", "math::vec4", "math::wrap", "math::wrap_add", "math::wrap_mul", "math::wrap_sub", "merge",
+				"math::vec2", "math::vec3", "math::vec4", "math::wrap", "math::wrap_add", "math::wrap_mul", "math::wrap_sub",
 				"pair", "parent_dir", "random", "regex", "regex::match", "root_script_dir", "root_script_path", "same_object",
 				"skip_flush_t", "skip_newline_t", "string::append", "string::from_bytes", "string::from_code", "string::is_valid_utf8",
 				"string::join", "string::pad_left", "string::pad_right", "string::repeat", "string::replace", "string::to_lower",
-				"string::to_upper", "string::trim", "thread_count", "to_char", "to_string", "type_of", "utf8_string", "vformat",
+				"string::to_upper", "string::trim", "thread_count", "to_char", "to_string", "reflect::type_of", "utf8_string", "vformat",
 				"web::build_query", "web::form_decode", "web::form_encode", "web::html", "web::html_escape", "web::html_unescape",
 				"web::parse_query", "web::parse_query_all", "web::parse_url", "web::url", "web::url_decode", "web::url_encode",
 				"working_dir"
@@ -4044,7 +4088,7 @@ public:
 			check_eq((size_t)64, node->size());
 			check_false(ks.checked_as_array().has_value(), "the array<var> view stays unavailable (not demoted)");
 			auto r = e->execute(R"(
-				var out = [ks[0].a, ks[7].a, ks[63].a, type_of(ks) + "/" + type_of(ks[63])];
+				var out = [ks[0].a, ks[7].a, ks[63].a, reflect::type_of(ks) + "/" + reflect::type_of(ks[63])];
 				[[warn_mode]] try { ks.push(5); out.push("accepted"); } catch (err) { out.push(err); }
 				[[warn_mode]] try { ks[0] = "s"; out.push("accepted"); } catch (err) { out.push(err); }
 				ks.push(K(3));
@@ -4254,9 +4298,9 @@ public:
 
 		test("typed_object_live_reference_pins_current_behavior", [this]() {
 			// A field reference minted THROUGH an element (auto& r = ks[3].a) counts as a live
-			// reference into the array: the fork takes the per-element walk, which detaches the
-			// pinned instance - the reference keeps the pre-region value, the element moves on.
-			// A direct element reference re-resolves through container+index: coherent.
+			// reference into the array: the fork takes the per-element walk, and the reference names the
+			// element's field, owning nothing - it reads and writes the element. A direct element reference
+			// re-resolves through container+index: coherent.
 			auto e = make_engine();
 			e->parallel_thread_count(4);
 			auto r = e->execute(R"(
@@ -4272,11 +4316,11 @@ public:
 				return out;
 			)");
 			const auto& vals = r.as_array();
-			check_eq((int64_t)3, vals[0].as_int(), "field ref detached from the element");
+			check_eq((int64_t)1003, vals[0].as_int(), "field ref names the element's field");
 			check_eq((int64_t)1003, vals[1].as_int());
 			check_eq((int64_t)1004, vals[2].as_int(), "element ref stays coherent");
 			check_eq((int64_t)1004, vals[3].as_int());
-			check_eq((int64_t)1003, vals[4].as_int(), "writes through the detached ref never reach the array");
+			check_eq((int64_t)-1, vals[4].as_int(), "a write through the field ref reaches the element");
 		});
 
 		test("typed_object_live_reference_then_released", [this]() {
@@ -4309,7 +4353,7 @@ public:
 				array<K> one = [K(9)];
 				parallel_for (auto& k : one) { k.a = k.a + 1; }
 				parallel_for (auto k : one) { k.a = 77; }
-				return [none.size(), one.size(), one[0].a, type_of(one[0])];
+				return [none.size(), one.size(), one[0].a, reflect::type_of(one[0])];
 			)");
 			const auto& vals = r.as_array();
 			check_eq((int64_t)0, vals[0].as_int());

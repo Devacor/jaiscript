@@ -1,5 +1,5 @@
 #pragma once
-// The socket primitives the runner's NetChannel/NetServer and the jai_spider host share: one spelling of a
+// The socket primitives the runner's net_channel/net_server and the jai_spider host share: one spelling of a
 // non-blocking TCP socket on Winsock and on POSIX.
 #ifdef _WIN32
 #ifndef NOMINMAX

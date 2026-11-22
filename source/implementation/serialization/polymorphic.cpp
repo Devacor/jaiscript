@@ -1,4 +1,5 @@
 #include <jaiscript/serialization/polymorphic.hpp>
+#include <jaiscript/detail/type_name_key.hpp>
 
 namespace jai::serialization {
 
@@ -54,6 +55,15 @@ auto polymorphic_registry::find(const std::string& name) const -> const type_ent
     std::shared_lock guard(mutex_);
     auto it = by_name_.find(name);
     return it != by_name_.end() ? it->second : nullptr;
+}
+
+std::string polymorphic_registry::name_of_key(std::string_view a_key) const {
+    std::shared_lock guard(mutex_);
+    std::string result;
+    for (const auto& [name, entry] : by_name_) {
+        if (detail::type_name_key(name) == a_key && (result.empty() || name < result)) { result = name; }
+    }
+    return result;
 }
 
 void polymorphic_registry::add_base_edge(std::type_index derived, std::type_index base, void* (*adjust)(void*)) {

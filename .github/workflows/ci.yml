@@ -70,19 +70,20 @@ jobs:
         with:
           arch: x64
 
+      # The image's own LLVM is first on PATH and can be older than the MSVC STL accepts; Visual Studio's Clang matches its STL
+      - name: Visual Studio's Clang
+        if: matrix.name == 'windows-clang'
+        run: |
+          llvm="$(cygpath -u "$VCINSTALLDIR")Tools/Llvm/x64/bin"
+          test -f "$llvm/clang-cl.exe" || { echo "::error::Visual Studio's C++ Clang tools are not installed ($llvm)"; exit 1; }
+          cygpath -w "$llvm" >> "$GITHUB_PATH"
+          "$llvm/clang-cl.exe" --version
+
       - name: Compiler cache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.name }}-${{ matrix.config }}
           max-size: 1G
-
-      # jai_spider downloads the SQLite amalgamation at configure time (pinned and hash-checked in tools/jai_spider/CMakeLists.txt);
-      # the cache keeps a sqlite.org outage from failing the cell. A system SQLite is used when CMake finds one.
-      - name: SQLite download cache
-        uses: actions/cache@v4
-        with:
-          path: build/tools/jai_spider/sqlite_download
-          key: sqlite-${{ hashFiles('tools/jai_spider/CMakeLists.txt') }}
 
       # Embedded (/Z7) debug info on MSVC Debug: ccache cannot cache /Zi's shared PDB.
       - name: Configure
@@ -257,3 +258,5 @@ jobs:
         run: find source/implementation -name '*.cpp' | sort | xargs -P 4 -n 1 g++-14 -std=c++20 -fsyntax-only -Iinclude -Isource
       - name: Public headers alone and warning-free
         run: HEADER_CXX=g++-14 bash tools/ci/gates.sh headers && HEADER_CXX=clang++ bash tools/ci/gates.sh headers
+      - name: The committed checker revision is the one the checker's sources give
+        run: bash tools/ci/gates.sh checker-revision

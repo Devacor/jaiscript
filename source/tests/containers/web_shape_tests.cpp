@@ -92,7 +92,7 @@ var texts = ["{\"a\":1,\"b\":[1,2,{\"c\":\"d\"}],\"a\":2}", " {\"k\" : \"v\\u00e
 	"[{\"id\":1,\"tags\":[\"a\"]},{\"tags\":[],\"id\":2}]", "1e999", "{\"$id\": 1, \"$type\": \"Pt\", \"$val\": {\"x\": 7}}"];
 for (auto& t : texts) {
 	var back = from_json(t);
-	out += to_json(back) + ":" + type_of(back) + "|";
+	out += to_json(back) + ":" + reflect::type_of(back) + "|";
 }
 var rows = from_json("[{\"name\":\"a\",\"v\":1},{\"name\":\"b\",\"v\":2},{\"v\":3,\"name\":\"c\"}]");
 rows[0]["name"] += "x";

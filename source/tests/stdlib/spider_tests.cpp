@@ -100,7 +100,7 @@ public:
 			transport->replies.push_back(reply(200, {{"Content-Type", "application/json"}, {"X-Many", "a"}, {"x-many", "b"}, {"Set-Cookie", "a=1; Path=/"}, {"Set-Cookie", "b=2"}}, "{\"n\": 3, \"list\": [1, 2]}"));
 			auto e = spider_engine(transport);
 			check_eq(std::string("200|true|application/json|a, b|2|a=1; Path=/|3|2|http://example.org/data?x=1|application/json"), text(e, R"(
-				spider::Response r = spider::get("http://example.org/data?x=1#frag");
+				spider::response r = spider::get("http://example.org/data?x=1#frag");
 				var j = r.json();
 				`${r.status}|${r.ok()}|${r.headers["content-type"]}|${r.headers["x-many"]}|${r.cookies.size()}|${r.cookies[0]}|${j["n"]}|${j["list"].size()}|${r.url}|${r.header("CONTENT-TYPE")}`;
 			)"));
@@ -252,44 +252,44 @@ public:
 		test("a_response_is_built_and_edited_by_a_server", [this, text]() {
 			auto e = spider_engine(std::make_shared<scripted_transport>());
 			check_eq(std::string("404|missing|text/plain|2|ok"), text(e, R"(
-				spider::Response r = spider::Response(404, "missing");
+				spider::response r = spider::response(404, "missing");
 				r.header("Content-Type", "text/plain").header("X-A", "1");
 				r.header("content-type", "text/plain");
 				`${r.status}|${r.body}|${r.header("CONTENT-type")}|${r.headers.size()}|${(r.ok() ? "bad" : "ok")}`;
 			)"));
 			check_eq(std::string("2 v 1"), text(e, R"(
-				spider::Response r;
+				spider::response r;
 				r.headers["X-B"] = "v";
 				r.headers["X-C"] = "w";
-				spider::Response copy = r;
+				spider::response copy = r;
 				copy.headers["X-D"] = "x";
 				`${r.headers.size()} ${r.header("x-b")} ${(copy.headers.size() - r.headers.size())}`;
 			)"));
-			check_eq(std::string("200 0 true"), text(e, "spider::Response r; `${r.status} ${r.body.size()} ${r.ok()}`;"));
+			check_eq(std::string("200 0 true"), text(e, "spider::response r; `${r.status} ${r.body.size()} ${r.ok()}`;"));
 		});
 
 		test("set_cookie_writes_one_line_per_cookie_with_the_safe_defaults", [this, text, caught]() {
 			auto e = spider_engine(std::make_shared<scripted_transport>());
 			check_eq(std::string("flavor=oat%20meal; Path=/; Max-Age=60; HttpOnly; SameSite=Lax|plain=1; Path=/|gone=; Path=/app; Max-Age=0; HttpOnly; SameSite=Lax|"
 				"s=1; Path=/; Domain=example.org; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Secure; HttpOnly; SameSite=Strict"), text(e, R"(
-				spider::Response r = spider::Response();
+				spider::response r = spider::response();
 				r.set_cookie("flavor", "oat meal", {"max_age": 60});
 				r.set_cookie("plain", "1", {"http_only": false, "same_site": ""});
 				r.clear_cookie("gone", {"path": "/app"});
 				r.set_cookie("s", "1", {"domain": "example.org", "expires": 10, "secure": true, "same_site": "Strict"});
 				r.cookies.join("|");
 			)"));
-			check(caught(e, R"(spider::Response r; r.set_cookie("a", "b", {"maxage": 1});)").find("Response.set_cookie: option 'maxage' is unknown") != std::string::npos, "an unknown cookie option is refused");
-			check(caught(e, R"(spider::Response r; r.set_cookie("a", "b", {"path": "/; Domain=evil.example"});)").find("Response.set_cookie: option 'path' holds a ';' or a control character") != std::string::npos,
+			check(caught(e, R"(spider::response r; r.set_cookie("a", "b", {"maxage": 1});)").find("spider::response.set_cookie: option 'maxage' is unknown") != std::string::npos, "an unknown cookie option is refused");
+			check(caught(e, R"(spider::response r; r.set_cookie("a", "b", {"path": "/; Domain=evil.example"});)").find("spider::response.set_cookie: option 'path' holds a ';' or a control character") != std::string::npos,
 				"an option holding ';' cannot add an attribute");
-			check(caught(e, R"(spider::Response r; r.set_cookie("a=b; x", "c");)").find("Response.set_cookie: 'a=b; x' is not a cookie name") != std::string::npos, "a cookie name is a token");
-			check(caught(e, R"(spider::Response r; r.header("X-A", "a\nB: c");)").find("Response.header: 'X-A' is not a header name, or its value holds a line break or NUL") != std::string::npos,
+			check(caught(e, R"(spider::response r; r.set_cookie("a=b; x", "c");)").find("spider::response.set_cookie: 'a=b; x' is not a cookie name") != std::string::npos, "a cookie name is a token");
+			check(caught(e, R"(spider::response r; r.header("X-A", "a\nB: c");)").find("spider::response.header: 'X-A' is not a header name, or its value holds a line break or NUL") != std::string::npos,
 				"a header value with a line break is refused");
 		});
 
 		test("the_checker_knows_the_signatures", [this]() {
 			auto e = spider_engine(std::make_shared<scripted_transport>());
-			auto report = e->check("spider::Response r = spider::get(\"http://h/\"); int s = r.status; spider::Response p = spider::post(\"http://h/\", {\"a\": 1}, {\"timeout\": 1}); spider::Response q = spider::sling(\"x\", \"http://h/\");");
+			auto report = e->check("spider::response r = spider::get(\"http://h/\"); int s = r.status; spider::response p = spider::post(\"http://h/\", {\"a\": 1}, {\"timeout\": 1}); spider::response q = spider::sling(\"x\", \"http://h/\");");
 			check(report.diagnostics.empty(), "typed uses of the client check clean");
 			auto bad = e->check("spider::get();");
 			check(!bad.diagnostics.empty(), "a call with no URL is a check error");

@@ -73,14 +73,14 @@ function demo_write(string path) -> bool {
 	path = data_path(path);
 	var d = {"seed": DEMO_SEED, "mapname": DEMO_MAP, "wad": DEMO_WAD, "skill": DEMO_SKILL,
 		"nightmare": DEMO_NM, "tics": DEMO_TICS};
-	write_file(path, to_json(d));
-	return file_exists(path);
+	file::write(path, to_json(d));
+	return file::exists(path);
 }
 
 function demo_load(string path) -> bool {
 	path = data_path(path);
-	if (!file_exists(path)) { return false; }
-	var txt = read_file(path);
+	if (!file::exists(path)) { return false; }
+	var txt = file::read(path);
 	if (txt.size() < 2) { return false; }
 	var d = from_json(txt);
 	if (d == null || !d.has("tics") || !d.has("seed") || !d.has("mapname")) { return false; }

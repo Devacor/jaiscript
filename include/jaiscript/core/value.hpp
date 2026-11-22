@@ -256,13 +256,22 @@ namespace detail {
         // One step of that list: a value into its placeholder, a map entry into its copied map, an object slot onto its
         // copied array, or the end of an instance's copy (its C++ object, after its fields)
         struct deep_copy_item {
-            enum class step : uint8_t { value, entry, slot, finish, finish_overflow };
+            enum class step : uint8_t { value, entry, slot, finish, finish_overflow, watched_end };
             step what;
             const void* source;
             void* dest;
             size_t index = 0;
         };
-        using deep_copy_work = std::vector<deep_copy_item>;
+        // The list, and the watch a copy keeps over what could hold a callable: how many watched copies are open around the
+        // value being copied (an instance whose class can hold one, class_instance::deep_copy_with_care; an array of objects,
+        // an untyped array and a map, which count once around their elements), and whether a closure or a coroutine bound to
+        // a class instance was met under one. The outermost watched copy that met one binds, inside the copy, every callable
+        // that was bound to an instance inside the original. A typed buffer and an instance whose class cannot hold a
+        // callable never read or write either
+        struct deep_copy_work : std::vector<deep_copy_item> {
+            uint32_t watched = 0;
+            uint32_t met_bound_callable = 0;   // a flag, sized so the two are one word a copy clears beside its list
+        };
     }
 
     class script_value {
@@ -399,7 +408,10 @@ namespace detail {
         // clone_element's rule into dest, which must not move until the work list is done
         void clone_element_into(script_value& dest, detail::deep_copy_work& work, unsigned depth) const;
         // The copy of a subtree below detail::k_inline_copy_depth, on a work list
-        void clone_subtree_into(script_value& dest) const;
+        void clone_subtree_into(script_value& dest, detail::deep_copy_work& outer) const;
+        // The outermost watched copy was this array's or this map's and met a closure or a coroutine bound to an instance:
+        // those bound to an instance this value holds are bound to the copy's (detail/copy_rebind.hpp)
+        void end_watched_copy(script_value& copy, detail::deep_copy_work& work) const;
 
         // Parallel-region detach (parallel_transform v0): deep copy where EVERY heavy
         // node gets a fresh strong_ptr - including strings, which clone() and plain
@@ -488,7 +500,25 @@ namespace detail {
         // A reference minted through an element of `root` (a chain rooted at arr[i]: nested
         // field, nested element) also counts in root->live_elem_refs, so a parallel fork over
         // `root` can prove its elements reference-free without touching one (value.cpp).
-        static void pin_element_root(script_value& reference, const strong_ptr<script_array>& root);
+        static void pin_element_root(script_value& reference, const strong_ptr<script_array>& root,
+                                     const strong_ptr<script_array>& parent = {}, size_t parent_index = SIZE_MAX);
+        // A reference minted through a chain whose base is a boxed local holds that local's cell (value.cpp)
+        static void pin_root_cell(script_value& reference, const script_value& base_slot);
+        // A reference value a binding takes (a reference variable, parameter or loop variable) becomes a view (value.cpp)
+        static void bind_view(const script_value& reference) noexcept;
+        // The reference a U& binding makes of a handle lvalue: it names the handle's object (value.cpp)
+        static script_value make_object_view(const script_value& handle, engine* eng);
+        // The live element and map-entry references into a container (value.cpp's view list): what the container let go of
+        // they name no more. An element change: its kind, its index or range, and an in-place filter's keep marks.
+        struct element_view_change {
+            enum class kind : uint8_t { scratch_only, removed_from, erased_at, inserted_at, kept, kept_range, permuted };
+            kind what = kind::scratch_only;
+            size_t first = 0;
+            size_t end = 0;
+            const std::vector<uint8_t>* kept = nullptr;
+        };
+        static void change_element_views(script_array& node, const element_view_change& change) noexcept;
+        static void remove_map_views(script_map& map, const script_value* key = nullptr) noexcept;   // null: every entry
         // Cell reference (Lua-upvalue box): the reference OWNS the boxed value. Escape-marked
         // variables hold one from declaration; ref binding/aliasing shares the handle, and the
         // cell keeps the value alive for as long as any handle exists (escape-legal semantics).
@@ -501,6 +531,7 @@ namespace detail {
         // list swept as it grows) and at engine teardown (release_deferred_cell_cycles).
         static void gather_shared_cells(const script_value* values, size_t count, std::vector<script_value>& out);
         static bool is_shared_cell(const script_value& value) noexcept;   // a cell something besides `value` holds too
+        static size_t reference_holders(const script_value& value) noexcept;   // the handles on a reference's holder, 0 for a value
         static void release_cell_cycles(std::vector<script_value>& cells, engine* eng);
         static bool release_plain_cells(std::vector<script_value>& cells, engine* eng);
         static void release_deferred_cell_cycles(engine* eng);
@@ -1029,6 +1060,9 @@ namespace detail {
 
 
         // Unchecked function accessor - caller must verify is_function() first
+        inline const script_function_node& unchecked_function_node() const noexcept {
+            return **storage_.get_if<TYPEID_FUNCTION>();
+        }
         inline const script_function& unchecked_as_function() const noexcept {
             return **storage_.get_if<TYPEID_FUNCTION>();
         }
@@ -1972,6 +2006,7 @@ namespace detail {
     private:
         const script_value& deref_slow() const;
         script_value& deref_slow();
+        const script_value& deref_target() const;   // what the holder names, before a declared reference's type is held to it
         template<typename V>
         void assign_through_reference(V&& value);
     public:
@@ -2185,6 +2220,27 @@ namespace detail {
             std::unique_ptr<detail::argument_capture_storage> argument_source;
             bool has_cell = false;      // inline storage holds the OWNED value
             bool has_map_key = false;   // inline storage holds the map KEY (container_map set)
+            // An element or map-entry reference is a view: linked in its container's list (view_head) while it lives, so
+            // the container that removes what it names, or empties itself, marks it gone
+            bool view_linked = false;   // bound (bind_view): counted in its containers and in its container's list
+            uint8_t view_state = view_live;
+            static constexpr uint8_t view_live = 0;
+            static constexpr uint8_t view_removed = 1;
+            static constexpr uint8_t view_moved = 2;   // an insert or erase at or below its index: the element it named is elsewhere
+            // the text a touch of a gone element view raises (built only on the failing path)
+            const char* element_gone_text() const noexcept {
+                return view_state == view_moved ? "Reference to a moved array element" : "Reference to a removed array element";
+            }
+            reference_holder* view_prev = nullptr;
+            reference_holder* view_next = nullptr;
+            void link_view(void*& head) noexcept;     // value.cpp
+            void unlink_view() noexcept;
+            // the view names nothing from now on: an element reference's index leaves the array, so every touch fails its
+            // bounds test and raises (detail::element_gone_text names why)
+            void mark_view_gone(uint8_t state) noexcept;
+            // a by-ref loop's cursor names the next element: a new binding, whatever the last one met
+            void repoint_element(size_t index) noexcept { container_index = index; view_state = view_live; }
+            void revive_view() noexcept { view_state = view_live; }
             strong_ptr<script_map> container_map;
             // the key's entry as the last touch found it, valid while the map's generation holds (script_map::recall)
             mutable uint64_t map_memo_gen = 0;
@@ -2227,6 +2283,20 @@ namespace detail {
             // The instance is pinned by its shared ownership
             class_instance* owner_instance = nullptr;
             strong_ptr<class_instance> owner_shared;
+            // A bound field or object reference names its object without owning it (bind_view): the object dies when its owners let
+            // it go, and the reference raises from then on. A reference an expression is still evaluating holds it (owner_shared, or
+            // an object view's counted inline value) as the temporary it reads.
+            jai::weaker_ptr<object_holder> owner_weak;
+            bool object_borrowed = false;   // an object view's inline value holds no count of its own (owner_weak keeps the block)
+            bool owner_gone() const noexcept { return owner_weak.owner_identity() != nullptr && owner_weak.expired(); }
+            class_instance* live_owner() const noexcept { return owner_gone() ? nullptr : owner_instance; }
+            // a field of an array's element (arr[i].f): the element an insert or remove moved, or a removal took, is not the
+            // object the reference names, as for an element reference
+            bool element_view_gone() const noexcept { return elem_parent && view_state != view_live; }
+            bool field_gone() const noexcept { return owner_gone() || element_view_gone(); }
+            const char* field_gone_text() const noexcept {
+                return element_view_gone() ? element_gone_text() : owner_gone() ? "Reference to a destroyed object" : "Reference to a removed field";
+            }
             uint64_t field_id = UINT64_MAX;
             // the field's slot as the owner's class assigned it (a slot never moves within a class; a re-class changes the class, a
             // reload bumps its field-shape epoch): field_cell() reads the slot while both match, else finds the field by id and
@@ -2238,6 +2308,16 @@ namespace detail {
             // The array this reference was minted THROUGH (chain rooted at arr[i]; null when
             // not): counted in its live_elem_refs like a direct element reference.
             strong_ptr<script_array> elem_root;
+            // A field reference into an element's object (arr[i].f, a value path from the element): the array that holds the element
+            // and its index there. The reference is a view in that array's list, so an insert, a remove or a removal marks it
+            strong_ptr<script_array> elem_parent;
+            size_t elem_parent_index = SIZE_MAX;
+            size_t view_index() const noexcept { return container ? container_index : elem_parent_index; }
+            // The cell of the local a chain starts from (local[0], local.h): a reference keeps alive the local it starts from
+            strong_ptr<reference_holder> root_cell;
+            // OBJECT mode (`U& r = p` over a handle p, a U& parameter given one): the reference names the handle's object, never
+            // the handle. The inline storage holds the object as a U value; a store copy-assigns into it.
+            bool object_view = false;
 
             // CPP-MEMBER / PROPERTY modes (null in every other mode; checked last on
             // every touch so those pay nothing). resolve_target() answers null for both:
@@ -2992,7 +3072,9 @@ namespace detail {
     // A value handed out of the engine (execute, execute_file, get_variable, hold): it keeps its payload until its engine is
     // destroyed, never the engine itself. The engine's teardown releases the payload while the engine still runs destructors and
     // leaves the held value outlived: valid() is false, get_engine() is null and every read throws "Value outlived its engine."
-    // A copy into a plain script_value is a borrow, valid while the engine lives
+    // A copy into a plain script_value is a borrow, valid while the engine lives. A callback's hold
+    // (the function a std::function made of a script function calls, what a signal receiver saved) is released later in the
+    // teardown, after the program's variables, so a receiver still fires for the destructors those run
     class held_value : public script_value {
     public:
         held_value(script_value value, engine* holder);
@@ -3039,6 +3121,7 @@ namespace detail {
 
     private:
         friend class engine;
+        held_value(script_value value, engine* holder, bool callback);
         void check_alive() const { if (outlived_) [[unlikely]] { throw_outlived(); } }
         void rebind(engine* holder, bool outlived);
         [[noreturn]] JAI_NOINLINE static void throw_outlived();
@@ -3046,6 +3129,7 @@ namespace detail {
         held_value* previous_ = nullptr;   // the engine's registry of held values: an intrusive list under its lock
         held_value* next_ = nullptr;
         bool outlived_ = false;
+        bool callback_ = false;            // which of the engine's two lists holds it, fixed when it is made
     };
 
     // ---- script_array kind-dispatched element access (script_value complete here) ----
@@ -3108,7 +3192,8 @@ namespace detail {
     inline script_array::script_array() : values_() {}
     inline script_array::script_array(kind_t k) : kind_(k) { construct_lane(); }
 
-    inline script_array::script_array(const script_array& other) : live_elem_refs(other.live_elem_refs), kind_(other.kind_), owner(other.owner) {
+    // references stay on the node they were made into: a copy or a move starts with none
+    inline script_array::script_array(const script_array& other) : kind_(other.kind_), owner(other.owner) {
         switch (lane_of(kind_)) {
             case lane_t::values: new (&values_) std::vector<script_value>(other.values_); break;
             case lane_t::ints: new (&ints_) std::vector<script_int>(other.ints_); break;
@@ -3118,7 +3203,7 @@ namespace detail {
             case lane_t::objs: new (&objs_) std::vector<obj_slot>(other.objs_); break;
         }
     }
-    inline script_array::script_array(script_array&& other) noexcept : live_elem_refs(other.live_elem_refs), kind_(other.kind_), owner(other.owner) {
+    inline script_array::script_array(script_array&& other) noexcept : kind_(other.kind_), owner(other.owner) {
         switch (lane_of(kind_)) {
             case lane_t::values: new (&values_) std::vector<script_value>(std::move(other.values_)); break;
             case lane_t::ints: new (&ints_) std::vector<script_int>(std::move(other.ints_)); break;
@@ -3137,8 +3222,8 @@ namespace detail {
     }
     inline script_array& script_array::operator=(script_array&& other) noexcept {
         if (this != &other) {
+            if (live_elem_refs) [[unlikely]] { release_element_views(); }
             destroy_lane();
-            live_elem_refs = other.live_elem_refs;
             kind_ = other.kind_;
             owner = other.owner;
             switch (lane_of(kind_)) {
@@ -3185,6 +3270,7 @@ namespace detail {
         }
     }
     inline void script_array::clear() noexcept {
+        if (live_elem_refs) [[unlikely]] { release_element_views(); }
         switch (lane_of(kind_)) {
             case lane_t::values: detail::clear_elements(values_); break;
             case lane_t::ints: ints_.clear(); break;
@@ -3230,6 +3316,7 @@ namespace detail {
 	}
 
 	inline void script_array::retain_range(size_t a_start, size_t a_end) {
+		if (live_elem_refs) [[unlikely]] { release_element_views(); }
 		// the dropped elements die last to first: the tail, then the head
 		auto retain = [&](auto& a_buffer, size_t a_stride = 1) {
 			using buffer_t = std::remove_reference_t<decltype(a_buffer)>;
@@ -3252,6 +3339,7 @@ namespace detail {
 		}
 	}
 	inline void script_array::retain_selected(const std::vector<uint8_t>& a_selected) {
+		if (live_elem_refs) [[unlikely]] { release_element_views(); }
 		// the dropped elements die last to first, once the kept ones have closed ranks
 		auto retain = [&](auto& a_buffer, size_t a_stride = 1) {
 			using buffer_t = std::remove_reference_t<decltype(a_buffer)>;
@@ -3285,6 +3373,7 @@ namespace detail {
 	}
 
     inline void script_array::assign_buffer(const script_array& other) {
+        if (live_elem_refs) [[unlikely]] { release_element_views(); }
         switch_lane(other.kind_);
         switch (other.kind_) {
             case kind_t::i64: ints_ = other.ints_; break;
@@ -3354,10 +3443,12 @@ namespace detail {
                 bytes_[i] = static_cast<uint8_t>(v.unchecked_as_int());   // pre-converted: an int in the kind's range
                 break;
             case kind_t::str:
+                if (live_elem_refs) [[unlikely]] { release_element_views(); }
                 strs_[i] = v.unchecked_string_handle();   // pre-converted: exactly a string
                 break;
             case kind_t::obj:
                 assert(v.raw_storage_index() == script_value::TYPEID_OBJECT && "object slot store: caller converts first");
+                if (live_elem_refs) [[unlikely]] { release_element_views(); }
                 objs_[i] = obj_slot{v.unchecked_object_handle(), v.get_type_info()};   // pre-converted: exactly an object
                 break;
             case kind_t::v2: case kind_t::iv2: case kind_t::v3: case kind_t::iv3: case kind_t::v4: case kind_t::rgba:
@@ -3424,6 +3515,7 @@ namespace detail {
     }
 
     inline void script_array::truncate(size_t n) {
+        if (live_elem_refs) [[unlikely]] { release_element_views(); }
         switch (kind_) {
             case kind_t::i64: if (n < ints_.size()) { ints_.resize(n); } break;
             case kind_t::f64: if (n < floats_.size()) { floats_.resize(n); } break;
@@ -3443,6 +3535,7 @@ namespace detail {
     }
 
     inline void script_array::pop_back() {
+        if (live_elem_refs) [[unlikely]] { release_element_views(); }
         switch (kind_) {
             case kind_t::i64: ints_.pop_back(); break;
             case kind_t::f64: floats_.pop_back(); break;
@@ -3460,6 +3553,7 @@ namespace detail {
     }
 
     inline void script_array::erase_at(size_t i) {
+        if (live_elem_refs) [[unlikely]] { release_element_views(); }
         switch (kind_) {
             case kind_t::i64: ints_.erase(ints_.begin() + i); break;
             case kind_t::f64: floats_.erase(floats_.begin() + i); break;
@@ -3555,6 +3649,7 @@ namespace detail {
     }
 
     inline void script_array::demote_to_hetero(engine* eng) {
+        if (live_elem_refs) [[unlikely]] { release_element_views(); }
         if (kind_ == kind_t::hetero) { return; }
         std::vector<script_value> boxed;
         switch (kind_) {

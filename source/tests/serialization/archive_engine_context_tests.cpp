@@ -21,6 +21,38 @@ namespace jai::foundry::tests {
 
 struct unrelated_archive_context {};
 
+// load_and_construct binding a reference member: construct<T> forwards its arguments, so construct(target) reaches T(int&); the
+// referent comes from the archive's user context
+struct counter_context { int target = 0; };
+class counted_ref : public property_owner<counted_ref> {
+    friend jai::access;
+public:
+    explicit counted_ref(int& a_target) : target(a_target) {}
+    int& target;
+    JAI_PROPERTY((int), steps, 0);
+protected:
+    template<class Archive> void save(Archive& archive, std::uint32_t const) const { property_mgr.save(archive); }
+    template<class Archive> void load(Archive& archive, std::uint32_t const) { property_mgr.load(archive); }
+    template<class Archive> static void load_and_construct(Archive& archive, jai::serialization::construct<counted_ref>& construct) {
+        construct(archive.template get_user_context<counter_context>()->target);
+        construct->load(archive, 0);
+    }
+};
+
+// The archive names the referent and the user context holds it: the saved key picks the context's object
+struct keyed_context { std::map<std::string, int> targets; };
+struct keyed_ref {
+    std::string key;
+    int& target;
+    keyed_ref(std::string a_key, int& a_target) : key(std::move(a_key)), target(a_target) {}
+    template<class Archive> void serialize(Archive& archive) { archive(jai::serialization::make_nvp("key", key)); }
+    template<class Archive> static void load_and_construct(Archive& archive, jai::serialization::construct<keyed_ref>& construct) {
+        std::string savedKey;
+        archive(jai::serialization::make_nvp("key", savedKey));
+        construct(savedKey, archive.template get_user_context<keyed_context>()->targets.at(savedKey));
+    }
+};
+
 // A clickable widget shape: a property_owner whose JAI_SIGNAL persists owned text receivers.
 class context_receiver_owner : public property_owner<context_receiver_owner> {
 public:
@@ -51,6 +83,42 @@ public:
             auto loaded = from_json<empty_map_holder>(*eng, json);
             check_eq((int)3, loaded.games, "scalar after the empty map: " + json);
             check_true(loaded.ratings.empty(), "empty map stays empty");
+        });
+        test("load_and_construct_binds_a_reference_member_from_the_user_context", [this]() {
+            auto eng = make_engine();
+            int original_target = 1;
+            auto saved = std::make_shared<counted_ref>(original_target);
+            saved->steps = 4;
+            const std::string json = to_json(*eng, saved);
+            counter_context context;
+            auto loaded = from_json<std::shared_ptr<counted_ref>>(*eng, json, context);
+            check_true(loaded != nullptr, json);
+            check_eq((int)4, loaded->steps.get(), "the record's fields restore after the construction");
+            loaded->target = 9;
+            check_eq((int)9, context.target, "the reference names the context's object");
+            check_eq((int)1, original_target, "never the saved object's referent");
+            counter_context binary_context;
+            auto from_bytes = from_binary<std::shared_ptr<counted_ref>>(*eng, to_binary(*eng, saved), binary_context);
+            check_true(from_bytes != nullptr && from_bytes->steps.get() == 4, "the binary archive loads the record");
+            from_bytes->target += 2;
+            check_eq((int)2, binary_context.target, "the binary load binds its own context's object");
+        });
+        test("load_and_construct_binds_a_reference_member_the_archive_names", [this]() {
+            auto eng = make_engine();
+            int original_target = 0;
+            auto saved = std::make_shared<keyed_ref>("b", original_target);
+            keyed_context context;
+            context.targets["a"] = 1;
+            context.targets["b"] = 2;
+            auto loaded = from_json<std::shared_ptr<keyed_ref>>(*eng, to_json(*eng, saved), context);
+            check_true(loaded != nullptr && loaded->key == "b", "the record's key loads");
+            loaded->target = 7;
+            check_eq((int)7, context.targets["b"], "the reference names the object the saved key picks");
+            check_eq((int)1, context.targets["a"]);
+            auto from_bytes = from_binary<std::shared_ptr<keyed_ref>>(*eng, to_binary(*eng, saved), context);
+            from_bytes->target += 1;
+            check_eq((int)8, context.targets["b"], "the binary load binds the same object");
+            check_eq((int)0, original_target, "never the saved object's referent");
         });
         test("json_reader_ctor_engine_is_implicit_context", [this]() {
             auto eng = make_engine();

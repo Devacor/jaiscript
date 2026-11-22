@@ -28,6 +28,16 @@ enum class foreign_word : unsigned char {
 	strict_not_equal,
 	generator_function,
 	spread,
+	template_prefix,
+	dynamic_pointer_cast_call,
+	struct_declaration,
+	pointer_type,
+	typedef_declaration,
+	using_alias,
+	unsigned_type,
+	long_type,
+	short_type,
+	std_namespace,
 };
 
 inline constexpr std::string_view foreign_word_text(foreign_word w) noexcept {
@@ -72,7 +82,41 @@ inline constexpr std::string_view foreign_word_text(foreign_word w) noexcept {
 			return "JaiScript has no 'function*': a generator is a coroutine, coroutine name(...) { yield v; }";
 		case foreign_word::spread:
 			return "JaiScript has no spread '...': join arrays with array::concat(a, b) (a.concat(b) appends in place), and pass arguments one by one";
+		case foreign_word::template_prefix:
+			return "JaiScript has no 'template<...>' prefix: a generic lists its type parameters after its name, class Stack<T> { ... } or T largest<T>(array<T> xs) { ... }";
+		case foreign_word::dynamic_pointer_cast_call:
+			return "JaiScript has no 'dynamic_pointer_cast': dynamic_cast<T>(x) is x as a shared_ptr<T>, null when it is not one";
+		case foreign_word::struct_declaration:
+			return "JaiScript has no 'struct': write class Name { ... }; its members start public";
+		case foreign_word::pointer_type:
+			return "JaiScript has no pointer types: hold a value as T x, share an object as shared_ptr<T>, and pass one to change it as T&";
+		case foreign_word::typedef_declaration:
+			return "JaiScript has no 'typedef': write the type itself, or make a class that holds it";
+		case foreign_word::using_alias:
+			return "JaiScript has no type aliases ('using X = T'): write the type itself, or make a class that holds it";
+		case foreign_word::unsigned_type:
+			return "JaiScript has no 'unsigned': int is a signed 64-bit integer, and array<uint8> holds bytes";
+		case foreign_word::long_type:
+			return "JaiScript has no 'long': int is already 64 bits";
+		case foreign_word::short_type:
+			return "JaiScript has no 'short': write int";
+		case foreign_word::std_namespace:
+			return "JaiScript has no 'std::': write array<T> for vector, map<K, V> for map, string for string and print(...) for cout";
 	}
+	return {};
+}
+
+inline constexpr std::string_view foreign_define_text =
+	"JaiScript has no '#define': write const int N = 4; for a constant and a function for a macro";
+
+// A C++ container or string method a builtin spells differently; empty for every other name. receiver is the builtin's type name.
+inline constexpr std::string_view foreign_member_text(std::string_view receiver, std::string_view member) noexcept {
+	if (receiver.substr(0, 5) == "array") {
+		if (member == "push_back") { return "write a.push(v)"; }
+		if (member == "pop_back") { return "write a.pop()"; }
+		if (member == "emplace_back") { return "construct the value and push it: a.push(T(args))"; }
+	}
+	if (member == "c_str" && (receiver == "string" || receiver == "utf8_string")) { return "a string is already its text: pass s itself"; }
 	return {};
 }
 

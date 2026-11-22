@@ -113,9 +113,9 @@ private:
 		int room = G.w - left.size() - 2;
 		if (m.size() > room) { m = m.substr(0, imax(0, room)); }
 		string body = pad_to(left + string::repeat(" ", imax(1, G.w - left.size() - m.size() - 1)) + m, G.w);
-		string strip = ESC + "[48;5;235m" + ESC + "[38;5;250m";
+		string strip = esc + "[48;5;235m" + esc + "[38;5;250m";
 		if (msg_t > 0) {
-			strip = ESC + "[48;5;235m" + ESC + "[" + msg_color + "m";
+			strip = esc + "[48;5;235m" + esc + "[" + msg_color + "m";
 		}
 		return strip + body + RESET;
 	}
@@ -158,10 +158,10 @@ private:
 			int fill = imax(0, G.w - used);
 			string aseg = pad_to(string::repeat(" ", imin(fill > 0 ? bob_shift : 0, 2)) + art[r], art_w + fill);
 			string hp_col = G.player.hp > 40 ? "97" : "91";
-			rows.push(ESC + "[48;5;236m" + ESC + "[" + hp_col + "m" + lseg +
-				ESC + "[38;5;179m" + mseg +
-				ESC + "[38;5;114m" + fseg +
-				ESC + "[38;5;250m" + aseg.substr(0, imax(0, G.w - left_w - mid_w - face_w)) + RESET);
+			rows.push(esc + "[48;5;236m" + esc + "[" + hp_col + "m" + lseg +
+				esc + "[38;5;179m" + mseg +
+				esc + "[38;5;114m" + fseg +
+				esc + "[38;5;250m" + aseg.substr(0, imax(0, G.w - left_w - mid_w - face_w)) + RESET);
 		}
 		return rows;
 	}
@@ -177,7 +177,7 @@ private:
 			string body = "";
 			if (li >= 0 && li < lines.size()) { body = lines[li]; }
 			int padl = imax(0, (G.w - body.size()) / 2);
-			rows.push(ESC + "[48;5;233m" + tint + pad_to(string::repeat(" ", padl) + body, G.w) + RESET);
+			rows.push(esc + "[48;5;233m" + tint + pad_to(string::repeat(" ", padl) + body, G.w) + RESET);
 		}
 		return rows;
 	}
@@ -193,7 +193,7 @@ private:
 		lines.push(blink == 0 ? ">>> press FIRE to descend <<<" : "");
 		lines.push("");
 		lines.push("w/s move  a/d strafe  arrows turn  SPACE fire  E use  1/2/3 weapons  m map");
-		string tint = (G.tick / 4) % 3 == 0 ? ESC + "[38;5;203m" : ESC + "[38;5;209m";
+		string tint = (G.tick / 4) % 3 == 0 ? esc + "[38;5;203m" : esc + "[38;5;209m";
 		return screen_rows(lines, tint).join("\n");
 	}
 
@@ -213,7 +213,7 @@ private:
 			"",
 			G.map_i + 1 < MAPS.size() ? "press FIRE for the next floor" : "press FIRE to face the dark"
 		];
-		return screen_rows(lines, ESC + "[38;5;114m").join("\n");
+		return screen_rows(lines, esc + "[38;5;114m").join("\n");
 	}
 
 	string dead() {
@@ -227,7 +227,7 @@ private:
 			"",
 			"press FIRE to rise again"
 		];
-		return screen_rows(lines, ESC + "[38;5;196m").join("\n");
+		return screen_rows(lines, esc + "[38;5;196m").join("\n");
 	}
 
 	string victory() {
@@ -243,7 +243,7 @@ private:
 		lines.push(`episode time     ${mins}m ${secs}s   deaths ${G.deaths}`);
 		lines.push("");
 		lines.push("the gloom lifts. for now.        (ESC quits)");
-		return screen_rows(lines, ESC + "[38;5;220m").join("\n");
+		return screen_rows(lines, esc + "[38;5;220m").join("\n");
 	}
 
 	// the play-mode frame: world rows + status strip + panel

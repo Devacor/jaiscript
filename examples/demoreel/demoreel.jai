@@ -1,7 +1,7 @@
 // demoreel.jai — drag-drop shim: runs the demoreel on the standalone jaiscript
 // runner with zero C++ beyond the runner itself. Recreates the C++ host contract
-// (demoreel_host.cpp) in script: the ESC global, the itrunc/ifloor casts, host_log
-// and the seeded xorshift64* Rng class, bit-exact under checked int64 (16-bit-limb
+// (demoreel_host.cpp) in script: the esc global, the itrunc/ifloor casts, host_log
+// and the xorshift64* seeded_rng class, bit-exact under checked int64 (16-bit-limb
 // multiplies, masked logical shifts). Then it imports the scene files in the host's
 // load order and pumps demo_frame at 30 fps.
 //
@@ -30,7 +30,7 @@
 
 // ---------------------------------------------------------------- host API ---
 
-string ESC = to_string(to_char(27));
+string esc = to_string(to_char(27));
 var RUNNER_BACKEND = "vm";   // HUD label only; the reel never branches on it
 
 function itrunc(float v) -> int { return math::itrunc(v); }
@@ -54,9 +54,9 @@ function u64_shr(int x, int k) -> int {
 	return (x >> k) & ((1 << (64 - k)) - 1);
 }
 
-class Rng {
+class seeded_rng {
 	int s = 0;
-	Rng(int seed) {
+	seeded_rng(int seed) {
 		s = seed != 0 ? seed : -7046029254386353131;   // 0x9E3779B97F4A7C15
 		for (int i = 0; i < 4; ++i) { raw(); }
 	}
@@ -88,10 +88,10 @@ class Rng {
 
 // ------------------------------------------------------------------ scenes ---
 // the jai adapter's kSceneFiles order: base classes before derived, main.jai last
-// (it reads ESC at import time, so the host API above must already exist).
+// (it reads esc at import time, so the host API above must already exist).
 
 // where the scene files live: EIGHT imports a module from there while it runs
-var SCENES_DIR = current_script_dir() + "/scenes";
+var scenes_dir = current_script_dir() + "/scenes";
 import "scenes/util.jai";
 import "scenes/music.jai";
 import "scenes/reel.jai";
@@ -136,9 +136,9 @@ var OPT_VIDEO = "";
 var OPT_EVERY = 2;
 var OPT_WORKERS = -1;       // -1 = the run's default
 
-for (int i = 0; i + 1 < ARGS.size(); i += 2) {
-	string k = ARGS[i];
-	string v = ARGS[i + 1];
+for (int i = 0; i + 1 < args.size(); i += 2) {
+	string k = args[i];
+	string v = args[i + 1];
 	if (k == "frames" || k == "turns") { OPT_FRAMES = v.to_int(); }
 	else if (k == "seed") { OPT_SEED = v.to_int(); }
 	else if (k == "fps") { OPT_FPS = v.to_int() * 1.0; }
@@ -195,7 +195,7 @@ function run_headless(int frames) -> int {
 		if (len > max_len) { max_len = len; }
 		for (int i = 0; i < len; ++i) { hash = (hash * 31 + frame[i]) & 0xFFFFFFFF; }
 		if (OPT_DUMP != "" && (f == 0 || f == frames - 2 || f == frames - 1)) {
-			write_file(OPT_DUMP + "_" + to_string(f) + ".txt", frame);
+			file::write(OPT_DUMP + "_" + to_string(f) + ".txt", frame);
 			write_bmp(OPT_DUMP + "_" + to_string(f) + ".bmp");
 		}
 	}
@@ -230,7 +230,7 @@ function write_bmp(string path) -> void {
 		}
 		out += row + padding;
 	}
-	write_file(path, out);
+	file::write(path, out);
 }
 
 // the whole reel at its real lengths with a fixed 1/30 s step, every `every`-th frame
@@ -241,7 +241,7 @@ function run_video(string dir) -> int {
 	int h = OPT_H > 0 ? OPT_H : 40;
 	float dt = 1.0 / 30.0;
 	demo_boot(w, h, OPT_SEED, "vm", false, false);
-	make_dirs(dir);
+	file::make_directories(dir);
 	write_cues(dir);
 	float total = 0.0;
 	for (int i = 0; i <= reel.intro_idx; ++i) { total += reel.dur_for(i); }
@@ -253,10 +253,10 @@ function run_video(string dir) -> int {
 		string frame = demo_frame(f * dt, dt, "", 0.0, 0.0, 0.0, 0.0);
 		if (f % OPT_EVERY != 0) { continue; }
 		string n = to_string(written);
-		write_file(dir + "/frame_" + string::repeat("0", 5 - n.size()) + n + ".txt", terminal.present(frame));
+		file::write(dir + "/frame_" + string::repeat("0", 5 - n.size()) + n + ".txt", terminal.present(frame));
 		++written;
 	}
-	write_file(dir + "/reel.txt", `frames ${written}\nfps ${30.0 / OPT_EVERY}\ncols ${w}\nrows ${h}\nseconds ${total}\n`);
+	file::write(dir + "/reel.txt", `frames ${written}\nfps ${30.0 / OPT_EVERY}\ncols ${w}\nrows ${h}\nseconds ${total}\n`);
 	print(`video: ${written} frames at ${30.0 / OPT_EVERY} fps (${total} s) -> ${dir}`);
 	return 0;
 }
@@ -300,7 +300,7 @@ function run_shot(int scene, float at) -> int {
 	var terminal = Terminal();
 	terminal.cube = OPT_CUBE;
 	terminal.ascii = OPT_ASCII;
-	write_file(p + ".txt", terminal.present(fr));
+	file::write(p + ".txt", terminal.present(fr));
 	write_bmp(p + ".bmp");
 	print(format("shot: scene {0} {1} at {2}s -> {3}.txt / {3}.bmp ({4} bytes)", scene + 1, reel.cur.name, at, p, fr.size()));
 	return 0;
@@ -315,10 +315,10 @@ function run_shot(int scene, float at) -> int {
 // the cue files' paths, or [] when they can't be written (then the reel runs silent)
 function write_cues(string dir) -> var {
 	var result = [];
-	if (!make_dirs(dir)) { return result; }
+	if (!file::make_directories(dir)) { return result; }
 	for (int i = 0; i < reel.cues.size(); ++i) {
 		string path = dir + `/cue_${i < 10 ? "0" : ""}${i}.mid`;
-		if (!write_file(path, reel.cues[i].midi())) { return []; }
+		if (!file::write(path, reel.cues[i].midi())) { return []; }
 		result.push(path);
 	}
 	return result;
@@ -331,7 +331,7 @@ function write_cues(string dir) -> var {
 // terminals without the block glyphs. Only the interactive reel presents through here; the headless modes
 // hash the reel's own frames.
 
-string CSI = ESC + "[";
+string CSI = esc + "[";
 
 function cube_axis(int v) -> int {
 	if (v < 48) { return 0; }
@@ -426,7 +426,7 @@ function run_interactive() -> int {
 	var terminal = Terminal();
 	terminal.cube = OPT_CUBE;
 	terminal.ascii = OPT_ASCII;
-	print(ESC + "[?1049h" + ESC + "[?25l" + ESC + "[2J" + ESC + "[H", skip_newline);
+	print(esc + "[?1049h" + esc + "[?25l" + esc + "[2J" + esc + "[H", skip_newline);
 	time::stopwatch show;
 	time::stopwatch pace;
 	float fps_ema = OPT_FPS;
@@ -453,7 +453,7 @@ function run_interactive() -> int {
 			playing = want;
 		}
 		sim_ms = pace.delta() * 1000;
-		print(ESC + "[H" + terminal.present(frame) + ESC + "[0m", skip_newline);
+		print(esc + "[H" + terminal.present(frame) + esc + "[0m", skip_newline);
 		draw_ms = pace.delta() * 1000;
 
 
@@ -461,7 +461,7 @@ function run_interactive() -> int {
 		if (used < budget_ms) { sleep((budget_ms - used) / 1000.0); }
 	}
 	stop_sounds();
-	print(ESC + "[0m" + ESC + "[?1049l" + ESC + "[?25h", skip_newline);
+	print(esc + "[0m" + esc + "[?1049l" + esc + "[?25h", skip_newline);
 	return 0;
 }
 

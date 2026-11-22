@@ -23,6 +23,8 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <map>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -916,7 +918,7 @@ public:
 				    [&] { return epoch + sim_now; },                                  // wall
 				    [&](std::chrono::nanoseconds d) { sim_now += d; });              // sleep advances the simulation
 				sim_now += std::chrono::milliseconds(1500);
-				eng->execute("print(time::now(), ' ', time::utc_now().to_string());");
+				eng->execute("print(time::engine_elapsed(), ' ', time::utc_now().to_string());");
 				// [/sample]
 			});
 		});
@@ -930,7 +932,7 @@ public:
 				eng->time().source([&] { return now; }, {}, {});
 				jai::script_run run = eng->start(R"(
 				    for (int wave = 1; wave <= 3; ++wave) {
-				        print("wave {} at {}", wave, time::now());
+				        print("wave {} at {}", wave, time::engine_elapsed());
 				        sleep(2.0);
 				    }
 				    "cleared";
@@ -974,7 +976,7 @@ public:
 				const std::string expected = doc_samples::trim_lines(intrusive_run.output);
 				const std::string got = doc_samples::trim_lines(run.output);
 				if (interpreted) {
-					check_true(intrusive_run.code.find("gate->spawn_wave(5, false);") != std::string::npos, page + ": the C++ call on the returned object moved");
+					check_true(intrusive_run.code.find("gate->spawn_wave(3);") != std::string::npos, page + ": the C++ call on the returned object moved");
 					check_true(!got.empty() && got.size() < expected.size() && expected.compare(0, got.size(), got) == 0 && expected[got.size()] == '\n',
 						page + " " + tab + ": the script's output does not open the page's: " + got);
 				} else {
@@ -1054,7 +1056,8 @@ public:
 			cpp_sample to_json_block(*this, page, "binder-to-json");
 			// [sample binder-to-json]
 			eng->execute(R"JAI(
-			    gate.onWave.connect("logger", "print(\"wave logged\");");   // named script-text receiver
+			    void log_wave(int wave) { print("wave logged"); }
+			    gate.onWave.connect("logger", log_wave);   // a named function: saved by its name
 			)JAI");
 			auto json = jai::to_json(*eng, gate);
 			std::cout << json << "\n";
@@ -1312,7 +1315,7 @@ public:
 			eng->add_global("marker", eng->make_object(marker));
 
 			eng->execute(R"(
-			    print(type_of(marker.position), " ", marker.tint);
+			    print(reflect::type_of(marker.position), " ", marker.tint);
 			    marker.position = math::vec3(1, 2, 3);
 			    marker.position.x += 4;
 			    marker.velocity.y = 2;
@@ -1548,11 +1551,33 @@ public:
 			                     void hot_reload_migrate() { level = 5; }
 			                 } )");
 
-			eng->execute(R"( print("hp: ", type_of(p.hp), " ", p.hp);
+			eng->execute(R"( print("hp: ", reflect::type_of(p.hp), " ", p.hp);
 			                 print("name: ", p.name);
 			                 print("level: ", p.level);
 			                 try { print(p.speed); } catch (e) { print("speed: ", e); } )");
 			// [/sample]
+			run.finish();
+		});
+
+		test("hot_reload_observer", [this]() {
+			auto eng = make_engine();
+			cpp_sample run(*this, "embedding/07-hot-reload.html", "hot-reload-observer");
+			// [sample hot-reload-observer]
+			struct parsed_file {
+			    std::optional<jai::engine::file_stamp> stamp;
+			    std::string bytes;
+			};
+			std::map<std::string, parsed_file> parsed;   // what this engine parsed, by path
+			eng->source_file_observer([&](const std::string& path, const std::optional<jai::engine::file_stamp>& stamp, std::string_view bytes) {
+			    parsed[path] = {stamp, std::string(bytes)};
+			});
+			// [/sample]
+			const auto file = jai::foundry::test_temp_directory() / "doc_observer.jai";
+			{ std::ofstream out(file, std::ios::binary | std::ios::trunc); out << "40 + 2;"; }
+			eng->jaibite_cache(false);
+			check_eq(jai::script_int(42), eng->execute_file(file.string()).as_int());
+			check_true(parsed.size() == 1 && parsed.begin()->second.bytes == "40 + 2;" && parsed.begin()->second.stamp.has_value(), "the observer got the file the engine parsed");
+			std::filesystem::remove(file);
 			run.finish();
 		});
 

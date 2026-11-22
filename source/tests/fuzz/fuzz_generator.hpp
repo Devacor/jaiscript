@@ -17,7 +17,12 @@
 #include "fuzz_regex_band.hpp"
 #include "fuzz_callargs_band.hpp"
 #include "fuzz_return_band.hpp"
+#include "fuzz_less_than_band.hpp"
 #include "fuzz_store_band.hpp"
+#include "fuzz_const_band.hpp"
+#include "fuzz_defaults_band.hpp"
+#include "fuzz_falloff_band.hpp"
+#include "fuzz_generics_band.hpp"
 #include "fuzz_block_band.hpp"
 #include "fuzz_local_alias_band.hpp"
 
@@ -444,6 +449,28 @@ namespace jai::fuzz {
 			early_return_band erband(seed_);   // calls whose callee returns early: under the call-arguments band's switch
 			const bool early_return_roll = erband.roll();
 			if (call_args_ == band_mode::always || (call_args_ == band_mode::sometimes && early_return_roll)) { p.segments.push_back(erband.emit()); p.labels.push_back("early-return"); }
+			less_than_band ltband(seed_);   // '<' after a name in the shapes a comparison and a call with type arguments share: under the call-arguments band's switch
+			const bool less_than_roll = ltband.roll();
+			if (call_args_ == band_mode::always || (call_args_ == band_mode::sometimes && less_than_roll)) { p.segments.push_back(ltband.emit()); p.labels.push_back("less-than"); }
+			const_guard_band cgband(seed_);   // a run-time const guard in a callee a graft takes: under the call-arguments band's switch
+			const bool const_guard_roll = cgband.roll();
+			if (call_args_ == band_mode::always || (call_args_ == band_mode::sometimes && const_guard_roll)) { p.segments.push_back(cgband.emit()); p.labels.push_back("const-guard"); }
+			generics_band gband(seed_);   // generic classes, functions and methods, one segment importing a unit: under the call-arguments band's switch
+			const bool generics_roll = gband.roll();
+			if (call_args_ == band_mode::always || (call_args_ == band_mode::sometimes && generics_roll)) {
+				generics_band::emitted made = gband.emit();
+				for (size_t i = 0; i < made.segments.size(); ++i) {
+					p.segments.push_back(std::move(made.segments[i]));
+					p.labels.push_back(made.labels[i]);
+				}
+				if (!made.import_path.empty()) { p.files.emplace_back(made.import_path, made.import_text); }
+			}
+			defaults_band dband(seed_);   // defaults that throw beside traced arguments: under the call-arguments band's switch
+			const bool defaults_roll = dband.roll();
+			if (call_args_ == band_mode::always || (call_args_ == band_mode::sometimes && defaults_roll)) { p.segments.push_back(dband.emit()); p.labels.push_back("defaults"); }
+			falloff_band fband(seed_);   // results of callees that end without returning a value: under the call-arguments band's switch
+			const bool falloff_roll = fband.roll();
+			if (call_args_ == band_mode::always || (call_args_ == band_mode::sometimes && falloff_roll)) { p.segments.push_back(fband.emit()); p.labels.push_back("fall-off"); }
 			local_alias_band lband(seed_);
 			const bool local_alias_roll = lband.roll();
 			if (local_alias_ == band_mode::always || (local_alias_ == band_mode::sometimes && local_alias_roll)) { p.segments.push_back(lband.emit()); p.labels.push_back("local-alias"); }

@@ -2,6 +2,7 @@
 #include <jaiscript/core/execution_backend.hpp>
 #include <jaiscript/detail/class_runtime.hpp>
 #include <jaiscript/detail/ast.hpp>
+#include <jaiscript/detail/generics.hpp>
 #include <jaiscript/detail/lexer.hpp>
 #include <jaiscript/detail/parser.hpp>
 #include <jaiscript/detail/interpreter.hpp>
@@ -30,6 +31,7 @@
 #include <jaiscript/detail/capture_ladder.hpp> // shared capture-source ladder (vm parity)
 #include <jaiscript/detail/loop_binding.hpp>
 #include <jaiscript/detail/cast_kernel.hpp>   // cast<T>/cast<T&>/cast<shared_ptr<T>> kernel (vm parity)
+#include <jaiscript/detail/type_value.hpp>
 #include <jaiscript/detail/const_rules.hpp>   // const guards (vm parity)
 #include <jaiscript/detail/aggregate_init.hpp>
 #include <jaiscript/detail/static_store.hpp>  // class-qualified static stores (vm parity)
@@ -62,6 +64,7 @@
 #include <jaiscript/detail/string_methods_more.hpp>
 #include <jaiscript/detail/utf8_methods.hpp>
 #include <jaiscript/detail/binary_data.hpp>
+#include <jaiscript/detail/coroutine_snapshot.hpp>
 
 namespace jai {
 
@@ -325,8 +328,8 @@ checked_result<bool> interpreter::language_less(const script_value& a_left, cons
 	const auto& left = a_left.deref();
 	const auto& right = a_right.deref();
 	if (operator_table_) {
-		if (const script_value* function = operator_table_->entry(detail::op_slot::less)) {
-			auto result = function->as_function()({left, right});
+		if (const script_value taker = operator_table_->overload(detail::op_slot::less, left, right); taker.is_function()) {
+			auto result = taker.as_function()({left, right});
 			if (!result) { return result.error_value(); }
 			return is_truthy(result.value());
 		}
@@ -341,8 +344,8 @@ checked_result<bool> interpreter::language_equal(const script_value& left, const
     const script_value& l = left.deref();
     const script_value& r = right.deref();
     if (operator_table_ && operator_table_->any()) {
-        if (const script_value* opFunc = operator_table_->entry(detail::binary_op_slot(token_type::equal_equal))) {
-            auto result = opFunc->as_function()({l, r});
+        if (const script_value taker = operator_table_->overload(detail::op_slot::equal_equal, l, r); taker.is_function()) {
+            auto result = taker.as_function()({l, r});
             if (!result) { return result.error_value(); }
             return is_truthy(result.value());
         }
@@ -390,13 +393,12 @@ void interpreter::initialize() {
     shared_ptr_holder_type_id_ = string_symbolizer_->intern("shared_ptr_holder");
     weak_from_this_id_ = string_symbolizer_->intern("weak_from_this");
     shared_from_this_id_ = string_symbolizer_->intern("shared_from_this");
-    coroutine_handle_type_id_ = string_symbolizer_->intern("coroutine_handle");
+    coroutine_handle_type_id_ = string_symbolizer_->intern("coroutine");
     next_id_ = string_symbolizer_->intern("next");
     handle_reset_id_ = string_symbolizer_->intern("reset");
     done_id_ = string_symbolizer_->intern("done");
     advance_id_ = string_symbolizer_->intern("advance");
     result_id_ = string_symbolizer_->intern("result");
-    same_as_id_ = string_symbolizer_->intern("same_as");
     eq_method_id_ = string_symbolizer_->intern("==");
     to_bool_id_ = string_symbolizer_->intern("to_bool");
     to_string_id_ = string_symbolizer_->intern("to_string");
@@ -544,6 +546,7 @@ void interpreter::pop_instance_scope() {
 
 script_value interpreter::execute(const std::vector<declaration_ptr>& declarations, bool textual) {
     arm_native_stack();
+    detail::host_time_pause host_paused(*limits_, *this);   // script the host runs inside a call the budget does not count is the script's time
     std::optional<detail::call_depth_guard> reentry_depth;
     checked_result<void> entry_result;
     if (is_executing()) {
@@ -604,6 +607,8 @@ script_value interpreter::execute(const std::vector<declaration_ptr>& declaratio
                 self->returnValue_ = std::move(saved_return);
                 self->hasReturnValue_ = saved_has_return;
                 self->member_scope_ = saved_member_scope;
+            } else {
+                self->top_level_node_ = nullptr;   // the run's statements are its caller's to free: an error raised after it stands in none
             }
             --self->execute_depth_;
         }
@@ -656,6 +661,7 @@ script_value interpreter::execute(const std::vector<declaration_ptr>& declaratio
 
         // Check if we're unwinding due to an uncaught exception
         if (is_unwinding_) {
+            debug_raised([&] { return current_exception_ ? std::string(current_exception_->what()) : std::string(); }, try_depth_ > 0);
             if (!trace_captured_) capture_stack_trace();
             // Stop executing further declarations
             break;
@@ -755,6 +761,12 @@ checked_result<void> interpreter::visit_literal_expr(literal_expr* expr) {
     return checked_result<void>();
 }
 
+// KEEP BYTE-PARALLEL with vm_backend::parallel_static_copy
+const script_value* interpreter::parallel_static_copy(class_definition* a_owner, uint64_t a_sym) const {
+    if (!parallel_worker_ || !parallel_method_pins_ || !a_owner) [[likely]] { return nullptr; }
+    return parallel_method_pins_->find_captured_static(a_owner, a_sym);
+}
+
 checked_result<void> interpreter::visit_identifier_expr(identifier_expr* expr) {
     // ::name - GLOBAL env only (locals, captures, member scope all skipped).
     // KEEP BYTE-PARALLEL with vm exec_load's global-only door.
@@ -824,6 +836,9 @@ checked_result<void> interpreter::visit_identifier_expr(identifier_expr* expr) {
                     return read.error_value();
                 }
                 push_value(std::move(read.value()));
+            } else if (const script_value* pinned = member.what == detail::member_probe_hit::kind::static_field
+                    ? parallel_static_copy(member.class_def, expr->symbol_id) : nullptr) [[unlikely]] {
+                push_value(*pinned);
             } else {
                 push_value(*member.value_ptr);
             }
@@ -889,6 +904,10 @@ checked_result<void> interpreter::visit_identifier_expr(identifier_expr* expr) {
                     // Check for static fields of the class
                     if (class_definition* owner = detail::bare_static_owner(bare_declaring_class(), instance->get_class_definition(),
                                                                             expr->symbol_id)) {
+                        if (const script_value* pinned = parallel_static_copy(owner, expr->symbol_id)) [[unlikely]] {
+                            push_value(*pinned);
+                            return checked_result<void>();
+                        }
                         push_value(owner->get_static_field(expr->symbol_id));
                         return checked_result<void>();
                     }
@@ -1033,10 +1052,9 @@ checked_result<void> interpreter::visit_binary_expr_t(binary_expr* expr, const r
     // flat operator table (detail/operator_table.hpp): one mask test + array read,
     // no environment probe on any operator path.
     if (op_symbol_id != 0 && operator_table_ && operator_table_->any()) {
-        if (const script_value* opFunc = operator_table_->entry(detail::binary_op_slot(expr->op.type))) {
-            const script_function& func = opFunc->as_function();
+        if (const script_value taker = operator_table_->overload(detail::binary_op_slot(expr->op.type), left, right); taker.is_function()) {
             std::vector<script_value> args = {left, right};
-            auto result = call_value(func, args);
+            auto result = call_value(taker.as_function(), args);
             if (!result) {
                 // Function returned error - propagate it up
                 return result.error_value();
@@ -1236,10 +1254,9 @@ checked_result<void> interpreter::visit_binary_expr_t(binary_expr* expr, const r
 
                 // Fall back to the global [] operator (flat table - no env probe)
                 if (operator_table_) {
-                    if (const script_value* getMethod = operator_table_->entry(detail::op_slot::subscript)) {
-                        const script_function& func = getMethod->as_function();
+                    if (const script_value taker = operator_table_->overload(detail::op_slot::subscript, left, right); taker.is_function()) {
                         std::vector<script_value> args = {left, right};
-                        auto result = call_value(func, args);
+                        auto result = call_value(taker.as_function(), args);
                         if (!result) {
                             // Function returned error - propagate it up
                             return result.error_value();
@@ -1631,10 +1648,9 @@ checked_result<void> interpreter::assign_compound_identifier(assignment_expr* ex
                 default: if (detail::compound_is_bitwise(expr->op.type)) { op_slot = detail::binary_op_slot(detail::compound_base(expr->op.type)); } break;
             }
             if (operator_table_) {
-                if (const script_value* opFunc = operator_table_->entry(op_slot)) {
-                    const script_function& func = opFunc->as_function();
+                if (const script_value taker = operator_table_->overload(op_slot, target, rightValue); taker.is_function()) {
                     std::vector<script_value> args = {target.clone(), rightValue};
-                    auto result = call_value(func, args);
+                    auto result = call_value(taker.as_function(), args);
                     if (!result) {
                         return result.error_value();
                     }
@@ -2056,15 +2072,19 @@ checked_result<void> interpreter::assign_compound_element(assignment_expr* expr,
     script_value resultValue = make_value();
     // a global operator answers first (the flat table; KEEP BYTE-PARALLEL with vm_backend::exec_index_compound); ++ and --
     // step numbers only
-    const script_value* compound_op_fn = operator_table_ && !expr->incdec_desugar
-        ? operator_table_->entry(detail::binary_op_slot(detail::compound_base(expr->op.type))) : nullptr;
-    if (compound_op_fn) {
-        auto result = call_value(compound_op_fn->as_function(), {currentValue, rightValue});
-        if (!result) {
-            return result.error_value();
+    bool by_global_operator = false;
+    const detail::op_slot compound_slot = detail::binary_op_slot(detail::compound_base(expr->op.type));
+    if (operator_table_ && !expr->incdec_desugar && operator_table_->entry(compound_slot)) {
+        if (const script_value taker = operator_table_->overload(compound_slot, currentValue, rightValue); taker.is_function()) {
+            auto result = call_value(taker.as_function(), {currentValue, rightValue});
+            if (!result) {
+                return result.error_value();
+            }
+            resultValue = std::move(result.value());
+            by_global_operator = true;
         }
-        resultValue = std::move(result.value());
-    } else {
+    }
+    if (!by_global_operator) {
         // a bound rhs decodes before the zero divisor's check, which comes ahead of the operands' kinds
         if (rightValue.raw_storage_index() == script_value::TYPEID_CPP_BOUND) [[unlikely]] {
             rightValue = rightValue.bound_decoded_temp();
@@ -2636,13 +2656,13 @@ checked_result<void> interpreter::store_through_subscript_reference(script_value
     script_value* target_ptr;
     if (typed_element) {
         if (refHolder->container_index >= refHolder->container->size()) {
-            return checked_result<void>(make_error_code(runtime_error_code::invalid_reference), "Invalid reference in assignment");
+            return checked_result<void>(make_error_code(runtime_error_code::invalid_reference), refHolder->view_state != 0 ? refHolder->element_gone_text() : "Invalid reference in assignment");
         }
         target_ptr = const_cast<script_value*>(&refHolder->materialize_typed_element(engine_));
     } else {
         target_ptr = refHolder->resolve_target();
         if (!target_ptr) {
-            return checked_result<void>(make_error_code(runtime_error_code::invalid_reference), "Invalid reference in assignment");
+            return checked_result<void>(make_error_code(runtime_error_code::invalid_reference), refHolder->field_gone() ? refHolder->field_gone_text() : "Invalid reference in assignment");
         }
     }
 
@@ -2746,6 +2766,7 @@ checked_result<void> interpreter::visit_block_stmt(block_stmt* stmt) {
         // With lazy caching, this is O(1) - no flat_lookup_ copy needed
         environment_ = block_environment(environment_);
     }
+    const size_t stack_mark = valueStack_.size();
 
     try {
         // The resumed statement consumes its own frames (expression replay); the rest run cold
@@ -2759,9 +2780,7 @@ checked_result<void> interpreter::visit_block_stmt(block_stmt* stmt) {
             // This ensures objects are destroyed at statement boundaries, not just at block exit
             // Variable declarations pop their values, but some other declarations (like expression_decl)
             // may leave values on the stack
-            if (valueStack_.size() > 0) {
-                valueStack_.clear();
-            }
+            valueStack_.truncate(stack_mark);
 
             if (!result) {
                 kill_scope_slots(stmt->declarations);
@@ -2806,10 +2825,8 @@ checked_result<void> interpreter::visit_block_stmt(block_stmt* stmt) {
         throw;
     }
 
-    // Clear the value stack before releasing scope
-    // This ensures any lingering object references on the stack are released
-    // Block statements don't produce a value, so the stack should be cleared
-    valueStack_.clear();
+    // A block produces no value: what it left on the stack is released before its scope
+    valueStack_.truncate(stack_mark);
     kill_scope_slots(stmt->declarations);
 
     // Restore the previous scope - only release if we created it
@@ -2845,6 +2862,7 @@ checked_result<void> interpreter::visit_variable_decl_t(variable_decl* decl) {
         if (decl->ref_escaping && !value.is_reference()) {
             value = script_value::make_cell_reference(std::move(value), engine_);
         }
+        if (decl->type && value.is_reference()) { JAISCRIPT_TRY(detail::bind_handle_object(value, decl->type.get(), engine_)); }   // KEEP BYTE-PARALLEL with the vm's define_ref_decl_value
         if (value.is_reference() && detail::reference_decl_checks_admission(*decl)) [[unlikely]] {
             if (auto rejected = detail::reference_decl_rejection(*decl, value, engine_)) {
                 // a const T& over another type's lvalue binds a T made from it (KEEP BYTE-PARALLEL with the vm's define_ref_decl_value)
@@ -2862,6 +2880,7 @@ checked_result<void> interpreter::visit_variable_decl_t(variable_decl* decl) {
             (decl->ref_escaping || decl->slot_index == SIZE_MAX || call_stack_.empty())) {
             detail::ref_declare(value, decl->type->element_type().get(), engine_);
         }
+        if (value.is_reference()) { script_value::bind_view(value); }   // KEEP BYTE-PARALLEL with the vm's define_ref_decl_value
         if (decl->slot_index != SIZE_MAX && !call_stack_.empty()) {
             if (decl->ref_escaping && !parallel_worker_) [[unlikely]] {
                 // a loop's next iteration drops the cell the last one shared: checked for a cycle once the slot lets go
@@ -2963,7 +2982,7 @@ checked_result<void> interpreter::visit_variable_decl_t(variable_decl* decl) {
                 if (infer_pointee) {
                     // Take the initializer's exact class; thereafter the tag behaves
                     // exactly like the explicit spelling (reassignment enforcement
-                    // reads it) - construct-and-share included.
+                    // reads it), a class value included.
                     std::string actual_class;
                     if (auto instance = value.get_class_instance()) {
                         actual_class = instance->get_class_name();
@@ -2978,6 +2997,7 @@ checked_result<void> interpreter::visit_variable_decl_t(variable_decl* decl) {
                         return checked_result<void>(make_error_code(runtime_error_code::type_mismatch),
                             "Cannot infer shared_ptr<auto> pointee from this initializer - use var, or an explicit shared_ptr<T>");
                     }
+                    if (const std::string held = detail::value_for_handle_slot(value); !held.empty()) { detail::refuse_value_into_handle(held); }
                     value.set_type_info(inferred);
                     JAISCRIPT_TRY(define_variable(std::move(value)));
                     return {};
@@ -2990,8 +3010,7 @@ checked_result<void> interpreter::visit_variable_decl_t(variable_decl* decl) {
                         "Cannot initialize shared_ptr<{0}> with {1}: type must match or be a subclass",
                         decl->type->element_type()->id, string_symbolizer_->intern(detail::shared_handle_judged_class(value, engine_)));
                 }
-                // Initialize with object/shared_ptr - that's fine, objects are already shared_ptr
-                // Mark the type as shared_ptr to ensure reference semantics
+                if (const std::string held = detail::value_for_handle_slot(value); !held.empty()) { detail::refuse_value_into_handle(held); }
                 value.set_type_info(decl->type);
                 JAISCRIPT_TRY(define_variable(std::move(value)));
             } else {   // a primitive or a container: the declaration's rejection (KEEP BYTE-PARALLEL with vm_backend::exec_decl_var)
@@ -3287,7 +3306,7 @@ checked_result<script_value> interpreter::store_namespace_cell(const detail::nam
                       slot_type->base_type == script_value_type::jai_object_type ||
                       slot_type->base_type == script_value_type::jai_array_type ||
                       slot_type->base_type == script_value_type::jai_map_type ||
-                      (slot_type->base_type == script_value_type::jai_shared_ptr_type && incoming.get_type_info().get() != slot_type.get()))) {
+                      detail::handle_store_is_judged(*slot_type, incoming))) {
         auto enforced = enforce_type_compatibility(std::move(incoming), slot_type, member->member);
         if (!enforced) {
             return enforced.error_value();
@@ -3378,7 +3397,11 @@ checked_result<script_value> interpreter::enforce_type_compatibility(
         }
         case verdict::handle_target:
             // shared_ptr<T> / weak_ptr<T> `=`: a same-kind tag stores as-is when a shared handle's judged class is T or a
-            // subclass; a shared handle downgrades into a weak_ptr<T> slot exactly as the declaration form does (outside the table)
+            // subclass; a shared handle downgrades into a weak_ptr<T> slot exactly as the declaration form does (outside the table);
+            // a class value never becomes a handle
+            if (target_type->base_type == script_value_type::jai_shared_ptr_type) {
+                if (const std::string held = detail::value_for_handle_slot(value); !held.empty()) { detail::refuse_value_into_handle(held); }
+            }
             if (value.type() == target_type->base_type &&
                 (target_type->base_type != script_value_type::jai_shared_ptr_type || detail::shared_handle_admits(value, target_type, engine_))) {
                 return std::move(value);
@@ -3592,6 +3615,9 @@ checked_result<void> interpreter::visit_call_expr_t(call_expr* expr, const repla
                 return checked_result<void>(make_error_code(runtime_error_code::undefined_variable),
                     "{0}() can only be called from within a method", ident_expr->symbol_id);
             }
+            if (!this_val.is_shared_ptr_type()) {   // KEEP BYTE-PARALLEL with vm_backend::exec_from_this
+                return checked_result<void>(make_error_code(runtime_error_code::type_mismatch), detail::from_this_of_value_text, ident_expr->symbol_id);
+            }
 
             if (ident_expr->symbol_id == weak_from_this_id_) {
                 // Create a weak_ptr from the 'this' object
@@ -3685,12 +3711,12 @@ checked_result<void> interpreter::visit_call_expr_t(call_expr* expr, const repla
     // (identifier/this - re-evaluable without side effects, so a gate miss can fall to
     // the generic path below), or a bare call of a method of this frame's receiver (the
     // vm's park_sibling_method). Mirrors vm exec_call_method's fast-entry precedence gate
-    // (same_as/super/coroutine/sp-builtin/access/getter-probe/field), skipping the
+    // (super/coroutine/sp-builtin/access/getter-probe/field), skipping the
     // bound-method mint, its this+args re-copies, and the carrier method env.
     {
         member_expr* const member = expr->callee->get_type() == node_type::member_expr ? static_cast<member_expr*>(expr->callee.get()) : nullptr;
         identifier_expr* const sibling = member ? nullptr : sibling_method_callee(expr->callee.get(), member_scope_);
-        if ((member && !member->is_static && member->member_id != same_as_id_ &&
+        if ((member && !member->is_static &&
              (member->object->get_type() == node_type::identifier_expr || member->object->get_type() == node_type::this_expr)) || sibling) {
             const uint64_t member_id = member ? member->member_id : sibling->symbol_id;
             script_value objectValue = make_value();
@@ -3935,7 +3961,7 @@ checked_result<void> interpreter::visit_call_expr_t(call_expr* expr, const repla
                 }
                 if (direct_ast) {
                     script_defined_function script_func(
-                        direct_ast->name,
+                        direct_ast->shown_name(),
                         shared_parameters_for(direct_ast),
                         direct_ast->return_type,
                         direct_ast->body,
@@ -4171,6 +4197,12 @@ checked_result<void> interpreter::visit_member_expr_t(member_expr* expr, const r
                 return checked_result<void>(make_error_code(jai::runtime_error_code::type_mismatch));  // [ErrorText] Invalid namespace path
             }
             name_id = string_symbolizer_->intern(name);
+            if (parallel_worker_ && parallel_method_pins_) [[unlikely]] {   // KEEP BYTE-PARALLEL with vm_backend::static_member_value
+                if (const script_value* pinned = parallel_method_pins_->find_static(name_id, expr->member_id)) {
+                    push_value(*pinned);
+                    return {};
+                }
+            }
         } else {
             // Static member access requires an identifier or namespace path
             return checked_result<void>(make_error_code(jai::runtime_error_code::type_mismatch));  // [ErrorText] Type error
@@ -4186,8 +4218,7 @@ checked_result<void> interpreter::visit_member_expr_t(member_expr* expr, const r
         // ONLY if name is NOT a namespace itself
         // For "my::nested::cat::meow()", name would be "my::nested::cat" which is NOT a namespace
         // We need to detect this pattern and split it into namespace="my::nested" and class="cat"
-        if (!is_namespace && name.find("::") != std::string::npos) {
-            size_t last_colon = name.rfind("::");
+        if (const size_t last_colon = is_namespace ? std::string::npos : class_qualifier_cut(name); last_colon != std::string::npos) {
             std::string potential_ns = name.substr(0, last_colon);
             std::string potential_class = name.substr(last_colon + 2);
 
@@ -4255,8 +4286,18 @@ checked_result<void> interpreter::visit_member_expr_t(member_expr* expr, const r
                 return checked_result<void>(make_error_code(runtime_error_code::undefined_variable), "Undefined variable '{0}::{1}'", name_id, expr->member_id);
             }
             if (ident_expr && engine_->is_enum_name(name_id)) {   // KEEP BYTE-PARALLEL with the vm
-                if (auto enum_var = environment_->get(name_id); enum_var && enum_var.value().deref().is_map()) {
+                // ::E::v names the program scope's enum where a namespace declares an E of its own
+                environment& scope = ident_expr->global_qualified ? *engine_->get_global_environment() : *environment_;
+                if (auto enum_var = scope.get(name_id); enum_var && enum_var.value().deref().is_map()) {
                     auto value = detail::enum_scoped_value(enum_var.value().deref().as_map(), name_id, expr->member, expr->member_id, engine_);
+                    if (!value) { return value.error_value(); }
+                    push_value(std::move(value.value()));
+                    return {};
+                }
+            }
+            if (!ident_expr) {   // ns::E::v, a namespace's enum
+                if (const script_value* table = detail::namespace_enum_cell(*engine_, name, *string_symbolizer_)) {
+                    auto value = detail::enum_scoped_value(table->deref().as_map(), name_id, expr->member, expr->member_id, engine_);
                     if (!value) { return value.error_value(); }
                     push_value(std::move(value.value()));
                     return {};
@@ -4340,7 +4381,7 @@ checked_result<void> interpreter::visit_member_expr_t(member_expr* expr, const r
     if (expr->place_read) [[unlikely]] {
         // KEEP BYTE-PARALLEL with vm_backend::exec_get_member
         script_value part = detail::math::evaluated_component_reference(objectValue, expr, engine_);
-        if (!part.is_reference() && expr->place_read == member_expr::place_read_field) {
+        if (!part.is_reference()) {
             auto field = detail::evaluated_member_reference(objectValue, expr, environment_.get(), engine_, string_symbolizer_);
             if (!field) { return field.error_value(); }
             part = std::move(field.value());
@@ -4389,7 +4430,7 @@ JAI_NOINLINE void interpreter::raise_script_text(const std::string& text, const 
 }
 
 JAI_NOINLINE void interpreter::raise_no_member(std::string_view kind, std::string_view member, const source_location& location) {
-    raise_script_text(no_member_text(kind, member), location);
+    raise_script_text(no_member_text(engine_, kind, member), location);
     detail::engine_access::set_exception_kind(*current_exception_, error_kind::no_member);
 }
 
@@ -4596,7 +4637,7 @@ checked_result<void> interpreter::member_read_on(member_expr* expr, script_value
             }
             // a call on a receiver the call's fast entry does not take (a member chain) enters the method's pin, else meets the
             // call's wall (KEEP BYTE-PARALLEL with vm_backend::exec_probe_member)
-            if (as_callee && expr->member_id != same_as_id_) {
+            if (as_callee) {
                 const detail::parallel_method_pin* pin = parallel_method_pins_ ? parallel_method_pins_->find(cls, expr->member_id) : nullptr;
                 if (!pin) { return detail::parallel_method_not_admitted(expr->member_id); }
                 push_value(pin->resolved ? create_bound_method(objectValue, pin->method_value) : detail::parallel_bound_pin(*pin, objectValue, expr->member_id, engine_));
@@ -4662,7 +4703,7 @@ checked_result<void> interpreter::member_read_on(member_expr* expr, script_value
                 return {};
             }
             return checked_result<void>(make_error_code(runtime_error_code::member_not_found),
-                "coroutine_handle has no member '{0}'", expr->member_id);
+                "{0} has no member '{1}'", detail::coroutine_type_symbol(objectValue, engine_), expr->member_id);
         }
     }
 
@@ -4833,15 +4874,6 @@ checked_result<void> interpreter::member_read_on(member_expr* expr, script_value
     // After refactor: shared_ptr<T> uses same storage as regular objects
     // No unwrapping needed - just access the object_holder directly
 
-    // Built-in same_as() for all values (identity/equality comparison)
-    // same_as_id_ is a per-interpreter member (symbol ids are per-engine; a static here
-    // cached the first engine's id and broke same_as on every later engine).
-    if (expr->member_id == same_as_id_) {
-	    if (!as_callee) { return method_value_error(expr, objectValue, false); }
-        push_value(detail::same_as_method(objectValue, engine_));
-        return {};
-    }
-
     if (!objectValue.is_object()) {
         if (expr->on_caught) [[unlikely]] {   // a thrown scalar read through its catch variable (KEEP BYTE-PARALLEL with vm_backend::member_access_value)
             if (auto error_member = engine_->caught_error_member(objectValue, expr->member_id, true)) {
@@ -4850,7 +4882,7 @@ checked_result<void> interpreter::member_read_on(member_expr* expr, script_value
             }
         }
         if (objectValue.is_null()) {
-            return checked_result<void>(make_error_code(runtime_error_code::member_access_on_null), null_member_message(expr->object.get(), as_callee), expr->member_id, null_member_receiver_symbol(expr->object.get()));
+            return checked_result<void>(make_error_code(runtime_error_code::member_access_on_null), null_member_message(expr->object.get(), as_callee), detail::listed_member_id(*string_symbolizer_, expr->member_id), null_member_receiver_symbol(expr->object.get()));
         }
         if (const std::string_view cls = class_named_by_dot_receiver(expr->object.get(), objectValue, engine_); !cls.empty()) {
             const auto [text, symbol] = class_dot_member_error(*string_symbolizer_, parallel_worker_, cls, expr->member);
@@ -5301,6 +5333,7 @@ checked_result<void> interpreter::visit_lambda_expr(lambda_expr* expr) {
     auto lambdaFunc = std::make_shared<script_defined_function>("<lambda>", shared_parameters_for(expr), expr->return_type, lambdaBody,
         needs_capture_env ? final_closure_env : nullptr, expr->local_count);
     lambdaFunc->unit = current_unit();
+    lambdaFunc->saved_source = expr->saved_source;
 
     // Create a script_function wrapper resolving the live backend at call time.
     // Named thunk (not an anonymous lambda) so callers can recover the payload via
@@ -5390,6 +5423,10 @@ checked_result<void> interpreter::visit_new_expr_t(new_expr* expr, const replay_
             // One argument - create weak_ptr from object
             JAISCRIPT_TRY_OPERAND(eval_child<Replaying>(expr->arguments[0].get(), rs, 0), expr, rp_new_weak, 0, {});
             script_value obj = pop_value();
+            if (is_unwinding_) {
+                push_value(make_value());
+                return {};
+            }
 
             // Handle null objects
             if (obj.is_null()) {
@@ -5492,12 +5529,13 @@ checked_result<void> interpreter::visit_new_expr_t(new_expr* expr, const replay_
             // Look up T's constructor
             auto ctor_result = environment_->get(innerTypeName, *string_symbolizer_);
             if (!ctor_result || !ctor_result.value().is_function()) {
-                return checked_result<void>(make_error_code(runtime_error_code::undefined_variable),
-                    "No constructor found for class '{0}'", inner_type->id);
+                const detail::error_text text = detail::no_constructor_text(engine_, *inner_type);
+                return checked_result<void>(make_error_code(runtime_error_code::undefined_variable), text.format, text.id);
             }
 
             script_value constructorFunc = std::move(ctor_result.value());
             const script_function& func = constructorFunc.as_function();
+            detail::handle_construction_scope handle_scope(engine_, expr->type.get());   // KEEP BYTE-PARALLEL with vm_backend::exec_new
             auto result = call_value(func, {});  // Call with no args
             if (!result) {
                 return result.error_value();
@@ -5526,6 +5564,10 @@ checked_result<void> interpreter::visit_new_expr_t(new_expr* expr, const replay_
         for (size_t ai = args.size(); ai < expr->arguments.size(); ++ai) {
             JAISCRIPT_TRY_OPERAND(eval_child<Replaying>(expr->arguments[ai].get(), rs, ai), expr, rp_new_shared, ai, args);
             args.push_back(pop_value());
+            if (is_unwinding_) {
+                push_value(make_value());
+                return {};
+            }
             if (auto taken = capture_call_argument(engine_, expr->arg_captures, ai, args.back(), [&] {
                     auto ctor = environment_->get(innerTypeName, *string_symbolizer_);
                     return ctor ? detail::callee_binding(ctor.value(), ai, false, expr->arguments.size()) : detail::arg_binding::opaque;
@@ -5537,12 +5579,13 @@ checked_result<void> interpreter::visit_new_expr_t(new_expr* expr, const replay_
         // Look up T's constructor
         auto ctor_result = environment_->get(innerTypeName, *string_symbolizer_);
         if (!ctor_result || !ctor_result.value().is_function()) {
-            return checked_result<void>(make_error_code(runtime_error_code::undefined_variable),
-                "No constructor found for class '{0}'", inner_type->id);
+            const detail::error_text text = detail::no_constructor_text(engine_, *inner_type);
+            return checked_result<void>(make_error_code(runtime_error_code::undefined_variable), text.format, text.id);
         }
 
         script_value constructorFunc = std::move(ctor_result.value());
         const script_function& func = constructorFunc.as_function();
+        detail::handle_construction_scope handle_scope(engine_, expr->type.get());   // KEEP BYTE-PARALLEL with vm_backend::exec_new
         auto result = invoke_constructor(func, args);
         if (!result) {
             return result.error_value();
@@ -5565,6 +5608,10 @@ checked_result<void> interpreter::visit_new_expr_t(new_expr* expr, const replay_
     for (size_t ai = args.size(); ai < expr->arguments.size(); ++ai) {
         JAISCRIPT_TRY_OPERAND(eval_child<Replaying>(expr->arguments[ai].get(), rs, ai), expr, rp_new_class, ai, args);
         args.push_back(pop_value());
+        if (is_unwinding_) {   // an argument threw: no constructor runs
+            push_value(make_value());
+            return {};
+        }
         if (auto taken = capture_call_argument(engine_, expr->arg_captures, ai, args.back(), [&] {
                 auto ctor = environment_->get(className, *string_symbolizer_);
                 return ctor ? detail::callee_binding(ctor.value(), ai, false, expr->arguments.size()) : detail::arg_binding::opaque;
@@ -5588,9 +5635,8 @@ checked_result<void> interpreter::visit_new_expr_t(new_expr* expr, const replay_
         return {};
     }
 
-    // No constructor found for class
-    return checked_result<void>(make_error_code(runtime_error_code::undefined_variable),
-        "No constructor found for class '{0}'", expr->type->id);
+    const detail::error_text text = detail::no_constructor_text(engine_, *expr->type);
+    return checked_result<void>(make_error_code(runtime_error_code::undefined_variable), text.format, text.id);
 }
 
 template<bool Replaying>
@@ -5740,6 +5786,9 @@ checked_result<void> interpreter::visit_this_expr(this_expr* expr) {
         return checked_result<void>(make_error_code(runtime_error_code::this_outside_method),
             "'this' can only be used inside methods");
     }
+    if (expr->into_handle && !this_ptr->is_shared_ptr_type()) {   // KEEP BYTE-PARALLEL with vm_backend::exec_this
+        return checked_result<void>(make_error_code(runtime_error_code::type_mismatch), detail::this_into_handle_text);
+    }
     push_value(*this_ptr);
     return {};
 }
@@ -5860,8 +5909,8 @@ checked_result<void> interpreter::visit_cast_expr_t(cast_expr* expr, const repla
         push_value(std::move(operand));
         return {};
     }
-    if (expr->instance_test) {   // KEEP BYTE-PARALLEL with the vm's exec_cast
-        push_value(script_value(detail::instance_test(operand, *expr->target, engine_), engine_));
+    if (expr->type_value) {   // KEEP BYTE-PARALLEL with the vm's exec_cast
+        push_value(detail::make_type_value(expr->target, engine_));
         return {};
     }
     if (expr->by_reference) {
@@ -5961,6 +6010,7 @@ checked_result<void> interpreter::visit_throw_expr_t(throw_expr* expr, const rep
     if (expr->value) {
         // Evaluate the expression to throw
         JAISCRIPT_TRY_OPERAND(eval_child<Replaying>(expr->value.get(), rs, 0), expr, rp_operand, 0, {});
+        if (is_unwinding_) { return {}; }   // the operand threw: that throw propagates
         script_value val = pop_value();
 
         // the message is the value's display text, a class's own to_string() for an instance (engine::text_of, print's rule)
@@ -5981,7 +6031,12 @@ checked_result<void> interpreter::visit_throw_expr_t(throw_expr* expr, const rep
         if (!current_exception_) {
             return checked_result<void>(make_error_code(runtime_error_code::invalid_operation), detail::bare_throw_text);
         }
-        // Keep the existing active_exception_value_
+        // Keep the existing active_exception_value_, and the stack its handler bound: the error goes on from where it was raised
+        if (!handled_errors_.empty() && handled_errors_.back()->caught()) {
+            debug_raised([&] { return std::string(current_exception_->what()); }, try_depth_ > 0);
+            captured_trace_ = engine_->caught_error_trace(*handled_errors_.back()->caught());
+            trace_captured_ = !captured_trace_.empty();
+        }
     }
 
     is_unwinding_ = true;
@@ -6001,11 +6056,12 @@ checked_result<void> interpreter::visit_yield_expr_t(yield_expr* expr, const rep
     script_value value = make_value();
     if (expr->value) {
         JAISCRIPT_TRY_OPERAND(eval_child<Replaying>(expr->value.get(), rs, 0), expr, rp_operand, 0, {});
+        if (is_unwinding_) { return {}; }   // the operand threw: nothing is yielded, the throw leaves the coroutine
         value = pop_value();
-        if (!is_unwinding_) { detail::materialize_return_value(value, detail::yield_operand_is_lvalue(expr->value.get())); }   // KEEP BYTE-PARALLEL with the vm's op_yield
+        detail::materialize_return_value(value, detail::yield_operand_is_lvalue(expr->value.get()));   // KEEP BYTE-PARALLEL with the vm's op_yield
         // A yield hands out the declared type like a return (the return's table and identity lanes, the yield's text).
         // KEEP BYTE-PARALLEL with the vm's exec_yield_convert.
-        if (!is_unwinding_ && !call_stack_.empty()) {
+        if (!call_stack_.empty()) {
             if (const script_defined_function* fn = call_stack_.back().function) {
                 const auto conv = detail::return_conv_of(*fn);
                 if (conv != detail::return_conv::none && conv != detail::return_conv::ref) {
@@ -6014,7 +6070,10 @@ checked_result<void> interpreter::visit_yield_expr_t(yield_expr* expr, const rep
                         auto converted = try_convert_for_parameter(value, fn->return_type,
                             detail::slot_site{detail::slot_kind::yield_value, {}, fn->name}, detail::uniquely_held(value) ? &value : nullptr);
                         if (!converted) { return converted.error_value(); }
-                        if (is_unwinding_) [[unlikely]] { return {}; }
+                        if (is_unwinding_) [[unlikely]] {   // the conversion threw: the yield's consumer pops a placeholder
+                            push_value(make_value());
+                            return {};
+                        }
                         value = std::move(converted.value());
                     }
                 }
@@ -6026,6 +6085,7 @@ checked_result<void> interpreter::visit_yield_expr_t(yield_expr* expr, const rep
     // visitor parks its operands), the owning statement consumes it, and the resume
     // substitutes null for this yield (vm exec_yield parity)
     active_coroutine_->do_yield(std::move(value));
+    active_coroutine_->note_yield_node(expr);
     hasYieldRequest_ = true;
     return checked_result<void>(make_error_code(runtime_error_code::coroutine_suspended));
 }
@@ -6248,7 +6308,7 @@ checked_result<void> interpreter::run_for_stmt(for_stmt* stmt) {
         if (stmt->initializer) {
             if (debug_hook_) [[unlikely]] { debug_quiet_node_ = stmt->initializer.get(); }
             auto result = dispatch_decl(stmt->initializer.get());
-            if (!result) {
+            if (!result || is_unwinding_) {   // a throw out of the initializer: no condition, body or update runs
                 end_scope(loop_env);
                 environment_ = previous;
                 return result;
@@ -6264,7 +6324,7 @@ checked_result<void> interpreter::run_for_stmt(for_stmt* stmt) {
         }
     } else if (resume_phase == rp_init && stmt->initializer) {
         auto result = dispatch_decl_resuming(stmt->initializer.get());
-        if (!result) {
+        if (!result || is_unwinding_) {
             environment_ = previous;
             return result;
         }
@@ -6351,7 +6411,7 @@ checked_result<void> interpreter::run_for_stmt(for_stmt* stmt) {
     // finish the update before this iteration's condition
     if (replay_update || resume_phase == rp_body_done) {
         eval_update();
-        if (park_loop_env || error) {
+        if (park_loop_env || error || is_unwinding_) {
             environment_ = previous;
             return error ? *error : checked_result<void>{};
         }
@@ -6425,6 +6485,7 @@ checked_result<void> interpreter::run_for_stmt(for_stmt* stmt) {
         }
 
         eval_update();
+        if (error || park_loop_env || is_unwinding_) break;   // the update failed, threw or suspended: the condition is not read after it
     }
 
     // Release the loop environment to destroy all loop variables (only if we created it).
@@ -6452,9 +6513,11 @@ checked_result<void> interpreter::visit_parallel_for_stmt(parallel_for_stmt* stm
     containers.reserve(stmt->arity());
     JAISCRIPT_TRY(dispatch_expr(stmt->container.get()));
     containers.push_back(pop_value());
+    if (is_unwinding_) { return {}; }   // a container threw: no region runs
     for (const auto& extra : stmt->extra_containers) {
         JAISCRIPT_TRY(dispatch_expr(extra.get()));
         containers.push_back(pop_value());
+        if (is_unwinding_) { return {}; }
     }
     const std::function<const script_value*(size_t)> read_frame_slot = [this](size_t slot) -> const script_value* {
         return call_stack_.empty() ? nullptr : call_stack_.back().get_local(slot);
@@ -6622,9 +6685,10 @@ checked_result<void> interpreter::run_range_for_stmt(range_for_stmt* stmt) {
                     if (auto* cursor = use_slot ? loop_var_ptr->element_cursor_holder() : nullptr;
                         cursor && cursor->container.get() == array_storage.get() &&
                         cursor->container_element_type == element_constraint) {
-                        cursor->container_index = i;
+                        cursor->repoint_element(i);
                     } else {
                         *loop_var_ptr = script_value::make_element_reference(array_storage, i, engine_, element_constraint);
+                        script_value::bind_view(*loop_var_ptr);
                     }
                     if (stmt->element_type) {   // a T& binds an element holding a T (KEEP BYTE-PARALLEL with vm exec_iter_next)
                         auto bound = detail::range_for_bind(*loop_var_ptr, stmt->element_type, true, stmt->variable_name, engine_);
@@ -6830,6 +6894,7 @@ checked_result<void> interpreter::run_range_for_stmt(range_for_stmt* stmt) {
                     const auto& entry = *it;
                     if (!detail::reaim_map_entry_cursor(loop_var_ptr, map_storage, entry.first, map_value_type)) {
                         *loop_var_ptr = script_value::make_map_entry_reference(map_storage, entry.first, &entry.second, engine_, map_value_type);
+                        script_value::bind_view(*loop_var_ptr);
                     }
                 } else {
                     script_value first = make_value();
@@ -7166,6 +7231,8 @@ checked_result<void> interpreter::visit_try_stmt(try_stmt* stmt) {
     checked_result<void> try_result;
     if (!resuming_catch) {
         const size_t try_stack_mark = valueStack_.size();
+        ++try_depth_;
+        struct try_depth_scope { size_t& depth; ~try_depth_scope() { --depth; } } in_try{try_depth_};
         try {
             try_result = dispatch_stmt(stmt->try_block.get());
         } catch (const std::exception& e) {
@@ -7225,6 +7292,7 @@ checked_result<void> interpreter::visit_try_stmt(try_stmt* stmt) {
 
     if (caught_error) {
         // the stack at the error, for the caught value (a callee's frame exit captured it already)
+        if (!resuming_catch) { debug_raised([&] { return current_exception_ ? std::string(current_exception_->what()) : std::string(); }, true); }
         if (!resuming_catch && !trace_captured_) { capture_stack_trace(); }
         // Reset unwinding flag
         is_unwinding_ = false; trace_captured_ = false;
@@ -7239,8 +7307,12 @@ checked_result<void> interpreter::visit_try_stmt(try_stmt* stmt) {
         // of the block. A catch resume skips the bind - the restored frame holds it.
         bool catch_env_pushed = false;
         std::optional<caught_error_scope> caught_scope;   // the thrown value dies as the handler exits (KEEP BYTE-PARALLEL with the vm's try record)
+        struct handled_scope { std::vector<const caught_error_scope*>& stack; size_t depth; ~handled_scope() { stack.resize(depth); } } handled{handled_errors_, handled_errors_.size()};
         if (stmt->catch_var_id != UINT64_MAX && resuming_catch && stmt->catch_slot_index != SIZE_MAX && !call_stack_.empty()) {
-            if (const script_value* held = call_stack_.back().get_local(stmt->catch_slot_index)) { caught_scope.emplace(engine_, *held); }
+            if (const script_value* held = call_stack_.back().get_local(stmt->catch_slot_index)) {
+                caught_scope.emplace(engine_, *held);
+                handled_errors_.push_back(&*caught_scope);
+            }
         }
         if (stmt->catch_var_id != UINT64_MAX && !resuming_catch) {
             const bool by_throw = current_exception_ && current_exception_->thrown;
@@ -7250,6 +7322,7 @@ checked_result<void> interpreter::visit_try_stmt(try_stmt* stmt) {
                                                              current_exception_ ? detail::engine_access::exception_kind(*current_exception_) : error_kind::other);
             captured_trace_.clear();
             caught_scope.emplace(engine_, caught);
+            handled_errors_.push_back(&*caught_scope);
             if (stmt->catch_slot_index != SIZE_MAX && !call_stack_.empty()) {
                 call_stack_.back().set_local(stmt->catch_slot_index, std::move(caught));
             } else {
@@ -7346,6 +7419,7 @@ checked_result<void> interpreter::visit_switch_stmt(switch_stmt* stmt) {
             return cond_result.error_value();
         }
         switch_value = pop_value();
+        if (is_unwinding_) { return {}; }   // the condition threw: no case value is read, no body entered
         resume_phase = rp_none;
     }
 
@@ -7384,6 +7458,11 @@ checked_result<void> interpreter::visit_switch_stmt(switch_stmt* stmt) {
                     return result;
                 }
                 script_value case_value = pop_value();
+                if (is_unwinding_) {   // the case value threw: it is compared with nothing
+                    in_switch_ = old_in_switch;
+                    should_fallthrough_ = old_should_fallthrough;
+                    return {};
+                }
 
                 // A case matches when the language's == holds (KEEP BYTE-PARALLEL with vm_backend::exec_case_eq)
                 auto equal = language_equal(switch_value, case_value);
@@ -7646,18 +7725,9 @@ checked_result<void> interpreter::visit_function_decl(function_decl* decl) {
         engine* eng = engine_;
         func_decl_ptr->unit = decl_unit;
         uint64_t coroutine_type_id = coroutine_handle_type_id_;
-        script_value functionValue = script_value::make_function(
-            [eng, coroutine_type_id, func_decl_ptr, closure_env](const std::vector<script_value>& args) -> checked_result<script_value> {
-                // Create a new coroutine handle; next() resolves the live backend itself
-                auto handle = std::make_shared<coroutine_handle>(eng);
-                handle->set_function(func_decl_ptr, args, closure_env);
+        script_value functionValue = script_value::make_function(coroutine_mint{eng, coroutine_type_id, func_decl_ptr, closure_env}, engine_);
 
-                // Wrap as a script object
-                return make_coroutine_object(eng, coroutine_type_id, handle);
-            }, engine_);
-
-        environment_->define(decl->name_id, functionValue);
-        return {};
+        return detail::declare_script_function(*engine_, *decl, environment_, nullptr, std::move(functionValue));
     }
 
     // Don't capture any environment in the closure - just use nullptr (which also makes
@@ -7681,6 +7751,7 @@ checked_result<void> interpreter::visit_function_decl(function_decl* decl) {
     scriptFunc->declared = true;
     scriptFunc->line = decl->location.line;
     scriptFunc->context = engine_->host_entry_generation();
+    scriptFunc->generic_stamp = decl->instance_stamp;
 
     // Create wrapper function resolving the live backend at call time. Named thunk so
     // callers can recover the payload via target<script_callable_thunk>() - vm parity.
@@ -7690,33 +7761,32 @@ checked_result<void> interpreter::visit_function_decl(function_decl* decl) {
     payload.fn = scriptFunc;
     script_value functionValue = script_value::make_function(
         script_function(script_callable_thunk{engine_, std::move(payload)}), engine_);
-    engine_->bump_definition_epoch();
 
-    // Define the function in current environment: alone, or in the overload set of its name (KEEP BYTE-PARALLEL with
-    // vm_backend::exec_func_decl)
-    auto declared = detail::declare_function_overload(*environment_, decl->name_id, scriptFunc, std::move(functionValue), engine_, decl->is_override);
-    if (!declared) { return declared.error_value(); }
-    environment_->define(decl->name_id, std::move(declared.value()));
-    return {};
+    // Define the function in current environment: alone, or in the overload set of its name; a generic's instance once its
+    // generic is declared (KEEP BYTE-PARALLEL with vm_backend::exec_func_decl)
+    return detail::declare_script_function(*engine_, *decl, environment_, scriptFunc, std::move(functionValue));
 }
 
 checked_result<void> interpreter::visit_class_decl(class_decl* decl) {
     return detail::declare_script_class(decl, detail::class_declaration_host{
         engine_, string_symbolizer_, environment_, class_definition_type_id_, class_lookup_callback_, current_unit(),
-        [this](const expression_ptr& e, const std::shared_ptr<environment>& env) -> checked_result<script_value> {
+        [this, decl](const expression_ptr& e, const std::shared_ptr<environment>& env) -> checked_result<script_value> {
             struct env_restore {
                 interpreter& self;
                 std::shared_ptr<environment> previous;
                 ~env_restore() { self.environment_ = std::move(previous); }
             } restore{*this, environment_};
             if (env) { environment_ = env; }
+            note_running_statement(e.get());   // an initializer's failure stands at its own line, as the vm's frame for it does
             auto evaluated = dispatch_expr(e.get());
             if (!evaluated) {
                 return evaluated.error_value();
             }
+            note_running_statement(decl);
             return pop_value();
         },
-        [this] {
+        [this, decl] {
+            note_running_statement(decl);
             if (is_unwinding_) {
                 is_unwinding_ = false;
                 trace_captured_ = false;
@@ -7753,7 +7823,7 @@ checked_result<void> interpreter::visit_namespace_decl(namespace_decl* decl) {
     // Process all declarations within the namespace
     // Functions, variables, and classes are stored in the namespace_data registry
     for (const auto& member_decl : decl->declarations) {
-        // Check what kind of declaration this is
+        note_running_statement(member_decl.get());   // a member's failure stands at the member, as the vm's namespace_member_ has it
         if (member_decl->get_type() == node_type::function_decl) {
             auto* func_decl = static_cast<function_decl*>(member_decl.get());
             // Intern the function name if not already done
@@ -7764,6 +7834,7 @@ checked_result<void> interpreter::visit_namespace_decl(namespace_decl* decl) {
             // Overloads of the name coexist; one of the same signature collides unless it overrides (KEEP BYTE-PARALLEL with the vm)
             func_decl->unit = current_unit();
             func_decl->context = engine_->host_entry_generation();
+            if (detail::namespace_function_waits(*engine_, ns_data, decl->name_id, *func_decl)) { continue; }   // a generic's instance, until its generic is declared
             auto& overloads = ns_data->functions[func_decl->name_id];
             std::string admission_error;
             const auto admission = detail::admit_namespace_function(overloads, *func_decl, engine_->unit_rerun(func_decl->unit), admission_error);
@@ -7775,6 +7846,7 @@ checked_result<void> interpreter::visit_namespace_decl(namespace_decl* decl) {
             if (admission == detail::namespace_admission::reference_only) {
                 return checked_result<void>(make_error_code(runtime_error_code::type_mismatch), "{0}", string_symbolizer_->intern(admission_error));
             }
+            if (admission == detail::namespace_admission::present) { continue; }   // a generic's instance, already defined
 
             // Check if this namespace name matches a class name
             // If so, check for collision with class static methods
@@ -7817,7 +7889,7 @@ checked_result<void> interpreter::visit_namespace_decl(namespace_decl* decl) {
                 return detail::inline_redefinition(*string_symbolizer_, var_decl->name_id, var_decl);
             }
             if (debug_hook_ && debug_hook_->wants_statement(static_cast<uint32_t>(var_decl->location.line))) [[unlikely]] {
-                debug_hook_->on_statement(var_decl, static_cast<int>(call_stack_.size()));
+                (void)debug_hook_->on_statement(var_decl, static_cast<int>(call_stack_.size()));
             }
             JAISCRIPT_TRY(visit_variable_decl(var_decl));
             if (is_unwinding_) {
@@ -7837,6 +7909,14 @@ checked_result<void> interpreter::visit_namespace_decl(namespace_decl* decl) {
                 JAISCRIPT_TRY(dispatch_decl(class_decl_ptr));
             }
             detail::register_namespace_class(*engine_, *ns_data, *class_decl_ptr);
+
+        } else if (member_decl->get_type() == node_type::generic_decl) {
+            // a generic class's declaration runs its marker (KEEP BYTE-PARALLEL with the vm)
+            if (const auto marker = detail::generic_marker(*static_cast<generic_decl*>(member_decl.get()), *string_symbolizer_)) { JAISCRIPT_TRY(visit_class_decl(marker.get())); }
+        } else if (member_decl->get_type() == node_type::generic_instance_decl) {
+            // an instance's request runs nothing (KEEP BYTE-PARALLEL with the vm)
+        } else if (member_decl->get_type() == node_type::enum_decl) {
+            detail::declare_namespace_enum(*engine_, *ns_data, decl->name_id, static_cast<const enum_decl&>(*member_decl));   // KEEP BYTE-PARALLEL with the vm
 
         } else {
             // Other declaration types (expressions, includes, etc.) - execute normally
@@ -7875,6 +7955,7 @@ checked_result<void> interpreter::include_into_value_stack(expression* path_expr
     if (path_expr_node) {
         // Evaluate the expression to get the path
         JAISCRIPT_TRY(dispatch_expr(path_expr_node));
+        if (is_unwinding_) { return {}; }   // the path threw: nothing is included
         script_value path_value = pop_value();
 
         // Convert to string
@@ -7895,10 +7976,14 @@ checked_result<void> interpreter::include_into_value_stack(expression* path_expr
     }
     std::string resolved_path = std::move(resolve_result.value());
 
-    std::string content;
-    if (!engine_ptr->read_include_file(resolved_path, content)) {   // KEEP BYTE-PARALLEL with the vm
+    const detail::loaded_source content = engine_ptr->read_include_file(resolved_path);   // KEEP BYTE-PARALLEL with the vm
+    if (content.status == detail::loaded_source::state::missing) {
         return checked_result<void>(make_error_code(runtime_error_code::file_not_found), "Failed to open include file: {0}",
                                     string_symbolizer_->intern(resolved_path));
+    }
+    if (content.status == detail::loaded_source::state::unsettled) {
+        return checked_result<void>(make_error_code(runtime_error_code::file_not_found), "{0}",
+                                    string_symbolizer_->intern(detail::unsettled_source_text(resolved_path)));
     }
 
     // Execute the included file. Pass the resolved path so every node in the included
@@ -8024,22 +8109,16 @@ checked_result<void> interpreter::visit_import_expr(import_expr* expr) {
 checked_result<script_value> interpreter::execute_method_ast(std::shared_ptr<function_decl> ast,
                                            std::shared_ptr<environment> method_env,
                                            const std::vector<script_value>& args) {
-    // Coroutine methods mint a handle instead of executing (free-coroutine parity).
-    // The handle pins its own method env carrying 'this' (the caller ends method_env when this returns) plus the receiver, so
-    // the instance stays alive while suspended and 'this' resolves identically across resumes (KEEP BYTE-PARALLEL with
-    // vm_backend::execute_method_ast)
+    // Coroutine methods mint a handle instead of executing (free-coroutine parity): its own method scope (the caller ends
+    // method_env when this returns) and the receiver, which the handle keeps alive while suspended
     if (ast->is_coroutine) {
         const uint64_t this_id = string_symbolizer_->get_this_id();
         script_value this_obj(std::monostate{}, engine_);
         if (auto this_result = method_env->get(this_id)) {
             this_obj = std::move(this_result.value());
         }
-        auto static_class = method_env->get_class_definition();
-        auto coro_env = static_class
-            ? std::make_shared<environment>(method_env->get_parent(), string_symbolizer_, static_class)
-            : std::make_shared<environment>(method_env->get_parent(), string_symbolizer_, this_obj);
-        coro_env->set_access_context(method_env->get_access_context());
-        coro_env->define(this_id, this_obj);
+        auto coro_env = detail::method_coroutine_scope(method_env->get_parent(), string_symbolizer_, this_id, this_obj, method_env->get_class_definition(),
+                                                       method_env->get_access_context());
         auto handle = std::make_shared<coroutine_handle>(engine_);
         handle->set_function(ast, args, coro_env);
         handle->set_receiver(std::move(this_obj));
@@ -8049,7 +8128,7 @@ checked_result<script_value> interpreter::execute_method_ast(std::shared_ptr<fun
     // Create a script_defined_function with the method environment (parameter storage
     // shared from the node - no per-call vector copy)
     script_defined_function script_func(
-        ast->name,
+        ast->shown_name(),
         shared_parameters_for(ast.get()),
         ast->return_type,
         ast->body,
@@ -8068,7 +8147,9 @@ checked_result<void> interpreter::evaluate_field_initializers(strong_ptr<class_i
                                              std::shared_ptr<script_class_definition> class_def,
                                              std::shared_ptr<environment> init_env,
                                              bool skip_parent_recursion,
-                                             const detail::aggregate_plan* aggregate) {
+                                             const detail::aggregate_plan* aggregate,
+                                             const std::vector<detail::field_initialization>* plan,
+                                             std::shared_ptr<environment> list_env) {
     const unit_stamp class_unit = class_def->unit();   // the initializers are the class's code (no frame of their own)
     unit_override_scope unitScope(this, &class_unit);
     // First, evaluate parent class field initializers (if any)
@@ -8135,6 +8216,18 @@ checked_result<void> interpreter::evaluate_field_initializers(strong_ptr<class_i
 
     if (aggregate) [[unlikely]] {
         return detail::aggregate_fill_own_fields(*instance, *class_def, *aggregate, engine_, initialize_field);
+    }
+    if (plan) {
+        const std::shared_ptr<environment> member_env = environment_;
+        const detail::member_scope_ctx member_scope = member_scope_;
+        for (const auto& step : *plan) {
+            // a listed initializer is the constructor's code: its parameters, then the members, as its body resolves names
+            environment_ = step.listed ? list_env : member_env;
+            member_scope_ = step.listed ? scope_restore.previous_scope : member_scope;
+            auto initialized = initialize_field(step.field_id, step.value);
+            if (!initialized) { return initialized; }
+        }
+        return {};
     }
     for (const auto& [field_id, initializer_ast] : field_initializers) {
         if (initializer_ast) {
@@ -8243,6 +8336,10 @@ struct interpreter::construction_lender final : detail::construction_host {
                                                      detail::construction_scope& scope, bool skip_parent_recursion,
                                                      const detail::aggregate_plan* aggregate) override {
         return self.evaluate_field_initializers(instance, cls, scope.members ? scope.members : scope.env, skip_parent_recursion, aggregate);
+    }
+    checked_result<void> initialize_fields(const strong_ptr<class_instance>& instance, const std::shared_ptr<script_class_definition>& cls,
+                                           const std::vector<detail::field_initialization>& plan, detail::construction_scope& scope) {
+        return self.evaluate_field_initializers(instance, cls, scope.members ? scope.members : scope.env, true, nullptr, &plan, scope.env);
     }
 
     bool owns_arguments(const std::vector<script_value>&) const { return call_ctx != nullptr; }
@@ -8382,7 +8479,7 @@ checked_result<script_value> interpreter::construct_instance(std::shared_ptr<scr
     std::shared_ptr<function_decl> matching_ctor;
     std::vector<script_value> captured;
     auto pre = detail::prepare_construction(host, class_def, args, initializer_depth, matching_ctor, captured, check_access);
-    if (!pre || is_unwinding_) { return pre; }
+    if (!pre || is_unwinding_ || !matching_ctor) { return pre; }
     script_value this_value = std::move(pre.value());
     initializer_depth.reset();
     auto constructed = detail::construct_instance_members(host, class_def, definition_env, this_value, matching_ctor, captured.empty() ? args : captured);
@@ -8590,10 +8687,7 @@ checked_result<script_value> interpreter::declared_component_reference(variable_
         });
     }
     if (!part.value().is_reference()) {
-        return checked_result<script_value>(make_error_code(runtime_error_code::invalid_reference),
-            "Cannot take reference of non-lvalue expression (var&/auto& declarations bind locals, "
-            "subscript chains like arr[i] or grid[y][x], map entries, object fields like obj.field and C++ properties; "
-            "computed script properties are not ref-bindable)");
+        return checked_result<script_value>(make_error_code(runtime_error_code::invalid_reference), detail::non_lvalue_reference_text);
     }
     return part;
 }
@@ -8886,7 +8980,7 @@ bool scope_slots_at(const statement* s, const ast_node* at, bool mid_statement, 
 }
 }
 
-void interpreter::note_running_statement(statement* stmt) {
+void interpreter::note_running_statement(const ast_node* stmt) {
     if (!call_stack_.empty()) call_stack_.back().current_node = stmt;
     else top_level_node_ = stmt;
 }
@@ -8902,28 +8996,82 @@ std::vector<std::pair<size_t, std::string_view>> interpreter::frame_scope_slots(
     const ast_node* at = updating != updating_loops_.rend() ? updating->second : frame.current_node;
     for (const auto& p : fn->parameters())
         if (!p.binds_capture) note_scope_slot(p.slot_index, p.name, out);
-    scope_slots_at(fn->body.get(), at, frame_index > 0, out);
+    scope_slots_at(fn->body.get(), at, frame_index > 0 && !frame.exiting, out);
+    if (frame.exiting && at) note_scope_decl(static_cast<const statement*>(at), out);   // its statement ran: its declaration is in scope
     return out;
 }
 
 std::vector<std::pair<std::string, script_value>> interpreter::get_frame_locals(size_t frame_index) const {
+    frame_index = debug_stack_position(frame_index);
     std::vector<std::pair<std::string, script_value>> out;
-    if (frame_index >= call_stack_.size()) return out;   // the top level: the caller reads its environment
-    const call_frame& frame = call_stack_[call_stack_.size() - 1 - frame_index];
-    for (const auto& [slot, name] : frame_scope_slots(frame_index)) {
-        if (const script_value* v = frame.get_local(slot)) out.emplace_back(std::string(name), *v);
+    if (frame_index > call_stack_.size() || (frame_index == call_stack_.size() && execute_depth_ == 0)) return out;
+    if (frame_index < call_stack_.size()) {
+        const call_frame& frame = call_stack_[call_stack_.size() - 1 - frame_index];
+        const auto slots = frame_scope_slots(frame_index);
+        for (auto it = slots.rbegin(); it != slots.rend(); ++it) {   // an inner declaration hides an outer one of its name
+            if (std::any_of(out.begin(), out.end(), [&](const auto& seen) { return seen.first == it->second; })) continue;
+            if (const script_value* v = frame.get_local(it->first)) out.emplace_back(std::string(it->second), *v);
+        }
+        detail::fold_lowered_locals(out, engine_);
+        if (frame.is_method && frame.this_object_ptr) out.emplace_back("this", *frame.this_object_ptr);
     }
-    detail::fold_lowered_locals(out, engine_);
+    // a plain function's scope parents on its caller's chain without seeing it: only a closure or a method names its outer scopes
+    const call_frame* function_frame = frame_index < call_stack_.size() ? &call_stack_[call_stack_.size() - 1 - frame_index] : nullptr;
+    const bool plain = function_frame && function_frame->function && !function_frame->function->closure_env;
+    const environment* env = frame_index == 0 ? environment_.get() : call_stack_[call_stack_.size() - frame_index].caller_environment;
+    environment::append_scope_variables(env, plain ? function_frame->closure_env.get() : get_global_environment().get(), out);
     return out;
 }
 
-script_value* interpreter::debug_local_storage(const std::string& name) {
-    if (call_stack_.empty()) return nullptr;
-    const auto slots = frame_scope_slots(0);
-    for (auto it = slots.rbegin(); it != slots.rend(); ++it) {
-        if (it->second == name) return call_stack_.back().get_local(it->first);
+script_value* interpreter::debug_local_storage(const std::string& name, size_t frame_index) {
+    frame_index = debug_stack_position(frame_index);
+    if (frame_index > call_stack_.size()) return nullptr;
+    call_frame* function_frame = frame_index < call_stack_.size() ? &call_stack_[call_stack_.size() - 1 - frame_index] : nullptr;
+    if (function_frame) {
+        const auto slots = frame_scope_slots(frame_index);
+        for (auto it = slots.rbegin(); it != slots.rend(); ++it) {
+            if (it->second == name) return function_frame->get_local(it->first);
+        }
     }
-    return nullptr;
+    const bool plain = function_frame && function_frame->function && !function_frame->function->closure_env;
+    const environment* env = frame_index == 0 ? environment_.get() : call_stack_[call_stack_.size() - frame_index].caller_environment;
+    return environment::find_scope_variable(env, plain ? function_frame->closure_env.get() : get_global_environment().get(), string_symbolizer_->intern(name));
+}
+
+// KEEP BYTE-PARALLEL with vm_backend::begin_debug_evaluation / end_debug_evaluation
+void interpreter::begin_debug_evaluation(std::chrono::nanoseconds budget) {
+    debug_evaluation_save saved;
+    saved.exception = current_exception_;
+    saved.exception_value = active_exception_value_;
+    saved.trace = captured_trace_;
+    saved.run_error = run_error_;
+    saved.nested = nested_failure_;
+    saved.catch_var = current_catch_var_id_;
+    saved.unwinding = is_unwinding_;
+    saved.trace_captured = trace_captured_;
+    saved.terminal = limits_->terminal_error;
+    saved.budget_active = budget_active_;
+    saved.budget = execution_budget_;
+    saved.deadline = execution_deadline_;
+    debug_evaluations_.push_back(std::move(saved));
+    execution_budget_ = budget;   // the evaluation's execute arms it
+}
+
+void interpreter::end_debug_evaluation() {
+    debug_evaluation_save saved = std::move(debug_evaluations_.back());
+    debug_evaluations_.pop_back();
+    current_exception_ = std::move(saved.exception);
+    active_exception_value_ = std::move(saved.exception_value);
+    captured_trace_ = std::move(saved.trace);
+    run_error_ = std::move(saved.run_error);
+    nested_failure_ = std::move(saved.nested);
+    current_catch_var_id_ = saved.catch_var;
+    is_unwinding_ = saved.unwinding;
+    trace_captured_ = saved.trace_captured;
+    limits_->terminal_error = saved.terminal;
+    budget_active_ = saved.budget_active;
+    execution_budget_ = saved.budget;
+    execution_deadline_ = saved.deadline;
 }
 
 // Function call implementation - returns checked_result for consistent error handling
@@ -8940,6 +9088,7 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
         return detail::raise_native_stack();
     }
 
+    detail::host_time_pause host_paused(*limits_, *this);   // a script function the host calls inside a call the budget does not count
     if (execution_limit_exhausted()) [[unlikely]] {
         return execution_limit_failure();
     }
@@ -8961,7 +9110,8 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
     }
 
 
-    if (args.size() != function.parameters().size() && !arity_accepts(function.parameters(), args.size())) {
+    coroutine_pause* const pause = std::exchange(pending_pause_, nullptr);
+    if (!pause && args.size() != function.parameters().size() && !arity_accepts(function.parameters(), args.size())) {
         return detail::arity_error(function.name, function.parameters().size(), args.size(), arity_count_ids_, *string_symbolizer_);
     }
 
@@ -8978,6 +9128,7 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
     // Set up closure environment for non-local lookups
     auto previousEnv = environment_;
     const detail::member_scope_ctx previousScope = member_scope_;
+    call_stack_[frame_index].caller_environment = previousEnv.get();
     unit_sync_scope unitSync{ this };   // the caller's unit again once this frame is gone
     const unit_stamp caller_unit = frame_index >= 1 && call_stack_[frame_index - 1].function ? call_stack_[frame_index - 1].function->unit : string_symbolizer_->current_unit();   // a by-reference argument resolves under it
     enter_unit(function.unit);
@@ -9076,15 +9227,22 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
     // Helper lambda to cleanup and restore state
     auto cleanup = [&](bool clear_this = true) {
         // capture before pop_back: deeper frames are still present
+        if (is_unwinding_) { debug_raised([&] { return current_exception_ ? std::string(current_exception_->what()) : std::string(); }, try_depth_ > 0); }
         if (is_unwinding_ && !trace_captured_) capture_stack_trace();
         detail::shared_cell_release shared_cells{engine_};   // declared first: its check runs after the frame's locals die
         {
             // The locals die while this frame is still the innermost one, as C++ destroys them inside the function: a destructor
-            // they fire traces through it (KEEP BYTE-PARALLEL with the vm). Moved out first, so a destructor reentering
-            // call_function only grows call_stack_ above this frame.
+            // they fire traces through it (KEEP BYTE-PARALLEL with the vm). Each is moved out of its slot first, last declared
+            // first, so a destructor reentering call_function only grows call_stack_ above this frame and a debugger stopped in
+            // it sees the locals still alive (the vm's slot kills).
             const size_t dying_index = call_stack_.size() - 1;
             if ((call_stack_[dying_index].boxed_cells || (function.body && function.body->shares_cells)) && !parallel_worker_) [[unlikely]] {
                 script_value::gather_shared_cells(call_stack_[dying_index].locals.data(), call_stack_[dying_index].locals.size(), shared_cells.cells);
+            }
+            call_stack_[dying_index].exiting = true;
+            for (size_t k = call_stack_[dying_index].locals.size(); k-- > 0;) {
+                script_value dying = std::move(call_stack_[dying_index].locals[k]);
+                call_stack_[dying_index].locals[k] = script_value(std::monostate{}, engine_);
             }
             reverse_destroyed_values dying_locals = std::move(call_stack_[dying_index].locals);
         }
@@ -9104,15 +9262,47 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
         returnValue_ = previousReturn;
     };
 
+    // A coroutine paused at a site (pause_coroutine_at): its frame is placed and it suspends here, as a yield suspends it
+    if (pause) [[unlikely]] {
+        place_paused_frame(*pause, frame_index, function);
+        auto& coro_state = coroutine_state(*pause->handle, engine_);
+        coro_state.saved_environment = environment_;
+        coro_state.saved_call_stack.clear();
+        coro_state.saved_call_stack.push_back(std::move(call_stack_[frame_index]));
+        coro_state.saved_return_value.reset();
+        coro_state.saved_has_return = false;
+        coro_state.saved_member_scope = member_scope_;
+        call_stack_.erase(call_stack_.begin() + frame_index, call_stack_.end());
+        environment_ = previousEnv;
+        member_scope_ = previousScope;
+        hasReturnValue_ = previousHasReturn;
+        returnValue_ = previousReturn;
+        return make_value();
+    }
+
     // parameters bind into the call frame; a reference parameter binds to its argument's storage
+    // an error while they bind is the callee's: the stack is taken while its frame stands, as for a throw there (KEEP BYTE-PARALLEL
+    // with vm_backend::binding_failed)
+    auto binding_failed = [&]() {
+        if (!trace_captured_) { capture_stack_trace(); }
+        cleanup();
+    };
 
     std::vector<script_value> held_args;
     const std::vector<script_value>* argv = &args;
+    // while its parameters bind, the frame stands at its first statement, as the vm's stands at its first instruction; a constructor's
+    // prologue comes first, standing at the constructor
+    if (pending_prologue_ && pending_prologue_->frame == frame_index && pending_prologue_->body == function.body.get()) {
+        call_stack_[frame_index].current_node = pending_prologue_->ctor;
+    } else if (function.body && !function.body->declarations.empty()) {
+        call_stack_[frame_index].current_node = function.body->declarations.front().get();
+    }
     // A native exception unwinding through this activation (a C++ callable, a removed-element reference, a bare rethrow
     // with nothing to rethrow) pops the frame first and converts at the caller's call boundary
     size_t last_body_idx = 0;
     try {
     for (size_t i = 0; i < function.parameters().size(); ++i) {
+        if (is_unwinding_) { break; }   // a default or a conversion threw: nothing more binds (KEEP BYTE-PARALLEL with vm_backend::bind_parameters)
         const auto& param = function.parameters()[i];
 
         if (i >= args.size()) {
@@ -9124,14 +9314,14 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
                 auto storage = param.is_reference ? named_storage_reference(param.default_value.get()) : std::nullopt;
                 if (storage) {
                     if (!*storage) {
-                        cleanup();
+                        binding_failed();
                         return storage->error_value();
                     }
                     default_val = std::move(storage->value());
                 } else {
                     auto default_result = dispatch_expr(param.default_value.get());
                     if (!default_result) {
-                        cleanup();
+                        binding_failed();
                         return default_result.error_value();
                     }
                     default_val = pop_value();
@@ -9140,7 +9330,7 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
                         if (d->get_type() == node_type::member_expr && static_cast<const member_expr*>(d)->is_static) {
                             if (auto cell = static_storage_reference(static_cast<const member_expr*>(d))) {
                                 if (!*cell) {
-                                    cleanup();
+                                    binding_failed();
                                     return cell->error_value();
                                 }
                                 default_val = std::move(cell->value());
@@ -9151,14 +9341,14 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
                             return try_convert_for_parameter(v, param.type, detail::slot_site{detail::slot_kind::parameter, param.name, function.name, false});
                         });
                         if (!bound) {
-                            cleanup();
+                            binding_failed();
                             return bound.error_value();
                         }
                         default_val = std::move(bound.value());
                     }
                 }
                 if (!is_unwinding_ && !detail::default_binds_reference(param, default_val)) {
-                    cleanup();
+                    binding_failed();
                     return detail::non_lvalue_default_error(param, *string_symbolizer_);
                 }
                 if (param.ref_escaping && !default_val.is_reference()) {
@@ -9184,8 +9374,14 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
                 auto bound = bind_reference_parameter(param, frame_index,
                                                       (*call_ctx->arg_exprs)[i].get(), previousEnv, &arg, caller_unit, &function, i);
                 if (!bound) {
-                    cleanup();
+                    binding_failed();
                     return bound.error_value();
+                }
+                // the evaluated argument the call keeps names what the parameter the binder resolved names: a view too, and a value
+                // it read (a handle) lets go, as the vm's argument is the parameter itself
+                script_value::bind_view(arg);
+                if (!arg.is_reference() && call_ctx->values == &args && argv == &args && &arg == &args[i]) {
+                    const_cast<script_value&>(arg) = script_value(std::monostate{}, engine_);
                 }
             } else {
                 // No metadata: external (C++) invocation. Object values are handles, so a
@@ -9204,7 +9400,7 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
                             detail::ref_parameter_takes_temporary(*engine_, function.parameters(), function.body.get(), i, !parallel_worker_))) {
                     call_stack_[frame_index].set_local(param.slot_index, detail::make_reference_argument_temporary(param, arg, engine_));
                 } else {
-                    cleanup();
+                    binding_failed();
                     return checked_result<script_value>(
                         make_error_code(runtime_error_code::invalid_reference),
                         "Cannot pass non-lvalue to reference parameter"
@@ -9267,7 +9463,7 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
                     detail::capture_argument(engine_, held_args[j], detail::transient_read_marker::arg_capture_full, detail::parameters_binding(function.parameters(), j));
                 }
                 if (auto placed = bind_later_places(function, call_ctx, i + 1, held_args, frame_index, previousEnv, caller_unit); !placed) {
-                    cleanup();
+                    binding_failed();
                     return placed.error_value();
                 }
                 argv = &held_args;
@@ -9277,7 +9473,7 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
                 detail::slot_site{detail::slot_kind::parameter, param.name, function.name, param.is_reference},
                 elide ? &const_cast<script_value&>(arg) : nullptr);
             if (!convert_result) {
-                cleanup();
+                binding_failed();
                 return convert_result.error_value();
             }
             script_value converted_arg = std::move(convert_result.value());
@@ -9344,8 +9540,15 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
             }
             continue;
         }
-        if (!param.type) { continue; }
         const script_value* bound = call_stack_[frame_index].get_local(param.slot_index);
+        if (bound) {   // KEEP BYTE-PARALLEL with vm_backend::bind_parameters
+            if (auto named = detail::bind_handle_object(*const_cast<script_value*>(bound), param.type.get(), engine_); !named) {
+                binding_failed();
+                return named.error_value();
+            }
+            script_value::bind_view(*bound);
+        }
+        if (!param.type) { continue; }
         if (bound && !detail::reference_binding_admits(param.type.get(), *bound, engine_)) {
             // a const T& binds a T made from the argument, as a T parameter converts it (C++; KEEP BYTE-PARALLEL with vm_backend::bind_parameters)
             if (param.is_const) {
@@ -9357,7 +9560,7 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
                 }
             }
             auto rejection = detail::typed_slot_rejection(bound->deref(), *param.type, detail::slot_site{detail::slot_kind::parameter, param.name, function.name, param.is_reference}, engine_);
-            cleanup();
+            binding_failed();
             return rejection;
         }
         if ((param.ref_escaping || param.declared_ref_escapes) && bound) [[unlikely]] {   // its reference reaches a binding that cannot see the name
@@ -9366,11 +9569,12 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
     }
 
     // a constructor's activation runs its prologue (bases, then fields) in this frame, the parameters bound, ahead of its body
-    bool run_body = true;
+    bool run_body = !is_unwinding_;   // the binding threw: neither the prologue nor a statement of the body runs
     if (pending_prologue_ && pending_prologue_->frame == frame_index && pending_prologue_->body == function.body.get()) [[unlikely]] {
         constructor_prologue_hook* hook = std::exchange(pending_prologue_, nullptr);
-        auto ran = run_constructor_prologue(*hook, frame_index, function);
+        auto ran = run_body ? run_constructor_prologue(*hook, frame_index, function) : checked_result<void>{};
         if (!ran) {
+            debug_raised([&] { return format_error(ran, *string_symbolizer_); }, try_depth_ > 0);
             if (!trace_captured_) capture_stack_trace();
             cleanup();
             return ran.error_value();
@@ -9390,6 +9594,7 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
 
         // Check for error codes - propagate errors
         if (!result && result.error() != std::error_code()) {
+            debug_raised([&] { return format_error(result, *string_symbolizer_); }, try_depth_ > 0);
             if (!trace_captured_) capture_stack_trace();
             cleanup();
             // Propagate the error with static message - nice formatting at API boundary
@@ -9406,6 +9611,7 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
     } catch (...) {
         if (call_stack_.size() > frame_index) {
             while (call_stack_.size() > frame_index + 1) { call_stack_.pop_back(); }   // frames an unwound callee left behind
+            if (!trace_captured_) { capture_stack_trace(); }   // the trace names the frame that raised it, as the vm's in-frame conversion does
             cleanup();
         }
         throw;
@@ -9466,28 +9672,6 @@ checked_result<script_value> interpreter::call_function(const script_defined_fun
         } else {
             result = std::move(returnValue_.value());
         }
-    } else {
-        // Check if this is a constructor (method with no explicit return)
-        // Constructors implicitly return 'this'
-        if (active_coroutine_ && active_coroutine_->get_function() &&
-            active_coroutine_->get_function()->body == function.body) {
-            // Coroutine body activation ran off the end: completes with null (vm
-            // run_fiber parity) - the implicit-'this' method rule must not apply.
-            result = make_value();
-        } else if (call_stack_[frame_index].is_method) {
-            result = call_stack_[frame_index].get_this();
-        } else {
-            // Check environment for method context (for closures inside methods)
-            auto function_env = environment_;
-            if (function_env->is_method_env()) {
-                result = function_env->get_this_object();
-            } else if (function_env->get_parent() && function_env->get_parent()->is_method_env()) {
-                result = function_env->get_parent()->get_this_object();
-            } else {
-                // Regular function with no return statement returns null
-                result = make_value();
-            }
-        }
     }
 
     // Cleanup and return success
@@ -9515,7 +9699,7 @@ checked_result<script_value> interpreter::try_convert_for_parameter(const script
         case script_value::TYPEID_STRING: if (target_base_type == script_value_type::jai_string_type) return arg; break;
         case script_value::TYPEID_BOOL: if (target_base_type == script_value_type::jai_bool_type) return arg; break;
         case script_value::TYPEID_CHAR: if (target_base_type == script_value_type::jai_char_type) return arg; break;
-        case script_value::TYPEID_WEAK_PTR: if (target_base_type == script_value_type::jai_weak_ptr_type) return arg; break;
+        case script_value::TYPEID_WEAK_PTR: if (target_base_type == script_value_type::jai_weak_ptr_type && detail::weak_handle_admits(derefed_arg, target_type, engine_)) return arg; break;
         default: break;
     }
 
@@ -9541,7 +9725,10 @@ checked_result<script_value> interpreter::try_convert_for_parameter(const script
         }
         case verdict::handle_target: {
             // shared_ptr<T> / weak_ptr<T> parameters and returns (outside the table): a same-kind
-            // payload, a matching or derived handle binds as-is
+            // payload, a matching or derived handle binds as-is; a class value never becomes a handle
+            if (target_base_type == script_value_type::jai_shared_ptr_type) {
+                if (const std::string held = detail::value_for_handle_slot(derefed_arg); !held.empty()) { detail::refuse_value_into_handle(held); }
+            }
             if (derefed_arg.current_type() == target_base_type) {
                 return arg;
             }
@@ -9599,6 +9786,175 @@ interpreter_coroutine_state::~interpreter_coroutine_state() {
     script_value::release_cell_cycles(shared, eng);
 }
 
+// The frame a site describes onto the body's fresh activation, and the continuation each construct around the yield would
+// have left: the innermost first, as the unwind of a yield pushes them
+void interpreter::place_paused_frame(const coroutine_pause& a_pause, size_t a_frameIndex, const script_defined_function& a_function) {
+    const detail::coroutine_site& site = *a_pause.site;
+    detail::coroutine_frame& image = *a_pause.frame;
+    auto& coro_state = coroutine_state(*a_pause.handle, engine_);
+    {
+        call_frame& frame = call_stack_[a_frameIndex];
+        for (size_t slot = 0; slot < image.slots.size(); ++slot) {
+            if (image.slots[slot].is_reference()) { frame.boxed_cells = true; }
+            frame.set_local(slot, std::move(image.slots[slot]));
+        }
+    }
+    using step_kind = detail::coroutine_step::kind;
+    // the scopes the constructs own, outermost first
+    std::vector<std::shared_ptr<environment>> scopes(site.path.size());
+    std::vector<size_t> loop_of(site.path.size(), SIZE_MAX);
+    std::vector<size_t> switch_of(site.path.size(), SIZE_MAX);
+    {
+        std::shared_ptr<environment> scope = environment_;
+        size_t loops = 0;
+        size_t switches = 0;
+        for (size_t i = 0; i < site.path.size(); ++i) {
+            const detail::coroutine_step& step = site.path[i];
+            if (step.what == step_kind::range_body) { loop_of[i] = loops++; }
+            if (step.what == step_kind::case_body || step.what == step_kind::default_body) { switch_of[i] = switches++; }
+            const bool owns_scope = (step.what == step_kind::block && step.node != a_function.body.get()) || step.what == step_kind::for_body ||
+                                    step.what == step_kind::case_body || step.what == step_kind::default_body;
+            if (owns_scope) {
+                scope = block_environment(scope);
+                scopes[i] = scope;
+            }
+        }
+    }
+    const auto subject_of = [&](size_t a_switch, const switch_stmt* a_statement) {
+        if (detail::switch_subject_held(*a_statement)) { return image.subjects[a_switch]; }
+        const auto* name = static_cast<const identifier_expr*>(a_statement->condition.get());
+        const script_value* held = resolve_local_or_env(name->slot_index, name->symbol_id);
+        return held ? script_value(held->deref()) : make_value();
+    };
+    bool any = false;
+    for (size_t i = site.path.size(); i-- > 0;) {
+        const detail::coroutine_step& step = site.path[i];
+        ast_node* node = const_cast<ast_node*>(step.node);
+        switch (step.what) {
+            case step_kind::block:
+                coro_state.push_continuation(node, any ? step.index : step.index + 1, scopes[i]);
+                any = true;
+                break;
+            case step_kind::case_body:
+            case step_kind::default_body: {
+                coro_state.push_continuation(node, any ? step.index : step.index + 1);
+                any = true;
+                ast_node* owner = const_cast<switch_stmt*>(step.owner);
+                coro_state.push_replay(owner, step.what == step_kind::case_body ? rp_case_body : rp_default_body,
+                                       step.what == step_kind::case_body ? step.branch : 0, {subject_of(switch_of[i], step.owner)}, scopes[i]);
+                break;
+            }
+            case step_kind::if_then:
+            case step_kind::if_else:
+                if (any) { coro_state.push_continuation(node, step.what == step_kind::if_then ? 0 : 1); }
+                break;
+            case step_kind::while_body:
+                if (any) { coro_state.push_continuation(node, 0); } else { coro_state.push_replay(node, rp_body_done, 0); }
+                any = true;
+                break;
+            case step_kind::for_body:
+                if (any) { coro_state.push_continuation(node, 0, scopes[i]); } else { coro_state.push_replay(node, rp_body_done, 0, {}, scopes[i]); }
+                any = true;
+                break;
+            case step_kind::range_body: {
+                const detail::coroutine_loop_state& loop = image.loops[loop_of[i]];
+                size_t position = loop.at;
+                bool walks_coroutine = false;
+                if (loop.range.is_map()) {   // the entry's place in key order: the walk a resume makes counts entries
+                    position = 0;
+                    const auto& entries = loop.range.as_map();
+                    for (auto it = entries.begin(); it != entries.end() && (it->first <=> loop.key) < 0; ++it) { ++position; }
+                } else if (!loop.range.is_array() && !loop.range.is_string() && !loop.range.is_utf8_string()) {
+                    walks_coroutine = true;
+                    position = 0;
+                }
+                if (any) { coro_state.push_continuation(node, position, nullptr, loop.range); }
+                else { coro_state.push_replay(node, rp_body_done, walks_coroutine ? 0 : position + 1, {}, nullptr, loop.range); }
+                any = true;
+                break;
+            }
+        }
+    }
+}
+
+bool interpreter::paused_coroutine_frame(coroutine_handle& a_handle, const std::vector<detail::coroutine_site>& a_sites, uint32_t& a_site,
+                                         detail::coroutine_frame_view& a_frame) {
+    auto* state = static_cast<interpreter_coroutine_state*>(a_handle.backend_state());
+    if (!state || state->saved_call_stack.size() != 1) { return false; }
+    a_site = UINT32_MAX;
+    for (size_t i = 0; i < a_sites.size(); ++i) {
+        if (a_sites[i].yield == a_handle.yield_node()) { a_site = static_cast<uint32_t>(i); break; }
+    }
+    if (a_site == UINT32_MAX) { return false; }
+    const detail::coroutine_site& site = a_sites[a_site];
+    const call_frame& frame = state->saved_call_stack.front();
+    a_frame.slots = frame.locals.data();
+    a_frame.slot_count = frame.locals.size();
+    a_frame.loops.resize(site.loops.size());
+    a_frame.subjects.assign(site.switches.size(), make_value());
+    if (site.refusal != detail::coroutine_refusal::none) { return true; }   // the save names why: the frame at such a site is not read
+    size_t loops = 0;
+    size_t switches = 0;
+    const auto& points = state->continuations();
+    for (size_t i = points.size(); i-- > 0;) {   // the outermost construct first
+        const auto& point = points[i];
+        if (!point.node) { continue; }
+        if (point.node->get_type() == node_type::range_for_stmt && point.saved_container) {
+            if (loops >= site.loops.size() || site.loops[loops] != point.node) { return false; }
+            detail::coroutine_loop_state& loop = a_frame.loops[loops++];
+            loop.range = *point.saved_container;
+            const bool body_done = point.phase == rp_body_done;
+            if (loop.range.is_array() || loop.range.is_string() || loop.range.is_utf8_string()) {
+                if (body_done && point.index == 0) { return false; }
+                loop.at = body_done ? point.index - 1 : point.index;
+            } else if (loop.range.is_map()) {
+                if (body_done && point.index == 0) { return false; }
+                size_t entry = body_done ? point.index - 1 : point.index;
+                const auto& entries = loop.range.as_map();
+                auto it = entries.begin();
+                for (; it != entries.end() && entry > 0; ++it) { --entry; }
+                if (it == entries.end()) { return false; }
+                loop.key = it->first;
+            }
+        } else if (point.node->get_type() == node_type::switch_stmt && (point.phase == rp_case_body || point.phase == rp_default_body)) {
+            if (switches >= site.switches.size() || site.switches[switches] != point.node) { return false; }
+            if (!point.partial.empty()) { a_frame.subjects[switches] = point.partial[0]; }
+            ++switches;
+        }
+    }
+    return loops == site.loops.size() && switches == site.switches.size();
+}
+
+bool interpreter::pause_coroutine_at(coroutine_handle& a_handle, const std::vector<detail::coroutine_site>& a_sites, uint32_t a_site,
+                                     detail::coroutine_frame&& a_frame) {
+    arm_native_stack();
+    const auto function = a_handle.get_function();
+    if (!function || a_site >= a_sites.size()) { return false; }
+    const unit_stamp replay_unit = function->unit;
+    unit_override_scope unitScope(this, &replay_unit);
+    auto& state = coroutine_state(a_handle, engine_);
+    // the function object a first resume makes (resume_coroutine)
+    std::vector<parameter> value_params = function->parameters;
+    for (auto& p : value_params) { p.is_reference = false; }
+    state.function.emplace(function->shown_name(), value_params, function->return_type, function->body, a_handle.get_closure_env(), function->local_count);
+    state.function->unit = function->unit;
+    coroutine_pause pause{&a_handle, &a_sites[a_site], &a_frame};
+    pending_pause_ = &pause;
+    const std::vector<script_value> none;
+    auto placed = call_function(*state.function, none);
+    const bool reached = pending_pause_ == nullptr;
+    pending_pause_ = nullptr;
+    if (!placed || !reached) {
+        a_handle.set_backend_state(nullptr);
+        return false;
+    }
+    a_handle.release_args();
+    a_handle.note_yield_node(a_sites[a_site].yield);
+    a_handle.set_status(coroutine_handle::status::suspended);
+    limits_->memory_charge_deferred(detail::k_coroutine_state_charge);
+    return true;
+}
+
 script_value interpreter::make_coroutine_object(engine* eng, uint64_t type_id, std::shared_ptr<coroutine_handle> handle) {
     return script_value::make_coroutine_handle(type_id, std::static_pointer_cast<void>(handle), eng);
 }
@@ -9614,6 +9970,7 @@ checked_result<script_value> interpreter::resume_coroutine(coroutine_handle& han
         arm_execution_deadline();
         limits_->reset_for_execute();
     }
+    detail::host_time_pause host_paused(*limits_, *this);
 
     // Check before activating or moving any coroutine state. A first resume is
     // counted by call_function; continuation replay below owns its own guard.
@@ -9712,7 +10069,7 @@ checked_result<script_value> interpreter::resume_coroutine(coroutine_handle& han
         // Owned by the coroutine state, not this stack: the saved frames point at it
         // across every later resume (return-site conversion, debugger locals)
         state.function.emplace(
-            function->name,
+            function->shown_name(),
             value_params,
             function->return_type,
             function->body,
@@ -9804,6 +10161,7 @@ checked_result<script_value> interpreter::resume_coroutine(coroutine_handle& han
             }
         } frames_guard{this, frame_base, dying_frames};
 
+        if (call_stack_.size() > frame_base) { call_stack_[frame_base].caller_environment = caller_state.env.get(); }
         environment_ = state.saved_environment;
         returnValue_ = std::move(state.saved_return_value);
         hasReturnValue_ = state.saved_has_return;
@@ -9820,6 +10178,7 @@ checked_result<script_value> interpreter::resume_coroutine(coroutine_handle& han
         }
         bool had_error = false;
         size_t last_body_idx = start_index;
+        const size_t stack_mark = valueStack_.size();
 
         for (size_t i = start_index; i < function->body->declarations.size(); ++i) {
             last_body_idx = i;
@@ -9832,9 +10191,7 @@ checked_result<script_value> interpreter::resume_coroutine(coroutine_handle& han
                 : dispatch_decl(function->body->declarations[i].get());
             // Statement boundary (visit_block_stmt parity): partial operands never
             // accumulate across the resumed body
-            if (valueStack_.size() > 0) {
-                valueStack_.clear();
-            }
+            valueStack_.truncate(stack_mark);
 
             if (!decl_result) {
                 if (decl_result.error() != std::error_code()) {
@@ -10098,6 +10455,7 @@ template<bool Replaying>
 checked_result<void> interpreter::visit_destructuring_decl_t(destructuring_decl* decl) {
     JAISCRIPT_TRY_ROOT(decl, decl->initializer.get());
     script_value source = pop_value();
+    if (is_unwinding_) { return {}; }   // a raising initializer wins over the array check
 
     if (!source.is_array()) {
         return checked_result<void>(make_error_code(runtime_error_code::type_mismatch),
@@ -10291,11 +10649,13 @@ void interpreter::capture_stack_trace() {
     for (size_t i = call_stack_.size(); i-- > 0;) {
         levels_from(i + 1);
         if (captured_trace_.size() >= k_stack_trace_frames) {
-            cap_stack_trace(captured_trace_, i + constructions + 2);
+            size_t chain_frames = 0;   // a `?.` chain's lambda has no frame in a trace (KEEP BYTE-PARALLEL with vm_backend::null_chain_frames_through)
+            for (size_t k = 0; k <= i; ++k) { chain_frames += detail::null_chain_frame(call_stack_[k].current_node) ? 1 : 0; }
+            cap_stack_trace(captured_trace_, i + constructions + 2 - chain_frames);
             trace_captured_ = true;
             return;
         }
-        captured_trace_.push_back(call_frame_trace(call_stack_[i]));
+        if (!detail::null_chain_frame(call_stack_[i].current_node)) { captured_trace_.push_back(call_frame_trace(call_stack_[i])); }
     }
     levels_from(0);
     captured_trace_.push_back(trace_frame_at("<script>", top_level_node_ ? &top_level_node_->location : nullptr));
@@ -10303,16 +10663,30 @@ void interpreter::capture_stack_trace() {
     trace_captured_ = true;
 }
 
+// a frame stands at its statement, else at its body's entry (KEEP BYTE-PARALLEL with vm_backend::frame_place)
 stack_frame interpreter::call_frame_trace(const call_frame& frame) {
-    return trace_frame_at(frame.function_name.empty() ? std::string("<anonymous>") : std::string(frame.function_name),
-                          frame.current_node ? &frame.current_node->location : nullptr);
+    const source_location* at = frame.current_node ? &frame.current_node->location
+                              : frame.function ? detail::body_entry_location(frame.function->body.get()) : nullptr;
+    return trace_frame_at(frame.function_name.empty() ? std::string("<anonymous>") : std::string(frame.function_name), at);
+}
+
+// The call_stack_ position (from the top) of the debugger's frame `frame_index`: a `?.` chain's lambda is no frame of its list
+size_t interpreter::debug_stack_position(size_t frame_index) const {
+    size_t visible = 0;
+    for (size_t position = 0; position < call_stack_.size(); ++position) {
+        if (detail::null_chain_frame(call_stack_[call_stack_.size() - 1 - position].current_node)) { continue; }
+        if (visible++ == frame_index) { return position; }
+    }
+    return call_stack_.size() + (frame_index - visible);
 }
 
 // capture_stack_trace's walk, uncapped, with the top level only while a top-level run is in flight
 std::vector<stack_frame> interpreter::debug_frames() const {
     std::vector<stack_frame> out;
     out.reserve(call_stack_.size() + 1);
-    for (auto it = call_stack_.rbegin(); it != call_stack_.rend(); ++it) { out.push_back(call_frame_trace(*it)); }
+    for (auto it = call_stack_.rbegin(); it != call_stack_.rend(); ++it) {
+        if (!detail::null_chain_frame(it->current_node)) { out.push_back(call_frame_trace(*it)); }
+    }
     if (execute_depth_ > 0) { out.push_back(trace_frame_at("<script>", top_level_node_ ? &top_level_node_->location : nullptr)); }
     return out;
 }
@@ -10356,14 +10730,27 @@ std::string interpreter::format_stack_trace() const {
     return out;
 }
 
+template <class Text> void interpreter::debug_raised(Text&& text, bool caught) {
+    debug::controller* dbg = debugger_.load(std::memory_order_relaxed);
+    if (!dbg || trace_captured_ || !dbg->wants_exceptions()) [[likely]] { return; }
+    dbg->on_exception(std::string(text()), caught, static_cast<int>(call_stack_.size()));
+}
+
+// KEEP BYTE-PARALLEL with the vm's statement boundary refusal
+JAI_NOINLINE error_propagator interpreter::debug_refusal() {
+    const std::string_view function = call_stack_.empty() || call_stack_.back().function_name.empty() ? std::string_view("<script>") : call_stack_.back().function_name;
+    return error_propagator{ make_error_code(runtime_error_code::unsupported_operation), debug::watch_runs_script_text, string_symbolizer_->intern(function) };
+}
+
 checked_result<void> interpreter::dispatch_stmt(statement* stmt) {
     if (stack_mark_.low()) [[unlikely]] { return detail::raise_nesting_depth(); }
     if (!call_stack_.empty()) call_stack_.back().current_node = stmt;
     else top_level_node_ = stmt;
     if (debug_hook_) [[unlikely]] {
         if (stmt == debug_quiet_node_) debug_quiet_node_ = nullptr;
-        else if (debug_hook_->wants_statement(static_cast<uint32_t>(stmt->location.line)))
-            debug_hook_->on_statement(stmt, static_cast<int>(call_stack_.size()));
+        else if (debug_hook_->wants_statement(static_cast<uint32_t>(stmt->location.line)) &&
+                 !debug_hook_->on_statement(stmt, static_cast<int>(call_stack_.size())))
+            return debug_refusal();
     }
     switch (stmt->get_type()) {
         case node_type::expression_stmt:
@@ -10412,8 +10799,9 @@ checked_result<void> interpreter::dispatch_decl(declaration* decl) {
         // after the resume is a join hang for anyone driving the controller).
         if (decl == debug_quiet_node_) debug_quiet_node_ = nullptr;
         else if (decl->get_type() != node_type::statement_decl &&
-            debug_hook_->wants_statement(static_cast<uint32_t>(decl->location.line)))
-            debug_hook_->on_statement(decl, static_cast<int>(call_stack_.size()));
+            debug_hook_->wants_statement(static_cast<uint32_t>(decl->location.line)) &&
+            !debug_hook_->on_statement(decl, static_cast<int>(call_stack_.size())))
+            return debug_refusal();
     }
     switch (decl->get_type()) {
         case node_type::variable_decl:
@@ -10438,6 +10826,12 @@ checked_result<void> interpreter::dispatch_decl(declaration* decl) {
             return visit_extern_decl(static_cast<extern_decl*>(decl));
         case node_type::statement_decl:
             return dispatch_stmt(static_cast<statement_decl*>(decl)->statement.get());
+        case node_type::generic_decl:            // a generic class's declaration runs its marker: the linker's word that the generic is
+            // declared, by a class declaration's path (KEEP BYTE-PARALLEL with vm_compiler's compile_declaration_code)
+            if (const auto marker = detail::generic_marker(*static_cast<generic_decl*>(decl), *string_symbolizer_)) { return visit_class_decl(marker.get()); }
+            return {};
+        case node_type::generic_instance_decl:   // a request runs nothing: the instance's declarations follow it
+            return {};
         default:
             return checked_result<void>(make_error_code(runtime_error_code::type_mismatch),
                 "Unknown declaration type in dispatch_decl");

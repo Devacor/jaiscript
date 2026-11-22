@@ -66,5 +66,5 @@ bool png_write_canvas(string path, int scale) {
 	png += png_chunk("IHDR", be32(w) + be32(h) + to_char(8) + to_char(2) + to_char(0) + to_char(0) + to_char(0));
 	png += png_chunk("IDAT", z);
 	png += png_chunk("IEND", "");
-	return write_file(path, png);
+	return file::write(path, png);
 }

@@ -19,6 +19,25 @@ namespace {
 
 bool ident_char(char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; }
 
+// A key with its type arguments taken out: an instance's members, its written name and a call of it are the generic's
+// ("m:Stack<int>.push" is "m:Stack.push", "g:Pair<string, int>" is "g:Pair", "g:largest<int>" is "g:largest")
+std::string generic_family(std::string_view key) {
+	if (key.size() < 2 || (key.substr(0, 2) != "m:" && key.substr(0, 2) != "g:")) { return std::string(key); }
+	std::string out;
+	int depth = 0;
+	for (char c : key) {
+		if (c == '<') {
+			if (depth == 0 && (out.empty() || !ident_char(out.back()))) { return std::string(key); }
+			++depth;
+		} else if (c == '>' && depth > 0) {
+			--depth;
+		} else if (depth == 0) {
+			out += c;
+		}
+	}
+	return depth == 0 ? out : std::string(key);   // an unclosed '<' is an operator's name (operator<, operator<=), no arguments
+}
+
 int completion_kind(symbol_kind k) {
 	switch (k) {
 		case symbol_kind::local:
@@ -29,6 +48,7 @@ int completion_kind(symbol_kind k) {
 		case symbol_kind::host_function: return 3;
 		case symbol_kind::class_type:
 		case symbol_kind::host_class: return 7;
+		case symbol_kind::type_parameter: return 25;
 		case symbol_kind::field: return 5;
 		case symbol_kind::method:
 		case symbol_kind::host_member: return 2;
@@ -59,6 +79,7 @@ const char* kind_words(symbol_kind k) {
 		case symbol_kind::host_class: return "host class";
 		case symbol_kind::host_member: return "member";
 		case symbol_kind::host_namespace: return "namespace";
+		case symbol_kind::type_parameter: return "type parameter";
 	}
 	return "symbol";
 }
@@ -198,6 +219,12 @@ void add_class_members(program_view& view, item_list& items, std::string_view cl
 				auto* fn = static_cast<const jai::function_decl*>(m.declaration.get());
 				if (fn->name == cd->name || fn->name.rfind("~", 0) == 0 || (statics_only && !fn->is_static)) { continue; }
 				items.add(std::string(fn->name), 2, function_signature(*fn, fn->name, false).label, 1 + depth);
+			} else if (m.declaration->get_type() == jai::node_type::generic_decl) {
+				const auto& g = *static_cast<const jai::generic_decl*>(m.declaration.get());
+				if (statics_only && !g.definition->is_static) { continue; }
+				const jai::declaration* v = view.view_of(g);
+				const std::string shown = std::string(g.definition->name) + generic_parameters_text(*g.definition);
+				items.add(std::string(g.definition->name), 2, v ? function_signature(*static_cast<const jai::function_decl*>(v), shown, false).label : shown, 1 + depth);
 			}
 		}
 		for (auto base : cd->base_classes) { add_class_members(view, items, base, statics_only, depth + 1); }
@@ -337,6 +364,12 @@ std::vector<std::string> workspace::reference_scope(unit& u, const symbol& s) {
 
 std::vector<location> workspace::collect_references(const std::vector<std::string>& paths, const std::vector<std::string>& keys, bool include_declaration) {
 	std::vector<location> out;
+	std::unordered_set<std::string> families;
+	bool instance_keys = false;   // a key naming an instance reaches its generic's own occurrences, which hold no '<'
+	for (const auto& k : keys) {
+		families.insert(generic_family(k));
+		instance_keys = instance_keys || k.find('<') != std::string::npos;
+	}
 	for (const auto& p : paths) {
 		unit* x = get(p);
 		if (!x) { continue; }
@@ -344,7 +377,11 @@ std::vector<location> workspace::collect_references(const std::vector<std::strin
 		for (const auto& o : m.occurrences) {
 			if (!include_declaration && o.declaration) { continue; }
 			const std::string& key = m.symbols[o.symbol].key;
-			if (std::find(keys.begin(), keys.end(), key) != keys.end()) { out.push_back({p, o.span}); }
+			const bool spelled_instance = key.find('<') != std::string::npos;
+			if (std::find(keys.begin(), keys.end(), key) != keys.end() || (spelled_instance && families.count(generic_family(key))) ||
+			    (!spelled_instance && instance_keys && families.count(key))) {
+				out.push_back({p, o.span});
+			}
 		}
 	}
 	return out;
@@ -372,8 +409,9 @@ std::optional<std::string> workspace::hover(unit& u, text_pos pos, text_span& ra
 	const symbol* s = symbol_at(u, pos, &index);
 	if (!s) { return std::nullopt; }
 	const unit_model& m = model(u);
+	std::string narrowed;
 	for (const auto& o : m.occurrences) {
-		if (o.symbol == index && o.span.contains(pos)) { range = o.span; break; }
+		if (o.symbol == index && o.span.contains(pos)) { range = o.span; narrowed = o.narrowed; break; }
 	}
 	std::string code;
 	if (!s->signatures.empty()) {
@@ -383,7 +421,7 @@ std::optional<std::string> workspace::hover(unit& u, text_pos pos, text_span& ra
 	}
 	if (s->kind == symbol_kind::class_type) {
 		program_view view(*this, program_of(u.path), u);
-		if (const jai::class_decl* cd = view.find_class(s->name)) {
+		if (const jai::class_decl* cd = view.find_class(s->instance.empty() ? s->name : s->instance)) {
 			code = view.class_detail(cd) + " {\n";
 			size_t shown = 0;
 			for (const auto& mem : cd->members) {
@@ -396,6 +434,12 @@ std::optional<std::string> workspace::hover(unit& u, text_pos pos, text_span& ra
 					auto* fn = static_cast<const jai::function_decl*>(mem.declaration.get());
 					code += "    " + function_signature(*fn, fn->name, fn->name == cd->name).label + ";\n";
 					++shown;
+				} else if (mem.declaration->get_type() == jai::node_type::generic_decl) {
+					const auto& g = *static_cast<const jai::generic_decl*>(mem.declaration.get());
+					if (const jai::declaration* v = view.view_of(g)) {
+						code += "    " + function_signature(*static_cast<const jai::function_decl*>(v), std::string(g.definition->name) + generic_parameters_text(*g.definition), false).label + ";\n";
+						++shown;
+					}
 				}
 			}
 			if (cd->members.size() > shown) { code += "    // ...\n"; }
@@ -407,12 +451,13 @@ std::optional<std::string> workspace::hover(unit& u, text_pos pos, text_span& ra
 	if ((s->kind == symbol_kind::field || s->kind == symbol_kind::method) && !s->container.empty()) { about += " of `" + s->container + "`"; }
 	else if (s->kind == symbol_kind::parameter && !s->container.empty()) { about += " of `" + s->container + "`"; }
 	else if (s->kind == symbol_kind::local && !s->container.empty() && s->container != "lambda") { about += " in `" + s->container + "`"; }
-	else if (s->kind == symbol_kind::enum_value) { about += " of `" + s->container + "`"; }
+	else if (s->kind == symbol_kind::enum_value || s->kind == symbol_kind::type_parameter) { about += " of `" + s->container + "`"; }
 	else if (!s->container.empty() && (s->kind == symbol_kind::function || s->kind == symbol_kind::global)) { about += " in namespace `" + s->container + "`"; }
 	if (!s->type.empty() && s->kind != symbol_kind::function && s->kind != symbol_kind::method && s->detail.find(s->type) == std::string::npos) { about += ", type `" + s->type + "`"; }
 	if (!s->path.empty() && s->path != u.path) {
 		about += " - declared in `" + file_name(s->path) + ":" + std::to_string(s->span.start.line + 1) + "`";
 	}
+	if (!narrowed.empty()) { about += "; narrowed here to `" + narrowed + "`"; }
 	md += "\n\n" + about;
 	if (!s->path.empty() && s->kind != symbol_kind::local && s->kind != symbol_kind::parameter) {
 		const std::string path = s->path;
@@ -487,7 +532,7 @@ std::vector<completion_item> workspace::completion(unit& u, text_pos pos) {
 		if (kind == "object" || kind == "class") {
 			add_class_members(view, items, recv, kind == "class");
 			if (kind == "object") {
-				for (const char* n : {"use_count", "unique", "same_as", "reset"}) { items.add(n, 2, std::string("shared_ptr builtin ") + n, 8); }
+				for (const char* n : {"use_count", "unique", "reset"}) { items.add(n, 2, std::string("shared_ptr builtin ") + n, 8); }
 			}
 		} else if (kind == "enum") {
 			if (const jai::enum_decl* e = view.find_enum(recv)) {
@@ -535,8 +580,8 @@ std::vector<completion_item> workspace::completion(unit& u, text_pos pos) {
 	}
 	add_host_names(view, items);
 	for (auto word : language_keywords()) { items.add(std::string(word), 14, "keyword", 6); }
-	items.add("instanceof", 14, "keyword", 6);   // an operator after an operand, a name anywhere else
 	items.add("make_shared", 14, "make_shared<T>(args): the same expression as new T(args)", 6);
+	items.add("dynamic_cast", 14, "dynamic_cast<T>(e): the object as a shared_ptr<T>, or null; dynamic_cast<T&>(e): the object as a T, or an error", 6);
 	return items.take();
 }
 
@@ -558,13 +603,28 @@ std::optional<signature_result> workspace::signature_help(unit& u, text_pos pos)
 		if (depth == 0 && (t == jai::token_type::semicolon || t == jai::token_type::left_brace || t == jai::token_type::right_brace)) { return std::nullopt; }
 	}
 	if (open == SIZE_MAX || open == 0) { return std::nullopt; }
-	if (u.tokens[open - 1].type != jai::token_type::identifier) {
+	size_t callee_at = open - 1;
+	if (u.tokens[callee_at].type == jai::token_type::greater || u.tokens[callee_at].type == jai::token_type::right_shift) {   // name<T>(: the generic's name
+		int angles = 0;
+		for (size_t i = callee_at + 1; i-- > 0;) {
+			const auto t = u.tokens[i].type;
+			if (t == jai::token_type::greater) { ++angles; }
+			else if (t == jai::token_type::right_shift) { angles += 2; }
+			else if (t == jai::token_type::less && --angles == 0) {
+				if (i > 0 && u.tokens[i - 1].type == jai::token_type::identifier) { callee_at = i - 1; }
+				break;
+			} else if (t == jai::token_type::semicolon || t == jai::token_type::left_brace || t == jai::token_type::right_brace) {
+				break;
+			}
+		}
+	}
+	if (u.tokens[callee_at].type != jai::token_type::identifier) {
 		const auto before = open >= 2 ? u.tokens[open - 2].type : jai::token_type::eof;
 		const bool qualified = before == jai::token_type::dot || before == jai::token_type::arrow || before == jai::token_type::question_dot ||
 		                       before == jai::token_type::colon_colon || before == jai::token_type::super_keyword;
 		if (!qualified || !is_keyword(u.tokens[open - 1].lexeme)) { return std::nullopt; }   // p.catch( is a member call
 	}
-	const lex_token& callee = u.tokens[open - 1];
+	const lex_token& callee = u.tokens[callee_at];
 
 	auto lookup = [&](const unit_model& m) -> const symbol* {
 		for (const auto& o : m.occurrences) {
@@ -782,6 +842,13 @@ std::vector<document_symbol> workspace::document_symbols(unit& u) {
 						} else if (m.declaration->get_type() == jai::node_type::function_decl) {
 							auto* fn = static_cast<const jai::function_decl*>(m.declaration.get());
 							if (auto ms = function_symbol(fn, fn->name == cd->name ? 9 : 6)) { ds.children.push_back(std::move(*ms)); }
+						} else if (m.declaration->get_type() == jai::node_type::generic_decl) {
+							auto held = u.generic_views.find(static_cast<const jai::generic_decl*>(m.declaration.get())->definition.get());
+							if (held == u.generic_views.end() || !held->second.decl) { continue; }
+							if (auto ms = function_symbol(static_cast<const jai::function_decl*>(held->second.decl), 6)) {
+								ms->detail = generic_parameters_text(*held->second.definition) + " " + ms->detail;
+								ds.children.push_back(std::move(*ms));
+							}
 						}
 					}
 					into.push_back(std::move(ds));
@@ -800,6 +867,17 @@ std::vector<document_symbol> workspace::document_symbols(unit& u) {
 						}
 					}
 					into.push_back(std::move(ds));
+					break;
+				}
+				case jai::node_type::generic_decl: {
+					auto held = u.generic_views.find(static_cast<const jai::generic_decl*>(d.get())->definition.get());
+					if (held == u.generic_views.end() || !held->second.node) { break; }
+					std::vector<document_symbol> shown;
+					walk({held->second.node}, shown, ns);
+					for (auto& one : shown) {
+						one.detail = generic_parameters_text(*held->second.definition) + (one.detail.empty() ? "" : " " + one.detail);
+						into.push_back(std::move(one));
+					}
 					break;
 				}
 				case jai::node_type::namespace_decl: {

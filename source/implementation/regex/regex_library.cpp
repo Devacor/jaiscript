@@ -1,5 +1,6 @@
 #include <jaiscript/detail/regex_library.hpp>
 #include <jaiscript/detail/regex.hpp>
+#include <jaiscript/detail/work_budget.hpp>
 #include <jaiscript/core/engine.hpp>
 #include <jaiscript/core/dynamic_binder.hpp>
 #include <jaiscript/detail/ast.hpp>
@@ -291,6 +292,17 @@ namespace jai::detail::regex_library {
 			return *detail::extract_cpp_object_ptr<regex_match>(args[0], ids.match);
 		}
 
+		// A search under the execution budget: the engine asks as it scans, and a stopped search leaves as the budget's error
+		struct search_budget {
+			engine* eng;
+			work_meter work;
+			explicit search_budget(engine* a_engine) : eng(a_engine), work(a_engine) {}
+			static bool spent(void* a_self, size_t a_units) { return static_cast<search_budget*>(a_self)->work.spend(a_units); }
+			regex::poll poll() { return {&spent, this}; }
+			void settle(const regex::searcher& a_searcher) const { if (a_searcher.stopped()) [[unlikely]] { throw_work_budget(*eng); } }
+			void match() { if (work.spend(4)) [[unlikely]] { throw_work_budget(*eng); } }
+		};
+
 		static void require_subject(const regex::compiled& re, const subject_text& s) {
 			if (std::string refusal = regex::subject_refusal(re, s.kind()); !refusal.empty()) { raise(refusal); }
 		}
@@ -299,16 +311,23 @@ namespace jai::detail::regex_library {
 
 		script_value full_match(const regex_value& rv, const subject_text& s) const {
 			require_subject(*rv.re, s);
-			regex::searcher searcher(*rv.re, s.kind());
-			return script_value(searcher.full(s.text()), eng);
+			search_budget budget(eng);
+			regex::searcher searcher(*rv.re, s.kind(), budget.poll());
+			const bool matched = searcher.full(s.text());
+			budget.settle(searcher);
+			return script_value(matched, eng);
 		}
 		R matches(const std::vector<script_value>& args) const { return full_match(self(args), subject_arg(args, 1, "matches", eng)); }
 
 		script_value search_from(const regex_value& rv, const subject_text& s, size_t from) const {
 			const std::string& text = s.text();
-			regex::searcher searcher(*rv.re, s.kind());
+			search_budget budget(eng);
+			regex::searcher searcher(*rv.re, s.kind(), budget.poll());
 			std::vector<size_t> slots;
-			if (!searcher.find(text, from, true, slots)) { return script_value(std::monostate{}, eng); }
+			if (!searcher.find(text, from, true, slots)) {
+				budget.settle(searcher);
+				return script_value(std::monostate{}, eng);
+			}
 			position_counter counter{text, s.utf8};
 			return make_match(match_of(rv.re, text, s.utf8, slots, counter));
 		}
@@ -340,15 +359,18 @@ namespace jai::detail::regex_library {
 			script_value out = script_value::make_array(nullptr, eng);
 			script_array& items = *out.unchecked_get_array_storage();
 			auto& limits = engine_access::execution_limits(*eng);
-			regex::searcher searcher(*rv.re, s.kind());
+			search_budget budget(eng);
+			regex::searcher searcher(*rv.re, s.kind(), budget.poll());
 			position_counter counter{text, s.utf8};
 			std::vector<size_t> slots;
 			for (size_t from = 0; from <= text.size() && searcher.find(text, from, true, slots);) {
 				const size_t begin = slots[0], end = slots[1];
+				budget.match();
 				if (!limits.memory_charge(sizeof(script_value) + sizeof(regex_match) + (end - begin))) [[unlikely]] { return raise_memory_cap(limits); }
 				items.push(make_match(match_of(rv.re, text, s.utf8, slots, counter)));
 				from = end == begin ? regex::next_character(text, end, s.kind()) : end;
 			}
+			budget.settle(searcher);
 			return out;
 		}
 
@@ -373,13 +395,15 @@ namespace jai::detail::regex_library {
 				pieces = parse_replacement(template_text.text(), *re);
 				for (const piece& p : pieces) { groups = groups || (p.group != npos && p.group != 0); }
 			}
-			regex::searcher searcher(*re, s.kind());
+			search_budget budget(eng);
+			regex::searcher searcher(*re, s.kind(), budget.poll());
 			position_counter counter{text, s.utf8};
 			std::vector<size_t> slots;
 			std::string out;
 			size_t last = 0;
 			for (size_t from = 0; from <= text.size() && searcher.find(text, from, groups, slots);) {
 				const size_t begin = slots[0], end = slots[1];
+				budget.match();
 				out.append(text, last, begin - last);
 				if (callback) {
 					script_value made = make_match(match_of(re, text, s.utf8, slots, counter));
@@ -403,6 +427,7 @@ namespace jai::detail::regex_library {
 				if (!every) { break; }
 				from = end == begin ? regex::next_character(text, end, s.kind()) : end;
 			}
+			budget.settle(searcher);
 			out.append(text, last, std::string::npos);
 			auto& limits = engine_access::execution_limits(*eng);
 			if (!limits.memory_charge(out.size())) [[unlikely]] { return raise_memory_cap(limits); }
@@ -431,7 +456,8 @@ namespace jai::detail::regex_library {
 				if (denied || !limits.memory_charge(sizeof(script_value) + count)) { denied = true; return; }
 				items.push(text_value(eng, text.substr(at, count), s.utf8));
 			};
-			regex::searcher searcher(*rv.re, s.kind());
+			search_budget budget(eng);
+			regex::searcher searcher(*rv.re, s.kind(), budget.poll());
 			std::vector<size_t> slots;
 			if (text.empty()) {
 				if (!searcher.find(text, 0, false, slots)) { push(0, 0); }
@@ -443,6 +469,7 @@ namespace jai::detail::regex_library {
 			while (q < text.size() && (max_splits < 0 || splits < max_splits)) {
 				if (!searcher.find(text, q, groups > 0, slots) || slots[0] >= text.size()) { break; }
 				const size_t begin = slots[0], end = slots[1];
+				budget.match();
 				if (end == p) {
 					q = regex::next_character(text, begin, s.kind());
 					continue;
@@ -455,6 +482,7 @@ namespace jai::detail::regex_library {
 				++splits;
 				p = q = end;
 			}
+			budget.settle(searcher);
 			push(p, text.size() - p);
 			if (denied) { return raise_memory_cap(limits); }
 			return out;

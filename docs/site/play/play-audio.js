@@ -1,4 +1,4 @@
-// Plays what a script's Sound does, with Web Audio: WAV and MP3 through the browser's decoder, MIDI through a General
+// Plays what a script's sound does, with Web Audio: WAV and MP3 through the browser's decoder, MIDI through a General
 // MIDI synth voiced for synthwave (filtered saw basses, supersaw pads, plucked and singing leads, FM bells, drum machines
 // on channel 10). Each MIDI channel has a strip that follows its controllers: expression (11), brightness (74, a lowpass),
 // pan (10) and reverb send (91). The MIDI mix shares one reverb, a compressor and a soft clip. One master gain carries the

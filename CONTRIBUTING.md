@@ -171,7 +171,11 @@ Two catalogues move with the code:
   output blocks that quote it.
 - **The AST format.** A change to what the serializer writes bumps `k_jaibite_version` in
   `include/jaiscript/detail/ast_serializer.hpp`, so stale `.jaibite` caches are
-  rejected instead of misread.
+  rejected instead of misread. The checker's revision beside it is generated from the code of every
+  C++ file under `include/` and `source/` but the tests: after a change to any of them that is more
+  than comments or layout, run
+  `python tools/ci/checker_revision.py` and commit `include/jaiscript/detail/jaibite_checker_revision.hpp`
+  (the `checker-revision` gate says so when it is stale).
 
 
 ## Documentation

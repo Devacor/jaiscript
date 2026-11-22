@@ -194,6 +194,14 @@ namespace jai {
         size_t size_ = 0;
         unsigned shift_ = 64;                       // 64 - log2(capacity): the home slot is the top bits of hash * golden ratio
         bool enum_values_ = false;                  // an enum's own value table: its keys read with a dot (Direction.north); never copied
+    public:
+        // Only references hold the map since its last owner let it go (views_remain): its entries were emptied
+        bool views_only = false;
+        // Live references into the entries (make_map_entry_reference / ~reference_holder); none for a copy or a move
+        uint32_t live_entry_refs = 0;
+        // The entry references themselves (value.cpp's view list: script_value::reference_holder), newest first
+        void* view_head = nullptr;
+    private:
         uint64_t gen_ = 1;                          // moves on every insert, erase or clear
         mutable std::vector<value_type*> order_;    // the entries by key, valid while order_gen_ == gen_
         mutable uint64_t order_gen_ = 0;
@@ -469,6 +477,8 @@ namespace jai {
             template <bool C = Const, typename = std::enable_if_t<C>>
             basic_iterator(const basic_iterator<false>& o) : m_(o.m_), node_(o.node_), index_(o.index_), gen_(o.gen_), key_(o.key_) {}
 
+            // the key an iteration stands at, whether or not its entry is still in the map
+            const script_value* standing_key() const noexcept { return key_ ? &*key_ : node_ ? &node_->first : nullptr; }
             reference operator*() const { revalidate(); return *node_; }
             pointer operator->() const { revalidate(); return node_; }
             basic_iterator& operator++() {
@@ -492,6 +502,13 @@ namespace jai {
 
         // the engine that made this node: its copies and memory charges run against it
         engine* owner = nullptr;
+
+        // strong_ptr's release that leaves handles: when the references into the entries are all that hold the map, its
+        // entries die now and the references raise
+        static void partial_release(script_map* a_map, uint32_t a_left) noexcept {
+            if (a_left == a_map->live_entry_refs) [[unlikely]] { views_remain(a_map); }
+        }
+        static void views_remain(script_map* a_map) noexcept;   // value.cpp
 
         script_map() = default;
         explicit script_map(engine* a_owner) : owner(a_owner) {}
@@ -597,6 +614,14 @@ namespace jai {
             entry* e = find_or_insert(key, [this](uint64_t h, const script_value& k) { return pool_.make(h, k); }).first;
             memo = entry_memo{this, gen_, e};
             return &e->kv;
+        }
+
+        // An iteration standing at `k` as one that walked there, whether or not the entry is still in the map: its next step
+        // continues after `k` (a paused loop's place, detail/coroutine_snapshot.hpp)
+        iterator standing_at(const script_value& k) {
+            iterator it(this, nullptr, npos, gen_ - 1, false);
+            it.key_.emplace(k);
+            return it;
         }
 
         iterator find(const script_value& k) {

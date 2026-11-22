@@ -46,7 +46,7 @@ document.documentElement.setAttribute("data-theme",t);}())</script>
 var d=document.querySelectorAll(".sidebar details");for(var i=0;i<d.length;i++)d[i].open=false;}())</script>
 <main class="content" id="main" tabindex="-1"><nav class="crumbs" aria-label="Breadcrumb"><a href="index.html">Docs</a><span class="sep" aria-hidden="true">/</span>Stability</nav>
 <article class="chapter"><h1 id="stability">Stability<a class="hlink" href="#stability" aria-label="link">&#8203;</a></h1>
-<p>JaiScript 0.5 is a beta: the language and its contract are complete, and the version stays 0.x until 1.0. This page
+<p>JaiScript 0.6 is a beta: the language and its contract are complete, and the version stays 0.x until 1.0. This page
 sorts the language and the embedding API into what is settled and what a release may still change.</p>
 <ul>
 <li><strong>A settled rule is the contract.</strong> Where the implementation departs from one, the implementation is
@@ -58,8 +58,8 @@ anything this page does not mention.</li>
 <p>A version is <code>0.minor.patch</code> (0.5.2). On this page a <em>release</em> that may change something is a minor
 release: 0.5 to 0.6.</p>
 <ul>
-<li><strong>Within one minor version</strong> (0.5.2 to 0.5.3) the CMake package declares the releases compatible:
-<code>find_package(JaiScript 0.5)</code> accepts any 0.5.z and refuses 0.6.</li>
+<li><strong>Within one minor version</strong> (0.6.0 to 0.6.1) the CMake package declares the releases compatible:
+<code>find_package(JaiScript 0.6)</code> accepts any 0.6.z and refuses 0.7.</li>
 <li><strong>Each release is a tag</strong> in the <a href="https://github.com/Devacor/jaiscript">repository</a>
 (<code>v0.5.2</code>). The repository keeps no changelog file; the history between two tags is the record of what
 changed.</li>
@@ -79,6 +79,7 @@ at any version step (below).</li>
 <tr><td><a href="guide/07-classes.html#access-control">Access control</a></td><td>Two levels: <code>public:</code> reaches everyone, <code>private:</code> the declaring class and its derived classes; <code>protected:</code> is a synonym of <code>private:</code>.</td></tr>
 <tr><td><a href="guide/04-operators.html">Operators</a></td><td>A class overloads binary <code>+ - * / % &amp; | ^ &lt;&lt; &gt;&gt; &lt; &gt; &lt;= &gt;= == != &lt;=&gt;</code>, unary <code>- + ~</code>, and <code>=</code>, <code>[]</code>, <code>()</code>. <code>a op= b</code> is <code>a = a op b</code>. Truthiness is <code>bool to_bool()</code>, and <code>!v</code> is <code>!to_bool(v)</code>. <code>==</code> compares arrays, maps and instances member by member (a user <code>operator==</code> first); <code>same_object</code> asks identity. <code>obj.method</code> without a call is an error; <code>reflect::bind</code> makes the callable.</td></tr>
 <tr><td>Statements</td><td><code>switch</code> breaks by default and <code>fallthrough;</code> continues. <code>++</code> and <code>--</code> work on every lvalue. An assignment expression's value is the value the destination stored. A declaration without an initializer takes its type's default.</td></tr>
+<tr><td><a href="guide/15-math.html#scalar-math">Math functions</a></td><td><code>math::</code> functions return the same bits on every platform, compiler and backend. The operators, <code>sqrt</code>, <code>fmod</code> and rounding give the results IEEE 754 defines exactly; the transcendentals are JaiScript&#x27;s own, within 1 ulp of the exact value, with C&#x27;s Annex F special values. It holds while the host keeps the default floating-point environment (round to nearest, subnormals kept).</td></tr>
 <tr><td><a href="guide/09-containers-strings.html#utf-8-text">Strings</a></td><td>A <code>string</code> is bytes; <code>utf8_string</code> holds the same bytes and counts characters.</td></tr>
 <tr><td><a href="guide/10-modules.html">Modules</a></td><td><code>include</code> is textual and runs each time it is reached. <code>import</code> runs a module once per engine, may appear wherever a statement may, and re-runs a module whose file changed when reached again.</td></tr>
 <tr><td><a href="guide/08-coroutines.html">Coroutines</a></td><td><code>coroutine</code> prefixes any function or method; it runs to each <code>yield</code> and is driven by a range-<code>for</code> or <code>next()</code>/<code>next(n)</code>.</td></tr>
@@ -96,8 +97,8 @@ registered. <a href="embedding/02-dynamic-binder.html#three-doors">Three doors</
 <li><strong>The backend is chosen before an engine's first execute.</strong>
 <a href="embedding/03-backends.html#set-backend-must-happen-before-the-first-execute">Backends</a></li>
 <li><strong>A script cannot outlast its limits.</strong> Exceeding the execution budget is terminal: no
-<code>catch</code> sees it. The memory cap raises once per execute as an ordinary catchable error, so a script can free
-memory and continue; a second raise in the same execute is terminal.
+<code>catch</code> sees it, and an entry that outran it never returns a result. The memory cap raises once per execute
+as an ordinary catchable error, so a script can free memory and continue; a second raise in the same execute is terminal.
 <a href="embedding/05-safety-rails.html">Safety Rails</a></li>
 <li><strong>Each way of calling script fails one way.</strong> <code>execute</code> and <code>execute_file</code> throw
 on every failure (<code>jai::parse_error</code>, <code>jai::static_check_error</code>, or a
@@ -121,12 +122,13 @@ source it was parsed from. <a href="embedding/04-jaibite.html">jaibite</a></li>
 <tr><td><a href="guide/09-containers-strings.html#strings-observers-vs-mutators">String mutators</a></td><td>whether <code>to_upper</code>, <code>trim</code> and the other mutating string methods change their receiver in place</td><td></td></tr>
 <tr><td><a href="embedding/13-script-extensible.html">Script-extensible objects</a></td><td><code>extend(obj, Class)</code> and its host side</td><td></td></tr>
 <tr><td>Coroutine lambdas</td><td>absent; they may be added</td><td></td></tr>
+<tr><td><a href="guide/08-coroutines.html#saving">Saved coroutines</a></td><td>which paused coroutines save: one refused now (paused inside an expression or a <code>catch</code> block, holding a reference to an element) may save later</td><td>a save is exact or it is refused; a coroutine loads only into a program whose function has the code that was saved</td></tr>
 </tbody></table></div>
 </article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="assets/search-index.js"></script>

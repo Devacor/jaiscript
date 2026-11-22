@@ -36,7 +36,7 @@
   ("var auto int double float string bool char class function coroutine yield if else while for " +
    "switch case default fallthrough break continue try catch throw return include import namespace " +
    "enum new null true false void this super override operator static private public array map " +
-   "shared_ptr weak_ptr cast extern instanceof skip_newline skip_flush").split(" ").forEach(function (k) { JAI_KW[k] = 1; });
+   "shared_ptr weak_ptr cast dynamic_cast extern skip_newline skip_flush").split(" ").forEach(function (k) { JAI_KW[k] = 1; });
   var CPP_KW = {};
   ("auto int double float bool char class struct const constexpr void return if else while for switch " +
    "case break continue try catch throw new delete nullptr true false namespace using template typename " +

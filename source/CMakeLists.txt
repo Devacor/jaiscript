@@ -7,22 +7,30 @@ set(JAISCRIPT_SOURCES
     implementation/class_registry.cpp
     implementation/construction.cpp
     implementation/conversion_registry.cpp
+    implementation/copy_rebind.cpp
     implementation/coroutine.cpp
+    implementation/coroutine_snapshot.cpp
     implementation/debug/connector.cpp
     implementation/debug/controller.cpp
     implementation/engine.cpp
     implementation/environment.cpp
+    implementation/jaibite_checker_revision.cpp
     implementation/lexer.cpp
+    implementation/load_report.cpp
     implementation/no_interpreter.cpp
     implementation/parallel_transform.cpp
     implementation/parse_errors.cpp
     implementation/parser.cpp
+    implementation/portable_math.cpp
     implementation/properties.cpp
+    implementation/records.cpp
+    implementation/generics.cpp
     implementation/regex/regex_engine.cpp
     implementation/regex/regex_library.cpp
     implementation/runtime_errors.cpp
     implementation/schema_binding.cpp
     implementation/script_run.cpp
+    implementation/signal_receivers.cpp
     implementation/templates.cpp
     implementation/serialization/archive_core.cpp
     implementation/serialization/binary_archive.cpp
@@ -31,6 +39,11 @@ set(JAISCRIPT_SOURCES
     implementation/stdlib/atomic.cpp
     implementation/stdlib/containers.cpp
     implementation/stdlib/crypto.cpp
+    implementation/stdlib/image.cpp
+    implementation/stdlib/image_gif.cpp
+    implementation/stdlib/image_jpeg.cpp
+    implementation/stdlib/image_pixels.cpp
+    implementation/stdlib/image_png.cpp
     implementation/stdlib/io.cpp
     implementation/stdlib/json.cpp
     implementation/stdlib/random.cpp
@@ -107,6 +120,7 @@ if(JAISCRIPT_EXPERIMENT_VM_NO_GS)
 endif()
 
 option(JAISCRIPT_ENABLE_DEBUGGER "Compile the DAP debug_connector (raw-socket VS Code attach)" ON)
+option(JAISCRIPT_ENABLE_IMAGE "Compile the image:: module (stdlib::register_image: the in-house PNG, JPEG and GIF codecs)" ON)
 
 foreach(jaiscript_target ${jaiscript_library_targets})
     # Include directories
@@ -124,6 +138,12 @@ foreach(jaiscript_target ${jaiscript_library_targets})
     # connector's TU is empty when this is off (constructing one is then a link error by design).
     if(JAISCRIPT_ENABLE_DEBUGGER)
         target_compile_definitions(${jaiscript_target} PUBLIC JAISCRIPT_ENABLE_DEBUGGER)
+    endif()
+
+    # The image:: module (stdlib::register_image). Its translation units are empty when this is off (calling
+    # register_image is then a link error by design), so a one-file build of jaiscript.cpp leaves the codecs out.
+    if(JAISCRIPT_ENABLE_IMAGE)
+        target_compile_definitions(${jaiscript_target} PUBLIC JAISCRIPT_ENABLE_IMAGE)
     endif()
 
     # Platform-specific settings

@@ -21,7 +21,7 @@ array<string> DEV_MODULES = ["gq_enums.jai", "gq_types.jai", "gq_state.jai", "gq
 	"gq_serve.jai", "gq_endgame.jai", "gq_predtest.jai", "gq_menutest.jai"];
 
 string dev_stamp(string module) {
-	var fd = file_data(module);
+	var fd = file::data(module);
 	return fd == null ? "" : to_string(fd["modified"]) + ":" + to_string(fd["size"]);
 }
 

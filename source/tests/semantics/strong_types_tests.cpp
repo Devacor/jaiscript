@@ -98,11 +98,11 @@ public:
                 var out = [];
                 function cap(string label, function body) { try { out.push(label + ":" + to_string(body())); } catch (err) { out.push(label + "!" + err); } }
                 var va = Animal(); var vd = Dog(); var vb = Box(); var vs = "s";
-                cap("decl", function() -> string { array<Animal> a = [va, vd]; return type_of(a[0]) + "," + type_of(a[1]) + "," + to_string(a[1].id); });
-                cap("push", function() -> string { array<Animal> a = []; a.push(va); a.push(vd); return type_of(a[0]) + "," + type_of(a[1]) + "," + to_string(a.size()); });
-                cap("store", function() -> string { array<Animal> a = [Animal()]; a[0] = vd; return type_of(a[0]) + "," + to_string(a[0].id); });
-                cap("ref", function() -> string { array<Animal> a = [Animal()]; put(a[0], vd); return type_of(a[0]) + "," + to_string(a[0].id); });
-                cap("map", function() -> string { map<string, Animal> m = {}; m["k"] = va; return type_of(m["k"]); });
+                cap("decl", function() -> string { array<Animal> a = [va, vd]; return reflect::type_of(a[0]) + "," + reflect::type_of(a[1]) + "," + to_string(a[1].id); });
+                cap("push", function() -> string { array<Animal> a = []; a.push(va); a.push(vd); return reflect::type_of(a[0]) + "," + reflect::type_of(a[1]) + "," + to_string(a.size()); });
+                cap("store", function() -> string { array<Animal> a = [Animal()]; a[0] = vd; return reflect::type_of(a[0]) + "," + to_string(a[0].id); });
+                cap("ref", function() -> string { array<Animal> a = [Animal()]; put(a[0], vd); return reflect::type_of(a[0]) + "," + to_string(a[0].id); });
+                cap("map", function() -> string { map<string, Animal> m = {}; m["k"] = va; return reflect::type_of(m["k"]); });
                 cap("copy", function() -> int { array<Animal> a = []; a.push(va); a[0].id = 9; return va.id; });
                 cap("box-store", function() -> int { array<Animal> a = [Animal()]; a[0] = vb; return 0; });
                 cap("box-push", function() -> int { array<Animal> a = []; a.push(vb); return 0; });
@@ -156,30 +156,30 @@ public:
 				function put(var& x, var val) { x = val; }
 				var out = [];
 				function cap(string label, function body) { try { out.push(label + ":" + to_string(body())); } catch (err) { out.push(label + "!" + err); } }
-				cap("decl", function() -> string { shared_ptr<Foo> h = Foo(); array<shared_ptr<Foo>> a = [null, h]; return to_string(a[0] == null) + "," + to_string(a[1] == null) + "," + to_string(a[1].n); });
-				cap("push", function() -> string { array<shared_ptr<Foo>> a = []; shared_ptr<Foo> h = Foo(); a.push(null); a.push(h); a.push(null); return to_string(a.size()) + "," + to_string(a[0] == null) + "," + to_string(a[1].n); });
-				cap("store", function() -> string { array<shared_ptr<Foo>> a = [null]; shared_ptr<Foo> h = Foo(); a[0] = h; int n = a[0].n; a[0] = null; return to_string(n) + "," + to_string(a[0] == null); });
-				cap("ref", function() -> string { array<shared_ptr<Foo>> a = [null]; shared_ptr<Foo> h = Foo(); put(a[0], h); int n = a[0].n; put(a[0], null); return to_string(n) + "," + to_string(a[0] == null); });
+				cap("decl", function() -> string { shared_ptr<Foo> h = make_shared<Foo>(); array<shared_ptr<Foo>> a = [null, h]; return to_string(a[0] == null) + "," + to_string(a[1] == null) + "," + to_string(a[1].n); });
+				cap("push", function() -> string { array<shared_ptr<Foo>> a = []; shared_ptr<Foo> h = make_shared<Foo>(); a.push(null); a.push(h); a.push(null); return to_string(a.size()) + "," + to_string(a[0] == null) + "," + to_string(a[1].n); });
+				cap("store", function() -> string { array<shared_ptr<Foo>> a = [null]; shared_ptr<Foo> h = make_shared<Foo>(); a[0] = h; int n = a[0].n; a[0] = null; return to_string(n) + "," + to_string(a[0] == null); });
+				cap("ref", function() -> string { array<shared_ptr<Foo>> a = [null]; shared_ptr<Foo> h = make_shared<Foo>(); put(a[0], h); int n = a[0].n; put(a[0], null); return to_string(n) + "," + to_string(a[0] == null); });
 				cap("var-null", function() -> string { array<shared_ptr<Foo>> a = []; var v = null; a.push(v); a[0] = v; return to_string(a.size()) + "," + to_string(a[0] == null); });
 				cap("map-decl", function() -> string { map<string, shared_ptr<Foo>> m = {"k": null}; return to_string(m["k"] == null); });
-				cap("map-store", function() -> string { map<string, shared_ptr<Foo>> m = {}; m["k"] = null; shared_ptr<Foo> h = Foo(); m["k"] = h; int n = m["k"].n; m["k"] = null; return to_string(n) + "," + to_string(m["k"] == null); });
+				cap("map-store", function() -> string { map<string, shared_ptr<Foo>> m = {}; m["k"] = null; shared_ptr<Foo> h = make_shared<Foo>(); m["k"] = h; int n = m["k"].n; m["k"] = null; return to_string(n) + "," + to_string(m["k"] == null); });
 				cap("weak", function() -> string { array<weak_ptr<Foo>> a = [null]; a.push(null); a[0] = null; return to_string(a.size()) + "," + to_string(a[0] == null); });
-				cap("weak-push-shared", function() -> string { array<weak_ptr<Foo>> a = []; shared_ptr<Foo> h = Foo(); shared_ptr<Dog> d = Dog(); a.push(h); a.push(d); return to_string(a.size()) + "," + to_string(a[0].expired()) + "," + to_string(a[1].expired()); });
-				cap("weak-store-shared", function() -> string { array<weak_ptr<Foo>> a = [null]; shared_ptr<Foo> h = Foo(); a[0] = h; bool live = !a[0].expired(); h = null; return to_string(live) + "," + to_string(a[0].expired()); });
-				cap("weak-map-shared", function() -> string { map<string, weak_ptr<Foo>> m = {}; shared_ptr<Foo> h = Foo(); m["k"] = h; bool live = !m["k"].expired(); h = null; return to_string(live) + "," + to_string(m["k"].expired()); });
-				cap("weak-literal-shared", function() -> string { shared_ptr<Foo> h = Foo(); array<weak_ptr<Foo>> a = [h, null]; return to_string(a[0].expired()) + "," + to_string(a[1] == null); });
+				cap("weak-push-shared", function() -> string { array<weak_ptr<Foo>> a = []; shared_ptr<Foo> h = make_shared<Foo>(); shared_ptr<Dog> d = make_shared<Dog>(); a.push(h); a.push(d); return to_string(a.size()) + "," + to_string(a[0].expired()) + "," + to_string(a[1].expired()); });
+				cap("weak-store-shared", function() -> string { array<weak_ptr<Foo>> a = [null]; shared_ptr<Foo> h = make_shared<Foo>(); a[0] = h; bool live = !a[0].expired(); h = null; return to_string(live) + "," + to_string(a[0].expired()); });
+				cap("weak-map-shared", function() -> string { map<string, weak_ptr<Foo>> m = {}; shared_ptr<Foo> h = make_shared<Foo>(); m["k"] = h; bool live = !m["k"].expired(); h = null; return to_string(live) + "," + to_string(m["k"].expired()); });
+				cap("weak-literal-shared", function() -> string { shared_ptr<Foo> h = make_shared<Foo>(); array<weak_ptr<Foo>> a = [h, null]; return to_string(a[0].expired()) + "," + to_string(a[1] == null); });
 				cap("weak-null-handle", function() -> string { shared_ptr<Foo> n = null; array<weak_ptr<Foo>> a = []; a.push(n); a.push(null); return to_string(a.size()) + "," + to_string(a[0] == null); });
-				cap("weak-wrong-class", function() -> int { array<weak_ptr<Foo>> a = []; shared_ptr<Bar> b = Bar(); a.push(b); return 0; });
-				cap("iterate", function() -> int { array<shared_ptr<Foo>> a = [null]; shared_ptr<Foo> h = Foo(); a.push(h); a.push(null); int c = 0; for (auto x : a) { if (x != null) { c += x.n; } } return c; });
-				cap("raw-push", function() -> string { array<shared_ptr<Foo>> a = []; a.push(Foo()); return type_of(a[0]) + "," + to_string(a[0].n) + "," + to_string(a[0] == null); });
-				cap("raw-decl", function() -> string { array<shared_ptr<Foo>> a = [Foo(), null]; return to_string(a.size()) + "," + type_of(a[0]) + "," + to_string(a[1] == null); });
-				cap("raw-store", function() -> string { array<shared_ptr<Foo>> a = [null]; a[0] = Foo(); a[0].n = 4; return to_string(a[0].n); });
-				cap("raw-map", function() -> string { map<string, shared_ptr<Foo>> m = {}; m["k"] = Foo(); return to_string(m["k"].n); });
-				cap("raw-shares-like-a-handle-slot", function() -> string { Foo f = Foo(); shared_ptr<Foo> h = f; h.n = 5; Foo g = Foo(); array<shared_ptr<Foo>> a = []; a.push(g); a[0].n = 5; return to_string((f.n == 5) == (g.n == 5)); });
-				cap("raw-subclass", function() -> string { array<shared_ptr<Foo>> a = []; a.push(Dog()); shared_ptr<Dog> d = Dog(); a.push(d); return to_string(a.size()) + "," + type_of(a[0]) + "," + type_of(a[1]); });
-				cap("handle-array-widens", function() -> string { array<shared_ptr<Dog>> ds = [Dog()]; array<shared_ptr<Foo>> fs = ds; return to_string(fs.size()) + "," + type_of(fs[0]); });
+				cap("weak-wrong-class", function() -> int { array<weak_ptr<Foo>> a = []; shared_ptr<Bar> b = make_shared<Bar>(); a.push(b); return 0; });
+				cap("iterate", function() -> int { array<shared_ptr<Foo>> a = [null]; shared_ptr<Foo> h = make_shared<Foo>(); a.push(h); a.push(null); int c = 0; for (auto x : a) { if (x != null) { c += x.n; } } return c; });
+				cap("raw-push", function() -> string { array<shared_ptr<Foo>> a = []; a.push(make_shared<Foo>()); return reflect::type_of(a[0]) + "," + to_string(a[0].n) + "," + to_string(a[0] == null); });
+				cap("raw-decl", function() -> string { array<shared_ptr<Foo>> a = [make_shared<Foo>(), null]; return to_string(a.size()) + "," + reflect::type_of(a[0]) + "," + to_string(a[1] == null); });
+				cap("raw-store", function() -> string { array<shared_ptr<Foo>> a = [null]; a[0] = make_shared<Foo>(); a[0].n = 4; return to_string(a[0].n); });
+				cap("raw-map", function() -> string { map<string, shared_ptr<Foo>> m = {}; m["k"] = make_shared<Foo>(); return to_string(m["k"].n); });
+				cap("raw-shares-like-a-handle-slot", function() -> string { Foo f = Foo(); shared_ptr<Foo> h = make_shared<Foo>(f); h.n = 5; Foo g = Foo(); array<shared_ptr<Foo>> a = []; a.push(make_shared<Foo>(g)); a[0].n = 5; return to_string((f.n == 5) == (g.n == 5)); });
+				cap("raw-subclass", function() -> string { array<shared_ptr<Foo>> a = []; a.push(make_shared<Dog>()); shared_ptr<Dog> d = make_shared<Dog>(); a.push(d); return to_string(a.size()) + "," + reflect::type_of(a[0]) + "," + reflect::type_of(a[1]); });
+				cap("handle-array-widens", function() -> string { array<shared_ptr<Dog>> ds = [make_shared<Dog>()]; array<shared_ptr<Foo>> fs = ds; return to_string(fs.size()) + "," + reflect::type_of(fs[0]); });
 				cap("wrong-class-raw", function() -> int { array<shared_ptr<Foo>> a = []; a.push(Bar()); return 0; });
-				cap("wrong-class-handle", function() -> int { array<shared_ptr<Foo>> a = []; shared_ptr<Bar> b = Bar(); a.push(b); return 0; });
+				cap("wrong-class-handle", function() -> int { array<shared_ptr<Foo>> a = []; shared_ptr<Bar> b = make_shared<Bar>(); a.push(b); return 0; });
 				cap("wrong-class-store", function() -> int { array<shared_ptr<Foo>> a = [null]; a[0] = Bar(); return 0; });
 				cap("int-into-handle-array", function() -> int { array<shared_ptr<Foo>> a = [5]; return 0; });
 				cap("value-decl", function() -> int { array<Foo> a = [null]; return 0; });
@@ -229,18 +229,18 @@ public:
             // what it stored; a heavy value comes back as a copy. Both backends agree row for row
             const char* src = R"(
                 class C { float n = 0; float _get_x() { return n; } void _set_x(float v) { n = v; } static float s = 0;
-                          string test_plain() { auto r = (n = 3); return type_of(r) + ":" + to_string(r) + "|" + type_of(n) + ":" + to_string(n); }
-                          string test_compound() { n = 1; auto r = (n += 2); return type_of(r) + ":" + to_string(r) + "|" + type_of(n) + ":" + to_string(n); } }
+                          string test_plain() { auto r = (n = 3); return reflect::type_of(r) + ":" + to_string(r) + "|" + reflect::type_of(n) + ":" + to_string(n); }
+                          string test_compound() { n = 1; auto r = (n += 2); return reflect::type_of(r) + ":" + to_string(r) + "|" + reflect::type_of(n) + ":" + to_string(n); } }
                 class D { int n = 0; int _get_x() { return n; } void _set_x(int v) { n = v * 2; } }
                 class S { string t = ""; }
                 class H { array<int> a = []; }
                 class T { static array<int> a = []; }
                 class G { string s = "a"; }
                 class W { float seen = 0; void _set_virt(float v) { seen = seen + v; } }
-                class T2 { static float s = 0; static string m() { int v = 3; auto r = (s = v); return type_of(r) + ":" + to_string(r) + "|" + type_of(s) + ":" + to_string(s); } }
+                class T2 { static float s = 0; static string m() { int v = 3; auto r = (s = v); return reflect::type_of(r) + ":" + to_string(r) + "|" + reflect::type_of(s) + ":" + to_string(s); } }
                 var out = [];
                 function cap(string label, function body) { try { out.push(label + ":" + to_string(body())); } catch (err) { out.push(label + "!" + err); } }
-                function show(var r, var dst) -> string { return type_of(r) + ":" + to_string(r) + "|" + type_of(dst) + ":" + to_string(dst); }
+                function show(var r, var dst) -> string { return reflect::type_of(r) + ":" + to_string(r) + "|" + reflect::type_of(dst) + ":" + to_string(dst); }
                 cap("local_plain", function() -> string { float n = 0; auto r = (n = 3); return show(r, n); });
                 cap("local_compound", function() -> string { float n = 1; auto r = (n += 2); return show(r, n); });
                 cap("bare_field_plain", function() -> string { C c = C(); return c.test_plain(); });
@@ -270,7 +270,7 @@ public:
                 cap("static_heavy", function() -> string { auto r = (T::a = [5, 6]); r.push(7); return to_string(r.size()) + "," + to_string(T::a.size()); });
                 cap("compound_member_heavy", function() -> string { G g = G(); auto r = (g.s += "b"); r += "c"; return r + "," + g.s; });
                 cap("bare_static_from_lvalue", function() -> string { return T2::m(); });
-                cap("setter_only_member", function() -> string { W w = W(); auto r = (w.virt = 2); return type_of(r) + ":" + to_string(r) + "|" + to_string(w.seen); });
+                cap("setter_only_member", function() -> string { W w = W(); auto r = (w.virt = 2); return reflect::type_of(r) + ":" + to_string(r) + "|" + to_string(w.seen); });
                 cap("statement_position", function() -> string { C c = C(); c.n = 3; array<float> a = [0]; a[0] = 2; map<string, float> m = {}; m["k"] = 1; c.x = 4; return to_string(c.n) + to_string(a[0]) + to_string(m["k"]); });
                 out;
             )";
@@ -307,15 +307,15 @@ public:
 			const char* src = R"(
 				var out = [];
 				function cap(string label, function body) { try { out.push(label + ":" + to_string(body())); } catch (err) { out.push(label + "!" + err); } }
-				cap("int-decl", function() -> string { array<int> a = [true, false, 7]; return to_string(a[0]) + to_string(a[1]) + to_string(a[2]) + type_of(a[0]); });
+				cap("int-decl", function() -> string { array<int> a = [true, false, 7]; return to_string(a[0]) + to_string(a[1]) + to_string(a[2]) + reflect::type_of(a[0]); });
 				cap("int-push", function() -> string { array<int> a = []; a.push(true); a.push(false); return to_string(a[0]) + to_string(a[1]); });
 				cap("int-store", function() -> string { array<int> a = [5]; a[0] = true; string r = to_string(a[0]); a[0] = false; return r + to_string(a[0]); });
-				cap("bool-decl", function() -> string { array<bool> b = [1, 0, 2, -3]; return to_string(b[0]) + "," + to_string(b[1]) + "," + to_string(b[2]) + "," + to_string(b[3]) + type_of(b[0]); });
+				cap("bool-decl", function() -> string { array<bool> b = [1, 0, 2, -3]; return to_string(b[0]) + "," + to_string(b[1]) + "," + to_string(b[2]) + "," + to_string(b[3]) + reflect::type_of(b[0]); });
 				cap("bool-push", function() -> string { array<bool> b = []; b.push(0); b.push(9); return to_string(b[0]) + "," + to_string(b[1]); });
 				cap("bool-store", function() -> string { array<bool> b = [false]; b[0] = 1; string r = to_string(b[0]); b[0] = 0; return r + "," + to_string(b[0]); });
 				cap("map-int", function() -> string { map<string, int> m = {"k": true}; m["j"] = false; return to_string(m["k"]) + to_string(m["j"]); });
 				cap("map-bool", function() -> string { map<string, bool> m = {"k": 1}; m["j"] = 0; return to_string(m["k"]) + "," + to_string(m["j"]); });
-				cap("whole-bool-to-int", function() -> string { array<bool> b = [true, false]; array<int> a = b; return to_string(a[0]) + to_string(a[1]) + type_of(a[0]); });
+				cap("whole-bool-to-int", function() -> string { array<bool> b = [true, false]; array<int> a = b; return to_string(a[0]) + to_string(a[1]) + reflect::type_of(a[0]); });
 				cap("whole-int-to-bool", function() -> string { array<int> a = [0, 3]; array<bool> b = a; return to_string(b[0]) + "," + to_string(b[1]); });
 				cap("var-held", function() -> string { var t = true; array<int> a = [t]; a.push(t); a[0] = t; return to_string(a.size()) + to_string(a[0]); });
 				cap("int-to-string", function() -> int { [[warn_mode]] array<string> s = [1]; return 0; });
@@ -523,7 +523,7 @@ public:
             check_values({
                 {"auto obj = shared_ptr<TestClass>(); obj = null; obj == null", true, test_class},
                 {"auto shared = shared_ptr<TestClass>(); auto weak = weak_ptr<TestClass>(shared); shared = null; weak.expired()", true, test_class},
-                {"shared_ptr<TestObj> obj = TestObj(); obj = null; obj = new TestObj(); obj.x", 1, "class TestObj { int x = 1; }"},
+                {"shared_ptr<TestObj> obj = make_shared<TestObj>(); obj = null; obj = new TestObj(); obj.x", 1, "class TestObj { int x = 1; }"},
             });
         });
 
@@ -861,9 +861,9 @@ public:
             for (const auto& [body, text] : run_rows) {
                 check_both((prelude + "try { " + body + " out = \"stored\"; } catch (e) { out = e; } out").c_str(), text, body);
             }
-            check_both("int x = 10; x = cast<int>(x + 2.5); type_of(x) + \":\" + to_string(x)", "int:12", "cast<int> spells the truncating store");
+            check_both("int x = 10; x = cast<int>(x + 2.5); reflect::type_of(x) + \":\" + to_string(x)", "int:12", "cast<int> spells the truncating store");
             check_both("to_string(cast<int>(2.5)) + \",\" + to_string(cast<int>(-2.5)) + \",\" + to_string(cast<int>(5 - 7.5)) + \",\" + to_string(cast<int>(10 % 4.5))", "2,-2,-2,1", "cast<int> truncates toward zero");
-            check_both("to_string(math::itrunc(-2.5)) + \",\" + to_string(math::ifloor(-2.5)) + \",\" + type_of(math::ifloor(2.5))", "-2,-3,int", "math::itrunc and math::ifloor return ints");
+            check_both("to_string(math::itrunc(-2.5)) + \",\" + to_string(math::ifloor(-2.5)) + \",\" + reflect::type_of(math::ifloor(2.5))", "-2,-3,int", "math::itrunc and math::ifloor return ints");
             check_both("function f(int v) { return \"int\"; } function f(float v) { return \"float\"; } f(1.5) + f(1)", "floatint", "a float argument never picks f(int)");
         });
 
@@ -916,25 +916,25 @@ public:
         });
 
         test("compound_float_target_stays_float", [this, check_both]() {
-            check_both("float f = 1.5; f += 2; type_of(f) + \":\" + to_string(f)", "float:3.5", "float +=int");
+            check_both("float f = 1.5; f += 2; reflect::type_of(f) + \":\" + to_string(f)", "float:3.5", "float +=int");
             check_both("float f = 7.5; f %= 2; to_string(f)", "1.5", "float %=");
             check_both("float f = 5.0; f /= 2; to_string(f)", "2.5", "float /=");
         });
 
         test("compound_auto_locked_behaves_typed", [this, check_both]() {
-            check_both("auto x = 1.5; x += 2; type_of(x) + \":\" + to_string(x)", "float:3.5", "auto-locked float takes an int");
-            check_both("auto f = 1.0; f += 2.5; type_of(f) + \":\" + to_string(f)", "float:3.5", "auto-locked float");
+            check_both("auto x = 1.5; x += 2; reflect::type_of(x) + \":\" + to_string(x)", "float:3.5", "auto-locked float takes an int");
+            check_both("auto f = 1.0; f += 2.5; reflect::type_of(f) + \":\" + to_string(f)", "float:3.5", "auto-locked float");
             // An auto parameter is inferred-then-enforced, so its compound stores by the inferred type too
-            check_both("function f(auto x) { x += 2; return type_of(x) + \":\" + to_string(x); } f(1.5)", "float:3.5", "inferred param");
-            check_both("function f(auto x) { var c = \"\"; try { x += 2.5; } catch (e) { c = e; } return c + \"|\" + type_of(x) + \":\" + to_string(x); } f(10)", "Cannot assign float to 'x' (declared int)|int:10", "inferred int param refuses a float");
+            check_both("function f(auto x) { x += 2; return reflect::type_of(x) + \":\" + to_string(x); } f(1.5)", "float:3.5", "inferred param");
+            check_both("function f(auto x) { var c = \"\"; try { x += 2.5; } catch (e) { c = e; } return c + \"|\" + reflect::type_of(x) + \":\" + to_string(x); } f(10)", "Cannot assign float to 'x' (declared int)|int:10", "inferred int param refuses a float");
             check_both("function f(float x) { x += 2; return to_string(x); } f(10)", "12.0", "typed param");
             check_both("function g() { float y = 10; y += 2; return to_string(y); } g()", "12.0", "slot local");
         });
 
         test("compound_var_target_stays_dynamic", [this, check_both]() {
-            check_both("var x = 10; x += 2.5; type_of(x) + \":\" + to_string(x)", "float:12.5", "var += float promotes");
-            check_both("var x = 10; x %= 3; type_of(x) + \":\" + to_string(x)", "int:1", "var %= int stays int");
-            check_both("var x = 10; x %= 4.5; type_of(x) + \":\" + to_string(x)", "float:1.0", "var %= float promotes");
+            check_both("var x = 10; x += 2.5; reflect::type_of(x) + \":\" + to_string(x)", "float:12.5", "var += float promotes");
+            check_both("var x = 10; x %= 3; reflect::type_of(x) + \":\" + to_string(x)", "int:1", "var %= int stays int");
+            check_both("var x = 10; x %= 4.5; reflect::type_of(x) + \":\" + to_string(x)", "float:1.0", "var %= float promotes");
             // The dynamic tag survives a mixed-type compound: the variable is still a var
             // afterwards (the old in-place path used to clobber the 'any' tag, wrongly
             // locking the variable to the promoted type)
@@ -965,23 +965,23 @@ public:
         test("compound_expression_result_is_stored_value", [this, check_both]() {
             // The compound expression evaluates to the converted (stored) value, exactly
             // like '=' on a typed local does
-            check_both("float x = 10; var r = (x += 2); type_of(r) + \":\" + to_string(r)", "float:12.0", "result converted");
-            check_both("var x = 10; var r = (x += 2.5); type_of(r) + \":\" + to_string(r)", "float:12.5", "var result promoted");
+            check_both("float x = 10; var r = (x += 2); reflect::type_of(r) + \":\" + to_string(r)", "float:12.0", "result converted");
+            check_both("var x = 10; var r = (x += 2.5); reflect::type_of(r) + \":\" + to_string(r)", "float:12.5", "var result promoted");
         });
 
         test("compound_typed_element_and_ref_targets", [this, check_both]() {
             // Constrained element: the store converts (int 12 -> float 12.0) and a consumed expression's
             // value is the stored element
-            check_both("array<float> a = [10]; a[0] += 2; type_of(a[0]) + \":\" + to_string(a[0])", "float:12.0", "typed element converts");
+            check_both("array<float> a = [10]; a[0] += 2; reflect::type_of(a[0]) + \":\" + to_string(a[0])", "float:12.0", "typed element converts");
             check_both("array<float> a = [10]; var r = (a[0] += 2); to_string(r)", "12.0", "element result is the stored element");
             check_both("array<float> a = [10]; a[0] %= 4; to_string(a[0])", "2.0", "typed element %=");
-            check_both("array<int> a = [10]; a[0] %= 4; type_of(a[0]) + \":\" + to_string(a[0])", "int:2", "int element %=");
+            check_both("array<int> a = [10]; a[0] %= 4; reflect::type_of(a[0]) + \":\" + to_string(a[0])", "int:2", "int element %=");
             // Constrained ref bound to a typed element behaves route-independently
             check_both(R"(
                 array<float> a = [10];
                 function f(float& r) { r += 2; }
                 f(a[0]);
-                type_of(a[0]) + ":" + to_string(a[0])
+                reflect::type_of(a[0]) + ":" + to_string(a[0])
             )", "float:12.0", "constrained ref compound converts");
         });
 
@@ -1018,14 +1018,14 @@ public:
                 class C { float f = 0.0; }
                 auto c = C();
                 c.f = 3;
-                type_of(c.f) + ":" + to_string(c.f)
+                reflect::type_of(c.f) + ":" + to_string(c.f)
             )", "float:3.0", "float field widens int assign");
             check_both(R"(
                 class C { string s = ""; }
                 auto c = C();
                 utf8_string u = "42";
                 c.s = u;
-                type_of(c.s) + ":" + c.s
+                reflect::type_of(c.s) + ":" + c.s
             )", "string:42", "a string field takes a utf8_string's bytes");
             // a string literal into an int field: a strict load error; the locals-identical
             // runtime text under warn and, under strict, for a var-sourced value
@@ -1064,12 +1064,12 @@ public:
                 }
                 auto c = C();
                 c.set(9);
-                type_of(c.v) + ":" + to_string(c.v)
+                reflect::type_of(c.v) + ":" + to_string(c.v)
             )", "float:9.0", "implicit-this assign converts");
             check_both(R"(
                 class C { float v = 4; }
                 auto c = C();
-                type_of(c.v) + ":" + to_string(c.v)
+                reflect::type_of(c.v) + ":" + to_string(c.v)
             )", "float:4.0", "ctor field-init converts the initializer");
             check_both(R"(
                 class C {
@@ -1097,7 +1097,7 @@ public:
                 class C { float v = 10; }
                 auto c = C();
                 c.v += 2;
-                type_of(c.v) + ":" + to_string(c.v)
+                reflect::type_of(c.v) + ":" + to_string(c.v)
             )", "float:12.0", "member compound converts back");
             check_both(R"(
                 class C {
@@ -1106,7 +1106,7 @@ public:
                 }
                 auto c = C();
                 c.bump();
-                type_of(c.v) + ":" + to_string(c.v)
+                reflect::type_of(c.v) + ":" + to_string(c.v)
             )", "float:12.0", "implicit-this compound converts back");
             check_both(R"(
                 class C { float v = 10.5; }
@@ -1122,7 +1122,7 @@ public:
                 class C { var v = 1; }
                 auto c = C();
                 c.v = 2.5;
-                var t1 = type_of(c.v);
+                var t1 = reflect::type_of(c.v);
                 c.v = "s";
                 t1 + "|" + c.v
             )", "float|s", "var field stays dynamic");
@@ -1130,14 +1130,14 @@ public:
                 class C { var v = 10; }
                 auto c = C();
                 c.v += 2.5;
-                type_of(c.v) + ":" + to_string(c.v)
+                reflect::type_of(c.v) + ":" + to_string(c.v)
             )", "float:12.5", "var field compound stays dynamic");
             // auto fields infer from the initializer then enforce
             check_both(R"(
                 class C { auto v = 1.5; }
                 auto c = C();
                 c.v = 2;
-                type_of(c.v) + ":" + to_string(c.v)
+                reflect::type_of(c.v) + ":" + to_string(c.v)
             )", "float:2.0", "auto field locks to inferred float");
             auto [i_out, v_out] = both(R"(
                 class C { auto v = 1; }
@@ -1155,7 +1155,7 @@ public:
                 class Derived : Base { var dv = 0; }
                 auto d = Derived();
                 d.bv = 7;
-                type_of(d.bv) + ":" + to_string(d.bv)
+                reflect::type_of(d.bv) + ":" + to_string(d.bv)
             )", "float:7.0", "base typed field enforced on derived instance");
             auto [i_out, v_out] = both(R"(
                 class Base { int bv = 0; }
@@ -1188,7 +1188,7 @@ public:
                 var n = null;
                 var c2 = "stored";
                 try { h.p = n; } catch (e) { c2 = e; }
-                to_string(a) + "|" + to_string(b) + "|" + to_string(b2) + "|" + c2 + "|" + type_of(h.p)
+                to_string(a) + "|" + to_string(b) + "|" + to_string(b2) + "|" + c2 + "|" + reflect::type_of(h.p)
             )", "1|2|2|Cannot assign null to field 'p' of H (declared S)|T", "same class and subtype (cast<T&> and var receiver) accepted, null refused");
             const char* base_receiver = R"(
                 class S { int x = 1; }
@@ -1302,10 +1302,10 @@ public:
             struct clean_row { const char* src; const char* expected; };
             const clean_row clean[] = {
                 {"int x = cast<int>(4.7); x", "4"},
-                {"float f = 2; type_of(f) + \":\" + to_string(f)", "float:2.0"},
+                {"float f = 2; reflect::type_of(f) + \":\" + to_string(f)", "float:2.0"},
                 {"class S { int x = 1; } class T : S { int t = 2; } function f(S s) -> int { return s.x; } f(T())", "1"},
                 {"function twice(int v) -> int { return v * 2; } twice(21)", "42"},
-                {"class C { float v = 0; } auto c = C(); c.v = 4; type_of(c.v) + \":\" + to_string(c.v)", "float:4.0"},
+                {"class C { float v = 0; } auto c = C(); c.v = 4; reflect::type_of(c.v) + \":\" + to_string(c.v)", "float:4.0"},
                 {"class S { int x = 1; } class T : S { int t = 2; } class H { S p; } auto h = H(); h.p = T(); cast<T&>(h.p).t", "2"},
             };
             for (const clean_row& r : clean) {
@@ -1329,7 +1329,7 @@ public:
             check_both(with_prelude("cast<T&>(h.p).t").c_str(), "2", "reference form reads the subtype member");
             check_both(with_prelude("cast<T&>(h.p).t = 5; var d = h.p; to_string(d.t)").c_str(), "5", "reference form writes through");
             check_both(with_prelude("T tv = cast<T>(h.p); tv.t = 9; var d = h.p; to_string(d.t) + \",\" + to_string(tv.t)").c_str(), "2,9", "value form is an independent copy");
-            check_both(with_prelude("shared_ptr<T> th = cast<shared_ptr<T>>(h.p); th.t = 11; var d = h.p; to_string(d.t)").c_str(), "11", "shared_ptr form shares the instance");
+            check_both(with_prelude("shared_ptr<S> sp = new T(); shared_ptr<T> th = cast<shared_ptr<T>>(sp); th.t = 11; to_string(cast<T&>(sp).t)").c_str(), "11", "shared_ptr form shares a handle's instance");
             check_both(with_prelude("auto& r = cast<T&>(h.p); r.t = 21; cast<T&>(h.p).t").c_str(), "21", "auto& aliases the cast reference");
             check_both(with_prelude("T tmp = T(); auto& r = cast<T&>(tmp); r.t = 33; to_string(tmp.t)").c_str(), "33", "identifier operand binds the variable");
             check_both(with_prelude("cast<T&>(T()).t").c_str(), "2", "temporary operand is pinned");
@@ -1341,7 +1341,7 @@ public:
         test("cast_upcast_and_null", [this, check_both, with_prelude]() {
             check_both(with_prelude("S up = cast<S>(T()); to_string(up.x)").c_str(), "1", "upcast by value");
             check_both(with_prelude("cast<S&>(h.p).x").c_str(), "1", "upcast by reference");
-            check_both(with_prelude("shared_ptr<S> sh = cast<shared_ptr<S>>(h.p); to_string(sh.x)").c_str(), "1", "upcast handle");
+            check_both(with_prelude("shared_ptr<T> sp = new T(); shared_ptr<S> sh = cast<shared_ptr<S>>(sp); to_string(sh.x)").c_str(), "1", "upcast handle");
             check_both("class T { int t = 2; } var n = null; var c = \"\"; try { cast<T>(n); } catch (e) { c = e; } c + \",\" + to_string(cast<shared_ptr<T>>(n) == null)", "Cannot cast 'null' to 'T',true", "null fails the value form and passes the shared_ptr form");
             check_both("class T { int t = 2; } var n = null; var c = \"\"; try { cast<T&>(n).t; } catch (e) { c = e; } c", "Cannot cast 'null' to 'T&'", "null fails the reference form");
         });
@@ -1349,16 +1349,16 @@ public:
         test("cast_failures_are_catchable_with_exact_text", [this, check_both, with_prelude]() {
             check_both(with_prelude("var c = \"\"; try { var bad = cast<H>(h.p); } catch (e) { c = e; } c").c_str(), "Cannot cast 'T' to 'H'", "unrelated class, value form");
             check_both(with_prelude("var c = \"\"; try { cast<H&>(h.p).p; } catch (e) { c = e; } c").c_str(), "Cannot cast 'T' to 'H&'", "unrelated class, reference form");
-            check_both(with_prelude("var c = \"\"; try { var bad = cast<shared_ptr<H>>(h.p); } catch (e) { c = e; } c").c_str(), "Cannot cast 'T' to 'shared_ptr<H>'", "unrelated class, shared_ptr form");
+            check_both(with_prelude("shared_ptr<S> sp = new T(); var c = \"\"; try { var bad = cast<shared_ptr<H>>(sp); } catch (e) { c = e; } c").c_str(), "Cannot cast 'T' to 'shared_ptr<H>'", "unrelated class, shared_ptr form");
             check_both("class T { int t = 2; } var v = 5; var c = \"\"; try { var bad = cast<T>(v); } catch (e) { c = e; } c", "Cannot cast 'int' to 'T'", "non-object into a class");
             check_both("var v = \"abc\"; var c = \"\"; try { var bad = cast<int>(v); } catch (e) { c = e; } c", "Cannot cast 'string' to 'int'", "unconvertible primitive");
             check_both(with_prelude("var c = \"\"; try { var ok = cast<T>(h.p); c = \"ran\"; } catch (e) { c = e; } c").c_str(), "ran", "admitted casts do not raise");
         });
 
         test("cast_primitive_conversions", [this, check_both]() {
-            check_both("var f = 2.7; to_string(cast<int>(f)) + \":\" + type_of(cast<int>(f))", "2:int", "float -> int truncates");
-            check_both("var i = 5; cast<string>(i) + \":\" + type_of(cast<string>(i))", "5:string", "int -> string");
-            check_both("var i = 1; to_string(cast<float>(i)) + \":\" + type_of(cast<float>(i))", "1.0:float", "int -> float widens");
+            check_both("var f = 2.7; to_string(cast<int>(f)) + \":\" + reflect::type_of(cast<int>(f))", "2:int", "float -> int truncates");
+            check_both("var i = 5; cast<string>(i) + \":\" + reflect::type_of(cast<string>(i))", "5:string", "int -> string");
+            check_both("var i = 1; to_string(cast<float>(i)) + \":\" + reflect::type_of(cast<float>(i))", "1.0:float", "int -> float widens");
             check_both("var z = 0; to_string(cast<bool>(z))", "false", "-> bool is truthiness");
             check_both("int total = 0; var xs = [1.5, 2.5]; for (auto x : xs) { total += cast<int>(x); } to_string(total)", "3", "cast inside a typed compound store");
             check_both("int n = 0; var v = 7.9; n = cast<int>(v); to_string(n)", "7", "cast<int> is a parse-proven typed store");
@@ -1367,18 +1367,18 @@ public:
         test("cast_char_rules", [this, check_both, both]() {
             // char <-> int/float/string convert through the cast alone (docs/site/guide/02-type-ladder.html
             // "cast<T>(e): the explicit boundary"); plain assignment keeps refusing the pair
-            check_both("var ch = 'a'; to_string(cast<int>(ch)) + \":\" + type_of(cast<int>(ch))", "97:int", "char -> int is the code point");
+            check_both("var ch = 'a'; to_string(cast<int>(ch)) + \":\" + reflect::type_of(cast<int>(ch))", "97:int", "char -> int is the code point");
             check_both("to_string(cast<int>('\\xC3'))", "195", "char -> int is unsigned (0..255)");
-            check_both("var ch = 'a'; to_string(cast<float>(ch)) + \":\" + type_of(cast<float>(ch))", "97.0:float", "char -> float is the code point widened");
-            check_both("var ch = 'a'; cast<string>(ch) + \":\" + type_of(cast<string>(ch))", "a:string", "char -> string is one text unit");
-            check_both("var ch = 'a'; to_string(cast<char>(ch)) + \":\" + type_of(cast<char>(ch))", "a:char", "char -> char is identity");
-            check_both("var i = 97; to_string(cast<char>(i)) + \":\" + type_of(cast<char>(i))", "a:char", "int -> char in range");
+            check_both("var ch = 'a'; to_string(cast<float>(ch)) + \":\" + reflect::type_of(cast<float>(ch))", "97.0:float", "char -> float is the code point widened");
+            check_both("var ch = 'a'; cast<string>(ch) + \":\" + reflect::type_of(cast<string>(ch))", "a:string", "char -> string is one text unit");
+            check_both("var ch = 'a'; to_string(cast<char>(ch)) + \":\" + reflect::type_of(cast<char>(ch))", "a:char", "char -> char is identity");
+            check_both("var i = 97; to_string(cast<char>(i)) + \":\" + reflect::type_of(cast<char>(i))", "a:char", "int -> char in range");
             check_both("to_string(cast<char>(0) == '\\x00') + \",\" + to_string(cast<char>(255) == '\\xFF')", "true,true", "int -> char range ends");
-            check_both("var s = \"a\"; to_string(cast<char>(s)) + \":\" + type_of(cast<char>(s))", "a:char", "one-character string -> char");
+            check_both("var s = \"a\"; to_string(cast<char>(s)) + \":\" + reflect::type_of(cast<char>(s))", "a:char", "one-character string -> char");
             check_both("to_string(cast<char>(cast<int>('z')) == 'z')", "true", "char -> int -> char round trip");
             check_both("to_string(cast<char>(cast<string>('q')) == 'q')", "true", "char -> string -> char round trip");
             check_both("to_string(cast<int>(cast<char>(200)))", "200", "int -> char -> int round trip");
-            check_both("char c = cast<char>(65); to_string(c) + \":\" + type_of(c)", "A:char", "cast<char> is a parse-proven typed store");
+            check_both("char c = cast<char>(65); to_string(c) + \":\" + reflect::type_of(c)", "A:char", "cast<char> is a parse-proven typed store");
             check_both("int code = cast<int>('a'); to_string(code)", "97", "cast<int> of a char into a typed local");
             check_both("var i = 256; var c = \"\"; try { var bad = cast<char>(i); } catch (e) { c = e; } c", "Cannot cast 'int' to 'char'", "int above 255 fails");
             check_both("var i = -1; var c = \"\"; try { var bad = cast<char>(i); } catch (e) { c = e; } c", "Cannot cast 'int' to 'char'", "negative int fails");
@@ -1413,12 +1413,12 @@ public:
         test("cast_reference_is_an_assignment_target", [this, check_both, both, both_in, with_prelude]() {
             // cast<T&>(e) is an lvalue (C++): =, op= and ++/-- store through it under the rules of the storage it names
             check_both("int x = 1; cast<int&>(x) = 5; to_string(x)", "5", "a variable");
-            check_both("float x = 1; cast<float&>(x) = 3; type_of(x) + \":\" + to_string(x)", "float:3.0", "the variable's table converts");
-            check_both("float x = 10; cast<float&>(x) += 2; type_of(x) + \":\" + to_string(x)", "float:12.0", "a compound converts back to the variable's type");
+            check_both("float x = 1; cast<float&>(x) = 3; reflect::type_of(x) + \":\" + to_string(x)", "float:3.0", "the variable's table converts");
+            check_both("float x = 10; cast<float&>(x) += 2; reflect::type_of(x) + \":\" + to_string(x)", "float:12.0", "a compound converts back to the variable's type");
             check_both("int x = 5; cast<int&>(x)++; ++cast<int&>(x); cast<int&>(x)--; to_string(x)", "6", "increment and decrement");
             check_both("int x = 5; int old = cast<int&>(x)++; int now = ++cast<int&>(x); to_string(old) + \",\" + to_string(now) + \",\" + to_string(x)", "5,7,7", "postfix yields the old value, prefix the new");
-            check_both("float x = 0; auto r = (cast<float&>(x) = 3); type_of(r) + \":\" + to_string(r)", "float:3.0", "the expression's value is the stored value");
-            check_both("float x = 1; auto r = (cast<float&>(x) += 1); type_of(r) + \":\" + to_string(r)", "float:2.0", "a consumed compound yields the stored value");
+            check_both("float x = 0; auto r = (cast<float&>(x) = 3); reflect::type_of(r) + \":\" + to_string(r)", "float:3.0", "the expression's value is the stored value");
+            check_both("float x = 1; auto r = (cast<float&>(x) += 1); reflect::type_of(r) + \":\" + to_string(r)", "float:2.0", "a consumed compound yields the stored value");
             check_both("function f() -> int { int x = 1; cast<int&>(x) += 2; cast<int&>(x) *= 2; return x; } to_string(f())", "6", "a function's slot local");
             check_both("class C { int n = 0; } C c = C(); cast<int&>(c.n) = 7; cast<int&>(c.n) *= 3; to_string(c.n)", "21", "a field");
             check_both("class C { int n = 0; void go() { cast<int&>(n) = 4; cast<int&>(this.n) += 1; } } C c = C(); c.go(); to_string(c.n)", "5", "a bare field and this.field");
@@ -1447,15 +1447,15 @@ public:
             check_both("var log = \"\"; function v() -> int { log += \"v\"; return 5; } "
                        "coroutine h() { array<int> a = [0, 0]; cast<int&>(a[(yield 1) == null ? 1 : 0]) += v(); int k = 1; cast<int&>(k) += v() + ((yield 2) == null ? 1 : 0); yield to_string(a[1]) + to_string(k); } "
                        "var co = h(); co.next(); co.next(); co.next() + log", "57vv", "a yield inside the target or the right side resumes without re-running either");
-            check_both("class W { static float s = 1; } cast<float&>(W::s) += 1; type_of(W::s) + \":\" + to_string(W::s)", "float:2.0", "a static's own table");
+            check_both("class W { static float s = 1; } cast<float&>(W::s) += 1; reflect::type_of(W::s) + \":\" + to_string(W::s)", "float:2.0", "a static's own table");
         });
 
         test("reference_stores_run_the_storage_rules", [this, check_both]() {
             // a compound through a reference to a typed variable runs the variable's table, as the direct compound does
-            check_both("float x = 10; auto& r = x; r += 2; type_of(x) + \":\" + to_string(x)", "float:12.0", "auto& to a float");
-            check_both("function f(float& r) { r += 2; } float x = 10; f(x); type_of(x) + \":\" + to_string(x)", "float:12.0", "a float& parameter");
-            check_both("float x = 10; var& r = x; r -= 1; type_of(x) + \":\" + to_string(x)", "float:9.0", "var& to a float");
-            check_both("int x = 10; var& r = x; var h = 0.5; var c = \"\"; try { r -= h; } catch (e) { c = e; } c + \"|\" + type_of(x) + \":\" + to_string(x)", "Cannot assign float to 'r' (declared int)|int:10", "var& to an int refuses a float");
+            check_both("float x = 10; auto& r = x; r += 2; reflect::type_of(x) + \":\" + to_string(x)", "float:12.0", "auto& to a float");
+            check_both("function f(float& r) { r += 2; } float x = 10; f(x); reflect::type_of(x) + \":\" + to_string(x)", "float:12.0", "a float& parameter");
+            check_both("float x = 10; var& r = x; r -= 1; reflect::type_of(x) + \":\" + to_string(x)", "float:9.0", "var& to a float");
+            check_both("int x = 10; var& r = x; var h = 0.5; var c = \"\"; try { r -= h; } catch (e) { c = e; } c + \"|\" + reflect::type_of(x) + \":\" + to_string(x)", "Cannot assign float to 'r' (declared int)|int:10", "var& to an int refuses a float");
             const std::string cnt = "class Cnt { int n = 0; function operator=(int v) { n = v * 10; } } ";
             check_both((cnt + "Cnt c = Cnt(); auto& r = c; r = 3; to_string(c.n)").c_str(), "30", "a reference to a class variable runs its operator=");
             check_both((cnt + "class H { Cnt k = Cnt(); } H h = H(); auto& r = h.k; r = 4; to_string(h.k.n)").c_str(), "40", "a reference to a class field runs its operator=");
@@ -1471,8 +1471,8 @@ public:
         test("a_reference_result_is_an_assignment_target", [this, check_both, both]() {
             // f() returning T&, a conditional of lvalues, an assignment and a prefix ++/-- are lvalues (C++)
             check_both("int g = 1; function f() -> int& { return g; } f() = 9; f() += 1; ++f(); f()++; to_string(g)", "12", "a function returning int&");
-            check_both("float g = 1; function f() -> float& { return g; } f() = 3; type_of(g) + \":\" + to_string(g)", "float:3.0", "the referent's table converts");
-            check_both("float g = 1; function f() -> float& { return g; } auto r = (f() = 3); type_of(r) + \":\" + to_string(r)", "float:3.0", "the expression's value is the stored value");
+            check_both("float g = 1; function f() -> float& { return g; } f() = 3; reflect::type_of(g) + \":\" + to_string(g)", "float:3.0", "the referent's table converts");
+            check_both("float g = 1; function f() -> float& { return g; } auto r = (f() = 3); reflect::type_of(r) + \":\" + to_string(r)", "float:3.0", "the expression's value is the stored value");
             check_both("class W { array<int> d = [1, 2, 3]; int& first() { return d[0]; } } W w = W(); w.first() = 11; w.first() *= 2; to_string(w.d[0])", "22", "a method returning int&");
             check_both("class S { static int s = 1; static int& get() { return S::s; } } S::get() = 4; S::get()++; to_string(S::s)", "5", "a static method returning a static");
             check_both("class W { array<int> d = [1, 2, 3]; int& operator[](int i) { return d[i]; } } W w = W(); w[2] = 30; ++w[1]; to_string(w.d[1]) + \",\" + to_string(w.d[2])", "3,30", "a user operator[] returning int&");
@@ -1532,26 +1532,26 @@ public:
         test("a_reference_stores_by_its_declared_type", [this, check_both]() {
             // The reference's declared type governs the store (cast<int&>(v), int& r = v); var& and auto&
             // keep the referent's own rule
-            check_both("var v = 1; cast<int&>(v) = true; type_of(v) + \":\" + to_string(v)", "int:1", "cast<int&> over a var");
-            check_both("var v = 1; int& r = v; r = true; type_of(v) + \":\" + to_string(v)", "int:1", "int& over a var");
-            check_both("var v = 1; int& r = v; var h = 0.5; var c = \"\"; try { r += h; } catch (e) { c = e; } c + \"|\" + type_of(v) + \":\" + to_string(v)", "Cannot assign float to a variable declared int|int:1", "a float compound through int& over a var is refused where the var alone would take it");
-            check_both("var v = 1; int& r = v; v = 1.5; var c = \"\"; try { r++; } catch (e) { c = e; } c + \"|\" + type_of(v) + \":\" + to_string(v)", "Cannot assign float to a variable declared int|float:1.5", "++ through int& over a var that now holds a float is refused");
-            check_both("var v = 1; cast<int&>(v) += 1; cast<int&>(v)++; type_of(v) + \":\" + to_string(v)", "int:3", "compound and ++ through cast<int&>");
-            check_both("var a = [1, 2]; int& r = a[0]; r = true; type_of(a[0]) + \":\" + to_string(a[0])", "int:1", "int& over an untyped element");
-            check_both("var v = 1; auto& r = v; r = 2.5; var& q = v; q = \"s\"; type_of(v)", "string", "auto& and var& keep the var");
+            check_both("var v = 1; cast<int&>(v) = true; reflect::type_of(v) + \":\" + to_string(v)", "int:1", "cast<int&> over a var");
+            check_both("var v = 1; int& r = v; r = true; reflect::type_of(v) + \":\" + to_string(v)", "int:1", "int& over a var");
+            check_both("var v = 1; int& r = v; var h = 0.5; var c = \"\"; try { r += h; } catch (e) { c = e; } c + \"|\" + reflect::type_of(v) + \":\" + to_string(v)", "Cannot assign float to a variable declared int|int:1", "a float compound through int& over a var is refused where the var alone would take it");
+            check_both("var v = 1; int& r = v; v = 1.5; var c = \"\"; try { r++; } catch (e) { c = e; } c + \"|\" + reflect::type_of(v) + \":\" + to_string(v)", "Reference to an 'int' now names a 'float'|float:1.5", "++ through int& over a var that now holds a float raises: the reference keeps its type");
+            check_both("var v = 1; cast<int&>(v) += 1; cast<int&>(v)++; reflect::type_of(v) + \":\" + to_string(v)", "int:3", "compound and ++ through cast<int&>");
+            check_both("var a = [1, 2]; int& r = a[0]; r = true; reflect::type_of(a[0]) + \":\" + to_string(a[0])", "int:1", "int& over an untyped element");
+            check_both("var v = 1; auto& r = v; r = 2.5; var& q = v; q = \"s\"; reflect::type_of(v)", "string", "auto& and var& keep the var");
             check_both("class Cnt { int n = 0; function operator=(int x) { n = x * 10; } } var c = Cnt(); cast<Cnt&>(c) = 2; to_string(c.n)", "20", "a class's operator= through cast<Cnt&> over a var");
-            check_both("function f() -> string { var v = 5; int& r = v; r = true; return type_of(v) + to_string(v); } f()", "int1", "a function's slot local");
-            check_both("var v = 1.5; float& r = v; r = 2; r += 1; var w = 1.5; float& s = w; s = 1; s++; type_of(v) + \":\" + to_string(v) + \",\" + type_of(w) + \":\" + to_string(w)", "float:3.0,float:2.0", "an int stored through float& takes the declared kind");
-            check_both("var v = 1; int& r = v; r += 2; r *= 3; r++; type_of(v) + \":\" + to_string(v)", "int:10", "matching kinds take the storage's own path");
+            check_both("function f() -> string { var v = 5; int& r = v; r = true; return reflect::type_of(v) + to_string(v); } f()", "int1", "a function's slot local");
+            check_both("var v = 1.5; float& r = v; r = 2; r += 1; var w = 1.5; float& s = w; s = 1; s++; reflect::type_of(v) + \":\" + to_string(v) + \",\" + reflect::type_of(w) + \":\" + to_string(w)", "float:3.0,float:2.0", "an int stored through float& takes the declared kind");
+            check_both("var v = 1; int& r = v; r += 2; r *= 3; r++; reflect::type_of(v) + \":\" + to_string(v)", "int:10", "matching kinds take the storage's own path");
             // a function's `T& name` is decided at its stores from the name; one whose reference reaches another binding carries
             // the declared type with it, so every route agrees
-            check_both("function f() -> string { var v = 1; int& q = v; q = false; return type_of(v) + to_string(v); } f()", "int0", "a slot-resident int& over a var");
-            check_both("function f() -> string { var v = 1; int& q = v; var h = 0.5; var c = \"\"; try { q += h; } catch (e) { c = e; } q += 1; q++; return c + \"|\" + type_of(v) + to_string(v); } f()", "Cannot assign float to a variable declared int|int3", "compound and ++ through a slot-resident int&");
-            check_both("function g(var& p) { p = false; } function f() -> string { var v = 1; int& q = v; g(q); return type_of(v) + to_string(v); } f()", "int0", "passed on to a var& parameter");
-            check_both("function f() -> string { var v = 1; int& q = v; auto& r = q; r = false; return type_of(v) + to_string(v); } f()", "int0", "aliased by auto&");
-            check_both("function f() -> string { var v = 1; int& q = v; var h = [&]() { q = false; }; h(); return type_of(v) + to_string(v); } f()", "int0", "captured by reference");
-            check_both("function f() -> string { var v = 1; var w = 1; int& q = v; (true ? q : w) = false; return type_of(v) + to_string(v); } f()", "int0", "an arm of a conditional target");
-            check_both("function f() -> string { var v = 1.5; float& q = v; q = 2; q += 1; return type_of(v) + to_string(v); } f()", "float3.0", "a slot-resident float& over a var holding a float");
+            check_both("function f() -> string { var v = 1; int& q = v; q = false; return reflect::type_of(v) + to_string(v); } f()", "int0", "a slot-resident int& over a var");
+            check_both("function f() -> string { var v = 1; int& q = v; var h = 0.5; var c = \"\"; try { q += h; } catch (e) { c = e; } q += 1; q++; return c + \"|\" + reflect::type_of(v) + to_string(v); } f()", "Cannot assign float to a variable declared int|int3", "compound and ++ through a slot-resident int&");
+            check_both("function g(var& p) { p = false; } function f() -> string { var v = 1; int& q = v; g(q); return reflect::type_of(v) + to_string(v); } f()", "int0", "passed on to a var& parameter");
+            check_both("function f() -> string { var v = 1; int& q = v; auto& r = q; r = false; return reflect::type_of(v) + to_string(v); } f()", "int0", "aliased by auto&");
+            check_both("function f() -> string { var v = 1; int& q = v; var h = [&]() { q = false; }; h(); return reflect::type_of(v) + to_string(v); } f()", "int0", "captured by reference");
+            check_both("function f() -> string { var v = 1; var w = 1; int& q = v; (true ? q : w) = false; return reflect::type_of(v) + to_string(v); } f()", "int0", "an arm of a conditional target");
+            check_both("function f() -> string { var v = 1.5; float& q = v; q = 2; q += 1; return reflect::type_of(v) + to_string(v); } f()", "float3.0", "a slot-resident float& over a var holding a float");
         });
 
         test("a_function_slot_takes_only_a_callable_or_null", [this, check_both]() {
@@ -1587,9 +1587,9 @@ public:
             check_both("var a = [1, 2]; var c = \"\"; try { float& r = a[0]; c = \"bound\"; } catch (e) { c = e; } c", "Cannot initialize 'r' (declared float&) with int", "an untyped element");
             check_both("function f(float& p) { p = 1; } var v = 1; var c = \"\"; try { f(v); c = \"bound\"; } catch (e) { c = e; } c", "Cannot pass int to parameter 'p' of 'f' (declared float&)", "a parameter");
             check_both("var v = 1; var c = \"\"; try { cast<float&>(v) = 2; c = \"bound\"; } catch (e) { c = e; } c", "Cannot cast 'int' to 'float&'", "a reference cast");
-            check_both("var v = 1; int& r = v; r = false; type_of(v) + to_string(v)", "int0", "a matching binding stores by T");
-            check_both("class A { int a = 1; } class B : A { int b = 2; } var v = B(); A& r = v; type_of(r)", "B", "a subclass binds a base reference");
-            check_both("var v = 1; auto& r = v; var& q = v; r = \"s\"; type_of(v)", "string", "auto& and var& bind any value");
+            check_both("var v = 1; int& r = v; r = false; reflect::type_of(v) + to_string(v)", "int0", "a matching binding stores by T");
+            check_both("class A { int a = 1; } class B : A { int b = 2; } var v = B(); A& r = v; reflect::type_of(r)", "B", "a subclass binds a base reference");
+            check_both("var v = 1; auto& r = v; var& q = v; r = \"s\"; reflect::type_of(v)", "string", "auto& and var& bind any value");
             auto [si, sv] = both("int x = 1; float& r = x;");
             check_eq(si, sv, "static rejection parity: float& over an int");
             check(si.find("ERROR: ") == 0 && si.find("cannot initialize 'r' declared 'float&' with 'int'") != std::string::npos, "float& over an int is rejected at load: " + si);
@@ -1597,17 +1597,17 @@ public:
 
         test("a_reference_parameter_stores_by_its_declared_type", [this, check_both]() {
             // `void f(int& p)` over a var stores ints, decided at the stores from the parameter's declared type
-            check_both("function f(int& p) { p = false; } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:0", "a converting store");
-            check_both("function f(int& p, var h) { p += h; } var v = 1; var c = \"\"; try { f(v, 0.5); } catch (e) { c = e; } c + \"|\" + type_of(v) + \":\" + to_string(v)", "Cannot assign float to a variable declared int|int:1", "a float compound is refused where the var alone would take it");
-            check_both("function f(int& p) { p = p + 1; p += 2; p++; } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:5", "matching kinds");
-            check_both("function f(float& p) { p = 2; p += 1; } var v = 1.5; f(v); type_of(v) + \":\" + to_string(v)", "float:3.0", "an int stored through float& into a var");
+            check_both("function f(int& p) { p = false; } var v = 1; f(v); reflect::type_of(v) + \":\" + to_string(v)", "int:0", "a converting store");
+            check_both("function f(int& p, var h) { p += h; } var v = 1; var c = \"\"; try { f(v, 0.5); } catch (e) { c = e; } c + \"|\" + reflect::type_of(v) + \":\" + to_string(v)", "Cannot assign float to a variable declared int|int:1", "a float compound is refused where the var alone would take it");
+            check_both("function f(int& p) { p = p + 1; p += 2; p++; } var v = 1; f(v); reflect::type_of(v) + \":\" + to_string(v)", "int:5", "matching kinds");
+            check_both("function f(float& p) { p = 2; p += 1; } var v = 1.5; f(v); reflect::type_of(v) + \":\" + to_string(v)", "float:3.0", "an int stored through float& into a var");
             check_both("class Cnt { int n = 0; function operator=(int x) { n = x * 10; } } function f(Cnt& c) { c = 3; } var c = Cnt(); f(c); to_string(c.n)", "30", "a class's operator=");
-            check_both("function f(var& p) { p = 2.5; } function g(auto& p) { p = \"s\"; } var v = 1; f(v); var w = 1; g(w); type_of(v) + \",\" + type_of(w)", "float,string", "var& and auto& keep the var");
-            check_both("function g(var& q) { q = false; } function f(int& p) { g(p); } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:0", "passed on to a var& parameter");
-            check_both("class K { void set(int& p) { p = false; } } var v = 1; K().set(v); type_of(v) + \":\" + to_string(v)", "int:0", "a method's parameter");
+            check_both("function f(var& p) { p = 2.5; } function g(auto& p) { p = \"s\"; } var v = 1; f(v); var w = 1; g(w); reflect::type_of(v) + \",\" + reflect::type_of(w)", "float,string", "var& and auto& keep the var");
+            check_both("function g(var& q) { q = false; } function f(int& p) { g(p); } var v = 1; f(v); reflect::type_of(v) + \":\" + to_string(v)", "int:0", "passed on to a var& parameter");
+            check_both("class K { void set(int& p) { p = false; } } var v = 1; K().set(v); reflect::type_of(v) + \":\" + to_string(v)", "int:0", "a method's parameter");
             check_both("function f(int& p) { p = p + 1; } function h() -> int { int n = 1; f(n); f(n); return n; } to_string(h())", "3", "a typed local argument");
-            check_both("function f(int& p) { p = false; } function h() -> string { var w = 1; f(w); return type_of(w) + to_string(w); } h()", "int0", "a var local argument");
-            check_both("function f(int& p) { var g = [&]() { p = false; }; g(); } var v = 1; f(v); type_of(v) + \":\" + to_string(v)", "int:0", "captured by reference");
+            check_both("function f(int& p) { p = false; } function h() -> string { var w = 1; f(w); return reflect::type_of(w) + to_string(w); } h()", "int0", "a var local argument");
+            check_both("function f(int& p) { var g = [&]() { p = false; }; g(); } var v = 1; f(v); reflect::type_of(v) + \":\" + to_string(v)", "int:0", "captured by reference");
         });
 
         test("typed_field_set_field_cpp_api", [this]() {
@@ -1643,13 +1643,13 @@ public:
                 p.hp = 42; p.speed = 1.5; p.name = "hero";
                 var j = to_json(p);
                 var q = from_json(j);
-                type_of(q.hp) + ":" + to_string(q.hp) + "|" + type_of(q.speed) + ":" + to_string(q.speed) + "|" + q.name
+                reflect::type_of(q.hp) + ":" + to_string(q.hp) + "|" + reflect::type_of(q.speed) + ":" + to_string(q.speed) + "|" + q.name
             )", "int:42|float:1.5|hero", "JSON math::round-trip preserves typed fields");
             // A float JSON payload into an int field converts on the way in
             check_both(R"(
                 class P { int hp = 0; }
                 var q = from_json("{\"$type\": \"P\", \"$val\": {\"hp\": 7.9}}");
-                type_of(q.hp) + ":" + to_string(q.hp)
+                reflect::type_of(q.hp) + ":" + to_string(q.hp)
             )", "int:7", "JSON float into int field truncates");
         });
 
@@ -1662,7 +1662,7 @@ public:
                     var f = 1.25;
                     var c = "";
                     try { for (int i = 0; i < 4; ++i) { x += f * 2.0; } } catch (e) { c = e; }
-                    return c + "|" + type_of(x) + ":" + to_string(x);
+                    return c + "|" + reflect::type_of(x) + ":" + to_string(x);
                 }
                 h()
             )", "Cannot assign float to 'x' (declared int)|int:0", "fused mixed bails and refuses");
@@ -1671,7 +1671,7 @@ public:
                     float x = 0;
                     var f = 2;
                     for (int i = 0; i < 4; ++i) { x += f * 2; }
-                    return type_of(x) + ":" + to_string(x);
+                    return reflect::type_of(x) + ":" + to_string(x);
                 }
                 h()
             )", "float:16.0", "fused mixed bails and converts");
@@ -1701,18 +1701,18 @@ public:
             auto [i2, v2] = both("var a = [1, \"s\", 3]; array<int> b = a; b.size()");
             check_eq(i2, v2, "mixed-into-array<int> parity");
             check(i2.find("ERROR") == 0, "mixed elements into array<int> raises");
-            check_both("var a = [1, 2]; array<float> b = a; type_of(b[0]) + \":\" + to_string(b[0])",
+            check_both("var a = [1, 2]; array<float> b = a; reflect::type_of(b[0]) + \":\" + to_string(b[0])",
                        "float:1.0", "int elements widen into array<float>");
-            check_both("var a = [1]; array<float> b = a; type_of(a[0]) + \":\" + to_string(a[0])",
+            check_both("var a = [1]; array<float> b = a; reflect::type_of(a[0]) + \":\" + to_string(a[0])",
                        "int:1", "source unchanged after converting decl");
         });
 
         test("typed_array_literal_init_converts_elements", [this, check_both]() {
             // decl contract (see visit_variable_decl): typed decls convert their
             // initializer exactly like assignment — element payloads included
-            check_both("array<float> a = [1, 2, 3]; type_of(a[0]) + \":\" + to_string(a[0])",
+            check_both("array<float> a = [1, 2, 3]; reflect::type_of(a[0]) + \":\" + to_string(a[0])",
                        "float:1.0", "literal ints become float payloads");
-            check_both("array<int> a = [true, 2]; type_of(a[0]) + \":\" + to_string(a[0])",
+            check_both("array<int> a = [true, 2]; reflect::type_of(a[0]) + \":\" + to_string(a[0])",
                        "int:1", "literal bool becomes an int payload");
         });
 
@@ -1720,7 +1720,7 @@ public:
             auto [i1, v1] = both("array<int> b = [1]; var a = [\"s\"]; b = a; b[0]");
             check_eq(i1, v1, "assign parity");
             check(i1.find("ERROR") == 0, "assigning string array into array<int> raises");
-            check_both("array<float> b = [1.5]; var a = [2]; b = a; type_of(b[0]) + \":\" + to_string(b[0])", "float:2.0", "assign converts");
+            check_both("array<float> b = [1.5]; var a = [2]; b = a; reflect::type_of(b[0]) + \":\" + to_string(b[0])", "float:2.0", "assign converts");
         });
 
         test("typed_array_field_validates_elements", [this, both, check_both]() {
@@ -1731,7 +1731,7 @@ public:
             auto [i2, v2] = both("class C { array<int> f = []; } auto c = C(); var a = [1, 2]; c.f = a; c.f.push(\"s\"); c.f.size()");
             check_eq(i2, v2, "field push-after-store parity");
             check(i2.find("ERROR") == 0, "push string into stored array<int> field raises");
-            check_both("class C { array<float> f = []; } auto c = C(); var a = [2]; c.f = a; type_of(c.f[0]) + \":\" + to_string(c.f[0])", "float:2.0", "field store converts");
+            check_both("class C { array<float> f = []; } auto c = C(); var a = [2]; c.f = a; reflect::type_of(c.f[0]) + \":\" + to_string(c.f[0])", "float:2.0", "field store converts");
             check_both("class C { array<int> f = []; } auto c = C(); var a = [2.5]; var r = \"\"; try { c.f = a; } catch (e) { r = e; } r + \"|\" + to_string(c.f.size())", "Cannot assign array to field 'f' of C (declared array<int>)|0", "a float element is refused, the field untouched");
         });
 
@@ -1739,7 +1739,7 @@ public:
             auto [i1, v1] = both("var m = {\"k\": \"s\"}; map<string, int> t = m; t.size()");
             check_eq(i1, v1, "map parity");
             check(i1.find("ERROR") == 0, "string values into map<string,int> raises");
-            check_both("var m = {\"k\": 2}; map<string, float> t = m; type_of(t[\"k\"]) + \":\" + to_string(t[\"k\"])", "float:2.0", "map value converts");
+            check_both("var m = {\"k\": 2}; map<string, float> t = m; reflect::type_of(t[\"k\"]) + \":\" + to_string(t[\"k\"])", "float:2.0", "map value converts");
         });
 
         test("typed_array_var_ref_keeps_enforcement", [this, both]() {
@@ -1796,18 +1796,18 @@ public:
             check_quad(q("array<K> ks = [K(1), K(2)]; for (auto& k : ks) { k.a = k.a * 10; } to_string(ks[0].a + ks[1].a)").c_str(), "30", "range-for by reference writes through");
             check_quad(q("array<K> ks = [K(1), K(2)]; ks.reverse(); to_string(ks[0].a)").c_str(), "2", "reverse");
             check_quad(q("array<K> ks = [K(1), K(2)]; ks[1].f()").c_str(), "k2", "method call on an element");
-            check_quad(q("array<K> ks = [K(1)]; type_of(ks) + \"|\" + type_of(ks[0])").c_str(), "array|K", "type_of");
+            check_quad(q("array<K> ks = [K(1)]; reflect::type_of(ks) + \"|\" + reflect::type_of(ks[0])").c_str(), "array|K", "reflect::type_of");
             check_quad(q("array<K> ks = [K(1), K(2)]; to_json(ks)").c_str(), "[{\"$type\":\"K\",\"$val\":{\"a\":1}},{\"$type\":\"K\",\"$val\":{\"a\":2}}]", "json");
             check_quad(q("array<K> a = [K(1)]; array<K> b = a; array<K> c = [K(2)]; to_string(a == b) + \",\" + to_string(a == c) + \",\" + to_string(same_object(a, b))").c_str(), "true,false,false", "equality is memberwise (a copy equals its source, identity via same_object)");
-            check_quad(q("shared_ptr<K> sp = K(7); array<K> ks = [sp]; sp.a = 8; to_string(ks[0].a) + \"|\" + type_of(ks[0])").c_str(), "7|K", "a handle stored into a class element copies its instance");
-            check_quad(q("shared_ptr<K> sp = K(7); array<shared_ptr<K>> ks = [sp]; auto c = ks; c[0].a = 9; to_string(ks[0].a) + \",\" + to_string(sp.a)").c_str(), "9,9", "copying an array keeps a shared element shared (C++ copy semantics)");
+            check_quad(q("shared_ptr<K> sp = make_shared<K>(7); array<K> ks = [sp]; sp.a = 8; to_string(ks[0].a) + \"|\" + reflect::type_of(ks[0])").c_str(), "7|K", "a handle stored into a class element copies its instance");
+            check_quad(q("shared_ptr<K> sp = make_shared<K>(7); array<shared_ptr<K>> ks = [sp]; auto c = ks; c[0].a = 9; to_string(ks[0].a) + \",\" + to_string(sp.a)").c_str(), "9,9", "copying an array keeps a shared element shared (C++ copy semantics)");
             check_quad(q("array<K> ks = [K(1), K(2), K(3)]; to_string(array::filter(ks, [](K k) { return k.a > 1; }).size())").c_str(), "2", "filter");
             check_quad(q("array<K> ks = [K(1)]; ks.clear(); ks.push(K(4)); to_string(ks.size()) + \":\" + to_string(ks[0].a)").c_str(), "1:4", "clear then push");
-            check_quad(q("array<K> ks = [K(1)]; var v = ks; string r = \"\"; try { v.push(5); } catch (e) { r = e; } v.push(K(2)); v = 5; r + \"|\" + type_of(v)").c_str(), "Cannot push 'int' to array<K>|int", "a var copy keeps array<K>, the var stays a var");
+            check_quad(q("array<K> ks = [K(1)]; var v = ks; string r = \"\"; try { v.push(5); } catch (e) { r = e; } v.push(K(2)); v = 5; r + \"|\" + reflect::type_of(v)").c_str(), "Cannot push 'int' to array<K>|int", "a var copy keeps array<K>, the var stays a var");
             check_quad(q("var v = [K(1), K(2)]; array<K> ks = v; v[0].a = 50; to_string(ks[0].a) + \",\" + to_string(ks.size())").c_str(), "1,2", "array<K> from a dynamic array copies");
             check_quad(q("function total(array<K> xs) -> int { int s = 0; for (auto x : xs) { s += x.a; } xs[0].a = 100; return s; } array<K> ks = [K(1), K(2)]; to_string(total(ks)) + \",\" + to_string(ks[0].a)").c_str(), "3,1", "by-value parameter");
             check_quad(q("function bump(array<K>& xs) { xs[0].a = 100; xs.push(K(9)); } array<K> ks = [K(1)]; bump(ks); to_string(ks[0].a) + \",\" + to_string(ks.size())").c_str(), "100,2", "by-reference parameter");
-            check_quad(q("function mk() -> array<K> { array<K> r = [K(3), K(4)]; return r; } auto got = mk(); to_string(got[1].a) + \"|\" + type_of(got)").c_str(), "4|array", "returned array");
+            check_quad(q("function mk() -> array<K> { array<K> r = [K(3), K(4)]; return r; } auto got = mk(); to_string(got[1].a) + \"|\" + reflect::type_of(got)").c_str(), "4|array", "returned array");
             check_quad(q("array<array<K>> grid = [[K(1)], [K(2), K(3)]]; to_string(grid[1][1].a)").c_str(), "3", "nested arrays stay dynamic outside");
             check_quad(q("array<K> ks = []; ks.push(K(2)); to_string(ks.size()) + \":\" + to_string(ks[0].a)").c_str(), "1:2", "empty then push");
             check_quad(q("coroutine int walk(array<K> xs) { for (auto x : xs) { yield x.a; } return 0; } array<K> ks = [K(5), K(6)]; auto h = walk(ks); to_string(h.next()) + \",\" + to_string(h.next())").c_str(), "5,6", "coroutine over an object buffer");
@@ -1820,11 +1820,11 @@ public:
         });
 
         test("type_of_names_the_held_class_through_casts", [check_quad]() {
-            // type_of answers what reflect::type_name answers - the INSTANCE's class, never
+            // reflect::type_of answers what reflect::type_name answers - the INSTANCE's class, never
             // the value tag. cast<Base>(d) copies rather than slices, so all four spellings
             // still hold a Derived.
-            check_quad("class Base { int a = 1; } class Derived : Base { int b = 2; } Derived d = Derived(); auto v = cast<Base>(d); "
-                       "type_of(v) + \",\" + type_of(cast<Base&>(d)) + \",\" + type_of(cast<shared_ptr<Base>>(d)) + \",\" + type_of(d)",
+            check_quad("class Base { int a = 1; } class Derived : Base { int b = 2; } Derived d = Derived(); shared_ptr<Derived> sd = new Derived(); auto v = cast<Base>(d); "
+                       "reflect::type_of(v) + \",\" + reflect::type_of(cast<Base&>(d)) + \",\" + reflect::type_of(cast<shared_ptr<Base>>(sd)) + \",\" + reflect::type_of(d)",
                        "Derived,Derived,Derived,Derived", "value / reference / handle casts and the variable");
         });
 
@@ -1833,10 +1833,10 @@ public:
             // must keep them
             // byte-identical, and the two EDGE rows are undecided, not behaviour to copy
             check_quad("var m = {\"a\": 1, \"b\": 2}; to_string(m[\"a\"] + m[\"b\"]) + \",\" + to_string(m.size())", "3,2", "literal read + size");
-            check_quad("map<string,int> m = {\"a\": 1, \"b\": 2}; to_string(m[\"b\"]) + \"|\" + type_of(m)", "2|map", "typed declaration");
+            check_quad("map<string,int> m = {\"a\": 1, \"b\": 2}; to_string(m[\"b\"]) + \"|\" + reflect::type_of(m)", "2|map", "typed declaration");
             check_quad("map<int,string> m = {3: \"c\", 1: \"a\", 2: \"b\"}; string s = \"\"; for (auto kv : m) { s += kv.second; } s", "abc", "int keys iterate in key order");
             check_quad("var m = {\"zeta\": 1, \"alpha\": 2, \"mid\": 3}; string s = \"\"; for (auto kv : m) { s += kv.first + \",\"; } s", "alpha,mid,zeta,", "string keys iterate in byte order");
-            check_quad("var m = {2: \"i\", \"x\": \"s\", 1.5: \"f\", true: \"b\"}; string s = \"\"; for (auto kv : m) { s += type_of(kv.first) + \",\"; } s", "int,float,string,bool,", "mixed keys order by type rank");
+            check_quad("var m = {2: \"i\", \"x\": \"s\", 1.5: \"f\", true: \"b\"}; string s = \"\"; for (auto kv : m) { s += reflect::type_of(kv.first) + \",\"; } s", "int,float,string,bool,", "mixed keys order by type rank");
             check_quad("map<string,int> m = {}; m[\"k\"] = 5; m[\"k\"] = m[\"k\"] + 1; to_string(m[\"k\"]) + \",\" + to_string(m.size())", "6,1", "store and re-store");
             check_quad("map<string,int> m = {\"a\": 1}; string r = \"\"; try { int x = m[\"nope\"]; } catch (e) { r = e; } r + \",\" + to_string(m.size())", "Key \"nope\" not found in map,1", "a missing key raises, no auto-insert");
             check_quad("map<string,int> m = {\"a\": 1}; to_string(m.contains(\"a\")) + \",\" + to_string(m.contains(\"b\"))", "true,false", "contains");
@@ -1854,7 +1854,7 @@ public:
             check_quad("map<string,int> m = {}; to_string(m.size()) + \",\" + to_string(m.empty())", "0,true", "empty");
             check_quad("function total(map<string,int> mm) -> int { int s = 0; for (auto kv : mm) { s += kv.second; } [[warn_mode]] mm[\"z\"] = 100; return s; } map<string,int> m = {\"a\": 1, \"b\": 2}; to_string(total(m)) + \",\" + to_string(m.size())", "3,2", "by-value parameter");
             check_quad("function grow(map<string,int>& mm) { mm[\"z\"] = 100; } map<string,int> m = {\"a\": 1}; grow(m); to_string(m.size()) + \",\" + to_string(m[\"z\"])", "2,100", "by-reference parameter");
-			check_quad("map<string,int> m = {\"a\": 1}; var v = m; bool rejected = false; try { v[5] = 2; } catch (e) { rejected = true; } string before = to_string(rejected) + \",\" + to_string(v.size()) + \",\" + type_of(v); v = 7; before + \"|\" + to_string(v)", "true,1,map|7", "var map keeps content constraints but permits rebinding");
+			check_quad("map<string,int> m = {\"a\": 1}; var v = m; bool rejected = false; try { v[5] = 2; } catch (e) { rejected = true; } string before = to_string(rejected) + \",\" + to_string(v.size()) + \",\" + reflect::type_of(v); v = 7; before + \"|\" + to_string(v)", "true,1,map|7", "var map keeps content constraints but permits rebinding");
             check_quad("var v = {\"a\": 1, \"b\": 2}; map<string,int> m = v; v[\"a\"] = 50; to_string(m[\"a\"]) + \",\" + to_string(m.size())", "1,2", "typed map from a dynamic map copies");
             check_quad("map<string,int> a = {\"x\": 1}; map<string,int> b = a; to_string(a == b) + \",\" + to_string(same_object(a, b))", "true,false", "equality is memberwise (a copy equals its source, identity via same_object)");
             check_quad("map<string,int> m = {\"px\": 3}; int acc = 0; for (int i = 0; i < 1000; i++) { acc += m[\"px\"]; } to_string(acc)", "3000", "constant-key reads");
@@ -2039,7 +2039,7 @@ public:
             check_quad(q("o.setVar(\"anything\") + \" \" + o.setVar([1,2,3]) + \" \" + o.dump()").c_str(), "ok ok 1|1.5|a|false|10|[1, 2, 3]|2|1|true", "var field takes anything");
             check_quad(q("o.setArr([4,5,6]) + \" \" + o.setArr([\"a\"]) + \" \" + o.setArr(7) + \" \" + o.dump()").c_str(), "ok Cannot assign array to field 'arr' of F (declared array<int>) Cannot assign int to field 'arr' of F (declared array<int>) 1|1.5|a|false|10|0|3|1|true", "typed array field: typed array ok, wrong element type and scalar raise");
             check_quad(q("auto o2 = O(); string r1 = o.setOther(o2); o2.i = 99; r1 + \" \" + to_string(o.other.i) + \" \" + o.setOther(5) + \" \" + o.setOther(null)").c_str(), "ok 1 Cannot assign int to field 'other' of F (declared O) Cannot assign null to field 'other' of F (declared O)", "object field: by-value copy, scalar and null raise");
-            check_quad(q("o.setSp(shared_ptr<F>()) + \" \" + o.setSp(F()) + \" \" + o.setSp(3) + \" \" + o.dump()").c_str(), "ok ok Cannot assign int to field 'sp' of F (declared shared_ptr<F>) 1|1.5|a|false|10|0|2|1|false", "shared_ptr field: handle, value, scalar");
+            check_quad(q("o.setSp(shared_ptr<F>()) + \" \" + o.setSp(F()) + \" \" + o.setSp(3) + \" \" + o.dump()").c_str(), "ok A F value does not become a handle: make_shared<F>(value) copies it into a new one Cannot assign int to field 'sp' of F (declared shared_ptr<F>) 1|1.5|a|false|10|0|2|1|false", "shared_ptr field: handle, value, scalar");
             check_quad(q("to_string(o.loopStore(1000)) + \" \" + o.dump()").c_str(), "999 999|999.0|a|false|10|0|2|1|true", "1000 stores at one site (the cached lane)");
             check_quad(q("to_string(o.chainStore()) + \",\" + to_string(o.storeResult()) + \",\" + to_string(o.storeResultConv()) + \",\" + to_string(o.i)").c_str(), "8,42,1.0,1", "store as expression: value is the stored (converted) value");
             check_quad(q("o.setStatic(9) + \" \" + o.setStatic(\"bad\") + \" \" + to_string(F::st)").c_str(), "ok Cannot assign string to static 'st' of F (declared int) 9", "static field stores enforce like instance fields (not the this-field lane)");
@@ -2096,7 +2096,7 @@ public:
             check_quad(q("C::setS(6) + \" \" + C::setS(3.9) + \" \" + C::setS(\"x\") + \" \" + to_string(C::i)").c_str(), "ok Cannot assign float to static 'i' of C (declared int) Cannot assign string to static 'i' of C (declared int) 6", "bare static in a static method");
             check_quad(q("C(7); string r = \"ok\"; try { C(\"x\"); } catch (err) { r = err; } r + \" \" + to_string(C::i)").c_str(), "Cannot assign string to static 'i' of C (declared int) 7", "bare static in a constructor");
             check_quad(q("auto lam = [](var val) { string r = \"ok\"; try { C::i = val; } catch (err) { r = err; } return r; }; lam(\"x\") + \" \" + lam(3) + \" \" + to_string(C::i)").c_str(), "Cannot assign string to static 'i' of C (declared int) ok 3", "C::i inside a lambda");
-            check_quad(q("var vv = true; C::i = vv; to_string(C::i) + \"|\" + type_of(C::i)").c_str(), "1|int", "C::i at top level keeps the declared type");
+            check_quad(q("var vv = true; C::i = vv; to_string(C::i) + \"|\" + reflect::type_of(C::i)").c_str(), "1|int", "C::i at top level keeps the declared type");
             check_quad(q("setF(2) + \" \" + setF(\"q\") + \" \" + o.dump()").c_str(), "ok Cannot assign string to static 'f' of C (declared float) 1|2.0|a|false|10|0|2|0|true|true", "float static: int promotes, string raises");
             check_quad(q("setStr(12) + \" \" + setStr(null) + \" \" + setStr(C()) + \" \" + o.dump()").c_str(), "Cannot assign int to static 's' of C (declared string) Cannot assign null to static 's' of C (declared string) Cannot assign C to static 's' of C (declared string) 1|1.5|a|false|10|0|2|0|true|true", "a string static takes text only (the instance-field row)");
             check_quad(q("setB(1) + \" \" + o.dump()").c_str(), "ok 1|1.5|a|true|10|0|2|0|true|true", "bool static: int converts");
@@ -2104,7 +2104,7 @@ public:
             check_quad(q("setV(\"anything\") + \" \" + setV([1, 2, 3]) + \" \" + o.dump()").c_str(), "ok ok 1|1.5|a|false|10|[1, 2, 3]|2|0|true|true", "var static takes anything");
             check_quad(q("setArr([4, 5, 6]) + \" \" + setArr([\"a\"]) + \" \" + setArr(7) + \" \" + o.dump()").c_str(), "ok Cannot assign array to static 'arr' of C (declared array<int>) Cannot assign int to static 'arr' of C (declared array<int>) 1|1.5|a|false|10|0|3|0|true|true", "array<int> static: typed array ok, wrong element type and scalar raise");
             check_quad(q("auto o2 = O(); string r1 = setOther(o2); o2.x = 99; r1 + \" \" + to_string(C::other.x) + \" \" + setOther(5) + \" \" + to_string(C::other.x) + \" \" + setOther(null)").c_str(), "ok 0 ok 7 Cannot assign null to static 'other' of C (declared O)", "object static: by-value copy, a scalar converts through O(var), null raises");
-            check_quad(q("setSp(shared_ptr<C>()) + \" \" + setSp(C()) + \" \" + setSp(3) + \" \" + o.dump()").c_str(), "ok ok Cannot assign int to static 'sp' of C (declared shared_ptr<C>) 1|1.5|a|false|10|0|2|0|false|true", "shared_ptr static: handle, value, scalar");
+            check_quad(q("setSp(shared_ptr<C>()) + \" \" + setSp(C()) + \" \" + setSp(3) + \" \" + o.dump()").c_str(), "ok A C value does not become a handle: make_shared<C>(value) copies it into a new one Cannot assign int to static 'sp' of C (declared shared_ptr<C>) 1|1.5|a|false|10|0|2|0|false|true", "shared_ptr static: handle, value, scalar");
             check_quad(q("auto keep = shared_ptr<C>(); setW(keep) + \" \" + setW(C()) + \" \" + o.dump()").c_str(), "ok Cannot assign C to static 'w' of C (declared weak_ptr<C>) 1|1.5|a|false|10|0|2|0|true|false", "weak_ptr static: the instance-field rows (a shared handle downgrades, a value raises)");
             check_quad("class P { int v = 1; } class S { static shared_ptr<P> p; } auto h = shared_ptr<P>(); S::p = h; h.v = 5; to_string(S::p.v)", "5", "shared_ptr static shares the handle on both backends");
             check_quad(q("int r = (C::i = 42); to_string(r)").c_str(), "42", "store as expression");
@@ -2119,10 +2119,10 @@ public:
             check_quad(q("C::i += 1; to_string(C::i)").c_str(), "2", "+=");
             check_quad(q("C::i -= 1; to_string(C::i)").c_str(), "0", "-=");
             check_quad(q("C::i *= 2; to_string(C::i)").c_str(), "2", "*=");
-            check_quad(q("C::i = 8; C::i /= 2; to_string(C::i) + \"|\" + type_of(C::i)").c_str(), "4|int", "/= converts back to the declared int");
+            check_quad(q("C::i = 8; C::i /= 2; to_string(C::i) + \"|\" + reflect::type_of(C::i)").c_str(), "4|int", "/= converts back to the declared int");
             check_quad(q("C::i = 7; C::i %= 3; to_string(C::i)").c_str(), "1", "%=");
-            check_quad(q("string r = \"ok\"; try { C::i += L(1.5); } catch (err) { r = err; } r + \" \" + to_string(C::i) + \"|\" + type_of(C::i)").c_str(), "Cannot assign float to static 'i' of C (declared int) 1|int", "int static += float raises, static untouched");
-            check_quad(q("C::v += 1.5; to_string(C::v) + \"|\" + type_of(C::v)").c_str(), "2.5|float", "var static += float becomes float");
+            check_quad(q("string r = \"ok\"; try { C::i += L(1.5); } catch (err) { r = err; } r + \" \" + to_string(C::i) + \"|\" + reflect::type_of(C::i)").c_str(), "Cannot assign float to static 'i' of C (declared int) 1|int", "int static += float raises, static untouched");
+            check_quad(q("C::v += 1.5; to_string(C::v) + \"|\" + reflect::type_of(C::v)").c_str(), "2.5|float", "var static += float becomes float");
             check_quad(q("C::f *= 2; to_string(C::f)").c_str(), "3.0", "float static *=");
             check_quad(q("C::s += \"b\"; C::s").c_str(), "ab", "string static concat");
             check_quad(q("auto old = C::i++; to_string(old) + \",\" + to_string(C::i)").c_str(), "1,2", "postfix ++ yields the old value");
@@ -2144,8 +2144,8 @@ public:
         test("static_definition_typing", [check_quad, check_quad_error, check_quad_error_text]() {
             // A static's declared type is recorded at definition and its initializer converts
             // through the field table; a missing initializer is a readable typed null
-            check_quad("class C { static float f = 3; } type_of(C::f) + \" \" + to_string(C::f)", "float 3.0", "static float from an int initializer");
-            check_quad("class C { static int n = true; } to_string(C::n) + \"|\" + type_of(C::n)", "1|int", "static int from a bool initializer");
+            check_quad("class C { static float f = 3; } reflect::type_of(C::f) + \" \" + to_string(C::f)", "float 3.0", "static float from an int initializer");
+            check_quad("class C { static int n = true; } to_string(C::n) + \"|\" + reflect::type_of(C::n)", "1|int", "static int from a bool initializer");
             check_quad_error("function L(var x) { return x; } class C { static int s = L(\"x\"); }", "an unconvertible static initializer raises at definition");
             check_quad_error_text("function L(var x) { return x; } class C { static int s = L(\"x\"); }", "Cannot assign string to static 's' of C (declared int)", "the definition raises the store text");
             check_quad("class C { static int s; } to_string(C::s)", "0", "a typed static without an initializer is its type's zero");
@@ -2159,9 +2159,9 @@ public:
         test("static_spellings_rejected", [check_quad_error, check_quad_runtime, check_quad_error_text]() {
             // `C.s` and `this.s` are not static spellings: their read and write errors stay,
             // byte-identical across backends (the write raises an error, never a bool)
-            const std::string P = "class C { static int s = 0; int q = 1; string viaThis() { string r = \"ok\"; try { this.s = 1; } catch (err) { r = type_of(err) + \":\" + to_string(err); } return r; } string readThis() { string r = \"ok\"; try { int t = this.s; } catch (err) { r = to_string(err); } return r; } } ";
+            const std::string P = "class C { static int s = 0; int q = 1; string viaThis() { string r = \"ok\"; try { this.s = 1; } catch (err) { r = reflect::type_of(err) + \":\" + to_string(err); } return r; } string readThis() { string r = \"ok\"; try { int t = this.s; } catch (err) { r = to_string(err); } return r; } } ";
             check_quad_error("class C { static int s = 0; } C.s", "dot read on a class name");
-            check_quad_runtime("class C { static int s = 0; } string r = \"\"; try { C.s = 8; } catch (err) { r = type_of(err) + \":\" + to_string(err); } r + \" \" + to_string(C::s)", "error:'C' is a class; use C::s 0", "dot store on a class name");
+            check_quad_runtime("class C { static int s = 0; } string r = \"\"; try { C.s = 8; } catch (err) { r = reflect::type_of(err) + \":\" + to_string(err); } r + \" \" + to_string(C::s)", "error:'C' is a class; use C::s 0", "dot store on a class name");
             check_quad_error("class C { static int s = 0; } C.s += 1", "dot compound on a class name");
             check_quad_error("class C { static int s = 0; } C.s++", "dot ++ on a class name");
             check_quad_runtime((P + "auto o = C(); o.viaThis() + \" \" + to_string(C::s)").c_str(), "error:Cannot assign to 's': C has no such member 0", "this.s store");
@@ -2208,7 +2208,7 @@ public:
             check_quad("map<string,auto> m = {\"a\": 1}; m[\"b\"] = 2; to_string(m[\"b\"])", "2", "map<K,auto> infers an int value");
             check_quad("auto m = {\"a\": 1, \"b\": 2}; m[\"c\"] = 3; to_string(m.size())", "3", "auto with a uniform map literal infers map<string,int>");
             check_quad("map<auto,auto> m = {1.5: \"x\"}; m[2.5] = \"y\"; to_string(m.size())", "2", "both slots infer");
-            check_quad("map<auto,int> m = {5: 1}; type_of(m)", "map", "the inferred map is still a map");
+            check_quad("map<auto,int> m = {5: 1}; reflect::type_of(m)", "map", "the inferred map is still a map");
             check_quad_error("map<auto,int> m = {5: 1}; m[\"x\"] = 1", "an inferred int key rejects a string key");
             check_quad_error("map<auto,int> m = {5: 1, \"hi\": 1}", "mixed keys under an auto key slot raise");
             check_quad_error("map<string,auto> m = {\"a\": 1}; m[\"b\"] = \"s\"", "an inferred int value rejects a string value");
@@ -2223,7 +2223,7 @@ public:
 			// slot keeps its own class tag; whole-array conversions prove the source class once
 			check_quad("[[warn_mode]] class B { int a = 1; } class D : B { int b = 2; } array<B> arr = [B(), D()]; to_string(arr.size()) + \",\" + to_string(arr[1].b)", "2,2", "a subclass element keeps its own class (per-slot tag): its fields stay reachable");
 			check_quad("[[warn_mode]] class B { int a = 1; } class D : B { int b = 2; } array<B> arr = [B()]; arr.push(D()); to_string(arr.size()) + \",\" + to_string(arr[1].a)", "2,1", "push of a subclass into array<Base>");
-			check_quad("[[warn_mode]] class B { int a = 1; } class D : B { int b = 2; } array<B> arr = [B()]; D d = D(); d.a = 5; arr[0] = d; to_string(arr[0].a) + type_of(arr[0]) + to_string(arr[0].b)", "5D2", "store of a subclass over an element takes the subclass in place (no slicing)");
+			check_quad("[[warn_mode]] class B { int a = 1; } class D : B { int b = 2; } array<B> arr = [B()]; D d = D(); d.a = 5; arr[0] = d; to_string(arr[0].a) + reflect::type_of(arr[0]) + to_string(arr[0].b)", "5D2", "store of a subclass over an element takes the subclass in place (no slicing)");
 			check_quad("[[warn_mode]] class B { int a = 1; } class D : B { int b = 2; } class E : D { int c = 3; } array<B> deep = [E()]; to_string(deep[0].c)", "3", "two inheritance levels");
 			check_quad("[[warn_mode]] class B { int a = 1; } class D : B { int b = 2; } array<D> ds = [D()]; array<B> bs = ds; bs[0].a = 9; to_string(ds[0].a) + \",\" + to_string(bs[0].a)", "1,9", "array<Derived> into array<Base> is a copy (value semantics)");
 			check_quad("[[warn_mode]] class B { int a = 1; } class D : B { int b = 2; } array<B> bs = [D(), D()]; array<D> back = bs; to_string(back.size()) + \",\" + to_string(back[1].b)", "2,2", "array<Base> whose elements are all Derived converts to array<Derived>");
@@ -2249,9 +2249,9 @@ public:
         test("typed_storage_reads_and_stores", [check_quad, check_quad_error]() {
             check_quad("array<int> a = [1,2,3]; `${to_string(a[0])},${to_string(a[2])}`", "1,3", "reads");
             check_quad("array<int> a = [1,2,3]; a[1] = 9; to_string(a[1])", "9", "store");
-            check_quad("array<int> a = [1]; a[0] = true; `${type_of(a[0])}:${to_string(a[0])}`", "int:1", "store converts");
-            check_quad("array<float> a = [1.5]; a[0] = 2; `${type_of(a[0])}:${to_string(a[0])}`", "float:2.0", "float store widens");
-            check_quad("array<float> a = [10]; a[0] += 2; `${type_of(a[0])}:${to_string(a[0])}`", "float:12.0", "compound converts");
+            check_quad("array<int> a = [1]; a[0] = true; `${reflect::type_of(a[0])}:${to_string(a[0])}`", "int:1", "store converts");
+            check_quad("array<float> a = [1.5]; a[0] = 2; `${reflect::type_of(a[0])}:${to_string(a[0])}`", "float:2.0", "float store widens");
+            check_quad("array<float> a = [10]; a[0] += 2; `${reflect::type_of(a[0])}:${to_string(a[0])}`", "float:12.0", "compound converts");
             check_quad("array<int> a = [10]; a[0] %= 4; to_string(a[0])", "2", "compound modulo");
             // byte kinds (bool/char buffers): reads, stores, push, sort, reverse, copies, json
             check_quad("array<bool> f = [true, false, true]; f[1] = true; to_string(f[0]) + to_string(f[1]) + to_string(f.size())", "truetrue3", "bool buffer store/read");
@@ -2313,7 +2313,7 @@ public:
             };
             auto caught = [](const std::string& body) { return "var out = \"none\"; try { " + body + "; } catch (e) { out = e; } out"; };
 
-            expect("array<uint8> b = [0, 1, 255]; to_string(b[0]) + \",\" + to_string(b[2]) + \",\" + type_of(b[2]) + \",\" + to_string(b.size())", "0,255,int,3", "uint8 reads are ints");
+            expect("array<uint8> b = [0, 1, 255]; to_string(b[0]) + \",\" + to_string(b[2]) + \",\" + reflect::type_of(b[2]) + \",\" + to_string(b.size())", "0,255,int,3", "uint8 reads are ints");
             expect("array<int8> b = [-128, 127]; to_string(b[0]) + \",\" + to_string(b[1]) + \",\" + to_string(b[0] + b[1])", "-128,127,-1", "int8 reads are signed ints");
             expect("array<uint8> b = [0]; b[0] = 200; int i = 0; b[i] = 201; to_json(b)", "[201]", "a store inside the range");
             expect(caught("array<uint8> b = [0]; int v = 256; b[0] = v"), "Cannot store 256 in array<uint8> (0..255)", "a store above the range");
@@ -2392,7 +2392,7 @@ public:
                 check_eq(std::string("Cannot store 300 in array<uint8> (0..255) [1]"),
                          h->execute("array<uint8> b = [1]; var out = \"none\"; try { host_push(b, 300); } catch (e) { out = e; } out + \" \" + to_json(b)").to_string(),
                          std::string("a bound_array write keeps the byte range") + tag);
-                check_eq(std::string("[1,2,255] int"), h->execute("var b = host_bytes(); to_json(b) + \" \" + type_of(b[2])").to_string(), std::string("a std::vector<uint8_t> result") + tag);
+                check_eq(std::string("[1,2,255] int"), h->execute("var b = host_bytes(); to_json(b) + \" \" + reflect::type_of(b[2])").to_string(), std::string("a std::vector<uint8_t> result") + tag);
                 check(h->execute("host_bytes()").unchecked_array_node()->kind() == jai::script_array::kind_t::u8, std::string("a std::vector<uint8_t> result is an array<uint8>") + tag);
             }
         });
@@ -2406,7 +2406,7 @@ public:
         });
 
         test("typed_storage_builtins", [check_quad]() {
-            check_quad("array<float> f = []; f.push(1); f.push(2.5); to_string(f.size()) + type_of(f[0]) + to_string(f.back())",
+            check_quad("array<float> f = []; f.push(1); f.push(2.5); to_string(f.size()) + reflect::type_of(f[0]) + to_string(f.back())",
                        "2float2.5", "push/size/back");
             check_quad("array<int> a = [3,1,2]; a.sort(); to_string(a[0]) + to_string(a[1]) + to_string(a[2])", "123", "default sort");
             check_quad("array<int> a = [3,1,2]; a.sort([](auto x, auto y) -> auto { return x > y; }); to_string(a[0]) + to_string(a[2])", "31", "comparator sort");
@@ -2425,14 +2425,14 @@ public:
             check_quad("array<int> a = [1,2,3]; var s = 0; for (auto x : a) { s += x; } to_string(s)", "6", "range-for copy");
             check_quad("array<int> a = [1,2,3]; for (auto& x : a) { x *= 2; } to_string(a[0]) + to_string(a[2])", "26", "range-for ref mutates");
             check_quad("array<int> a = [5]; var& r = a[0]; r = 9; to_string(a[0])", "9", "var& element write");
-            check_quad("array<float> a = [5]; var& r = a[0]; r += 2; type_of(a[0]) + \":\" + to_string(a[0])", "float:7.0", "ref compound converts");
+            check_quad("array<float> a = [5]; var& r = a[0]; r += 2; reflect::type_of(a[0]) + \":\" + to_string(a[0])", "float:7.0", "ref compound converts");
             check_quad("array<int> a = [5]; var& r = a[0]; r++; to_string(a[0]) + to_string(r)", "66", "ref increment commits");
             check_quad("array<float> a = [1.5]; var& r = a[0]; r--; to_string(a[0])", "0.5", "float ref decrement");
             check_quad(R"(
                 array<float> a = [10];
                 function f(float& r) { r += 2; }
                 f(a[0]);
-                type_of(a[0]) + ":" + to_string(a[0])
+                reflect::type_of(a[0]) + ":" + to_string(a[0])
             )", "float:12.0", "float& param through element");
             check_quad("array<int> a = [1,2]; var [x, y] = a; to_string(x) + to_string(y)", "12", "destructure");
         });
@@ -2458,18 +2458,18 @@ public:
 			// independent. Pre-fix the raw buffer survived under the array<var> tag and the
 			// first heterogeneous push wrote a script_value into it (segfault, both backends).
 			check_quad("array<int> ints = [1, 2, 3]; array<var> m = ints; m.push(\"four\"); ints.push(9); m[0] = \"zero\"; "
-					   "to_json(m) + \"|\" + to_json(ints) + \"|\" + to_string(m.size()) + \"|\" + type_of(m) + \"|\" + type_of(m[1]) + \"|\" + type_of(m[3])",
+					   "to_json(m) + \"|\" + to_json(ints) + \"|\" + to_string(m.size()) + \"|\" + reflect::type_of(m) + \"|\" + reflect::type_of(m[1]) + \"|\" + reflect::type_of(m[3])",
 					   "[\"zero\",2,3,\"four\"]|[1,2,3,9]|4|array|int|string", "int buffer -> array<var>");
-			check_quad("array<float> fs = [1.5, 2.5]; array<var> m = fs; m.push(\"x\"); to_json(m) + \"|\" + to_json(fs) + \"|\" + type_of(m[0])",
+			check_quad("array<float> fs = [1.5, 2.5]; array<var> m = fs; m.push(\"x\"); to_json(m) + \"|\" + to_json(fs) + \"|\" + reflect::type_of(m[0])",
 					   "[1.5,2.5,\"x\"]|[1.5,2.5]|float", "float buffer -> array<var>");
-			check_quad("array<bool> bs = [true, false]; array<var> m = bs; m.push(\"x\"); to_json(m) + \"|\" + to_json(bs) + \"|\" + type_of(m[0])",
+			check_quad("array<bool> bs = [true, false]; array<var> m = bs; m.push(\"x\"); to_json(m) + \"|\" + to_json(bs) + \"|\" + reflect::type_of(m[0])",
 					   "[true,false,\"x\"]|[true,false]|bool", "bool buffer -> array<var>");
-			check_quad("array<char> cs = ['a', 'b']; array<var> m = cs; m.push(\"x\"); to_json(m) + \"|\" + to_json(cs) + \"|\" + type_of(m[0])",
+			check_quad("array<char> cs = ['a', 'b']; array<var> m = cs; m.push(\"x\"); to_json(m) + \"|\" + to_json(cs) + \"|\" + reflect::type_of(m[0])",
 					   "[{\"$char\":97},{\"$char\":98},\"x\"]|[{\"$char\":97},{\"$char\":98}]|char", "char buffer -> array<var>");
-			check_quad("array<string> ss = [\"a\", \"b\"]; array<var> m = ss; m.push(5); m[0] = \"z\"; to_json(m) + \"|\" + to_json(ss) + \"|\" + type_of(m[2])",
+			check_quad("array<string> ss = [\"a\", \"b\"]; array<var> m = ss; m.push(5); m[0] = \"z\"; to_json(m) + \"|\" + to_json(ss) + \"|\" + reflect::type_of(m[2])",
 					   "[\"z\",\"b\",5]|[\"a\",\"b\"]|int", "string buffer -> array<var>");
 			check_quad("class K { int a = 1; K(int v) { a = v; } } array<K> ks = [K(1), K(2)]; array<var> m = ks; m.push(\"x\"); m[0].a = 9; "
-					   "to_string(m.size()) + \"|\" + type_of(m[0]) + \"|\" + to_string(m[0].a) + \"|\" + to_string(ks[0].a) + \"|\" + type_of(m[2])",
+					   "to_string(m.size()) + \"|\" + reflect::type_of(m[0]) + \"|\" + to_string(m[0].a) + \"|\" + to_string(ks[0].a) + \"|\" + reflect::type_of(m[2])",
 					   "3|K|9|1|string", "object buffer -> array<var> (decl copies the instances)");
 			check_quad("array<int> ints = []; array<var> m = ints; m.push(\"x\"); to_json(m) + \"|\" + to_json(ints)", "[\"x\"]|[]", "empty buffer -> array<var>");
 			// the same table at every boundary: assignment, parameter, return, field store,
@@ -2495,9 +2495,9 @@ public:
 			check_quad("array<int> ints = [1, 2, 3]; array<var> m = ints; m.push(4); array<int> back = m; back.push(5); m.push(\"s\"); to_json(back) + \"|\" + to_json(m)",
 					   "[1,2,3,4,5]|[1,2,3,4,\"s\"]", "array<var> -> array<int> rebuilds the buffer");
 			// element coercion between primitive buffers, independent both ways
-			check_quad("array<int> ints = [1, 2]; array<float> fs = ints; fs.push(3.5); ints.push(7); to_json(fs) + \"|\" + type_of(fs[0]) + \"|\" + to_json(ints)",
+			check_quad("array<int> ints = [1, 2]; array<float> fs = ints; fs.push(3.5); ints.push(7); to_json(fs) + \"|\" + reflect::type_of(fs[0]) + \"|\" + to_json(ints)",
 					   "[1.0,2.0,3.5]|float|[1,2,7]", "array<int> -> array<float>");
-			check_quad("array<int> ints = [1, 2]; array<float> fs = ints; fs.push(3.5); to_json(fs) + \"|\" + type_of(fs[0]) + \"|\" + to_json(ints)",
+			check_quad("array<int> ints = [1, 2]; array<float> fs = ints; fs.push(3.5); to_json(fs) + \"|\" + reflect::type_of(fs[0]) + \"|\" + to_json(ints)",
 					   "[1.0,2.0,3.5]|float|[1,2]", "array<int> -> array<float>");
 			// mismatches keep the documented boundary text on both backends
 			auto mixed = quad("array<var> m = [1, \"two\"]; array<int> ints = m; ints.size()");
@@ -2563,7 +2563,7 @@ public:
             check_quad("array<int> ints = [1, 2, 3]; class B { int x = 0; } class C : B { array<int> f = ints; } B b = B(); extend(b, C); b.f.push(4); to_json(ints) + \"|\" + to_json(b.f)",
                        "[1,2,3]|[1,2,3,4]", "extend() runs the same pass");
             // the field table still converts and rejects with its own text
-            check_quad("int gi = 2; class C { float f = gi; } C c = C(); type_of(c.f) + \":\" + to_string(c.f)", "float:2.0", "conversion through the field table");
+            check_quad("int gi = 2; class C { float f = gi; } C c = C(); reflect::type_of(c.f) + \":\" + to_string(c.f)", "float:2.0", "conversion through the field table");
             auto rej = quad("var gs = \"s\"; class CD { int f = gs; } CD cd = CD(); cd.f");
             check_eq(rej[0], rej[1], "rejection parity");
             check(rej[0].find("Cannot assign string to field 'f' of CD (declared int)") != std::string::npos, "rejection keeps the field-store text: " + rej[0]);
@@ -2621,7 +2621,7 @@ public:
             check(ol.unchecked_array_node()->kind() == jai::script_array::kind_t::obj, "a var copy keeps the object slot buffer");
             auto oa = e->execute("class K4 { int a = 1; } auto inferred4 = [K4(), K4()]; inferred4");
             check(oa.unchecked_array_node()->kind() == jai::script_array::kind_t::hetero, "an auto object literal stays dynamic");
-            auto os = e->execute("class K5 { int a = 1; } shared_ptr<K5> sp = K5(); array<K5> ks5 = [sp]; ks5");
+            auto os = e->execute("class K5 { int a = 1; } shared_ptr<K5> sp = make_shared<K5>(); array<K5> ks5 = [sp]; ks5");
             check(os.unchecked_array_node()->kind() == jai::script_array::kind_t::obj, "a shared_ptr-tagged element lives in the object buffer");
         });
 
@@ -2653,16 +2653,16 @@ public:
             check(stamped.unchecked_array_node()->kind() == jai::script_array::kind_t::hetero, "stamping an open-element tag demotes the node");
         });
 
-        // type_of on a shared-pointer-semantic instance must match a value instance: both name the class.
+        // reflect::type_of on a shared-pointer-semantic instance must match a value instance: both name the class.
         test("type_of_shared_and_value_instance_both_name_the_class", [this, check_both]() {
             const char* decl = "class P { int v = 0; } ";
-            check_both((std::string(decl) + "auto p = P(); type_of(p)").c_str(), "P", "value instance");
-            check_both((std::string(decl) + "var p = new P(); type_of(p)").c_str(), "P", "new P()");
-            check_both((std::string(decl) + "shared_ptr<P> p = P(); type_of(p)").c_str(), "P", "shared_ptr<P> p = P()");
-            check_both((std::string(decl) + "auto p = shared_ptr<P>(); type_of(p)").c_str(), "P", "auto p = shared_ptr<P>()");
+            check_both((std::string(decl) + "auto p = P(); reflect::type_of(p)").c_str(), "P", "value instance");
+            check_both((std::string(decl) + "var p = new P(); reflect::type_of(p)").c_str(), "P", "new P()");
+            check_both((std::string(decl) + "shared_ptr<P> p = make_shared<P>(); reflect::type_of(p)").c_str(), "P", "shared_ptr<P> p = make_shared<P>()");
+            check_both((std::string(decl) + "auto p = shared_ptr<P>(); reflect::type_of(p)").c_str(), "P", "auto p = shared_ptr<P>()");
             // value == shared, on the same class, in one program
             check_both((std::string(decl) +
-                "auto a = P(); auto b = new P(); type_of(a) + \"==\" + type_of(b)").c_str(),
+                "auto a = P(); auto b = new P(); reflect::type_of(a) + \"==\" + reflect::type_of(b)").c_str(),
                 "P==P", "value == shared");
         });
 
@@ -2717,7 +2717,7 @@ public:
 
         test("proof_battery_same_type_stores", [check_proof_run, check_proof_error, thrice, thrice_then]() {
             // per certain kind: env-global `=`, decl init, bare `f =`, `this.f =`, `o.f =`,
-            // typed and var parameters, typed return, type_of after the stores, then a
+            // typed and var parameters, typed return, reflect::type_of after the stores, then a
             // mismatching store that must take the ladder behind the (now stale) proof
             struct kind_row { const char* type; const char* a; const char* b; const char* mismatch; const char* expect; const char* expect_mismatch; };
             const kind_row rows[] = {
@@ -2737,9 +2737,9 @@ public:
                     + T + " g = " + k.a + "; g = " + k.b + ";\n"
                     + T + " fn(" + T + " v) { " + T + " local = v; local = " + k.b + "; return local; }\n"
                     "C c = C(); c.f = " + k.b + "; " + T + " r = c.set(" + k.a + "); r = c.viaArg(" + k.b + "); " + T + " q = c.pass(" + k.a + ");\n"
-                    "type_of(g) + \":\" + to_string(g) + \":\" + type_of(c.f) + \":\" + to_string(c.f) + \":\" + to_string(r) + \":\" + to_string(q) + \":\" + to_string(fn(" + k.a + "))";
+                    "reflect::type_of(g) + \":\" + to_string(g) + \":\" + reflect::type_of(c.f) + \":\" + to_string(c.f) + \":\" + to_string(r) + \":\" + to_string(q) + \":\" + to_string(fn(" + k.a + "))";
                 const std::string mismatch =
-                    "c.f = " + std::string(k.mismatch) + "; g = " + k.mismatch + "; type_of(c.f) + \":\" + to_string(c.f) + \":\" + type_of(g) + \":\" + to_string(g)";
+                    "c.f = " + std::string(k.mismatch) + "; g = " + k.mismatch + "; reflect::type_of(c.f) + \":\" + to_string(c.f) + \":\" + reflect::type_of(g) + \":\" + to_string(g)";
                 check_proof_run(thrice(unit), k.expect, T + " same-type lanes");
                 if (T == "char" || T == "string") { check_proof_error(thrice_then(unit, mismatch), "int into a proven " + T + " field/global raises"); }
                 else { check_proof_run(thrice_then(unit, mismatch), k.expect_mismatch, T + " mismatching store takes the ladder"); }
@@ -2753,11 +2753,11 @@ public:
                 "K g = K(1); g = K(2);\n"
                 "K fn(K v) { K local = v; local = K(2); return local; }\n"
                 "C c = C(); c.f = K(2); K r = c.set(K(1)); r = c.viaArg(K(2)); K q = c.pass(K(1));\n"
-                "type_of(g) + \":\" + to_string(g.n) + \":\" + type_of(c.f) + \":\" + to_string(c.f.n) + \":\" + to_string(r.n) + \":\" + to_string(q.n) + \":\" + to_string(fn(K(1)).n)";
+                "reflect::type_of(g) + \":\" + to_string(g.n) + \":\" + reflect::type_of(c.f) + \":\" + to_string(c.f.n) + \":\" + to_string(r.n) + \":\" + to_string(q.n) + \":\" + to_string(fn(K(1)).n)";
             check_proof_run(thrice(obj_unit), "K:2:K:2:2:1:2", "object same-type lanes");
             check_proof_run(thrice_then(obj_unit, "c.f = 5; g = 6; to_string(c.f.n) + \":\" + to_string(g.n)"), "", "int into an object slot takes the ctor-conversion ladder");
             check_proof_error(thrice_then(obj_unit, "class J { int m = 0; } g = J(); g.n"), "unrelated class into an object slot raises");
-            check_proof_run(thrice_then(obj_unit, "c.f = null; type_of(c.f)"), "", "null into an object field takes the ladder");
+            check_proof_run(thrice_then(obj_unit, "c.f = null; reflect::type_of(c.f)"), "", "null into an object field takes the ladder");
         });
 
         test("proof_battery_not_certain", [check_proof_run, check_proof_error, thrice_then]() {
@@ -2765,11 +2765,11 @@ public:
             // references, by-ref params, callable locals, coroutines, null, placeholders,
             // derived-into-base, handle-into-value): the ladder runs and all lanes agree
             const std::string cls = "class C { int v = 1; } class D : C { int w = 2; }\n";
-            check_proof_run({"var v = 1; v = \"s\"; v = 2.5; type_of(v) + \":\" + to_string(v)"}, "float:2.5", "var");
-            check_proof_run({"auto n; n = 3; n = 4; type_of(n) + \":\" + to_string(n)"}, "int:4", "auto without initializer");
+            check_proof_run({"var v = 1; v = \"s\"; v = 2.5; reflect::type_of(v) + \":\" + to_string(v)"}, "float:2.5", "var");
+            check_proof_run({"auto n; n = 3; n = 4; reflect::type_of(n) + \":\" + to_string(n)"}, "int:4", "auto without initializer");
             check_proof_error({"auto n; n = 3; n = \"s\"; n"}, "auto locks at its first assignment");
-            check_proof_run({cls + "shared_ptr<C> sp = C(); shared_ptr<C> sq = sp; sq.v = 5; to_string(sp.v)"}, "5", "shared_ptr handle");
-            check_proof_run({cls + "shared_ptr<C> sp = C(); weak_ptr<C> wp = sp; to_string(wp.expired()) + \":\" + to_string(wp.lock().v)"}, "false:1", "weak_ptr handle");
+            check_proof_run({cls + "shared_ptr<C> sp = make_shared<C>(); shared_ptr<C> sq = sp; sq.v = 5; to_string(sp.v)"}, "5", "shared_ptr handle");
+            check_proof_run({cls + "shared_ptr<C> sp = make_shared<C>(); weak_ptr<C> wp = sp; to_string(wp.expired()) + \":\" + to_string(wp.lock().v)"}, "false:1", "weak_ptr handle");
             check_proof_run({"array<int> a = [1, 2]; array<int> b = a; b[0] = 9; to_string(a[0]) + to_string(b[0])"}, "19", "typed array copies");
             check_proof_run({"map<string,int> m = {\"a\": 1}; map<string,int> n = m; n[\"a\"] = 2; to_string(m[\"a\"]) + to_string(n[\"a\"])"}, "12", "typed map copies");
             check_proof_run({"int x = 1; int& r = x; r = 5; to_string(x)"}, "5", "reference declaration");
@@ -2777,10 +2777,10 @@ public:
             check_proof_run({"int twice(int v) { return v * 2; } var f = twice; to_string(f(4))"}, "8", "callable local");
             check_proof_error({"int twice(int v) { return v * 2; } var f = twice; f(\"s\")"}, "callable local still enforces its parameter");
             check_proof_run({"coroutine int gen(int n) { yield n; return n + 1; } auto h = gen(3); to_string(h.next()) + \":\" + to_string(h.next())"}, "3:4", "coroutine callee");
-            check_proof_run({cls + "C a = C(); a = null; type_of(a)"}, "", "null into an object slot");
-            check_proof_run({cls + "C a; C b = a; type_of(b)"}, "", "typed-null placeholder");
-            check_proof_run({cls + "C b = D(); to_string(b.v) + \":\" + type_of(b)"}, "1:D", "derived into base");
-            check_proof_run({cls + "shared_ptr<C> sp = C(); C c = sp; c.v = 9; to_string(sp.v) + \":\" + to_string(c.v)"}, "", "handle into a value slot");
+            check_proof_run({cls + "C a = C(); a = null; reflect::type_of(a)"}, "", "null into an object slot");
+            check_proof_run({cls + "C a; C b = a; reflect::type_of(b)"}, "", "typed-null placeholder");
+            check_proof_run({cls + "C b = D(); to_string(b.v) + \":\" + reflect::type_of(b)"}, "1:D", "derived into base");
+            check_proof_run({cls + "shared_ptr<C> sp = make_shared<C>(); C c = sp; c.v = 9; to_string(sp.v) + \":\" + to_string(c.v)"}, "", "handle into a value slot");
             check_proof_error({"int x = 1; x = \"s\"; x"}, "string into int raises");
             check_proof_error({"char c = 'a'; c = 65; c"}, "int into char raises");
             check_proof_error({"int f(int v) { return v; } f(\"s\")"}, "string argument into an int parameter raises");
@@ -2819,7 +2819,7 @@ public:
                 "class P { int hp = 10; float x = 1.5; string tag = \"p\"; bool alive = true; char c = 'a';\n"
                 "  int tick(int d) { hp = hp - d; this.hp = this.hp + 1; x = x * 2.0; tag = tag + \"!\"; alive = !alive; c = 'b'; return hp; } }\n"
                 "P p = P(); int r = p.tick(3); r = r + p.tick(1); p.hp = r;\n"
-                "to_string(r) + \":\" + to_string(p.hp) + \":\" + type_of(p.hp) + \":\" + type_of(p.x) + \":\" + p.tag + \":\" + to_string(p.alive) + \":\" + to_string(p.c)";
+                "to_string(r) + \":\" + to_string(p.hp) + \":\" + reflect::type_of(p.hp) + \":\" + reflect::type_of(p.x) + \":\" + p.tag + \":\" + to_string(p.alive) + \":\" + to_string(p.c)";
             check_proof_run(thrice(unit), "16:16:int:float:p!!:true:b", "self-defining unit executed three times");
             // module pattern: the class unit runs three times before its users' first check
             const std::string cls = "class Q { int f = 10; string tag = \"q\"; int tick(int d) { f = f - d; this.f = this.f + 1; tag = tag + \"!\"; return f; } Q dup() { Q q = Q(); q.f = f; q.tag = tag; return q; } }";
@@ -2845,7 +2845,7 @@ public:
                 "class P { int hp = 10; float x = 1.5; string tag = \"p\"; bool alive = true; char c = 'a';\n"
                 "  int tick(int d) { hp = hp - d; this.hp = this.hp + 1; x = x * 2.0; tag = tag + \"!\"; alive = !alive; c = 'b'; return hp; } }\n"
                 "P p = P(); int r = p.tick(3); r = r + p.tick(1); p.hp = r;\n"
-                "to_string(r) + \":\" + to_string(p.hp) + \":\" + type_of(p.hp) + \":\" + p.tag";
+                "to_string(r) + \":\" + to_string(p.hp) + \":\" + reflect::type_of(p.hp) + \":\" + p.tag";
             const std::string use = "{ int k = 0; k = 2; r = p.tick(k); } p.hp = r; p.tag = \"t\"; to_string(p.hp) + \":\" + p.tag";
             const std::string bad = "p.hp = \"x\"; p.hp";
             for (int pass = 0; pass < 3; ++pass) {
@@ -3134,7 +3134,7 @@ public:
                 check_eq(si, sv, std::string("load listing parity: ") + src);
                 check_true(si.find("ERROR: static check failed") == 0 && si.find(text) != std::string::npos, std::string("load error for ") + src + ": " + si);
             }
-            check_both("string s = \"a\"; array<int> xs = []; int n = 0; if (s) { n += 1; } if (!xs) { n += 2; } if (s && !xs) { n += 4; } to_string(n)", "7", "conditions keep truthiness for declared text and containers");
+            check_both("string s = \"a\"; array<int> xs = []; int n = 0; if (!s.empty()) { n += 1; } if (!xs) { n += 2; } if (s && !xs) { n += 4; } to_string(n)", "7", "conditions keep truthiness for declared text and containers");
             check_both(R"JAI(
                 class B { bool to_bool() { return false; } }
                 bool p(bool x) { return x; }
@@ -3195,9 +3195,9 @@ public:
             )JAI", "2,3,0,4", "a C declaration from a shared_ptr<C> handle copies the pointee, as C x = *h does");
             auto [i_out, v_out] = both(R"JAI(
                 class C { int a = 0; C() {} C(int v) { a = v; } }
-                string pt(C c) { return type_of(c) + ":" + to_string(c.a); }
+                string pt(C c) { return reflect::type_of(c) + ":" + to_string(c.a); }
                 C d1 = new C(2); C d2 = shared_ptr<C>();
-                string decl = type_of(d1) + ":" + to_string(d1.a) + "|" + type_of(d2) + ":" + to_string(d2.a);
+                string decl = reflect::type_of(d1) + ":" + to_string(d1.a) + "|" + reflect::type_of(d2) + ":" + to_string(d2.a);
                 string param = pt(new C(2)) + "|" + pt(shared_ptr<C>());
                 to_string(decl == param) + " " + decl
             )JAI");
@@ -3208,12 +3208,12 @@ public:
         test("typed_slot_null_into_handle_params_and_returns", [check_both]() {
             check_both(R"JAI(
                 class C { int a = 0; }
-                string p(shared_ptr<C> x) { return to_string(x == null) + ":" + type_of(x); }
+                string p(shared_ptr<C> x) { return to_string(x == null) + ":" + reflect::type_of(x); }
                 shared_ptr<C> g() { return null; }
-                string pw(weak_ptr<C> x) { return to_string(x == null) + ":" + type_of(x); }
+                string pw(weak_ptr<C> x) { return to_string(x == null) + ":" + reflect::type_of(x); }
                 weak_ptr<C> gw() { return null; }
                 shared_ptr<C> q = null; weak_ptr<C> qw; qw = null;
-                p(null) + "|" + to_string(g() == null) + ":" + type_of(g()) + "|" + pw(null) + "|" + to_string(gw() == null) + ":" + type_of(gw()) + "|" + type_of(q) + "|" + type_of(qw)
+                p(null) + "|" + to_string(g() == null) + ":" + reflect::type_of(g()) + "|" + pw(null) + "|" + to_string(gw() == null) + ":" + reflect::type_of(gw()) + "|" + reflect::type_of(q) + "|" + reflect::type_of(qw)
             )JAI", "true:object|true:object|true:weak_ptr|true:weak_ptr|object|weak_ptr", "null binds to shared_ptr/weak_ptr parameters and returns as the typed null `=` stores");
         });
 
@@ -3284,11 +3284,11 @@ public:
 				string r1 = ""; try { pa(["x"]); r1 = "ok"; } catch (e) { r1 = e; }
 				array<int> ga() { return ["x"]; }
 				string r2 = ""; try { ga(); r2 = "ok"; } catch (e) { r2 = e; }
-				string pb(array<int> a) { return type_of(a[1]) + to_string(a[1]); }
+				string pb(array<int> a) { return reflect::type_of(a[1]) + to_string(a[1]); }
 				string r3 = pb([1, true]);
 				string r3f = ""; try { pb([1, 2.5]); r3f = "ok"; } catch (e) { r3f = e; }
 				array<int> g = [1, 2];
-				string pt(array<int> a) { return to_string(a.size()) + type_of(a[0]); }
+				string pt(array<int> a) { return to_string(a.size()) + reflect::type_of(a[0]); }
 				r1 + "|" + r2 + "|" + r3 + "|" + r3f + "|" + pt(g)
 			)JAI", "Cannot store string in array<int>|Cannot store string in array<int>|int1|Cannot store float in array<int>|2int", "array<int> parameters and returns run the element boundary");
 			auto [i_out, v_out] = both(R"JAI(
@@ -3308,7 +3308,7 @@ public:
 
         test("typed_slot_local_container_assign_checks_elements", [check_both]() {
             check_both(R"JAI(
-                string f() { array<int> v = [1]; var s = ["x"]; try { v = s; } catch (e) { return e; } return type_of(v[0]); }
+                string f() { array<int> v = [1]; var s = ["x"]; try { v = s; } catch (e) { return e; } return reflect::type_of(v[0]); }
                 f()
             )JAI", "Cannot store string in array<int>", "a slot-local `=` into array<int> runs the boundary like the global path");
             check_both(R"JAI(
@@ -3350,7 +3350,7 @@ public:
                 string local1() { string r = ""; try { weak_ptr<Foo> w; var o = Foo(); w = o; } catch (e) { r = e; } return r; }
                 string local2() { string r = ""; try { var o = Foo(); weak_ptr<Foo> w = o; } catch (e) { r = e; } return r; }
                 r1 + "|" + r2 + "|" + r3 + "|" + r4 + "|" + r5 + "|" + r6 + "|" + r7 + "|" + r8 + "|" + r9 + "|" + local1() + "|" + local2()
-            )JAI", "Cannot initialize 'w' (declared weak_ptr<Foo>) with Foo|Cannot initialize 'w' (declared weak_ptr<Foo>) with int|Cannot initialize 'w' (declared weak_ptr<Foo>) with Bar|Cannot assign Foo to 'w' (declared weak_ptr<Foo>)|Cannot assign int to 'w' (declared weak_ptr<Foo>)|Cannot assign Bar to 'w' (declared weak_ptr<Foo>)|Cannot assign string to 'p' (declared shared_ptr<Foo>)|Cannot assign array to 'p' (declared shared_ptr<Foo>)|Cannot assign Bar to 'p' (declared shared_ptr<Foo>)|Cannot assign Foo to 'w' (declared weak_ptr<Foo>)|Cannot initialize 'w' (declared weak_ptr<Foo>) with Foo",
+            )JAI", "Cannot initialize 'w' (declared weak_ptr<Foo>) with Foo|Cannot initialize 'w' (declared weak_ptr<Foo>) with int|Cannot initialize 'w' (declared weak_ptr<Foo>) with Bar|Cannot assign Foo to 'w' (declared weak_ptr<Foo>)|Cannot assign int to 'w' (declared weak_ptr<Foo>)|Cannot assign Bar to 'w' (declared weak_ptr<Foo>)|Cannot assign string to 'p' (declared shared_ptr<Foo>)|Cannot assign array to 'p' (declared shared_ptr<Foo>)|A Bar value does not become a handle: make_shared<Bar>(value) copies it into a new one|Cannot assign Foo to 'w' (declared weak_ptr<Foo>)|Cannot initialize 'w' (declared weak_ptr<Foo>) with Foo",
                 "handle variables name the slot and spell the payload's type (globals and slotted locals alike)");
             check_both(R"JAI(
                 class Foo { int a = 1; }
@@ -3422,7 +3422,7 @@ public:
                 class H { array<int> items = [1]; array<int> get() { return items; } }
                 H hd = H();
                 var hi = hd.get(); hi.push(2);
-                to_string(src.size()) + ":" + type_of(r) + ":" + to_string(r.size()) + "|" + to_string(dg.b) + ":" + to_string(x.b) + "|" + to_string(hd.items.size()) + ":" + to_string(hi.size())
+                to_string(src.size()) + ":" + reflect::type_of(r) + ":" + to_string(r.size()) + "|" + to_string(dg.b) + ":" + to_string(x.b) + "|" + to_string(hd.items.size()) + ":" + to_string(hi.size())
             )JAI", "2:array:3|1:9|1:2", "typed returns of a global, a derived global and a field are copies");
             check_proof_run({"array<int> src = [1, 2]; array<int> f() { return src; } var r = f(); r.push(3); to_string(src.size()) + \":\" + to_string(r.size())"},
                             "2:3", "same-type proven return of a global still copies under every lane");

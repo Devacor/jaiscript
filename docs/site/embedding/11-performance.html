@@ -82,8 +82,9 @@ after 30 warm-up frames, the median of five interleaved runs, each within 4% of 
 run, so its cells sample the same window in three slices spread across it, each slice the median of three runs: twelve
 frames of each scene (projecting OSSUARY's 60-frame window at 358 seconds) and 600 of GLOOM's ticks over three processes
 (projecting the showcase look's 600 ticks at 245 seconds). <sup>b</sup> CPython hashes each frame outside its timed
-window, where the C++ hosts hash inside it (tens of microseconds a frame in C++). The ports and their runners are in the
-comparison project: <code>demoreel/ports/COMPARISON.md</code> and the GLOOM ports beside it.</p>
+window, where the C++ hosts hash inside it (tens of microseconds a frame in C++). Every port, runner and pinned runtime is in
+<a href="https://github.com/Devacor/jaiscript_benchmarks">jaiscript_benchmarks</a>, with the JaiScript release it measured as a submodule; <code>demoreel/ports/COMPARISON.md</code> there
+records this table's protocol.</p>
 <h3 id="smaller-apps">Smaller apps<a class="hlink" href="#smaller-apps" aria-label="link">&#8203;</a></h3>
 <p>Four benchmark programs with no ChaiScript port, so they sit outside the headline. Same protocol: whole programs,
 hash-checked, timing their own workload, lower is faster.</p>
@@ -197,8 +198,8 @@ C++. A copy that is only read binds in place for free, but treat that as a bonus
 <li><strong>Use <code>array&lt;int&gt;</code> and <code>array&lt;float&gt;</code> for bulk numeric data.</strong> Same API,
 raw primitive storage: a 13,600-element grid takes 109&nbsp;KB instead of 435&nbsp;KB, a copy is a <code>memcpy</code>,
 and element access skips boxing.</li>
-<li><strong>Write compound element stores.</strong> <code>a[i] += v</code> is one instruction, cheaper than the spelled-out
-read and write.</li>
+<li><strong>Write compound stores.</strong> <code>a[i] += v</code> and <code>p.x += v</code> are one instruction each, cheaper
+than the spelled-out read and write.</li>
 <li><strong>Keep calls out of the innermost loop.</strong> A call costs about ten fused loop iterations. A self tail
 call (<code>return f(args)</code>) is the exception: it reuses the frame (about 40 ns a call) and runs at any depth.</li>
 <li><strong>Parallelize the bulk stages.</strong> <code>parallel_for</code> and <code>parallel_transform</code> run bodies
@@ -280,12 +281,38 @@ the reasons with their top sites, <code>vm_coverage_summary()</code> returns the
 exit. <code>engine::vm_coverage_available()</code> says whether the build counts; without it the report and reset calls throw
 <code>std::logic_error</code>.</td></tr>
 </tbody></table></div>
+<h3 id="finding-load-time">Finding where load time goes<a class="hlink" href="#finding-load-time" aria-label="link">&#8203;</a></h3>
+<p><code>--load-report</code> asks the engine where a load spent its time: one row per file, in the order the load reached them, and one column per phase that took any time. <code>jaiscript --load-report file.jai</code> prints the table on stderr when the file&#x27;s top level ends, and <code>jai_spider --load-report app.jai</code> prints it once, for the first engine it builds. <code>--load-report=json</code> prints the same report as one line of JSON. Standard output does not change.</p>
+<div class="codeblock cb-plain"><span class="cb-label">shell</span><pre><code class="lang-plain">jaiscript --load-report game.jai</code></pre></div>
+<div class="codeblock cb-plain"><span class="cb-label">output</span><pre><code class="lang-plain">load report (vm), times in ms, files under /work/game/
+file           KB     read    stamp    fresh   c.read   decode    gener   proofs   compil   bodies      run   import    other     total  check   cache
+game.jai      0.0        .        .     0.01     0.04     0.05     0.00     0.11     0.06        .     0.08        .     0.11      0.46  trusted hit
+rules.jai     0.1     0.05     0.07     0.03     0.03     0.03     0.00     0.06     0.01     0.07     0.04        .     0.03      0.44  trusted hit
+(engine)      0.0     0.01        .        .        .        .        .        .        .        .        .     0.13     0.13      0.27
+total         0.2     0.06     0.07     0.04     0.07     0.08     0.00     0.17     0.08     0.07     0.12     0.13     0.26      1.17
+load 1.08 ms + first file's top-level run 0.08 ms = 1.17 ms; engine setup 56.70 ms
+function bodies compiled: 1 of 2 (50%), 70% of their encoded bytes</code></pre></div>
+<p>A host turns it on with <code>eng-&gt;load_report(true)</code> before the first load and reads <code>eng-&gt;load_report_snapshot()</code> (<code>&lt;jaiscript/core/load_report.hpp&gt;</code>) whenever it likes: <code>format()</code> is this table, <code>json()</code> the JSON, and <code>rows</code>, <code>engine</code> and <code>totals</code> hold the numbers. <code>eng-&gt;load_report_setup_time(seconds)</code> adds what the host spent making the engine. It is off by default, and off it costs a pointer test at each phase boundary and nothing while scripts run.</p>
+<div class="tablewrap"><table><thead><tr><th>column</th><th>what it counts</th></tr></thead><tbody>
+<tr><td><code>read</code>, <code>stamp</code></td><td>Reading the source file, and asking for its time and size. A file the host handed over as text, as the runner does with its first file, has no read.</td></tr>
+<tr><td><code>fresh</code>, <code>c.read</code>, <code>decode</code></td><td>Hashing the source against the <a href="04-jaibite.html">cache file</a>, reading that file, and turning it into the program&#x27;s tree.</td></tr>
+<tr><td><code>lex</code>, <code>parse</code>, <code>repars</code></td><td>Parsing the source. <code>repars</code> is a second parse, of a unit that named a namespace class before its whole program was known.</td></tr>
+<tr><td><code>gener</code>, <code>templ</code></td><td>Making the instances of generics, and parsing a template the program names. A template is charged to its own file.</td></tr>
+<tr><td><code>check</code>, <code>proofs</code></td><td>The static check, and the type proofs the backends use, which run on every load.</td></tr>
+<tr><td><code>c.writ</code></td><td>Writing the cache file.</td></tr>
+<tr><td><code>compil</code>, <code>bodies</code></td><td>On the VM: compiling the unit&#x27;s top level, and compiling each function the first time it is called, charged to the file that declares it. The interpreter has neither.</td></tr>
+<tr><td><code>run</code></td><td>The unit&#x27;s top-level code. A file it imports is charged to that file.</td></tr>
+<tr><td><code>import</code>, <code>other</code></td><td>The <code>(engine)</code> row&#x27;s <code>import</code> is resolving imports and collecting the program&#x27;s names, which belongs to no one file. <code>other</code> is the rest of a unit&#x27;s load.</td></tr>
+<tr><td><code>check</code> (after <code>total</code>)</td><td><code>ran</code>, or <code>trusted</code> when the cache file&#x27;s checked-clean stamp stood in for the check.</td></tr>
+<tr><td><code>cache</code></td><td><code>hit</code>, <code>memory</code>, <code>miss</code> with the reason (<code>no file</code>, <code>different source</code>, <code>fingerprint</code>, <code>format version</code>, <code>namespace classes</code>, <code>corrupt</code>), or <code>not cacheable</code> with the reason (<code>source text</code>, <code>cache off</code>, <code>filesystem off</code>, <code>no cache path</code>, <code>spliced files</code>, <code>another file&#x27;s generics</code>). <code>(written)</code> or <code>(write failed)</code> follows when the load wrote the file.</td></tr>
+</tbody></table></div>
+<p>No time is counted twice: each moment belongs to the innermost phase, so the rows and <code>(engine)</code> add up to the last line&#x27;s total exactly. A program whose top level calls <code>main</code> runs inside the first file&#x27;s <code>run</code>, which is why the report comes after it and why the last line gives that run apart from the load. Time a script spends in <code>sleep</code> at its top level counts as <code>run</code>. The last line of the report says how many of the functions declared at file, namespace and class scope were compiled, and what share of their encoded size that is: what is left is code the program loaded and never called.</p>
 <p>The ports of these programs to Lua, Squirrel, Luau and ChaiScript and the harness that drives them are not part of
 the JaiScript package, so the package reproduces the JaiScript column of every table and not the others.</p><nav class="prevnext" aria-label="Chapter navigation"><a class="prev" rel="prev" href="../embedding/10-signals-properties.html"><span>&larr; previous</span>Signals &amp; Observable Properties</a><a class="next" rel="next" href="../embedding/12-debugging.html"><span>next &rarr;</span>Debugging</a></nav></article>
 </main>
 </div>
 <footer class="site-footer">
-<p>JaiScript 0.5 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
+<p>JaiScript 0.6 beta &middot; <a href="https://github.com/Devacor/jaiscript/blob/main/LICENSE">MIT license</a> &middot; <a href="https://github.com/Devacor/jaiscript">source</a> &middot; <a href="https://github.com/Devacor/jaiscript/issues">report a docs bug</a></p>
 <p class="foot-note">every standalone script sample on this site runs on both backends, and the output shown is what they print</p>
 </footer>
 <script src="../assets/search-index.js"></script>

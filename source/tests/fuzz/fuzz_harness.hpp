@@ -17,7 +17,12 @@
 #include <regex>
 #include <sstream>
 #include <string>
+#include <chrono>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <thread>
+#include <utility>
 #include <vector>
 
 namespace jai::fuzz {
@@ -69,6 +74,7 @@ namespace jai::fuzz {
 		std::vector<std::string> segments;
 		std::vector<std::string> labels;   // per segment: the band or generator part that wrote it (the census attributes by it)
 		bool host_math_aliases = false;   // explicit host aliases exercise float-parameter conversion and the alias optimizer
+		std::vector<std::pair<std::string, std::string>> files;   // (absolute path, text): units a segment imports, written before a run
 
 		std::string joined() const {
 			std::string out;
@@ -224,6 +230,31 @@ namespace jai::fuzz {
 		return lower(hay).find(lower(needle)) != std::string::npos;
 	}
 
+	// Each file in place with its text: one already holding it stays untouched, another is written beside it and renamed over
+	// it, so a run of the same seed in another process never reads a half-written unit
+	inline void write_program_files(const program& p) {
+		for (const auto& [path, text] : p.files) {
+			std::error_code ec;
+			const std::filesystem::path target(path);
+			std::filesystem::create_directories(target.parent_path(), ec);
+			{
+				std::ifstream held(target, std::ios::binary);
+				std::stringstream read;
+				read << held.rdbuf();
+				if (held && read.str() == text) { continue; }
+			}
+			// a name no other writer holds: the thread (one write at a time) and the moment (threads of two processes)
+			const std::filesystem::path partial = target.string() + "." + std::to_string(std::hash<std::thread::id>()(std::this_thread::get_id())) + "." +
+			                                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".part";
+			{
+				std::ofstream out(partial, std::ios::binary);
+				out << text;
+			}
+			std::filesystem::rename(partial, target, ec);
+			if (ec) { std::filesystem::remove(partial, ec); }
+		}
+	}
+
 	inline run_outcome run_program(const program& p, const run_config& cfg) {
 		run_outcome out;
 		auto eng = jai::engine::make();
@@ -251,6 +282,10 @@ namespace jai::fuzz {
 			detail::engine_access::register_math_alias(*eng, "host_abs", "abs");
 			detail::engine_access::register_math_alias(*eng, "host_floor", "floor");
 			detail::engine_access::register_math_alias(*eng, "host_ceil", "ceil");
+		}
+		if (!p.files.empty()) {
+			eng->jaibite_cache(false);   // each backend reads the imported text itself, never the other's cache
+			write_program_files(p);
 		}
 		if (cfg.on_engine) cfg.on_engine(*eng);
 
@@ -298,6 +333,9 @@ namespace jai::fuzz {
 			segments_finished.fetch_add(1, std::memory_order_relaxed);
 			if (cfg.after_segment) cfg.after_segment(out.segment_results.size() - 1, *eng);
 		}
+		// whether the engine still runs code, not how fast: on a loaded machine the probe alone can outlast a short budget
+		eng->execution_budget(0);
+		eng->execution_step_budget(0);
 		try {
 			out.alive = (eng->execute("1 + 1").as_int() == 2);
 			out.alias_binds = detail::engine_access::parameter_alias_binds(*eng);

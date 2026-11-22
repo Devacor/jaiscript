@@ -129,8 +129,8 @@ public:
             auto eng = make_engine();
             jai::stdlib::register_all(*eng);
             eng->add_global("g_flag", script_value((script_int)0, eng.get()));
-            eng->execute(R"( auto blob = to_base64({"$type": "g_flag = 99; Dummy", "$val": {}}); )");
-            (void)eng->execute("from_base64(blob)");
+            eng->execute(R"( auto blob = base64_encode(to_binary({"$type": "g_flag = 99; Dummy", "$val": {}})); )");
+            (void)eng->execute("from_binary(base64_decode(blob))");
             check_eq((script_int)0, eng->execute("g_flag").as_int());
         });
 
